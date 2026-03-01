@@ -173,6 +173,29 @@ if [ -d "$SUMMA_DIR" ]; then
         stage_library "$SUMMA_DIR/bin/libftz.so" "libftz.so" "SUMMA" || true
     fi
 
+    # Stage SUNDIALS shared libraries (SUMMA dependency, built from source)
+    SUNDIALS_LIB="$INSTALLS_DIR/sundials/install/sundials/lib"
+    if [ -d "$SUNDIALS_LIB" ]; then
+        print_info "Staging SUNDIALS libraries..."
+        for slib in "$SUNDIALS_LIB"/libsundials_*; do
+            [ -f "$slib" ] || continue
+            slib_name="$(basename "$slib")"
+            # Only stage actual shared libraries (.dylib or .so), skip symlinks to avoid duplicates
+            case "$slib_name" in
+                *.dylib|*.so|*.so.*)
+                    if [ ! -L "$slib" ]; then
+                        stage_library "$slib" "$slib_name" "SUNDIALS" || true
+                    else
+                        # Copy symlinks too (versioned .dylib.X -> .dylib)
+                        cp -P "$slib" "lib/$slib_name"
+                    fi
+                    ;;
+            esac
+        done
+    else
+        print_warning "SUNDIALS lib directory not found at $SUNDIALS_LIB"
+    fi
+
     stage_license "$SUMMA_DIR" "SUMMA"
 else
     print_warning "SUMMA not installed"
@@ -575,59 +598,63 @@ print_info "Fixing binary portability (RPATH rewriting)..."
 OS_TYPE="$(uname -s)"
 
 if [ "$OS_TYPE" = "Darwin" ]; then
-    # macOS: use install_name_tool to rewrite RPATHs
-    for binary in bin/*; do
-        [ -f "$binary" ] || continue
-        binary_name="$(basename "$binary")"
+    # macOS: use install_name_tool to rewrite RPATHs and library references
 
-        # Skip non-Mach-O files (scripts, etc.)
-        file "$binary" | grep -q "Mach-O" || continue
-
-        # Get existing RPATHs
-        EXISTING_RPATHS="$(otool -l "$binary" 2>/dev/null | grep -A2 LC_RPATH | grep 'path ' | awk '{print $2}' || true)"
-
-        if [ -n "$EXISTING_RPATHS" ]; then
-            # Delete all existing RPATHs (they point to CI build paths)
-            while IFS= read -r rpath; do
-                install_name_tool -delete_rpath "$rpath" "$binary" 2>/dev/null || true
-            done <<< "$EXISTING_RPATHS"
-            print_success "$binary_name: removed CI RPATHs"
-        fi
-
-        # Add relocatable RPATH pointing to ../lib
-        install_name_tool -add_rpath "@executable_path/../lib" "$binary" 2>/dev/null || true
-        print_success "$binary_name: added @executable_path/../lib RPATH"
+    # Collect all Mach-O files (binaries + libraries)
+    ALL_MACHO=()
+    for f in bin/* lib/*.dylib; do
+        [ -f "$f" ] || continue
+        [ -L "$f" ] && continue  # skip symlinks
+        file "$f" | grep -q "Mach-O" || continue
+        ALL_MACHO+=("$f")
     done
 
-    # Fix shared library install names in lib/
+    # Step 1: Fix RPATHs on all Mach-O files
+    for macho in "${ALL_MACHO[@]}"; do
+        macho_name="$(basename "$macho")"
+
+        # Delete all existing RPATHs (they point to CI build paths)
+        EXISTING_RPATHS="$(otool -l "$macho" 2>/dev/null | grep -A2 LC_RPATH | grep 'path ' | awk '{print $2}' || true)"
+        if [ -n "$EXISTING_RPATHS" ]; then
+            while IFS= read -r rpath; do
+                install_name_tool -delete_rpath "$rpath" "$macho" 2>/dev/null || true
+            done <<< "$EXISTING_RPATHS"
+        fi
+
+        # Add relocatable RPATH
+        case "$macho" in
+            bin/*)
+                install_name_tool -add_rpath "@executable_path/../lib" "$macho" 2>/dev/null || true
+                print_success "$macho_name: RPATH → @executable_path/../lib"
+                ;;
+            lib/*)
+                install_name_tool -add_rpath "@loader_path" "$macho" 2>/dev/null || true
+                print_success "$macho_name: RPATH → @loader_path"
+                ;;
+        esac
+    done
+
+    # Step 2: Fix install names on all libraries, and rewrite references everywhere
     for lib in lib/*.dylib; do
         [ -f "$lib" ] || continue
+        [ -L "$lib" ] && continue
         lib_name="$(basename "$lib")"
 
         # Get the current install name (absolute CI path)
         OLD_ID="$(otool -D "$lib" 2>/dev/null | tail -1 || true)"
         NEW_ID="@rpath/$lib_name"
 
-        # Set install name to @rpath/libname so binaries find it via RPATH
+        # Set install name to @rpath/libname
         install_name_tool -id "$NEW_ID" "$lib" 2>/dev/null || true
-        print_success "$lib_name: set install name to $NEW_ID"
 
-        # Update all binaries that reference this library by its old name
+        # Update references in ALL Mach-O files (binaries AND other libraries)
         if [ -n "$OLD_ID" ] && [ "$OLD_ID" != "$NEW_ID" ]; then
-            for binary in bin/*; do
-                [ -f "$binary" ] || continue
-                file "$binary" | grep -q "Mach-O" || continue
-                install_name_tool -change "$OLD_ID" "$NEW_ID" "$binary" 2>/dev/null || true
+            for macho in "${ALL_MACHO[@]}"; do
+                install_name_tool -change "$OLD_ID" "$NEW_ID" "$macho" 2>/dev/null || true
             done
-            print_success "$lib_name: updated references in binaries"
-        fi
-
-        # Also fix RPATHs in the library itself
-        EXISTING_RPATHS="$(otool -l "$lib" 2>/dev/null | grep -A2 LC_RPATH | grep 'path ' | awk '{print $2}' || true)"
-        if [ -n "$EXISTING_RPATHS" ]; then
-            while IFS= read -r rpath; do
-                install_name_tool -delete_rpath "$rpath" "$lib" 2>/dev/null || true
-            done <<< "$EXISTING_RPATHS"
+            print_success "$lib_name: install name → $NEW_ID (references updated)"
+        else
+            print_success "$lib_name: install name → $NEW_ID"
         fi
     done
 
