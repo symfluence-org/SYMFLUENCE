@@ -148,7 +148,7 @@ jobs:
           repository-url: https://test.pypi.org/legacy/
           skip-existing: true
           attestations: false
-          verbose: true
+          # verbose: true  # uncomment to debug upload failures
 
   # ===========================================================================
   # Publish to Production PyPI
@@ -175,7 +175,7 @@ jobs:
         with:
           skip-existing: true
           attestations: false
-          verbose: true
+          # verbose: true  # uncomment to debug upload failures
 
   # ===========================================================================
   # Verify Production PyPI

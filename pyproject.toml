@@ -87,10 +87,9 @@ gdal = [
 # MESH model support - requires packages not on PyPI (hydrant on PyPI is an
 # unrelated Kinesis Firehose tool; the correct one is kasra-keshavarz/hydrant).
 # hydrant MUST be installed before meshflow to prevent pip resolving to the wrong package.
-mesh = [
-  "hydrant @ git+https://github.com/kasra-keshavarz/hydrant.git",
-  "meshflow @ git+https://github.com/CH-Earth/meshflow.git@main",
-]
+# Install manually:
+#   uv pip install git+https://github.com/kasra-keshavarz/hydrant.git
+#   uv pip install git+https://github.com/CH-Earth/meshflow.git@main
 # Baseflow separation (requires Python <3.10 due to numba constraints)
 baseflow = [
   "baseflow",
