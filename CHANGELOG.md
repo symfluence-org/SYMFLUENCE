@@ -11,6 +11,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.1] - 2026-03-01
+
+### Fixed
+- **HPC file-locking workaround**: Added tempfile fallback (attempt 4) to ERA5
+  NetCDF writer for parallel filesystems (Lustre/GPFS/BeeGFS) where HDF5
+  `fcntl()` locking fails even with `HDF5_USE_FILE_LOCKING=FALSE`. Writes to
+  `$TMPDIR` first, then moves the file to the target path.
+- **mizuRoute Makefile build**: Collapse multi-line `LIBNETCDF` before appending
+  RPATH flags to avoid breaking backslash continuation (caused "missing separator"
+  errors on CI).
+- **ngen linker (expat)**: Detect system UDUNITS2 via `pkg-config`/`ldconfig`
+  (not just explicit env var) so `-lexpat` is added for XML symbol resolution.
+- **Wflow calibration**: Fix snow parameters, routing, and unit conversion issues.
+  Add Oudin PET, log-transform bounds, and sub-daily resampling support.
+- **FUSE preprocessing**: Make streamflow observations optional.
+- **MPI launcher**: Add fallback when preferred launcher fails; prefer `mpirun`
+  over `srun` for launcher detection.
+
+### Added
+- SPDX license headers on all source files.
+- Coverage tracking in cross-platform CI workflow.
+- Unit tests for NGEN, JFUSE, HYPE model runners and configs.
+- Unit tests for core modules (file_utils, validation, path_resolver).
+- Unit tests for `_safe_to_netcdf` fallback chain.
+- WATFLOOD: Expand calibration to 16 parameters with tests.
+- Bow River preset and default `DEM_SOURCE` to Copernicus.
+- Config-hash stage invalidation for workflow orchestrator.
+
+---
+
 ## [0.7.0] - 2026-02-10
 
 > **Note**: This release jumps from the last tagged release v0.5.2 directly to v0.7.0.
