@@ -269,9 +269,11 @@ jobs:
           mkdir -p "$TEST_DIR"
           cd "$TEST_DIR"
 
-          # --force-local: treat D: as filename, not remote host (Windows)
           TARBALL=$(ls "$GITHUB_WORKSPACE"/release/symfluence-tools-*.tar.gz 2>/dev/null | head -1)
-          tar --force-local -xzf "$TARBALL"
+          # --force-local: treat D: as filename, not remote host (Windows only; BSD tar doesn't support it)
+          TAR_ARGS="-xzf"
+          case "$(uname -s 2>/dev/null)" in MSYS*|MINGW*|CYGWIN*) TAR_ARGS="--force-local $TAR_ARGS" ;; esac
+          tar $TAR_ARGS "$TARBALL"
 
           # Test binaries run without original install directory
           echo "-> Testing SUMMA..."

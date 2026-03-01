@@ -72,8 +72,13 @@ cd "$(dirname "$STAGED_DIR")"
 STAGED_BASENAME="$(basename "$STAGED_DIR")"
 
 print_info "Compressing..."
-# --force-local: treat D: as filename, not remote host (Windows paths)
-tar --force-local -czf "$TARBALL_PATH" "$STAGED_BASENAME"
+# On Windows (MSYS/MinGW), tar interprets D: as a remote host.
+# --force-local fixes this but is not supported by BSD tar (macOS).
+TAR_ARGS="-czf"
+case "$(uname -s 2>/dev/null)" in
+    MSYS*|MINGW*|CYGWIN*) TAR_ARGS="--force-local $TAR_ARGS" ;;
+esac
+tar $TAR_ARGS "$TARBALL_PATH" "$STAGED_BASENAME"
 
 TARBALL_SIZE="$(du -h "$TARBALL_PATH" | cut -f1)"
 print_success "Created tarball: $TARBALL_NAME ($TARBALL_SIZE)"
