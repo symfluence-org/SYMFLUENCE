@@ -83,7 +83,8 @@ jobs:
             gdal-bin libgdal-dev \
             libnetcdf-dev libnetcdff-dev \
             libhdf5-dev libudunits2-dev \
-            libopenblas-dev liblapack-dev
+            libopenblas-dev liblapack-dev \
+            patchelf
 
       - name: Configure compiler env (Linux)
         if: runner.os == 'Linux'
@@ -274,6 +275,15 @@ jobs:
           TAR_ARGS="-xzf"
           case "$(uname -s 2>/dev/null)" in MSYS*|MINGW*|CYGWIN*) TAR_ARGS="--force-local $TAR_ARGS" ;; esac
           tar $TAR_ARGS "$TARBALL"
+
+          # Verify lib/ directory was included
+          echo "-> Checking lib/ directory..."
+          if [ -d "./symfluence-tools/lib" ]; then
+            echo "  lib/ contents:"
+            ls -lh ./symfluence-tools/lib/ 2>/dev/null || echo "  (empty)"
+          else
+            echo "  No lib/ directory found"
+          fi
 
           # Test binaries run without original install directory
           echo "-> Testing SUMMA..."

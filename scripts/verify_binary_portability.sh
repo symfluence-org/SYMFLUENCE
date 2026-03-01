@@ -78,7 +78,7 @@ esac
 print_info "Platform: $PLATFORM"
 echo ""
 
-# Find all binaries
+# Find all binaries in bin/
 BINARIES=()
 for file in "$BINARIES_DIR"/*; do
     if [ -f "$file" ] && [ -x "$file" ]; then
@@ -89,12 +89,28 @@ for file in "$BINARIES_DIR"/*; do
     fi
 done
 
+# Also check lib/ directory (sibling of bin/)
+LIB_DIR="$(dirname "$BINARIES_DIR")/lib"
+LIBRARIES=()
+if [ -d "$LIB_DIR" ]; then
+    for file in "$LIB_DIR"/*; do
+        if [ -f "$file" ]; then
+            if file "$file" | grep -qE "(ELF|Mach-O|shared object|dynamic library)"; then
+                LIBRARIES+=("$file")
+            fi
+        fi
+    done
+fi
+
 if [ ${#BINARIES[@]} -eq 0 ]; then
     print_error "No binaries found in $BINARIES_DIR"
     exit 1
 fi
 
 print_success "Found ${#BINARIES[@]} binaries to verify"
+if [ ${#LIBRARIES[@]} -gt 0 ]; then
+    print_success "Found ${#LIBRARIES[@]} shared libraries to verify"
+fi
 echo ""
 
 # Verification results
@@ -216,6 +232,45 @@ if [ "$PLATFORM" = "Linux" ]; then
 
         echo ""
     done
+
+    # Check shared libraries in lib/
+    if [ ${#LIBRARIES[@]} -gt 0 ]; then
+        print_info "Checking shared libraries in lib/..."
+        echo ""
+
+        for lib in "${LIBRARIES[@]}"; do
+            lib_name="$(basename "$lib")"
+            echo "━━━ Checking: $lib_name ━━━"
+
+            # Check RPATH
+            print_info "Checking RPATH..."
+            TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+
+            if command -v readelf >/dev/null 2>&1; then
+                RPATH_OUTPUT="$(readelf -d "$lib" 2>/dev/null | grep -E "(RPATH|RUNPATH)" || true)"
+
+                if [ -n "$RPATH_OUTPUT" ]; then
+                    if echo "$RPATH_OUTPUT" | grep -qE '\$ORIGIN'; then
+                        print_success "RPATH uses \$ORIGIN (relocatable)"
+                        PASSED_CHECKS=$((PASSED_CHECKS + 1))
+                    elif echo "$RPATH_OUTPUT" | grep -qE "(/home/|/tmp/|/build/|/runner/|/workspace/)"; then
+                        print_error "RPATH contains build paths!"
+                        echo "$RPATH_OUTPUT" | sed 's/^/    /'
+                        LIBRARY_ISSUES+=("$lib_name: Build path in RPATH")
+                        FAILED_CHECKS=$((FAILED_CHECKS + 1))
+                    else
+                        print_warning "RPATH present but may not be relocatable"
+                        WARNING_CHECKS=$((WARNING_CHECKS + 1))
+                    fi
+                else
+                    print_success "No RPATH set"
+                    PASSED_CHECKS=$((PASSED_CHECKS + 1))
+                fi
+            fi
+
+            echo ""
+        done
+    fi
 
 # ============================================================================
 # macOS Verification
@@ -353,6 +408,41 @@ elif [ "$PLATFORM" = "macOS" ]; then
 
         echo ""
     done
+
+    # Check shared libraries in lib/
+    if [ ${#LIBRARIES[@]} -gt 0 ]; then
+        print_info "Checking shared libraries in lib/..."
+        echo ""
+
+        for lib in "${LIBRARIES[@]}"; do
+            lib_name="$(basename "$lib")"
+            echo "━━━ Checking: $lib_name ━━━"
+
+            # Check install name
+            print_info "Checking install name..."
+            TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+
+            if command -v otool >/dev/null 2>&1; then
+                INSTALL_NAME="$(otool -D "$lib" 2>/dev/null | tail -1 || true)"
+
+                if echo "$INSTALL_NAME" | grep -q "@rpath"; then
+                    print_success "Install name uses @rpath (relocatable)"
+                    echo "    $INSTALL_NAME"
+                    PASSED_CHECKS=$((PASSED_CHECKS + 1))
+                elif echo "$INSTALL_NAME" | grep -qE "(/Users/|/tmp/|/build/|/runner/)"; then
+                    print_error "Install name contains build path!"
+                    echo "    $INSTALL_NAME"
+                    LIBRARY_ISSUES+=("$lib_name: Build path in install name")
+                    FAILED_CHECKS=$((FAILED_CHECKS + 1))
+                else
+                    print_warning "Install name: $INSTALL_NAME"
+                    WARNING_CHECKS=$((WARNING_CHECKS + 1))
+                fi
+            fi
+
+            echo ""
+        done
+    fi
 fi
 
 # ============================================================================

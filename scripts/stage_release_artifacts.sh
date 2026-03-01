@@ -84,7 +84,7 @@ mkdir -p "$STAGE_DIR"
 cd "$STAGE_DIR"
 
 # Create standard structure
-mkdir -p bin share LICENSES
+mkdir -p bin lib share LICENSES
 
 print_info "Created staging structure:"
 tree -L 1 . 2>/dev/null || ls -la
@@ -106,6 +106,22 @@ stage_binary() {
         return 0
     else
         print_warning "Not found: $src"
+        return 1
+    fi
+}
+
+# Helper function to stage a shared library
+stage_library() {
+    local src="$1"
+    local dest_name="$2"
+    local tool_name="$3"
+
+    if [ -f "$src" ]; then
+        cp "$src" "lib/$dest_name"
+        chmod +x "lib/$dest_name"
+        print_success "Staged library $tool_name → lib/$dest_name"
+        return 0
+    else
         return 1
     fi
 }
@@ -141,6 +157,20 @@ if [ -d "$SUMMA_DIR" ]; then
         :
     else
         print_warning "SUMMA binary not found"
+    fi
+
+    # Stage SUMMA shared libraries (required at runtime)
+    if [ "$(uname)" = "Darwin" ]; then
+        stage_library "$SUMMA_DIR/lib/libsumma.dylib" "libsumma.dylib" "SUMMA" || \
+            print_warning "libsumma.dylib not found"
+    else
+        stage_library "$SUMMA_DIR/lib/libsumma.so" "libsumma.so" "SUMMA" || \
+            print_warning "libsumma.so not found"
+    fi
+
+    # Stage libftz.so on Linux x86_64 (FTZ/DAZ control)
+    if [ "$(uname)" = "Linux" ] && [ "$(uname -m)" = "x86_64" ]; then
+        stage_library "$SUMMA_DIR/bin/libftz.so" "libftz.so" "SUMMA" || true
     fi
 
     stage_license "$SUMMA_DIR" "SUMMA"
@@ -538,6 +568,98 @@ else
 fi
 
 # ============================================================================
+# Fix Binary Portability (RPATH rewriting)
+# ============================================================================
+print_info "Fixing binary portability (RPATH rewriting)..."
+
+OS_TYPE="$(uname -s)"
+
+if [ "$OS_TYPE" = "Darwin" ]; then
+    # macOS: use install_name_tool to rewrite RPATHs
+    for binary in bin/*; do
+        [ -f "$binary" ] || continue
+        binary_name="$(basename "$binary")"
+
+        # Skip non-Mach-O files (scripts, etc.)
+        file "$binary" | grep -q "Mach-O" || continue
+
+        # Get existing RPATHs
+        EXISTING_RPATHS="$(otool -l "$binary" 2>/dev/null | grep -A2 LC_RPATH | grep 'path ' | awk '{print $2}' || true)"
+
+        if [ -n "$EXISTING_RPATHS" ]; then
+            # Delete all existing RPATHs (they point to CI build paths)
+            while IFS= read -r rpath; do
+                install_name_tool -delete_rpath "$rpath" "$binary" 2>/dev/null || true
+            done <<< "$EXISTING_RPATHS"
+            print_success "$binary_name: removed CI RPATHs"
+        fi
+
+        # Add relocatable RPATH pointing to ../lib
+        install_name_tool -add_rpath "@executable_path/../lib" "$binary" 2>/dev/null || true
+        print_success "$binary_name: added @executable_path/../lib RPATH"
+    done
+
+    # Fix shared library install names in lib/
+    for lib in lib/*.dylib; do
+        [ -f "$lib" ] || continue
+        lib_name="$(basename "$lib")"
+
+        # Get the current install name (absolute CI path)
+        OLD_ID="$(otool -D "$lib" 2>/dev/null | tail -1 || true)"
+        NEW_ID="@rpath/$lib_name"
+
+        # Set install name to @rpath/libname so binaries find it via RPATH
+        install_name_tool -id "$NEW_ID" "$lib" 2>/dev/null || true
+        print_success "$lib_name: set install name to $NEW_ID"
+
+        # Update all binaries that reference this library by its old name
+        if [ -n "$OLD_ID" ] && [ "$OLD_ID" != "$NEW_ID" ]; then
+            for binary in bin/*; do
+                [ -f "$binary" ] || continue
+                file "$binary" | grep -q "Mach-O" || continue
+                install_name_tool -change "$OLD_ID" "$NEW_ID" "$binary" 2>/dev/null || true
+            done
+            print_success "$lib_name: updated references in binaries"
+        fi
+
+        # Also fix RPATHs in the library itself
+        EXISTING_RPATHS="$(otool -l "$lib" 2>/dev/null | grep -A2 LC_RPATH | grep 'path ' | awk '{print $2}' || true)"
+        if [ -n "$EXISTING_RPATHS" ]; then
+            while IFS= read -r rpath; do
+                install_name_tool -delete_rpath "$rpath" "$lib" 2>/dev/null || true
+            done <<< "$EXISTING_RPATHS"
+        fi
+    done
+
+elif [ "$OS_TYPE" = "Linux" ]; then
+    # Linux: use patchelf to rewrite RPATHs
+    if command -v patchelf >/dev/null 2>&1; then
+        for binary in bin/*; do
+            [ -f "$binary" ] || continue
+            binary_name="$(basename "$binary")"
+
+            # Skip non-ELF files
+            file "$binary" | grep -q "ELF" || continue
+
+            # Set RPATH to $ORIGIN/../lib
+            patchelf --set-rpath '$ORIGIN/../lib' "$binary" 2>/dev/null || true
+            print_success "$binary_name: set RPATH to \$ORIGIN/../lib"
+        done
+
+        for lib in lib/*.so; do
+            [ -f "$lib" ] || continue
+            lib_name="$(basename "$lib")"
+
+            patchelf --set-rpath '$ORIGIN' "$lib" 2>/dev/null || true
+            print_success "$lib_name: set RPATH to \$ORIGIN"
+        done
+    else
+        print_warning "patchelf not available — skipping Linux RPATH fix"
+        print_warning "Install patchelf to make binaries relocatable"
+    fi
+fi
+
+# ============================================================================
 # Create README
 # ============================================================================
 print_info "Creating README..."
@@ -582,7 +704,7 @@ Not all models build on all platforms. Check the staging summary for availabilit
 # Extract archive
 tar -xzf symfluence-tools-*.tar.gz
 
-# Add to PATH
+# Add to PATH (lib/ contains shared libraries loaded via RPATH)
 export PATH="$PWD/symfluence-tools/bin:$PATH"
 
 # Verify
@@ -647,6 +769,11 @@ echo ""
 print_info "Staged binaries:"
 ls -lh bin/ | tail -n +2 | awk '{printf "  %s (%s)\n", $9, $5}'
 echo ""
+if ls lib/* >/dev/null 2>&1; then
+    print_info "Staged libraries:"
+    ls -lh lib/ | tail -n +2 | awk '{printf "  %s (%s)\n", $9, $5}'
+    echo ""
+fi
 print_info "Licenses:"
 ls -1 LICENSES/ | sed 's/^/  /'
 echo ""
