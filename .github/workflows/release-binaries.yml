@@ -79,7 +79,8 @@ jobs:
             openmpi-bin libopenmpi-dev \
             gdal-bin libgdal-dev \
             libnetcdf-dev libnetcdff-dev \
-            libhdf5-dev libudunits2-dev
+            libhdf5-dev libudunits2-dev \
+            libopenblas-dev liblapack-dev
 
       - name: Configure compiler env (Linux)
         if: runner.os == 'Linux'
