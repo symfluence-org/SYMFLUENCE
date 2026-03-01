@@ -14,7 +14,7 @@ on:
 
 defaults:
   run:
-    shell: bash
+    shell: bash -l {0}
 
 concurrency:
   group: release-${{ github.ref_name }}
@@ -132,7 +132,6 @@ jobs:
 
       - name: Install system dependencies (Windows)
         if: runner.os == 'Windows'
-        shell: bash -l {0}
         run: |
           conda install -y gcc gfortran cmake make netcdf-fortran hdf5 openblas udunits2 numpy
 
@@ -155,7 +154,6 @@ jobs:
           df -h
 
       - name: Build external tools
-        shell: ${{ matrix.os == 'windows-latest' && 'bash -l {0}' || 'bash' }}
         run: |
           mkdir -p "${{ env.SYMFLUENCE_DATA }}"
 
@@ -215,7 +213,6 @@ jobs:
       # Generate Release Artifacts
       # ========================================================================
       - name: Generate toolchain metadata
-        shell: ${{ matrix.os == 'windows-latest' && 'bash -l {0}' || 'bash' }}
         run: |
           set -e
           chmod +x ./scripts/generate_toolchain.sh
@@ -225,7 +222,6 @@ jobs:
             "${{ matrix.platform }}"
 
       - name: Stage release artifacts
-        shell: ${{ matrix.os == 'windows-latest' && 'bash -l {0}' || 'bash' }}
         run: |
           set -e
           chmod +x ./scripts/stage_release_artifacts.sh
@@ -236,7 +232,6 @@ jobs:
             "./release"
 
       - name: Verify binary portability
-        shell: ${{ matrix.os == 'windows-latest' && 'bash -l {0}' || 'bash' }}
         run: |
           set -e
           chmod +x ./scripts/verify_binary_portability.sh
@@ -247,7 +242,6 @@ jobs:
           }
 
       - name: Create release tarball
-        shell: ${{ matrix.os == 'windows-latest' && 'bash -l {0}' || 'bash' }}
         run: |
           set -e
           chmod +x ./scripts/create_release_tarball.sh
@@ -266,7 +260,6 @@ jobs:
             "./release"
 
       - name: Test artifact relocatability
-        shell: ${{ matrix.os == 'windows-latest' && 'bash -l {0}' || 'bash' }}
         run: |
           set -e
           echo "Testing relocated binaries..."
@@ -435,7 +428,6 @@ jobs:
           brew install netcdf netcdf-fortran hdf5 gdal
 
       - name: Install symfluence from npm
-        shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             TAG="${{ github.event.inputs.tag }}"
@@ -449,7 +441,6 @@ jobs:
           npm install -g symfluence@${VERSION}
 
       - name: Test CLI commands
-        shell: bash
         run: |
           echo "Testing symfluence CLI commands..."
 
@@ -463,7 +454,6 @@ jobs:
           echo "path command works"
 
       - name: Test info command and binary detection
-        shell: bash
         run: |
           echo "Testing symfluence info..."
           symfluence info
@@ -477,7 +467,6 @@ jobs:
           echo "Binary directory exists: $BIN_DIR"
 
       - name: Verify critical binaries exist
-        shell: bash
         run: |
           BIN_DIR=$(symfluence path)
           FOUND=0
@@ -521,7 +510,6 @@ jobs:
           fi
 
       - name: Test binary execution
-        shell: bash
         run: |
           BIN_DIR=$(symfluence path)
 
@@ -538,7 +526,6 @@ jobs:
 
       - name: Summary
         if: success()
-        shell: bash
         run: |
           echo "========================================="
           echo "npm Installation Test Summary"
