@@ -155,7 +155,7 @@ jobs:
           df -h
 
       - name: Build external tools
-        shell: ${{ runner.os == 'Windows' && 'bash -l {0}' || 'bash' }}
+        shell: ${{ matrix.os == 'windows-latest' && 'bash -l {0}' || 'bash' }}
         run: |
           mkdir -p "${{ env.SYMFLUENCE_DATA }}"
 
@@ -215,7 +215,7 @@ jobs:
       # Generate Release Artifacts
       # ========================================================================
       - name: Generate toolchain metadata
-        shell: ${{ runner.os == 'Windows' && 'bash -l {0}' || 'bash' }}
+        shell: ${{ matrix.os == 'windows-latest' && 'bash -l {0}' || 'bash' }}
         run: |
           set -e
           chmod +x ./scripts/generate_toolchain.sh
@@ -225,7 +225,7 @@ jobs:
             "${{ matrix.platform }}"
 
       - name: Stage release artifacts
-        shell: ${{ runner.os == 'Windows' && 'bash -l {0}' || 'bash' }}
+        shell: ${{ matrix.os == 'windows-latest' && 'bash -l {0}' || 'bash' }}
         run: |
           set -e
           chmod +x ./scripts/stage_release_artifacts.sh
@@ -236,7 +236,7 @@ jobs:
             "./release"
 
       - name: Verify binary portability
-        shell: ${{ runner.os == 'Windows' && 'bash -l {0}' || 'bash' }}
+        shell: ${{ matrix.os == 'windows-latest' && 'bash -l {0}' || 'bash' }}
         run: |
           set -e
           chmod +x ./scripts/verify_binary_portability.sh
@@ -247,7 +247,7 @@ jobs:
           }
 
       - name: Create release tarball
-        shell: ${{ runner.os == 'Windows' && 'bash -l {0}' || 'bash' }}
+        shell: ${{ matrix.os == 'windows-latest' && 'bash -l {0}' || 'bash' }}
         run: |
           set -e
           chmod +x ./scripts/create_release_tarball.sh
@@ -266,7 +266,7 @@ jobs:
             "./release"
 
       - name: Test artifact relocatability
-        shell: ${{ runner.os == 'Windows' && 'bash -l {0}' || 'bash' }}
+        shell: ${{ matrix.os == 'windows-latest' && 'bash -l {0}' || 'bash' }}
         run: |
           set -e
           echo "Testing relocated binaries..."
