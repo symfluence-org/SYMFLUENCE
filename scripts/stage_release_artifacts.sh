@@ -252,6 +252,15 @@ if [ -d "$NGEN_DIR" ]; then
     else
         print_warning "NGEN binary not found in $NGEN_DIR/cmake_build"
     fi
+
+    # Stage NGEN shared libraries (BMI modules built as shared libs)
+    for ngen_lib in "$NGEN_DIR/cmake_build"/*.dylib "$NGEN_DIR/cmake_build"/*.so \
+                    "$NGEN_DIR/cmake_build/extern"/**/*.dylib "$NGEN_DIR/cmake_build/extern"/**/*.so; do
+        [ -f "$ngen_lib" ] || continue
+        ngen_lib_name="$(basename "$ngen_lib")"
+        stage_library "$ngen_lib" "$ngen_lib_name" "NGEN" || true
+    done
+
     stage_license "$NGEN_DIR" "NGEN"
 else
     print_warning "NGEN not installed"
@@ -738,27 +747,32 @@ if [ "$OS_TYPE" = "Darwin" ]; then
         esac
     done
 
-    # Step 2: Fix install names on all libraries, and rewrite references everywhere
+    # Step 2: Fix install names on all libraries
     for lib in lib/*.dylib; do
         [ -f "$lib" ] || continue
         [ -L "$lib" ] && continue
         lib_name="$(basename "$lib")"
+        install_name_tool -id "@rpath/$lib_name" "$lib" 2>/dev/null || true
+    done
 
-        # Get the current install name (absolute CI path)
-        OLD_ID="$(otool -D "$lib" 2>/dev/null | tail -1 || true)"
-        NEW_ID="@rpath/$lib_name"
-
-        # Set install name to @rpath/libname
-        install_name_tool -id "$NEW_ID" "$lib" 2>/dev/null || true
-
-        # Update references in ALL Mach-O files (binaries AND other libraries)
-        if [ -n "$OLD_ID" ] && [ "$OLD_ID" != "$NEW_ID" ]; then
-            for macho in "${ALL_MACHO[@]}"; do
-                install_name_tool -change "$OLD_ID" "$NEW_ID" "$macho" 2>/dev/null || true
-            done
-            print_success "$lib_name: install name → $NEW_ID (references updated)"
-        else
-            print_success "$lib_name: install name → $NEW_ID"
+    # Step 3: Rewrite ALL non-system references in every Mach-O by basename matching
+    # This catches both /opt/homebrew/opt/... and /opt/homebrew/Cellar/... paths
+    for macho in "${ALL_MACHO[@]}"; do
+        macho_name="$(basename "$macho")"
+        REWRITTEN=0
+        while IFS= read -r dep; do
+            # Skip already-relocatable and system deps
+            case "$dep" in
+                @rpath/*|@executable_path/*|@loader_path/*|/usr/lib/*|/System/*) continue ;;
+            esac
+            dep_base="$(basename "$dep")"
+            if [ -f "lib/$dep_base" ]; then
+                install_name_tool -change "$dep" "@rpath/$dep_base" "$macho" 2>/dev/null || true
+                REWRITTEN=$((REWRITTEN + 1))
+            fi
+        done < <(otool -L "$macho" 2>/dev/null | tail -n +2 | awk '{print $1}')
+        if [ $REWRITTEN -gt 0 ]; then
+            print_success "$macho_name: rewrote $REWRITTEN references → @rpath/"
         fi
     done
 
