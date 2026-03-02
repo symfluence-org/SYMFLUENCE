@@ -1,213 +1,76 @@
 #!/usr/bin/env node
 /**
- * SYMFLUENCE CLI wrapper
- * Provides information about installed binaries and tools
+ * SYMFLUENCE npm CLI — thin wrapper around the Python CLI.
+ *
+ * All arguments are forwarded to the Python `symfluence` command so that
+ * npm-installed and pip-installed users get identical behaviour.
+ *
+ * The npm dist/bin directory is prepended to PATH so that the Python CLI's
+ * `binary` subcommand can discover the pre-built tools shipped by npm.
  */
 
-const fs = require('fs');
+const { execFileSync, execSync } = require('child_process');
 const path = require('path');
-const { getPlatformName } = require('../lib/platform');
+const fs = require('fs');
 
-const distDir = path.join(__dirname, '..', 'dist');
-const binDir = path.join(distDir, 'bin');
-const toolchainFile = path.join(distDir, 'toolchain.json');
+const distBinDir = path.join(__dirname, '..', 'dist', 'bin');
 
 /**
- * Check if SYMFLUENCE binaries are installed
- * @returns {boolean}
+ * Locate the Python symfluence entry-point.
+ * Tries, in order: python -m symfluence, python3 -m symfluence, bare `symfluence`
+ * on PATH (skipping *this* script to avoid infinite recursion).
+ * @returns {{ exe: string, args: string[] } | null}
  */
-function isInstalled() {
-  return fs.existsSync(distDir) && fs.existsSync(binDir);
-}
-
-/**
- * Get list of installed tools
- * @returns {Array<string>}
- */
-function getInstalledTools() {
-  if (!fs.existsSync(binDir)) {
-    return [];
+function findPythonCli() {
+  // 1. Try `python -m symfluence` and `python3 -m symfluence`
+  for (const py of ['python3', 'python']) {
+    try {
+      execSync(`${py} -m symfluence --version`, { stdio: 'ignore', timeout: 10000 });
+      return { exe: py, args: ['-m', 'symfluence'] };
+    } catch {
+      // not available
+    }
   }
 
-  return fs.readdirSync(binDir)
-    .filter(f => {
-      const fullPath = path.join(binDir, f);
-      const stats = fs.statSync(fullPath);
-      return stats.isFile() && (stats.mode & 0o111); // Executable
-    })
-    .sort();
+  // 2. Try a bare `symfluence` on PATH that is NOT this wrapper
+  const thisScript = fs.realpathSync(__filename);
+  try {
+    const resolved = execSync('which symfluence', { encoding: 'utf8', timeout: 5000 }).trim();
+    if (resolved && fs.realpathSync(resolved) !== thisScript) {
+      return { exe: resolved, args: [] };
+    }
+  } catch {
+    // not found
+  }
+
+  return null;
 }
 
-/**
- * Read toolchain metadata
- * @returns {Object|null}
- */
-function getToolchain() {
-  if (!fs.existsSync(toolchainFile)) {
-    return null;
+function main() {
+  const userArgs = process.argv.slice(2);
+  const cli = findPythonCli();
+
+  if (!cli) {
+    console.error(
+      'Error: SYMFLUENCE Python package not found.\n\n' +
+      'The npm package is a wrapper around the Python CLI.\n' +
+      'Install it with:\n\n' +
+      '  pip install symfluence\n\n' +
+      'Then re-run your command.'
+    );
+    process.exit(1);
+  }
+
+  // Prepend npm dist/bin so the Python CLI can find npm-shipped binaries
+  const env = { ...process.env };
+  if (fs.existsSync(distBinDir)) {
+    env.PATH = `${distBinDir}${path.delimiter}${env.PATH || ''}`;
   }
 
   try {
-    return JSON.parse(fs.readFileSync(toolchainFile, 'utf8'));
+    execFileSync(cli.exe, [...cli.args, ...userArgs], { stdio: 'inherit', env });
   } catch (err) {
-    return null;
-  }
-}
-
-/**
- * Display help information
- */
-function showHelp() {
-  console.log('SYMFLUENCE - Hydrological Modeling Framework\n');
-  console.log('Usage: symfluence [command]\n');
-  console.log('Commands:');
-  console.log('  info        Show installed tools and build information');
-  console.log('  version     Show version information');
-  console.log('  path        Show binary directory path');
-  console.log('  help        Show this help message\n');
-  console.log('Environment:');
-  console.log('  To use tools directly, add to your PATH:');
-  console.log(`  export PATH="$(npm root -g)/symfluence/dist/bin:$PATH"\n`);
-  console.log('Documentation: https://github.com/DarriEy/SYMFLUENCE');
-}
-
-/**
- * Display version information
- */
-function showVersion() {
-  const packageJson = require('../package.json');
-  const toolchain = getToolchain();
-
-  console.log(`symfluence v${packageJson.version}`);
-
-  if (toolchain) {
-    console.log(`Platform: ${toolchain.platform || 'unknown'}`);
-    console.log(`Build date: ${toolchain.build_date || 'unknown'}`);
-  }
-}
-
-/**
- * Display installed tools and build information
- */
-function showInfo() {
-  if (!isInstalled()) {
-    console.error('❌ SYMFLUENCE binaries not found.');
-    console.error('   Run: npm install -g symfluence');
-    process.exit(1);
-  }
-
-  const packageJson = require('../package.json');
-  const toolchain = getToolchain();
-  const tools = getInstalledTools();
-
-  console.log('╔════════════════════════════════════════════╗');
-  console.log('║   SYMFLUENCE Installation Info             ║');
-  console.log('╚════════════════════════════════════════════╝\n');
-
-  console.log(`📦 Version: ${packageJson.version}`);
-  console.log(`📍 Platform: ${getPlatformName()}`);
-
-  if (toolchain) {
-    console.log(`🔧 Build Platform: ${toolchain.platform || 'unknown'}`);
-    console.log(`📅 Build Date: ${toolchain.build_date || 'unknown'}`);
-
-    if (toolchain.compilers) {
-      console.log('\n🛠️  Compilers:');
-      if (toolchain.compilers.fortran) {
-        console.log(`   Fortran: ${toolchain.compilers.fortran}`);
-      }
-      if (toolchain.compilers.c) {
-        console.log(`   C: ${toolchain.compilers.c}`);
-      }
-    }
-
-    if (toolchain.libraries) {
-      console.log('\n📚 Libraries:');
-      if (toolchain.libraries.netcdf) {
-        console.log(`   NetCDF: ${toolchain.libraries.netcdf}`);
-      }
-      if (toolchain.libraries.hdf5) {
-        console.log(`   HDF5: ${toolchain.libraries.hdf5}`);
-      }
-    }
-  }
-
-  console.log('\n🔨 Installed Tools:');
-  if (tools.length === 0) {
-    console.log('   (none found)');
-  } else {
-    tools.forEach(tool => {
-      const toolPath = path.join(binDir, tool);
-      console.log(`   ✓ ${tool}`);
-
-      // Show additional info from toolchain if available
-      if (toolchain && toolchain.tools && toolchain.tools[tool]) {
-        const toolInfo = toolchain.tools[tool];
-        if (toolInfo.commit) {
-          console.log(`     Commit: ${toolInfo.commit.substring(0, 8)}`);
-        }
-        if (toolInfo.branch) {
-          console.log(`     Branch: ${toolInfo.branch}`);
-        }
-      }
-    });
-  }
-
-  console.log('\n📂 Binary Directory:');
-  console.log(`   ${binDir}`);
-
-  console.log('\n💡 Usage:');
-  console.log('   Add to PATH:');
-  console.log(`     export PATH="${binDir}:$PATH"`);
-  console.log('   Or use full path:');
-  if (tools.length > 0) {
-    console.log(`     ${path.join(binDir, tools[0])} --help`);
-  }
-
-  console.log('\n📖 Documentation:');
-  console.log('   https://github.com/DarriEy/SYMFLUENCE');
-  console.log('   https://github.com/DarriEy/SYMFLUENCE/blob/main/docs/SYSTEM_REQUIREMENTS.md\n');
-}
-
-/**
- * Show binary directory path
- */
-function showPath() {
-  if (!isInstalled()) {
-    console.error('❌ SYMFLUENCE binaries not found.');
-    process.exit(1);
-  }
-  console.log(binDir);
-}
-
-/**
- * Main CLI entry point
- */
-function main() {
-  const args = process.argv.slice(2);
-  const command = args[0] || 'help';
-
-  switch (command) {
-    case 'info':
-      showInfo();
-      break;
-
-    case 'version':
-    case '-v':
-    case '--version':
-      showVersion();
-      break;
-
-    case 'path':
-      showPath();
-      break;
-
-    case 'help':
-    case '-h':
-    case '--help':
-    default:
-      showHelp();
-      break;
+    process.exit(err.status || 1);
   }
 }
 
