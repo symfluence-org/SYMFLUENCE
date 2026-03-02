@@ -254,12 +254,12 @@ if [ -d "$NGEN_DIR" ]; then
     fi
 
     # Stage NGEN shared libraries (BMI modules built as shared libs)
-    for ngen_lib in "$NGEN_DIR/cmake_build"/*.dylib "$NGEN_DIR/cmake_build"/*.so \
-                    "$NGEN_DIR/cmake_build/extern"/**/*.dylib "$NGEN_DIR/cmake_build/extern"/**/*.so; do
+    # Use find for recursive discovery — bash globs don't expand ** without globstar
+    while IFS= read -r ngen_lib; do
         [ -f "$ngen_lib" ] || continue
         ngen_lib_name="$(basename "$ngen_lib")"
         stage_library "$ngen_lib" "$ngen_lib_name" "NGEN" || true
-    done
+    done < <(find "$NGEN_DIR/cmake_build" \( -name "*.dylib" -o -name "*.so" \) -not -type d 2>/dev/null || true)
 
     stage_license "$NGEN_DIR" "NGEN"
 else
