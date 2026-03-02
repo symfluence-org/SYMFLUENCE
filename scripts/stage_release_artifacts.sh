@@ -259,7 +259,7 @@ if [ -d "$NGEN_DIR" ]; then
         [ -f "$ngen_lib" ] || continue
         ngen_lib_name="$(basename "$ngen_lib")"
         stage_library "$ngen_lib" "$ngen_lib_name" "NGEN" || true
-    done < <(find "$NGEN_DIR/cmake_build" \( -name "*.dylib" -o -name "*.so" \) -not -type d 2>/dev/null || true)
+    done < <(find "$NGEN_DIR/cmake_build" "$NGEN_DIR/extern" \( -name "*.dylib" -o -name "*.so" \) -not -type d 2>/dev/null || true)
 
     stage_license "$NGEN_DIR" "NGEN"
 else
