@@ -100,6 +100,7 @@ dependencies:
       version_flag: "--version"
       version_regex: "(\\d+\\.\\d+(?:\\.\\d+)?)"
       pkg_config: netcdf
+      conda_header: include/netcdf.h
     packages:
       apt: libnetcdf-dev
       dnf: netcdf-devel
@@ -119,6 +120,7 @@ dependencies:
       version_flag: "--version"
       version_regex: "(\\d+\\.\\d+(?:\\.\\d+)?)"
       pkg_config: netcdf-fortran
+      conda_header: include/netcdf.inc
     packages:
       apt: libnetcdff-dev
       dnf: netcdf-fortran-devel
@@ -139,6 +141,7 @@ dependencies:
       version_regex: "HDF5 Version:\\s+(\\d+\\.\\d+\\.\\d+)"
       alternatives: [h5dump]
       pkg_config: hdf5
+      conda_header: include/hdf5.h
     packages:
       apt: libhdf5-dev
       dnf: hdf5-devel
@@ -159,6 +162,7 @@ dependencies:
       version_regex: "(\\d+\\.\\d+(?:\\.\\d+)?)"
       alternatives: [gdalinfo]
       pkg_config: gdal
+      conda_header: include/gdal.h
     packages:
       apt: gdal-bin libgdal-dev
       dnf: gdal gdal-devel
@@ -178,6 +182,7 @@ dependencies:
       version_flag: ""
       version_regex: "Rel\\. (\\d+\\.\\d+\\.\\d+)"
       pkg_config: proj
+      conda_header: include/proj.h
     packages:
       apt: libproj-dev
       dnf: proj-devel
@@ -197,6 +202,7 @@ dependencies:
       version_flag: "--version"
       version_regex: "(\\d+\\.\\d+(?:\\.\\d+)?)"
       pkg_config: geos
+      conda_header: include/geos_c.h
     packages:
       apt: libgeos-dev
       dnf: geos-devel
@@ -216,6 +222,7 @@ dependencies:
       version_flag: "--version"
       version_regex: "(?:Open MPI|HYDRA|mpirun).*?(\\d+\\.\\d+(?:\\.\\d+)?)"
       alternatives: [mpiexec, mpicc]
+      conda_header: include/mpi.h
     packages:
       apt: libopenmpi-dev openmpi-bin
       dnf: openmpi-devel
@@ -235,6 +242,7 @@ dependencies:
       version_flag: ""
       version_regex: ""
       pkg_config: openblas
+      conda_header: include/openblas_config.h
     packages:
       apt: libopenblas-dev liblapack-dev
       dnf: openblas-devel lapack-devel

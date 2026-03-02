@@ -216,6 +216,14 @@ class SystemDepsRegistry:
             if found:
                 path = f"(pkg-config: {pkg_config_name})"
 
+        # Conda prefix fallback: on Conda (especially Windows), CLI tools
+        # like nc-config are often absent.  Probe $CONDA_PREFIX for known
+        # header files to confirm the library is actually installed.
+        if not found and self._platform == Platform.CONDA:
+            conda_header = check.get("conda_header", "")
+            if conda_header:
+                found, path = self._check_conda_prefix(conda_header)
+
         # Homebrew keg-only fallback: on macOS, packages like openblas and
         # lapack are "keg-only" (not symlinked into the Homebrew prefix), so
         # their .pc files are invisible to pkg-config by default.  Probe the
@@ -375,6 +383,34 @@ class SystemDepsRegistry:
                 return True, result.stdout.strip()
         except (subprocess.TimeoutExpired, OSError):
             pass
+        return False, None
+
+    @staticmethod
+    def _check_conda_prefix(header_relpath: str) -> tuple:
+        """Probe ``$CONDA_PREFIX`` for a known header file.
+
+        On Windows Conda, CLI tools like ``nc-config`` are often absent, but
+        the libraries are installed under ``$CONDA_PREFIX/Library/`` (Windows)
+        or ``$CONDA_PREFIX/`` (Unix).
+
+        Args:
+            header_relpath: Relative path to check, e.g. ``"include/netcdf.h"``.
+
+        Returns:
+            ``(found, path_str)`` — *found* is True if the header exists.
+        """
+        prefix = os.environ.get("CONDA_PREFIX", "")
+        if not prefix:
+            return False, None
+
+        # Windows Conda puts headers in Library/include/, Unix in include/
+        candidates = [
+            os.path.join(prefix, "Library", header_relpath),
+            os.path.join(prefix, header_relpath),
+        ]
+        for candidate in candidates:
+            if os.path.isfile(candidate):
+                return True, f"(conda: {candidate})"
         return False, None
 
     @staticmethod
