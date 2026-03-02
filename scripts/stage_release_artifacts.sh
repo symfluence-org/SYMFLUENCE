@@ -591,6 +591,91 @@ else
 fi
 
 # ============================================================================
+# Bundle Non-System Shared Library Dependencies
+# ============================================================================
+print_info "Bundling non-system shared library dependencies..."
+
+OS_BUNDLE="$(uname -s)"
+
+if [ "$OS_BUNDLE" = "Darwin" ]; then
+    # macOS: recursively discover and bundle Homebrew / non-system dylibs
+    BUNDLE_ROUND=0
+    BUNDLE_CHANGED=1
+    while [ $BUNDLE_CHANGED -eq 1 ]; do
+        BUNDLE_CHANGED=0
+        BUNDLE_ROUND=$((BUNDLE_ROUND + 1))
+        print_info "Dependency scan round $BUNDLE_ROUND..."
+
+        for macho in bin/* lib/*.dylib; do
+            [ -f "$macho" ] || continue
+            [ -L "$macho" ] && continue
+            file "$macho" | grep -q "Mach-O" || continue
+
+            # Find non-system dependencies (anything not @rpath, /usr/lib, /System)
+            DEPS="$(otool -L "$macho" 2>/dev/null | tail -n +2 | awk '{print $1}' \
+                | grep -vE '^(@rpath/|@executable_path/|@loader_path/|/usr/lib/|/System/)' \
+                || true)"
+
+            for dep in $DEPS; do
+                dep_basename="$(basename "$dep")"
+                # Skip if already bundled
+                [ -f "lib/$dep_basename" ] && continue
+
+                if [ -f "$dep" ]; then
+                    # Resolve symlinks to copy the actual file
+                    cp -L "$dep" "lib/$dep_basename"
+                    chmod +x "lib/$dep_basename"
+                    BUNDLE_CHANGED=1
+                    print_success "Bundled $dep_basename (from $dep)"
+                else
+                    print_warning "Dependency not found: $dep (referenced by $(basename "$macho"))"
+                fi
+            done
+        done
+    done
+    print_success "Dependency bundling complete ($BUNDLE_ROUND rounds)"
+
+elif [ "$OS_BUNDLE" = "Linux" ]; then
+    # Linux: bundle non-system shared libraries (e.g. from conda, /opt, etc.)
+    if command -v ldd >/dev/null 2>&1; then
+        BUNDLE_ROUND=0
+        BUNDLE_CHANGED=1
+        while [ $BUNDLE_CHANGED -eq 1 ]; do
+            BUNDLE_CHANGED=0
+            BUNDLE_ROUND=$((BUNDLE_ROUND + 1))
+            print_info "Dependency scan round $BUNDLE_ROUND..."
+
+            for elf in bin/* lib/*.so lib/*.so.*; do
+                [ -f "$elf" ] || continue
+                [ -L "$elf" ] && continue
+                file "$elf" | grep -q "ELF" || continue
+
+                # Find non-system dependencies
+                DEPS="$(ldd "$elf" 2>/dev/null | grep '=>' | awk '{print $3}' \
+                    | grep -vE '^(/usr/lib|/lib/|/lib64/)' \
+                    || true)"
+
+                for dep in $DEPS; do
+                    [ -z "$dep" ] && continue
+                    dep_basename="$(basename "$dep")"
+                    [ -f "lib/$dep_basename" ] && continue
+
+                    if [ -f "$dep" ]; then
+                        cp -L "$dep" "lib/$dep_basename"
+                        chmod +x "lib/$dep_basename"
+                        BUNDLE_CHANGED=1
+                        print_success "Bundled $dep_basename (from $dep)"
+                    fi
+                done
+            done
+        done
+        print_success "Dependency bundling complete ($BUNDLE_ROUND rounds)"
+    fi
+fi
+
+echo ""
+
+# ============================================================================
 # Fix Binary Portability (RPATH rewriting)
 # ============================================================================
 print_info "Fixing binary portability (RPATH rewriting)..."

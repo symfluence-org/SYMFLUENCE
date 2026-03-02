@@ -369,10 +369,10 @@ elif [ "$PLATFORM" = "macOS" ]; then
             if [ -n "$SUSPICIOUS_LIBS" ]; then
                 # Check specifically for Homebrew or user paths
                 if echo "$SUSPICIOUS_LIBS" | grep -qE "(/Users/|/opt/homebrew/|/usr/local/)"; then
-                    print_warning "Libraries from non-relocatable paths:"
+                    print_error "Libraries reference non-relocatable paths (must be bundled in lib/):"
                     echo "$SUSPICIOUS_LIBS" | sed 's/^/    /'
                     LIBRARY_ISSUES+=("$binary_name: Non-relocatable library paths")
-                    WARNING_CHECKS=$((WARNING_CHECKS + 1))
+                    FAILED_CHECKS=$((FAILED_CHECKS + 1))
                 else
                     print_success "All libraries use standard or relocatable paths"
                     PASSED_CHECKS=$((PASSED_CHECKS + 1))
@@ -437,6 +437,28 @@ elif [ "$PLATFORM" = "macOS" ]; then
                 else
                     print_warning "Install name: $INSTALL_NAME"
                     WARNING_CHECKS=$((WARNING_CHECKS + 1))
+                fi
+
+                # Check library dependencies for non-relocatable paths
+                print_info "Checking library dependencies..."
+                TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+
+                LIB_DEPS="$(otool -L "$lib" 2>/dev/null | tail -n +2 | awk '{print $1}' || true)"
+                SUSPICIOUS_LIB_DEPS="$(echo "$LIB_DEPS" | grep -vE '^(@rpath/|@executable_path/|@loader_path/|/usr/lib/|/System/)' || true)"
+
+                if [ -n "$SUSPICIOUS_LIB_DEPS" ]; then
+                    if echo "$SUSPICIOUS_LIB_DEPS" | grep -qE "(/Users/|/opt/homebrew/|/usr/local/)"; then
+                        print_error "Library references non-relocatable paths (must be bundled):"
+                        echo "$SUSPICIOUS_LIB_DEPS" | sed 's/^/    /'
+                        LIBRARY_ISSUES+=("$lib_name: Non-relocatable dependency paths")
+                        FAILED_CHECKS=$((FAILED_CHECKS + 1))
+                    else
+                        print_success "All dependencies use standard or relocatable paths"
+                        PASSED_CHECKS=$((PASSED_CHECKS + 1))
+                    fi
+                else
+                    print_success "All dependencies use relocatable paths"
+                    PASSED_CHECKS=$((PASSED_CHECKS + 1))
                 fi
             fi
 
