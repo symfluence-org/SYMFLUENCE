@@ -144,7 +144,7 @@ __all__ = [
 ]
 
 # Suppress overly verbose external logging/warnings
-rpy2_logger = logging.getLogger("r2.rinterface_lib.embedded")
+rpy2_logger = logging.getLogger("rpy2.rinterface_lib.embedded")
 rpy2_logger.setLevel(logging.WARNING)
 rpy2_logger.addHandler(logging.NullHandler())
 rpy2_logger.propagate = False

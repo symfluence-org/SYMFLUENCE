@@ -5,6 +5,9 @@
  * All arguments are forwarded to the Python `symfluence` command so that
  * npm-installed and pip-installed users get identical behaviour.
  *
+ * Built-in commands (version, path, help, info) work without Python so
+ * that the npm package is self-contained for basic queries.
+ *
  * The npm dist/bin directory is prepended to PATH so that the Python CLI's
  * `binary` subcommand can discover the pre-built tools shipped by npm.
  */
@@ -13,7 +16,90 @@ const { execFileSync, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
-const distBinDir = path.join(__dirname, '..', 'dist', 'bin');
+const pkgRoot = path.join(__dirname, '..');
+const distDir = path.join(pkgRoot, 'dist');
+const distBinDir = path.join(distDir, 'bin');
+const pkgJson = require(path.join(pkgRoot, 'package.json'));
+
+// =========================================================================
+// Built-in commands (work without Python)
+// =========================================================================
+
+/**
+ * Handle commands that can be answered from the npm package alone.
+ * @param {string[]} args - CLI arguments
+ * @returns {boolean} true if the command was handled
+ */
+function handleBuiltin(args) {
+  const cmd = (args[0] || '').toLowerCase();
+
+  if (cmd === 'version' || cmd === '--version' || cmd === '-v') {
+    console.log(pkgJson.version);
+    return true;
+  }
+
+  if (cmd === 'path') {
+    if (fs.existsSync(distBinDir)) {
+      console.log(distBinDir);
+    } else {
+      console.error('Binary directory not found (binaries not yet installed).');
+      process.exit(1);
+    }
+    return true;
+  }
+
+  if (cmd === 'help' || cmd === '--help' || cmd === '-h' || !cmd) {
+    console.log(`SYMFLUENCE ${pkgJson.version} (npm)\n`);
+    console.log('Usage: symfluence <command> [options]\n');
+    console.log('Built-in commands:');
+    console.log('  help        Show this help message');
+    console.log('  version     Print package version');
+    console.log('  path        Print binary directory path');
+    console.log('  info        Show installation info and detected binaries\n');
+    console.log('Python-backed commands (requires pip install symfluence):');
+    console.log('  workflow    Run hydrological model workflows');
+    console.log('  binary      Manage pre-built model binaries');
+    console.log('  ...         All other symfluence CLI commands\n');
+    console.log('Documentation: https://github.com/DarriEy/SYMFLUENCE');
+    return true;
+  }
+
+  if (cmd === 'info') {
+    console.log(`SYMFLUENCE ${pkgJson.version} (npm)\n`);
+    console.log(`Package root:     ${pkgRoot}`);
+    console.log(`Binary directory: ${distBinDir}`);
+
+    if (fs.existsSync(distBinDir)) {
+      const bins = fs.readdirSync(distBinDir).filter(f => {
+        const full = path.join(distBinDir, f);
+        try { return fs.statSync(full).isFile(); } catch { return false; }
+      });
+      console.log(`Binaries found:   ${bins.length}\n`);
+      if (bins.length > 0) {
+        bins.forEach(b => console.log(`  - ${b}`));
+      }
+    } else {
+      console.log('Binaries found:   0 (dist/bin not present)\n');
+    }
+
+    // Check Python availability
+    const cli = findPythonCli();
+    if (cli) {
+      console.log(`\nPython CLI:       ${cli.exe} ${cli.args.join(' ')}`);
+    } else {
+      console.log('\nPython CLI:       not found');
+      console.log('  Install with: pip install symfluence');
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
+// =========================================================================
+// Python forwarding
+// =========================================================================
 
 /**
  * Locate the Python symfluence entry-point.
@@ -48,6 +134,13 @@ function findPythonCli() {
 
 function main() {
   const userArgs = process.argv.slice(2);
+
+  // Try built-in commands first (no Python required)
+  if (handleBuiltin(userArgs)) {
+    return;
+  }
+
+  // For all other commands, forward to Python CLI
   const cli = findPythonCli();
 
   if (!cli) {

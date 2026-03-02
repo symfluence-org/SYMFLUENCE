@@ -36,11 +36,16 @@ from ..spatial_modes import SpatialMode
 # Broad exception handling is intentional here: rpy2 can raise RuntimeError, RRuntimeError,
 # ImportError, or other exceptions when R is installed but broken (missing core packages,
 # incompatible versions, etc.). We must catch all to provide graceful fallback.
+# rpy2 prints noisy messages to stderr during R initialization (e.g. "Error importing in
+# API mode", "Trying to import in ABI mode") — redirect stderr to suppress them.
 try:
-    import rpy2.robjects as robjects
-    from rpy2.robjects import pandas2ri
-    from rpy2.robjects.conversion import localconverter
-    from rpy2.robjects.packages import importr
+    import contextlib
+    import io
+    with contextlib.redirect_stderr(io.StringIO()):
+        import rpy2.robjects as robjects
+        from rpy2.robjects import pandas2ri
+        from rpy2.robjects.conversion import localconverter
+        from rpy2.robjects.packages import importr
     HAS_RPY2 = True
 except Exception:  # noqa: BLE001 - Broad exception required for rpy2 import failures
     HAS_RPY2 = False

@@ -59,7 +59,7 @@ try:
     from .elevation_correction import ElevationCorrectionProcessor
 except ImportError as _e:
     ElevationCorrectionProcessor: Any = None  # type: ignore[no-redef]
-    _logger.warning("Failed to import ElevationCorrectionProcessor: %s", _e)
+    _logger.debug("ElevationCorrectionProcessor not available: %s", _e)
 
 __all__ = [
     'ForcingResampler',

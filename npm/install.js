@@ -157,14 +157,204 @@ async function verifyChecksum(file, checksumUrl) {
 function extractTarball(tarball, destDir) {
   console.log('📦 Extracting binaries...');
 
-  // Use --strip-components=1 to remove the top-level directory
-  const extractCmd = `tar -xzf "${tarball}" -C "${destDir}" --strip-components=1`;
+  // On Windows (MSYS/MinGW), tar interprets D: as a remote host.
+  // --force-local fixes this but is not supported by BSD tar (macOS).
+  const forceLocal = process.platform === 'win32' ? '--force-local ' : '';
+  const extractCmd = `tar ${forceLocal}-xzf "${tarball}" -C "${destDir}" --strip-components=1`;
 
   try {
     execSync(extractCmd, { stdio: 'inherit' });
     console.log('✅ Extraction complete');
   } catch (err) {
     throw new Error(`Extraction failed: ${err.message}`);
+  }
+}
+
+/**
+ * Check whether a shell command exists / succeeds silently.
+ * @param {string} cmd - Command to run
+ * @returns {boolean}
+ */
+function commandExists(cmd) {
+  try {
+    execSync(cmd, { stdio: 'ignore', timeout: 10000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Runtime C/Fortran libraries required by SYMFLUENCE models (SUMMA, FUSE, etc.)
+ * Each entry lists one or more detection commands and per-package-manager names.
+ */
+const RUNTIME_DEPS = [
+  {
+    name: 'NetCDF-C',
+    detect: ['nc-config --version'],
+    brew: 'netcdf',
+    apt: 'libnetcdf-dev',
+    dnf: 'netcdf',
+    conda: 'netcdf4',
+  },
+  {
+    name: 'NetCDF-Fortran',
+    detect: ['nf-config --version'],
+    brew: 'netcdf-fortran',
+    apt: 'libnetcdff-dev',
+    dnf: 'netcdf-fortran',
+    conda: 'netcdf-fortran',
+  },
+  {
+    name: 'HDF5',
+    detect: ['h5cc -showconfig', 'h5dump --version'],
+    brew: 'hdf5',
+    apt: 'libhdf5-dev',
+    dnf: 'hdf5',
+    conda: 'hdf5',
+  },
+  {
+    name: 'GDAL',
+    detect: ['gdal-config --version', 'gdalinfo --version'],
+    brew: 'gdal',
+    apt: 'gdal-bin libgdal-dev',
+    dnf: 'gdal',
+    conda: 'gdal',
+  },
+  {
+    name: 'OpenBLAS',
+    detect: ['dpkg -s libopenblas0 2>/dev/null | grep "Status: install ok"',
+             'ldconfig -p 2>/dev/null | grep libopenblas'],
+    brew: 'openblas',
+    apt: 'libopenblas0',
+    dnf: 'openblas',
+    conda: 'openblas',
+  },
+];
+
+/**
+ * Check whether a single runtime dependency is available.
+ * @param {{ name: string, detect: string[] }} dep
+ * @returns {boolean}
+ */
+function checkDep(dep) {
+  return dep.detect.some(cmd => commandExists(cmd));
+}
+
+/**
+ * Detect the best available system package manager.
+ * @returns {{ name: string, installCmd: string, key: string } | null}
+ */
+function detectPackageManager() {
+  // Conda (cross-platform, checked first)
+  if (process.env.CONDA_PREFIX) {
+    return { name: 'conda', installCmd: 'conda install -y -c conda-forge', key: 'conda' };
+  }
+
+  if (process.platform === 'darwin') {
+    if (commandExists('brew --version')) {
+      return { name: 'Homebrew', installCmd: 'brew install', key: 'brew' };
+    }
+    return null;
+  }
+
+  if (process.platform === 'linux') {
+    if (commandExists('apt-get --version')) {
+      return { name: 'apt', installCmd: 'sudo apt-get install -y', key: 'apt' };
+    }
+    if (commandExists('dnf --version')) {
+      return { name: 'dnf', installCmd: 'sudo dnf install -y', key: 'dnf' };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Print manual installation instructions for missing dependencies.
+ * @param {{ name: string }[]} missing
+ */
+function printManualInstructions(missing) {
+  const names = missing.map(d => d.name).join(', ');
+  console.warn(`\n⚠️  Could not auto-install system dependencies: ${names}`);
+  console.warn('   Please install them manually:\n');
+
+  if (process.platform === 'darwin') {
+    const pkgs = missing.map(d => d.brew).join(' ');
+    console.warn(`   # macOS (Homebrew)`);
+    console.warn(`   brew install ${pkgs}`);
+    console.warn(`   # Install Homebrew: https://brew.sh\n`);
+  } else if (process.platform === 'linux') {
+    const aptPkgs = missing.map(d => d.apt).join(' ');
+    const dnfPkgs = missing.map(d => d.dnf).join(' ');
+    console.warn(`   # Debian/Ubuntu`);
+    console.warn(`   sudo apt-get install -y ${aptPkgs}\n`);
+    console.warn(`   # Fedora/RHEL`);
+    console.warn(`   sudo dnf install -y ${dnfPkgs}\n`);
+  }
+
+  const condaPkgs = missing.map(d => d.conda).join(' ');
+  console.warn(`   # Conda (any platform)`);
+  console.warn(`   conda install -c conda-forge ${condaPkgs}\n`);
+  console.warn('   📖 https://github.com/DarriEy/SYMFLUENCE/blob/main/docs/SYSTEM_REQUIREMENTS.md\n');
+}
+
+/**
+ * Detect and auto-install system-level runtime dependencies (NetCDF, HDF5, GDAL).
+ * Non-fatal: prints manual instructions on failure.
+ */
+function tryInstallSystemDeps() {
+  // Skip on Windows (libraries are bundled in the tarball)
+  if (process.platform === 'win32') {
+    return;
+  }
+
+  // Allow users to opt out
+  if (process.env.SYMFLUENCE_SKIP_SYSTEM_DEPS === '1') {
+    console.log('\n📦 Skipping system dependency check (SYMFLUENCE_SKIP_SYSTEM_DEPS=1)\n');
+    return;
+  }
+
+  console.log('\n🔍 Checking system dependencies...\n');
+
+  const found = [];
+  const missing = [];
+
+  for (const dep of RUNTIME_DEPS) {
+    if (checkDep(dep)) {
+      console.log(`   ✅ ${dep.name}`);
+      found.push(dep);
+    } else {
+      console.log(`   ❌ ${dep.name} — not found`);
+      missing.push(dep);
+    }
+  }
+
+  if (missing.length === 0) {
+    console.log('\n   All system dependencies found.\n');
+    return;
+  }
+
+  console.log(`\n   ${missing.length} missing dependenc${missing.length === 1 ? 'y' : 'ies'}, attempting auto-install...\n`);
+
+  const pm = detectPackageManager();
+  if (!pm) {
+    printManualInstructions(missing);
+    return;
+  }
+
+  // Build install command from the per-manager package names
+  const pkgs = missing.map(d => d[pm.key]).join(' ');
+  const cmd = `${pm.installCmd} ${pkgs}`;
+
+  console.log(`   Using ${pm.name}: ${cmd}\n`);
+
+  try {
+    execSync(cmd, { stdio: 'inherit', timeout: 300000 });
+    console.log(`\n✅ System dependencies installed via ${pm.name}`);
+  } catch (err) {
+    console.warn(`\n⚠️  ${pm.name} install failed: ${err.message}`);
+    printManualInstructions(missing);
   }
 }
 
@@ -255,6 +445,9 @@ async function install() {
 
     // Cleanup tarball
     fs.unlinkSync(tarballPath);
+
+    // Try to install system dependencies (non-fatal, needed before Python)
+    tryInstallSystemDeps();
 
     // Try to install Python package (non-fatal)
     tryInstallPython();

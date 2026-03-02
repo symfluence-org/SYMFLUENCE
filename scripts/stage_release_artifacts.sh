@@ -683,6 +683,14 @@ elif [ "$OS_BUNDLE" = "Linux" ]; then
                     | grep -vE '^(/usr/lib|/lib/|/lib64/)' \
                     || true)"
 
+                # Also force-bundle specific libs that live in system paths
+                # but aren't universally available across Linux distros
+                FORCE_BUNDLE="libopenblas|liblapack|libgfortran|libgomp|libquadmath"
+                FORCE_DEPS="$(ldd "$elf" 2>/dev/null | grep '=>' | awk '{print $3}' \
+                    | grep -E "($FORCE_BUNDLE)" \
+                    || true)"
+                DEPS="$(printf '%s\n%s' "$DEPS" "$FORCE_DEPS" | sort -u | grep -v '^$' || true)"
+
                 for dep in $DEPS; do
                     [ -z "$dep" ] && continue
                     dep_basename="$(basename "$dep")"
