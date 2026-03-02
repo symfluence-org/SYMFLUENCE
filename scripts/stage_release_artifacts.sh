@@ -631,6 +631,25 @@ if [ "$OS_BUNDLE" = "Darwin" ]; then
                     print_warning "Dependency not found: $dep (referenced by $(basename "$macho"))"
                 fi
             done
+
+            # Also resolve @rpath/ references to files missing from lib/
+            # (some Homebrew libs like libgfortran already use @rpath internally)
+            RPATH_DEPS="$(otool -L "$macho" 2>/dev/null | tail -n +2 | awk '{print $1}' \
+                | grep '^@rpath/' | sed 's|^@rpath/||' \
+                || true)"
+
+            for rdep_name in $RPATH_DEPS; do
+                [ -f "lib/$rdep_name" ] && continue
+                # Search Homebrew for this library
+                found="$(find /opt/homebrew/opt /opt/homebrew/lib /usr/local/lib \
+                    -name "$rdep_name" -not -type d 2>/dev/null | head -1 || true)"
+                if [ -n "$found" ]; then
+                    cp -L "$found" "lib/$rdep_name"
+                    chmod +x "lib/$rdep_name"
+                    BUNDLE_CHANGED=1
+                    print_success "Bundled $rdep_name (from $found, resolved @rpath ref)"
+                fi
+            done
         done
     done
     print_success "Dependency bundling complete ($BUNDLE_ROUND rounds)"
