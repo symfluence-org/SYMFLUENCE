@@ -184,6 +184,16 @@ find "${SRC_DIR}" -name "*.f" -o -name "*.f90" | while read -r f; do
     perl -pi -e "s/write\(([^)]+)\)'/write(\$1) '/gi" "$f"
 done
 
+# Fix missing comma in WRITE continuation:
+#   source_file_name   '   ->   source_file_name , '
+# write_diversion_tb0.f line 87 has: ,source_file_name   '
+# which is missing a comma before the trailing string literal.
+for f in "${SRC_DIR}/model/write_diversion_tb0.f" "${SRC_DIR}/model/write_tb0.f"; do
+    if [ -f "$f" ]; then
+        perl -pi -e "s/(source_file_name)\s+'/\$1, '/g" "$f"
+    fi
+done
+
 # === Create compatibility source files ===
 echo "Creating compatibility stubs..."
 

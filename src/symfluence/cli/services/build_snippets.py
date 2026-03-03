@@ -1068,6 +1068,25 @@ detect_or_build_flex() {
         return 0
     fi
 
+    # Prefer Homebrew flex on macOS — Apple's /usr/bin/flex calls /usr/bin/gm4
+    # which was removed in macOS Sequoia (15.x)
+    if [ -x /opt/homebrew/opt/flex/bin/flex ]; then
+        echo "Found Homebrew flex: /opt/homebrew/opt/flex/bin/flex"
+        export PATH="/opt/homebrew/opt/flex/bin:$PATH"
+        flex --version | head -1
+        FLEX_FOUND=true
+        # Homebrew flex includes libfl
+        local brew_flex_lib="/opt/homebrew/opt/flex/lib"
+        if [ -f "$brew_flex_lib/libfl.a" ] || [ -f "$brew_flex_lib/libfl.dylib" ]; then
+            echo "Found Homebrew libfl"
+            LIBFL_FOUND=true
+            export FLEX_LIB_DIR="$brew_flex_lib"
+            export LDFLAGS="${LDFLAGS:-} -L${FLEX_LIB_DIR}"
+            export LIBRARY_PATH="${FLEX_LIB_DIR}:${LIBRARY_PATH:-}"
+        fi
+        return 0
+    fi
+
     # Check if flex binary is available in PATH
     if command -v flex >/dev/null 2>&1; then
         echo "Found flex: $(command -v flex)"

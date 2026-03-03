@@ -113,7 +113,7 @@ jobs:
           cpanm --notest XML::LibXML 2>/dev/null || true
 
           # Set up Fortran compiler paths
-          GCC_VER=$(ls /opt/homebrew/bin/gfortran-* 2>/dev/null | head -1 | sed 's/.*gfortran-//')
+          GCC_VER=$(ls /opt/homebrew/bin/gfortran-* 2>/dev/null | sort -t- -k2 -n | tail -1 | sed 's/.*gfortran-//')
           if [ -n "$GCC_VER" ]; then
             echo "FC=/opt/homebrew/bin/gfortran-${GCC_VER}" >> $GITHUB_ENV
             echo "CC=/opt/homebrew/bin/gcc-${GCC_VER}" >> $GITHUB_ENV
@@ -147,14 +147,21 @@ jobs:
         run: |
           # Core build dependencies
           conda install -y gcc gfortran cmake make netcdf-fortran hdf5 openblas udunits2 numpy gdal boost-cpp proj
-          # MPI: mpich is not available on win-64; use msmpi instead (best-effort)
-          conda install -y msmpi mpi4py 2>/dev/null || echo "WARNING: MPI not available — MPI-dependent models will be skipped"
+
+          # Expose CONDA_PREFIX so symfluence dependency checker finds conda-installed libs
+          echo "CONDA_PREFIX=$CONDA_PREFIX" >> $GITHUB_ENV
 
           echo "CC=gcc" >> $GITHUB_ENV
           echo "CXX=g++" >> $GITHUB_ENV
           echo "FC=gfortran" >> $GITHUB_ENV
           echo "SYMFLUENCE_NO_VENV=true" >> $GITHUB_ENV
           echo "SYMFLUENCE_PYTHON=python" >> $GITHUB_ENV
+
+      - name: Install MS-MPI (Windows)
+        if: runner.os == 'Windows'
+        uses: mpi4py/setup-mpi@v1
+        with:
+          mpi: msmpi
 
       # ========================================================================
       # Build Tools

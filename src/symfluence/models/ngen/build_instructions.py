@@ -275,17 +275,14 @@ if [ -n "${UDUNITS2_INCLUDE_DIR:-}" ] && [ -n "${UDUNITS2_LIBRARY:-}" ]; then
   _U2_LIB=$(echo "$UDUNITS2_LIBRARY" | sed 's/\\/\//g')
   CMAKE_ARGS="$CMAKE_ARGS -DUDUNITS2_ROOT=$_U2_DIR"
   CMAKE_ARGS="$CMAKE_ARGS -DUDUNITS2_INCLUDE_DIR=$_U2_INC"
+  CMAKE_ARGS="$CMAKE_ARGS -DUDUNITS2_LIBRARY=$_U2_LIB"
   # When UDUNITS2 is a static archive, GNU ld needs transitive dependencies
-  # (expat, dl, m) AFTER the archive on the link line.  Shell quoting cannot
-  # reliably pass CMake semicolon-lists through bash variables, so write them
-  # to an initial-cache file that cmake processes directly.
+  # (expat, dl, m) AFTER the archive on the link line.  We pass these via
+  # CMAKE_EXE_LINKER_FLAGS because UDUNITS2_LIBRARY must be a single path
+  # (ngen's FindUDUNITS2.cmake uses it in IMPORTED_LOCATION).
   if echo "$_U2_LIB" | grep -q '\.a$'; then
-    _U2_CACHE="/tmp/_ngen_u2_cache.cmake"
-    echo "set(UDUNITS2_LIBRARY \"$_U2_LIB;expat;dl;m\" CACHE STRING \"UDUNITS2 with transitive deps\" FORCE)" > "$_U2_CACHE"
-    CMAKE_ARGS="$CMAKE_ARGS -C $_U2_CACHE"
-    echo "Wrote UDUNITS2 cmake cache: $_U2_CACHE"
-  else
-    CMAKE_ARGS="$CMAKE_ARGS -DUDUNITS2_LIBRARY=$_U2_LIB"
+    EXTRA_LIBS="${EXTRA_LIBS:-} -lexpat -ldl -lm"
+    echo "Static UDUNITS2 detected — adding transitive deps to linker flags"
   fi
 
   # Also add to compiler flags (use forward-slash path)
@@ -418,13 +415,7 @@ else
   if [ -n "${UDUNITS2_INCLUDE_DIR:-}" ] && [ -n "${UDUNITS2_LIBRARY:-}" ]; then
     FALLBACK_ARGS="$FALLBACK_ARGS -DUDUNITS2_ROOT=$UDUNITS2_DIR"
     FALLBACK_ARGS="$FALLBACK_ARGS -DUDUNITS2_INCLUDE_DIR=$UDUNITS2_INCLUDE_DIR"
-    if echo "$UDUNITS2_LIBRARY" | grep -q '\.a$'; then
-      _U2_CACHE="/tmp/_ngen_u2_cache.cmake"
-      echo "set(UDUNITS2_LIBRARY \"$UDUNITS2_LIBRARY;expat;dl;m\" CACHE STRING \"UDUNITS2 with transitive deps\" FORCE)" > "$_U2_CACHE"
-      FALLBACK_ARGS="$FALLBACK_ARGS -C $_U2_CACHE"
-    else
-      FALLBACK_ARGS="$FALLBACK_ARGS -DUDUNITS2_LIBRARY=$UDUNITS2_LIBRARY"
-    fi
+    FALLBACK_ARGS="$FALLBACK_ARGS -DUDUNITS2_LIBRARY=$UDUNITS2_LIBRARY"
   fi
   # Note: LIBRARY_PATH and CMAKE_PREFIX_PATH are already set in environment for expat
 
