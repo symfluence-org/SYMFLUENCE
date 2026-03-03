@@ -481,6 +481,10 @@ class BaseDatasetHandler(ABC, ConfigMixin):
         or the parallel filesystem does not support POSIX file locking),
         retries with h5netcdf using ``lock=False``.
 
+        If a libhdf5 build conflict between h5py and netCDF4 was detected at
+        startup, the h5netcdf fallback is skipped (importing h5py would
+        corrupt the netcdf4 backend for the rest of the process).
+
         Args:
             path: Path to the NetCDF file
             **kwargs: Additional arguments passed to xr.open_dataset
@@ -494,6 +498,21 @@ class BaseDatasetHandler(ABC, ConfigMixin):
             msg = str(e).lower()
             if not any(pat.lower() in msg for pat in self._HDF_ERROR_PATTERNS):
                 raise
+
+            # If h5py and netCDF4 bundle different libhdf5 builds, falling
+            # back to h5netcdf would import h5py and poison the netcdf4
+            # backend for the rest of the process.  Fail fast with a
+            # clear message instead.
+            from symfluence.core.hdf5_safety import hdf5_library_conflict
+            if hdf5_library_conflict:
+                raise OSError(
+                    f"netcdf4 engine failed on {Path(path).name} and the "
+                    f"h5netcdf fallback is disabled because h5py and netCDF4 "
+                    f"link against different libhdf5 builds. Fix: "
+                    f"pip uninstall h5py netCDF4 -y && "
+                    f"conda install h5py netcdf4"
+                ) from e
+
             self.logger.warning(
                 f"netcdf4 engine failed on {Path(path).name} (likely HDF5 "
                 f"library conflict or file-locking issue), retrying with "

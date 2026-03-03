@@ -28,8 +28,12 @@ Usage:
 """
 
 import gc
+import logging
 import os
-from typing import Dict
+from pathlib import Path
+from typing import Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # Environment Variable Constants
@@ -52,6 +56,12 @@ THREAD_ENV_VARS: Dict[str, str] = {
     'KMP_DUPLICATE_LIB_OK': 'TRUE',  # Prevent OpenMP conflicts on macOS
 }
 """Environment variables to force single-threaded execution in numerical libraries."""
+
+# Module-level flag: set to True when h5py and netCDF4 link against different
+# libhdf5 builds.  When True, the h5netcdf engine fallback in
+# BaseDatasetHandler.open_dataset() must be skipped because importing h5py
+# would corrupt netcdf4's HDF5 state for the rest of the process.
+hdf5_library_conflict: bool = False
 
 
 # =============================================================================
@@ -84,21 +94,19 @@ def configure_hdf5_safety(disable_tqdm_monitor: bool = True) -> None:
         else:
             os.environ.setdefault(key, value)
 
-    # Configure xarray to minimize file caching and prefer h5netcdf backend
-    # h5netcdf is more stable than netCDF4 for concurrent access
+    # Configure xarray to minimize file caching
     try:
         import xarray as xr
         xr.set_options(
             file_cache_maxsize=1,  # Minimal file cache
         )
-        # Try to set h5netcdf as default backend if available
-        try:
-            import h5netcdf  # noqa: F401
-            # h5netcdf is available, will be used when backend='h5netcdf'
-        except ImportError:
-            pass  # h5netcdf not available, will fall back to netCDF4
     except (ImportError, AttributeError):
         pass  # xarray not yet imported or doesn't support this option
+
+    # Check for conflicting HDF5 library builds (e.g. pip h5py + pip netCDF4
+    # each bundling their own libhdf5).  Must run BEFORE any h5py/h5netcdf
+    # import to avoid poisoning the process.
+    _check_hdf5_library_conflict()
 
     # Disable tqdm monitor thread to prevent segfaults
     if disable_tqdm_monitor:
@@ -211,6 +219,94 @@ def clear_xarray_cache() -> None:
 # =============================================================================
 # Internal Helpers
 # =============================================================================
+
+def _find_bundled_libhdf5(pkg_name: str) -> Optional[Path]:
+    """Find a bundled libhdf5 shipped inside a pip wheel for *pkg_name*.
+
+    Pip wheels for h5py and netCDF4 vendor their own private copy of
+    libhdf5 into a ``<pkg>.libs/`` (Linux) or ``<pkg>/.dylibs/``
+    (macOS) directory next to the package.  Conda-installed packages
+    instead link against a single shared ``$CONDA_PREFIX/lib/libhdf5``
+    and have no bundled copy.
+
+    Returns the resolved path to the bundled libhdf5, or None if the
+    package is not installed or does not bundle its own copy.
+    """
+    try:
+        import importlib.util
+        spec = importlib.util.find_spec(pkg_name)
+        if spec is None or spec.origin is None:
+            return None
+        pkg_dir = Path(spec.origin).parent
+
+        # Linux pip wheels: <site-packages>/<pkg>.libs/libhdf5-*.so*
+        # macOS pip wheels: <site-packages>/<pkg>/.dylibs/libhdf5*.dylib
+        search_dirs = [
+            pkg_dir.parent / f"{pkg_name}.libs",      # Linux
+            pkg_dir / ".dylibs",                       # macOS (inside pkg)
+        ]
+        # netCDF4 pip wheel uses the distribution name "netcdf4" (lowercase)
+        if pkg_name == "netCDF4":
+            search_dirs.append(pkg_dir.parent / "netcdf4.libs")
+
+        for d in search_dirs:
+            if not d.is_dir():
+                continue
+            for f in d.iterdir():
+                name = f.name.lower()
+                if 'libhdf5' in name and 'libhdf5_hl' not in name:
+                    return f.resolve()
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def _check_hdf5_library_conflict() -> None:
+    """Detect conflicting libhdf5 builds between h5py and netCDF4.
+
+    When both packages are pip-installed, each bundles its own private
+    copy of ``libhdf5`` (with different build hashes).  If h5py is
+    imported first, its libhdf5 symbols shadow netCDF4's, corrupting
+    HDF5 global state and causing ``NetCDF: HDF error`` on every
+    subsequent netcdf4 operation — even reads.
+
+    This check runs at startup (before any h5py import) by looking for
+    bundled libhdf5 files in pip wheel vendor directories — no Python
+    HDF5 modules are imported.
+
+    Sets the module-level ``hdf5_library_conflict`` flag and logs a
+    warning with clear fix instructions.
+    """
+    global hdf5_library_conflict
+
+    h5py_lib = _find_bundled_libhdf5('h5py')
+    nc4_lib = _find_bundled_libhdf5('netCDF4')
+
+    if h5py_lib is None or nc4_lib is None:
+        # At least one package doesn't bundle its own libhdf5 (likely
+        # conda-installed or not present at all).  No conflict.
+        return
+
+    if h5py_lib == nc4_lib:
+        return  # Same file — no conflict
+
+    hdf5_library_conflict = True
+    logger.warning(
+        "h5py and netCDF4 bundle DIFFERENT libhdf5 builds:\n"
+        "  h5py    → %s\n"
+        "  netCDF4 → %s\n"
+        "Importing h5py will corrupt netcdf4's HDF5 state, causing "
+        "'NetCDF: HDF error' on all subsequent operations.\n"
+        "Fix: install both from the same package manager:\n"
+        "  conda:  pip uninstall h5py netCDF4 -y && conda install h5py netcdf4\n"
+        "  pip:    pip install --force-reinstall --no-binary h5py --no-binary "
+        "netCDF4 h5py netCDF4\n"
+        "The h5netcdf engine fallback will be DISABLED for this session to "
+        "prevent the conflict from being triggered.",
+        h5py_lib,
+        nc4_lib,
+    )
+
 
 def _disable_tqdm_monitor() -> None:
     """Disable tqdm's background monitor thread."""
