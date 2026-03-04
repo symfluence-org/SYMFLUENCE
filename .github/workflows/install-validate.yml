@@ -72,39 +72,10 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      # ----- Build deps via pixi (with apt-get fallback) -----
-      - name: Set up Pixi
-        id: pixi
-        continue-on-error: true
-        uses: prefix-dev/setup-pixi@v0.9.4
-        with:
-          environments: build
-          cache: true
-
-      - name: Export pixi environment paths
-        if: steps.pixi.outcome == 'success'
+      # ----- System deps (always run now) -----
+      - name: Install system build deps
         run: |
-          PIXI_PREFIX="$(pixi run -e build python3 -c 'import sys; print(sys.prefix)')"
-          echo "PIXI_PREFIX=$PIXI_PREFIX"
-          echo "CONDA_PREFIX=$PIXI_PREFIX" >> $GITHUB_ENV
-          echo "CMAKE_PREFIX_PATH=$PIXI_PREFIX" >> $GITHUB_ENV
-          echo "$PIXI_PREFIX/bin" >> $GITHUB_PATH
-          echo "CC=mpicc" >> $GITHUB_ENV
-          echo "CXX=mpicxx" >> $GITHUB_ENV
-          echo "FC=gfortran" >> $GITHUB_ENV
-          # FUSE build vars (derived from pixi-provided nc-config/nf-config)
-          NF_FLIBS="$(pixi run -e build nf-config --flibs 2>/dev/null || echo '')"
-          NC_LIBS="$(pixi run -e build nc-config --libs 2>/dev/null || echo '')"
-          NF_FFLAGS="$(pixi run -e build nf-config --fflags 2>/dev/null || echo '')"
-          NC_CFLAGS="$(pixi run -e build nc-config --cflags 2>/dev/null || echo '')"
-          echo "FUSE_LIBRARIES=${NF_FLIBS} ${NC_LIBS}" >> $GITHUB_ENV
-          echo "FUSE_INCLUDE=${NC_CFLAGS} ${NF_FFLAGS}" >> $GITHUB_ENV
-          echo "FUSE_FFLAGS_EXTRA=-fallow-argument-mismatch -std=legacy -ffree-line-length-none -fmax-errors=0" >> $GITHUB_ENV
-          echo "PIXI_OK=true" >> $GITHUB_ENV
-
-      - name: Install system build deps (fallback)
-        if: env.PIXI_OK != 'true'
-        run: |
+          set -e
           sudo apt-get update
           sudo apt-get install -y \
             build-essential gfortran cmake make pkg-config \
@@ -118,9 +89,11 @@ jobs:
             libfl-dev libbsd-dev \
             r-base libcurl4-openssl-dev \
             python3-dev python3-pip python3-numpy cdo
+          mpicc --version
+          mpirun --version
+          gdal-config --version
 
-      - name: Configure compiler env (fallback)
-        if: env.PIXI_OK != 'true'
+      - name: Configure compiler and library env
         run: |
           set -e
           echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig:${PKG_CONFIG_PATH}" >> $GITHUB_ENV
@@ -136,22 +109,25 @@ jobs:
           echo "HDF5_LIBDIR=/usr/lib/x86_64-linux-gnu/hdf5/serial" >> $GITHUB_ENV
           echo "HDF5_INCLUDE_DIR=/usr/include/hdf5/serial" >> $GITHUB_ENV
           echo "UDUNITS2_DIR=$(pkg-config --variable=prefix udunits2 2>/dev/null || echo /usr)" >> $GITHUB_ENV
-          echo "LIBRARY_PATH=${NETCDF_LIBDIR}:/usr/lib/x86_64-linux-gnu/hdf5/serial:${LIBRARY_PATH:-}" >> $GITHUB_ENV
+          # LIBRARY_PATH is for compile-time linking (Fortran builds need this)
+          echo "LIBRARY_PATH=${NETCDF_LIBDIR}:${HDF5_LIBDIR}:${LIBRARY_PATH}" >> $GITHUB_ENV
+          # NOTE: Do NOT set LD_LIBRARY_PATH here — system HDF5 paths on
+          # LD_LIBRARY_PATH override pip netCDF4's bundled HDF5 (LD_LIBRARY_PATH
+          # beats RUNPATH in the dynamic linker). Fortran builds use -L flags
+          # from FUSE_LIBRARIES/pkg-config; runtime needs are handled per-step.
           echo "CC=mpicc"  >> $GITHUB_ENV
           echo "CXX=mpicxx" >> $GITHUB_ENV
-          echo "FC=gfortran" >> $GITHUB_ENV
           NF_FLIBS="$(nf-config --flibs 2>/dev/null || echo "-L${NETCDF_LIBDIR} -lnetcdff")"
           NC_LIBS="$(nc-config --libs  2>/dev/null || echo "-L${NETCDF_LIBDIR} -lnetcdf")"
-          H5_LIBS="$(pkg-config --libs hdf5_hl hdf5 2>/dev/null || echo "-L/usr/lib/x86_64-linux-gnu/hdf5/serial -lhdf5_hl -lhdf5")"
+          H5_LIBS="$(pkg-config --libs hdf5_hl hdf5 2>/dev/null || echo "-L${HDF5_LIBDIR} -lhdf5_hl -lhdf5")"
           echo "FUSE_LIBRARIES=${NF_FLIBS} ${NC_LIBS} ${H5_LIBS}" >> $GITHUB_ENV
           NF_FFLAGS="$(nf-config --fflags 2>/dev/null || true)"
           NC_CFLAGS="$(nc-config --cflags 2>/dev/null || true)"
-          H5_CFLAGS="$(pkg-config --cflags hdf5 2>/dev/null || echo "-I/usr/include/hdf5/serial")"
-          echo "FUSE_INCLUDE=${NC_CFLAGS} ${NF_FFLAGS} ${H5_CFLAGS} -I${NETCDF_INC}" >> $GITHUB_ENV
+          H5_CFLAGS="$(pkg-config --cflags hdf5 2>/dev/null || echo "-I${HDF5_INCLUDE_DIR}")"
+          echo "FUSE_INCLUDE=${NC_CFLAGS} ${NF_FFLAGS} ${H5_CFLAGS} -I${NETCDF_INCLUDE}" >> $GITHUB_ENV
           echo "FUSE_FFLAGS_EXTRA=-fallow-argument-mismatch -std=legacy -ffree-line-length-none -fmax-errors=0" >> $GITHUB_ENV
 
-      - name: Create /usr/lib64 symlinks (fallback)
-        if: env.PIXI_OK != 'true'
+      - name: Create /usr/lib64 symlinks for legacy builds (HDF5/NetCDF)
         run: |
           set -e
           sudo mkdir -p /usr/lib64
@@ -534,38 +510,9 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Set up Pixi
-        id: pixi
-        continue-on-error: true
-        uses: prefix-dev/setup-pixi@v0.9.4
-        with:
-          environments: build
-          cache: true
-
-      - name: Export pixi environment paths
-        if: steps.pixi.outcome == 'success'
+      - name: Install system dependencies
         run: |
-          PIXI_PREFIX="$(pixi run -e build python3 -c 'import sys; print(sys.prefix)')"
-          echo "PIXI_PREFIX=$PIXI_PREFIX"
-          echo "CONDA_PREFIX=$PIXI_PREFIX" >> $GITHUB_ENV
-          echo "CMAKE_PREFIX_PATH=$PIXI_PREFIX" >> $GITHUB_ENV
-          echo "$PIXI_PREFIX/bin" >> $GITHUB_PATH
-          echo "CC=mpicc" >> $GITHUB_ENV
-          echo "CXX=mpicxx" >> $GITHUB_ENV
-          echo "FC=gfortran" >> $GITHUB_ENV
-          # FUSE build vars (derived from pixi-provided nc-config/nf-config)
-          NF_FLIBS="$(pixi run -e build nf-config --flibs 2>/dev/null || echo '')"
-          NC_LIBS="$(pixi run -e build nc-config --libs 2>/dev/null || echo '')"
-          NF_FFLAGS="$(pixi run -e build nf-config --fflags 2>/dev/null || echo '')"
-          NC_CFLAGS="$(pixi run -e build nc-config --cflags 2>/dev/null || echo '')"
-          echo "FUSE_LIBRARIES=${NF_FLIBS} ${NC_LIBS}" >> $GITHUB_ENV
-          echo "FUSE_INCLUDE=${NC_CFLAGS} ${NF_FFLAGS}" >> $GITHUB_ENV
-          echo "FUSE_FFLAGS_EXTRA=-fallow-argument-mismatch -std=legacy -ffree-line-length-none -fmax-errors=0" >> $GITHUB_ENV
-          echo "PIXI_OK=true" >> $GITHUB_ENV
-
-      - name: Install system build deps (fallback)
-        if: env.PIXI_OK != 'true'
-        run: |
+          set -e
           sudo apt-get update
           sudo apt-get install -y \
             build-essential gfortran cmake make pkg-config \
@@ -580,8 +527,7 @@ jobs:
             r-base libcurl4-openssl-dev \
             python3-dev python3-pip python3-numpy cdo
 
-      - name: Configure compiler env (fallback)
-        if: env.PIXI_OK != 'true'
+      - name: Configure compiler and library env
         run: |
           set -e
           echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig:${PKG_CONFIG_PATH}" >> $GITHUB_ENV
@@ -597,22 +543,25 @@ jobs:
           echo "HDF5_LIBDIR=/usr/lib/x86_64-linux-gnu/hdf5/serial" >> $GITHUB_ENV
           echo "HDF5_INCLUDE_DIR=/usr/include/hdf5/serial" >> $GITHUB_ENV
           echo "UDUNITS2_DIR=$(pkg-config --variable=prefix udunits2 2>/dev/null || echo /usr)" >> $GITHUB_ENV
-          echo "LIBRARY_PATH=${NETCDF_LIBDIR}:/usr/lib/x86_64-linux-gnu/hdf5/serial:${LIBRARY_PATH:-}" >> $GITHUB_ENV
+          # LIBRARY_PATH is for compile-time linking (Fortran builds need this)
+          echo "LIBRARY_PATH=${NETCDF_LIBDIR}:${HDF5_LIBDIR}:${LIBRARY_PATH}" >> $GITHUB_ENV
+          # NOTE: Do NOT set LD_LIBRARY_PATH here — system HDF5 paths on
+          # LD_LIBRARY_PATH override pip netCDF4's bundled HDF5 (LD_LIBRARY_PATH
+          # beats RUNPATH in the dynamic linker). Fortran builds use -L flags
+          # from FUSE_LIBRARIES/pkg-config; runtime needs are handled per-step.
           echo "CC=mpicc"  >> $GITHUB_ENV
           echo "CXX=mpicxx" >> $GITHUB_ENV
-          echo "FC=gfortran" >> $GITHUB_ENV
           NF_FLIBS="$(nf-config --flibs 2>/dev/null || echo "-L${NETCDF_LIBDIR} -lnetcdff")"
           NC_LIBS="$(nc-config --libs  2>/dev/null || echo "-L${NETCDF_LIBDIR} -lnetcdf")"
-          H5_LIBS="$(pkg-config --libs hdf5_hl hdf5 2>/dev/null || echo "-L/usr/lib/x86_64-linux-gnu/hdf5/serial -lhdf5_hl -lhdf5")"
+          H5_LIBS="$(pkg-config --libs hdf5_hl hdf5 2>/dev/null || echo "-L${HDF5_LIBDIR} -lhdf5_hl -lhdf5")"
           echo "FUSE_LIBRARIES=${NF_FLIBS} ${NC_LIBS} ${H5_LIBS}" >> $GITHUB_ENV
           NF_FFLAGS="$(nf-config --fflags 2>/dev/null || true)"
           NC_CFLAGS="$(nc-config --cflags 2>/dev/null || true)"
-          H5_CFLAGS="$(pkg-config --cflags hdf5 2>/dev/null || echo "-I/usr/include/hdf5/serial")"
-          echo "FUSE_INCLUDE=${NC_CFLAGS} ${NF_FFLAGS} ${H5_CFLAGS} -I${NETCDF_INC}" >> $GITHUB_ENV
+          H5_CFLAGS="$(pkg-config --cflags hdf5 2>/dev/null || echo "-I${HDF5_INCLUDE_DIR}")"
+          echo "FUSE_INCLUDE=${NC_CFLAGS} ${NF_FFLAGS} ${H5_CFLAGS} -I${NETCDF_INCLUDE}" >> $GITHUB_ENV
           echo "FUSE_FFLAGS_EXTRA=-fallow-argument-mismatch -std=legacy -ffree-line-length-none -fmax-errors=0" >> $GITHUB_ENV
 
-      - name: Create /usr/lib64 symlinks (fallback)
-        if: env.PIXI_OK != 'true'
+      - name: Create /usr/lib64 symlinks for legacy builds (HDF5/NetCDF)
         run: |
           set -e
           sudo mkdir -p /usr/lib64

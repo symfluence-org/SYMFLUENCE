@@ -74,50 +74,10 @@ jobs:
           ./scripts/check_version_sync.sh
 
       # ========================================================================
-      # Build Dependencies — pixi (primary) with apt/brew/conda fallback
+      # Linux System Dependencies
       # ========================================================================
-      - name: Set up Pixi
-        id: pixi
-        uses: prefix-dev/setup-pixi@v0.9.4
-        with:
-          environments: build
-          cache: true
-        continue-on-error: true
-
-      - name: Export pixi environment paths
-        if: steps.pixi.outcome == 'success'
-        run: |
-          PIXI_PREFIX="$(pixi run -e build python3 -c 'import sys; print(sys.prefix)')"
-          echo "PIXI_PREFIX=$PIXI_PREFIX"
-          echo "CONDA_PREFIX=$PIXI_PREFIX" >> $GITHUB_ENV
-          echo "CMAKE_PREFIX_PATH=$PIXI_PREFIX" >> $GITHUB_ENV
-          echo "$PIXI_PREFIX/bin" >> $GITHUB_PATH
-          echo "PIXI_OK=true" >> $GITHUB_ENV
-
-          case "${{ runner.os }}" in
-            Windows)
-              echo "CC=gcc" >> $GITHUB_ENV
-              echo "CXX=g++" >> $GITHUB_ENV
-              echo "FC=gfortran" >> $GITHUB_ENV
-              echo "SYMFLUENCE_NO_VENV=true" >> $GITHUB_ENV
-              echo "SYMFLUENCE_PYTHON=python" >> $GITHUB_ENV
-              git config --global core.protectNTFS false
-              ;;
-            macOS)
-              echo "FC=$(pixi run -e build which gfortran)" >> $GITHUB_ENV
-              echo "CC=$(pixi run -e build which gcc)" >> $GITHUB_ENV
-              echo "CXX=$(pixi run -e build which g++)" >> $GITHUB_ENV
-              ;;
-            Linux)
-              echo "CC=mpicc" >> $GITHUB_ENV
-              echo "CXX=mpicxx" >> $GITHUB_ENV
-              echo "FC=gfortran" >> $GITHUB_ENV
-              ;;
-          esac
-
-      # --- Fallback: platform-specific package managers if pixi failed ---
-      - name: Install system dependencies (Linux fallback)
-        if: env.PIXI_OK != 'true' && runner.os == 'Linux'
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -129,37 +89,68 @@ jobs:
             libopenblas-dev liblapack-dev \
             patchelf \
             tcl-dev libxml2-utils libexpat1-dev
+
+      - name: Configure compiler env (Linux)
+        if: runner.os == 'Linux'
+        run: |
           echo "CC=mpicc" >> $GITHUB_ENV
           echo "CXX=mpicxx" >> $GITHUB_ENV
           echo "FC=gfortran" >> $GITHUB_ENV
 
-      - name: Install system dependencies (macOS fallback)
-        if: env.PIXI_OK != 'true' && runner.os == 'macOS'
+      # ========================================================================
+      # macOS System Dependencies
+      # ========================================================================
+      - name: Install system dependencies (macOS)
+        if: runner.os == 'macOS'
         run: |
-          brew install gcc cmake open-mpi netcdf netcdf-fortran hdf5 gdal udunits m4 libxml2 flex
+          brew install gcc cmake open-mpi netcdf netcdf-fortran hdf5 gdal udunits m4 libxml2 flex cpanminus
+
+          # flex needs gm4 (GNU m4) but macOS Sequoia removed /usr/bin/gm4.
+          # Homebrew flex uses the correct path; ensure it's found first.
+          echo "/opt/homebrew/opt/flex/bin" >> $GITHUB_PATH
+
+          # CLM/CESM needs Perl XML::LibXML for namelist generation
+          cpanm --notest XML::LibXML 2>/dev/null || true
+
+          # Set up Fortran compiler paths
           GCC_VER=$(ls /opt/homebrew/bin/gfortran-* 2>/dev/null | sort -t- -k2 -n | tail -1 | sed 's/.*gfortran-//')
           if [ -n "$GCC_VER" ]; then
             echo "FC=/opt/homebrew/bin/gfortran-${GCC_VER}" >> $GITHUB_ENV
             echo "CC=/opt/homebrew/bin/gcc-${GCC_VER}" >> $GITHUB_ENV
             echo "CXX=/opt/homebrew/bin/g++-${GCC_VER}" >> $GITHUB_ENV
             echo "/opt/homebrew/bin" >> $GITHUB_PATH
+
+            # Create unversioned gfortran symlink — Homebrew only installs
+            # versioned binaries (gfortran-13, etc.); the dependency checker
+            # looks for plain 'gfortran' via shutil.which().
             ln -sf /opt/homebrew/bin/gfortran-${GCC_VER} /opt/homebrew/bin/gfortran
           fi
-          echo "CMAKE_PREFIX_PATH=/opt/homebrew" >> $GITHUB_ENV
 
-      - name: Set up Miniconda (Windows fallback)
-        if: env.PIXI_OK != 'true' && runner.os == 'Windows'
+          # Help CMake find Homebrew packages (especially udunits)
+          echo "CMAKE_PREFIX_PATH=/opt/homebrew" >> $GITHUB_ENV
+          echo "UDUNITS2_ROOT=/opt/homebrew" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=/opt/homebrew/lib/pkgconfig:${PKG_CONFIG_PATH:-}" >> $GITHUB_ENV
+
+      # ========================================================================
+      # Windows System Dependencies
+      # ========================================================================
+      - name: Set up Miniconda (Windows)
+        if: runner.os == 'Windows'
         uses: conda-incubator/setup-miniconda@v3
         with:
           auto-update-conda: false
           channels: conda-forge
           python-version: ${{ matrix.python-version }}
 
-      - name: Install system dependencies (Windows fallback)
-        if: env.PIXI_OK != 'true' && runner.os == 'Windows'
+      - name: Install system dependencies (Windows)
+        if: runner.os == 'Windows'
         run: |
+          # Core build dependencies
           conda install -y gcc gfortran cmake make netcdf-fortran hdf5 openblas udunits2 numpy gdal boost-cpp proj
+
+          # Expose CONDA_PREFIX so symfluence dependency checker finds conda-installed libs
           echo "CONDA_PREFIX=$CONDA_PREFIX" >> $GITHUB_ENV
+
           echo "CC=gcc" >> $GITHUB_ENV
           echo "CXX=g++" >> $GITHUB_ENV
           echo "FC=gfortran" >> $GITHUB_ENV
