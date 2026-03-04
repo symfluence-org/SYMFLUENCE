@@ -195,13 +195,50 @@ jobs:
           submodules: recursive
 
       - name: Set up Python
-        if: runner.os != 'Windows'
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install system dependencies (Linux)
-        if: runner.os == 'Linux'
+      - name: Set up Pixi
+        id: pixi
+        continue-on-error: true
+        uses: prefix-dev/setup-pixi@v0.9.4
+        with:
+          environments: build
+          cache: true
+
+      - name: Export pixi environment paths
+        if: steps.pixi.outcome == 'success'
+        run: |
+          PIXI_PREFIX="$(pixi run -e build python3 -c 'import sys; print(sys.prefix)')"
+          echo "PIXI_PREFIX=$PIXI_PREFIX"
+          echo "CONDA_PREFIX=$PIXI_PREFIX" >> $GITHUB_ENV
+          echo "CMAKE_PREFIX_PATH=$PIXI_PREFIX" >> $GITHUB_ENV
+          echo "$PIXI_PREFIX/bin" >> $GITHUB_PATH
+          case "${{ runner.os }}" in
+            Windows)
+              echo "CC=gcc" >> $GITHUB_ENV
+              echo "CXX=g++" >> $GITHUB_ENV
+              echo "FC=gfortran" >> $GITHUB_ENV
+              echo "SYMFLUENCE_NO_VENV=true" >> $GITHUB_ENV
+              echo "SYMFLUENCE_PYTHON=python" >> $GITHUB_ENV
+              git config --global core.protectNTFS false
+              ;;
+            macOS)
+              echo "FC=$(pixi run -e build which gfortran)" >> $GITHUB_ENV
+              echo "CC=$(pixi run -e build which gcc)" >> $GITHUB_ENV
+              echo "CXX=$(pixi run -e build which g++)" >> $GITHUB_ENV
+              ;;
+            Linux)
+              echo "CC=mpicc" >> $GITHUB_ENV
+              echo "CXX=mpicxx" >> $GITHUB_ENV
+              echo "FC=gfortran" >> $GITHUB_ENV
+              ;;
+          esac
+          echo "PIXI_OK=true" >> $GITHUB_ENV
+
+      - name: Install system dependencies (Linux fallback)
+        if: env.PIXI_OK != 'true' && runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -211,13 +248,10 @@ jobs:
             libnetcdf-dev libnetcdff-dev \
             libhdf5-dev libudunits2-dev cdo
 
-      - name: Install system dependencies (macOS)
-        if: runner.os == 'macOS'
+      - name: Install system dependencies (macOS fallback)
+        if: env.PIXI_OK != 'true' && runner.os == 'macOS'
         run: |
           brew install gcc cmake open-mpi netcdf netcdf-fortran hdf5 gdal udunits cdo
-
-          # Set up Fortran compiler paths (Homebrew gcc includes gfortran)
-          # Find the gcc version installed by Homebrew
           GCC_VER=$(ls /opt/homebrew/bin/gfortran-* 2>/dev/null | head -1 | sed 's/.*gfortran-//')
           if [ -n "$GCC_VER" ]; then
             echo "FC=/opt/homebrew/bin/gfortran-${GCC_VER}" >> $GITHUB_ENV
@@ -225,14 +259,10 @@ jobs:
             echo "CXX=/opt/homebrew/bin/g++-${GCC_VER}" >> $GITHUB_ENV
             echo "/opt/homebrew/bin" >> $GITHUB_PATH
           fi
-
-          # Help CMake find Homebrew packages (especially udunits)
           echo "CMAKE_PREFIX_PATH=/opt/homebrew" >> $GITHUB_ENV
-          echo "UDUNITS2_ROOT=/opt/homebrew" >> $GITHUB_ENV
-          echo "PKG_CONFIG_PATH=/opt/homebrew/lib/pkgconfig:${PKG_CONFIG_PATH:-}" >> $GITHUB_ENV
 
-      - name: Setup conda (Windows)
-        if: runner.os == 'Windows'
+      - name: Setup conda (Windows fallback)
+        if: env.PIXI_OK != 'true' && runner.os == 'Windows'
         uses: conda-incubator/setup-miniconda@v3
         with:
           python-version: ${{ matrix.python-version }}
@@ -240,19 +270,6 @@ jobs:
           activate-environment: "test-env"
           miniconda-version: "latest"
           channels: conda-forge,defaults
-
-      - name: Free up disk space (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          # Remove unnecessary packages to free up disk space
-          # Note: Do NOT remove $AGENT_TOOLSDIRECTORY - it contains setup-python installation
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /usr/local/share/boost
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo docker image prune --all --force || true
-          df -h
 
       - name: Cache external tools
         id: cache-tools
@@ -267,25 +284,16 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
         run: |
-          # Install package first so CLI is available for build script
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            source "$CONDA/etc/profile.d/conda.sh"
-            conda activate test-env
-          fi
           python -m pip install --upgrade pip
           pip install rich pyyaml
 
-          # Install GDAL Python bindings BEFORE package install (needed for osgeo imports)
-          # Note: Check Windows first — conda's gdal-config is not bash-compatible
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            python -c "import re; c=open('pyproject.toml').read(); c=re.sub(r'\"gdal[^\"]*\",?\s*','',c,flags=re.I); open('pyproject.toml','w').write(c)"
-          elif command -v gdal-config >/dev/null 2>&1; then
+          # Install GDAL Python bindings (pixi provides gdal-config on all platforms)
+          if command -v gdal-config >/dev/null 2>&1; then
             GDAL_VERSION=$(gdal-config --version)
             pip install "gdal>=${GDAL_VERSION},<${GDAL_VERSION%.*}.$((${GDAL_VERSION##*.}+1))"
           fi
 
           pip install -e . || pip install .
-          git checkout pyproject.toml 2>/dev/null || true
           echo "Package pre-installed for build script"
 
       - name: Build external tools
@@ -294,35 +302,6 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
         run: |
-          # Initialize conda for bash on Windows
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            source "$CONDA/etc/profile.d/conda.sh"
-            conda activate test-env
-            export PATH="$(cygpath -u "$CONDA" 2>/dev/null || echo "$CONDA")/condabin:$PATH"
-            # Windows: use conda Python directly, no venv
-            export SYMFLUENCE_NO_VENV="true"
-            export SYMFLUENCE_PYTHON="python"
-          else
-            # Linux/macOS: use setup-python's Python location
-            if [[ -n "${pythonLocation:-}" ]]; then
-              export PATH="${pythonLocation}:${pythonLocation}/bin:$PATH"
-              # Find Python executable - check bin/ and root directory
-              if [[ -x "${pythonLocation}/bin/python3" ]]; then
-                export SYMFLUENCE_PYTHON="${pythonLocation}/bin/python3"
-              elif [[ -x "${pythonLocation}/bin/python" ]]; then
-                export SYMFLUENCE_PYTHON="${pythonLocation}/bin/python"
-              elif [[ -x "${pythonLocation}/python3" ]]; then
-                export SYMFLUENCE_PYTHON="${pythonLocation}/python3"
-              elif [[ -x "${pythonLocation}/python" ]]; then
-                export SYMFLUENCE_PYTHON="${pythonLocation}/python"
-              else
-                export SYMFLUENCE_PYTHON="python3"
-              fi
-            else
-              export SYMFLUENCE_PYTHON="python3"
-            fi
-            echo "Using Python: $SYMFLUENCE_PYTHON ($($SYMFLUENCE_PYTHON --version))"
-          fi
           mkdir -p "${{ env.SYMFLUENCE_DATA }}"
           chmod +x ./scripts/symfluence-bootstrap || true  # chmod may not work on Windows
           ./scripts/symfluence-bootstrap --install
@@ -341,36 +320,19 @@ jobs:
         env:
           RPY2_CFFI_MODE: ABI
         run: |
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            source "$CONDA/etc/profile.d/conda.sh"
-            conda activate test-env
-          fi
           python -m pip install --upgrade pip
 
-          # Install GDAL Python bindings matching system version
-          # Note: Check Windows first — conda's gdal-config is not bash-compatible
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            conda install -c conda-forge gdal-python::gdal -y || true
-          elif command -v gdal-config >/dev/null 2>&1; then
+          # Install GDAL Python bindings (pixi provides gdal-config on all platforms)
+          if command -v gdal-config >/dev/null 2>&1; then
             GDAL_VERSION=$(gdal-config --version)
             pip install "gdal>=${GDAL_VERSION},<${GDAL_VERSION%.*}.$((${GDAL_VERSION##*.}+1))"
           fi
 
           # Install package from pyproject.toml (source of truth for dependencies)
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            # On Windows, GDAL is from conda. Remove it from pyproject.toml before install
-            python -c "open('pyproject.toml', 'w').write('\n'.join([l for l in open('pyproject.toml').readlines() if 'gdal' not in l.lower()]))"
-            pip install -e ".[test]" || pip install -e . || pip install .
-          else
-            pip install -e ".[test]" || pip install -e .
-          fi
+          pip install -e ".[test]" || pip install -e .
 
       - name: Validate binaries
         run: |
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            source "$CONDA/etc/profile.d/conda.sh"
-            conda activate test-env
-          fi
           pytest -v --tb=short -s tests/e2e/test_install_validate.py::test_binary_validation || echo "Binary validation completed with warnings"
 
       # =====================================================================
@@ -505,13 +467,50 @@ jobs:
           submodules: recursive
 
       - name: Set up Python
-        if: matrix.os != 'windows-latest'
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install system dependencies (Linux)
-        if: matrix.os == 'ubuntu-24.04'
+      - name: Set up Pixi
+        id: pixi
+        continue-on-error: true
+        uses: prefix-dev/setup-pixi@v0.9.4
+        with:
+          environments: build
+          cache: true
+
+      - name: Export pixi environment paths
+        if: steps.pixi.outcome == 'success'
+        run: |
+          PIXI_PREFIX="$(pixi run -e build python3 -c 'import sys; print(sys.prefix)')"
+          echo "PIXI_PREFIX=$PIXI_PREFIX"
+          echo "CONDA_PREFIX=$PIXI_PREFIX" >> $GITHUB_ENV
+          echo "CMAKE_PREFIX_PATH=$PIXI_PREFIX" >> $GITHUB_ENV
+          echo "$PIXI_PREFIX/bin" >> $GITHUB_PATH
+          case "${{ runner.os }}" in
+            Windows)
+              echo "CC=gcc" >> $GITHUB_ENV
+              echo "CXX=g++" >> $GITHUB_ENV
+              echo "FC=gfortran" >> $GITHUB_ENV
+              echo "SYMFLUENCE_NO_VENV=true" >> $GITHUB_ENV
+              echo "SYMFLUENCE_PYTHON=python" >> $GITHUB_ENV
+              git config --global core.protectNTFS false
+              ;;
+            macOS)
+              echo "FC=$(pixi run -e build which gfortran)" >> $GITHUB_ENV
+              echo "CC=$(pixi run -e build which gcc)" >> $GITHUB_ENV
+              echo "CXX=$(pixi run -e build which g++)" >> $GITHUB_ENV
+              ;;
+            Linux)
+              echo "CC=mpicc" >> $GITHUB_ENV
+              echo "CXX=mpicxx" >> $GITHUB_ENV
+              echo "FC=gfortran" >> $GITHUB_ENV
+              ;;
+          esac
+          echo "PIXI_OK=true" >> $GITHUB_ENV
+
+      - name: Install system dependencies (Linux fallback)
+        if: env.PIXI_OK != 'true' && runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -521,13 +520,10 @@ jobs:
             libnetcdf-dev libnetcdff-dev \
             libhdf5-dev libudunits2-dev cdo
 
-      - name: Install system dependencies (macOS)
-        if: runner.os == 'macOS'
+      - name: Install system dependencies (macOS fallback)
+        if: env.PIXI_OK != 'true' && runner.os == 'macOS'
         run: |
           brew install gcc cmake open-mpi netcdf netcdf-fortran hdf5 gdal udunits cdo
-
-          # Set up Fortran compiler paths (Homebrew gcc includes gfortran)
-          # Find the gcc version installed by Homebrew
           GCC_VER=$(ls /opt/homebrew/bin/gfortran-* 2>/dev/null | head -1 | sed 's/.*gfortran-//')
           if [ -n "$GCC_VER" ]; then
             echo "FC=/opt/homebrew/bin/gfortran-${GCC_VER}" >> $GITHUB_ENV
@@ -535,14 +531,10 @@ jobs:
             echo "CXX=/opt/homebrew/bin/g++-${GCC_VER}" >> $GITHUB_ENV
             echo "/opt/homebrew/bin" >> $GITHUB_PATH
           fi
-
-          # Help CMake find Homebrew packages (especially udunits)
           echo "CMAKE_PREFIX_PATH=/opt/homebrew" >> $GITHUB_ENV
-          echo "UDUNITS2_ROOT=/opt/homebrew" >> $GITHUB_ENV
-          echo "PKG_CONFIG_PATH=/opt/homebrew/lib/pkgconfig:${PKG_CONFIG_PATH:-}" >> $GITHUB_ENV
 
-      - name: Setup conda (Windows)
-        if: runner.os == 'Windows'
+      - name: Setup conda (Windows fallback)
+        if: env.PIXI_OK != 'true' && runner.os == 'Windows'
         uses: conda-incubator/setup-miniconda@v3
         with:
           python-version: ${{ matrix.python-version }}
@@ -550,19 +542,6 @@ jobs:
           activate-environment: "test-env"
           miniconda-version: "latest"
           channels: conda-forge,defaults
-
-      - name: Free up disk space (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          # Remove unnecessary packages to free up disk space
-          # Note: Do NOT remove $AGENT_TOOLSDIRECTORY - it contains setup-python installation
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /usr/local/share/boost
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo docker image prune --all --force || true
-          df -h
 
       - name: Cache external tools
         id: cache-tools
@@ -585,25 +564,16 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
         run: |
-          # Install package first so CLI is available for build script
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            source "$CONDA/etc/profile.d/conda.sh"
-            conda activate test-env
-          fi
           python -m pip install --upgrade pip
           pip install rich pyyaml
 
-          # Install GDAL Python bindings BEFORE package install (needed for osgeo imports)
-          # Note: Check Windows first — conda's gdal-config is not bash-compatible
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            python -c "import re; c=open('pyproject.toml').read(); c=re.sub(r'\"gdal[^\"]*\",?\s*','',c,flags=re.I); open('pyproject.toml','w').write(c)"
-          elif command -v gdal-config >/dev/null 2>&1; then
+          # Install GDAL Python bindings (pixi provides gdal-config on all platforms)
+          if command -v gdal-config >/dev/null 2>&1; then
             GDAL_VERSION=$(gdal-config --version)
             pip install "gdal>=${GDAL_VERSION},<${GDAL_VERSION%.*}.$((${GDAL_VERSION##*.}+1))"
           fi
 
           pip install -e . || pip install .
-          git checkout pyproject.toml 2>/dev/null || true
           echo "Package pre-installed for build script"
 
       - name: Build external tools
@@ -612,35 +582,6 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
         run: |
-          # Initialize conda for bash on Windows
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            source "$CONDA/etc/profile.d/conda.sh"
-            conda activate test-env
-            export PATH="$(cygpath -u "$CONDA" 2>/dev/null || echo "$CONDA")/condabin:$PATH"
-            # Windows: use conda Python directly, no venv
-            export SYMFLUENCE_NO_VENV="true"
-            export SYMFLUENCE_PYTHON="python"
-          else
-            # Linux/macOS: use setup-python's Python location
-            if [[ -n "${pythonLocation:-}" ]]; then
-              export PATH="${pythonLocation}:${pythonLocation}/bin:$PATH"
-              # Find Python executable - check bin/ and root directory
-              if [[ -x "${pythonLocation}/bin/python3" ]]; then
-                export SYMFLUENCE_PYTHON="${pythonLocation}/bin/python3"
-              elif [[ -x "${pythonLocation}/bin/python" ]]; then
-                export SYMFLUENCE_PYTHON="${pythonLocation}/bin/python"
-              elif [[ -x "${pythonLocation}/python3" ]]; then
-                export SYMFLUENCE_PYTHON="${pythonLocation}/python3"
-              elif [[ -x "${pythonLocation}/python" ]]; then
-                export SYMFLUENCE_PYTHON="${pythonLocation}/python"
-              else
-                export SYMFLUENCE_PYTHON="python3"
-              fi
-            else
-              export SYMFLUENCE_PYTHON="python3"
-            fi
-            echo "Using Python: $SYMFLUENCE_PYTHON ($($SYMFLUENCE_PYTHON --version))"
-          fi
           mkdir -p "${{ env.SYMFLUENCE_DATA }}"
           chmod +x ./scripts/symfluence-bootstrap || true  # chmod may not work on Windows
           ./scripts/symfluence-bootstrap --install
@@ -659,37 +600,21 @@ jobs:
         env:
           RPY2_CFFI_MODE: ABI
         run: |
-          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-            source "$CONDA/etc/profile.d/conda.sh"
-            conda activate test-env
-          fi
           python -m pip install --upgrade pip
 
-          # Install GDAL Python bindings matching system version
-          # Note: Check Windows first — conda's gdal-config is not bash-compatible
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            conda install -c conda-forge gdal-python::gdal -y || true
-          elif command -v gdal-config >/dev/null 2>&1; then
+          # Install GDAL Python bindings (pixi provides gdal-config on all platforms)
+          if command -v gdal-config >/dev/null 2>&1; then
             GDAL_VERSION=$(gdal-config --version)
             pip install "gdal>=${GDAL_VERSION},<${GDAL_VERSION%.*}.$((${GDAL_VERSION##*.}+1))"
           fi
 
           # Install package from pyproject.toml (source of truth for dependencies)
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            python -c "open('pyproject.toml', 'w').write('\n'.join([l for l in open('pyproject.toml').readlines() if 'gdal' not in l.lower()]))"
-            pip install -e ".[test]" || pip install -e . || pip install .
-          else
-            pip install -e ".[test]" || pip install -e .
-          fi
+          pip install -e ".[test]" || pip install -e .
           # Install pytest-xdist for parallel execution
           pip install pytest-xdist
 
       - name: Run integration tests
         run: |
-          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-            source "$CONDA/etc/profile.d/conda.sh"
-            conda activate test-env
-          fi
           # Run integration tests in parallel (skip slow tests that download large datasets)
           pytest -v --tb=short -m "integration and not slow" -n auto tests/integration/ || echo "Integration tests completed"
 

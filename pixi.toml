@@ -103,19 +103,22 @@ boost-cpp = "*"
 proj = "*"
 expat = "*"
 libxml2 = "*"
-m4 = "*"
-flex = "*"
-perl = "*"
 meson = "*"
 
 [feature.build.target.linux-64.dependencies]
 openmpi = "*"
 patchelf = "*"
+m4 = "*"
+flex = "*"
+perl = "*"
 
 [feature.build.target.osx-arm64.dependencies]
 openmpi = "*"
+m4 = "*"
+flex = "*"
+perl = "*"
 
 [environments]
 default = { features = [], solve-group = "default" }
 test = { features = ["test"], solve-group = "default" }
-build = { features = ["build"], solve-group = "default" }
+build = { features = ["build"] }

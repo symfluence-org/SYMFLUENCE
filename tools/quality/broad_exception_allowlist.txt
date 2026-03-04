@@ -47,20 +47,21 @@ src/symfluence/cli/external_tools_config.py:431:except Exception:  # noqa: BLE00
 src/symfluence/cli/external_tools_config.py:436:except Exception as exc:  # noqa: BLE001
 src/symfluence/cli/preset_registry.py:163:except Exception:  # noqa: BLE001
 src/symfluence/cli/preset_registry.py:173:except Exception:  # noqa: BLE001
-src/symfluence/cli/services/tool_installer.py:1016:except Exception:  # noqa: BLE001 — top-level fallback
-src/symfluence/cli/services/tool_installer.py:1042:except Exception:  # noqa: BLE001 — top-level fallback
+src/symfluence/cli/services/tool_installer.py:1003:except Exception:  # noqa: BLE001 — top-level fallback
+src/symfluence/cli/services/tool_installer.py:1030:except Exception:  # noqa: BLE001 — top-level fallback
+src/symfluence/cli/services/tool_installer.py:1056:except Exception:  # noqa: BLE001 — top-level fallback
 src/symfluence/cli/services/tool_installer.py:214:except Exception:  # noqa: BLE001 — top-level fallback
-src/symfluence/cli/services/tool_installer.py:615:except Exception as e:  # noqa: BLE001 — top-level fallback
-src/symfluence/cli/services/tool_installer.py:829:except Exception:  # noqa: BLE001 — top-level fallback
-src/symfluence/cli/services/tool_installer.py:868:except Exception as e:  # noqa: BLE001 — top-level fallback
-src/symfluence/cli/services/tool_installer.py:989:except Exception:  # noqa: BLE001 — top-level fallback
+src/symfluence/cli/services/tool_installer.py:629:except Exception as e:  # noqa: BLE001 — top-level fallback
+src/symfluence/cli/services/tool_installer.py:843:except Exception:  # noqa: BLE001 — top-level fallback
+src/symfluence/cli/services/tool_installer.py:882:except Exception as e:  # noqa: BLE001 — top-level fallback
 src/symfluence/cli/services/tool_validator.py:150:except Exception as e:  # noqa: BLE001 — top-level fallback
 src/symfluence/cli/services/tool_validator.py:431:except Exception as test_error:  # noqa: BLE001 — top-level fallback
 src/symfluence/core/_bootstrap.py:172:except Exception:  # noqa: BLE001 — never let a broken plugin crash the framework
 src/symfluence/core/base_manager.py:145:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/core/config/models/root.py:308:except Exception as e:  # noqa: BLE001 — configuration resilience
 src/symfluence/core/exceptions.py:332:except Exception as e:  # noqa: BLE001 — error handler implementation
-src/symfluence/core/hdf5_safety.py:290:except Exception:  # noqa: BLE001 — must-not-raise contract
+src/symfluence/core/hdf5_safety.py:259:except Exception:  # noqa: BLE001
+src/symfluence/core/hdf5_safety.py:386:except Exception:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/core/profiling/io_profiler.py:248:except Exception as e:  # noqa: BLE001 — monitoring thread
 src/symfluence/core/profiling/io_profiler.py:286:except Exception as e:  # noqa: BLE001 — monitoring thread
 src/symfluence/core/profiling/io_profiler.py:331:except Exception as e:  # noqa: BLE001 — monitoring thread
@@ -79,15 +80,15 @@ src/symfluence/core/registry.py:373:except Exception:  # noqa: BLE001 — adviso
 src/symfluence/core/system.py:304:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/core/system.py:414:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/core/system.py:435:except Exception as e:  # noqa: BLE001 — must-not-raise contract
-src/symfluence/coupling/adapters/process_adapters.py:151:except Exception as e:  # noqa: BLE001 — must-not-raise contract
-src/symfluence/coupling/adapters/process_adapters.py:172:except Exception as e:  # noqa: BLE001 — must-not-raise contract
-src/symfluence/coupling/adapters/process_adapters.py:229:except Exception as e:  # noqa: BLE001 — must-not-raise contract
-src/symfluence/coupling/adapters/process_adapters.py:255:except Exception as e:  # noqa: BLE001 — must-not-raise contract
-src/symfluence/coupling/adapters/process_adapters.py:313:except Exception as e:  # noqa: BLE001 — must-not-raise contract
-src/symfluence/coupling/adapters/process_adapters.py:337:except Exception as e:  # noqa: BLE001 — must-not-raise contract
-src/symfluence/coupling/adapters/process_adapters.py:382:except Exception as e:  # noqa: BLE001 — must-not-raise contract
-src/symfluence/coupling/adapters/process_adapters.py:411:except Exception as e:  # noqa: BLE001 — must-not-raise contract
-src/symfluence/coupling/adapters/process_adapters.py:459:except Exception as e:  # noqa: BLE001 — must-not-raise contract
+src/symfluence/coupling/adapters/process_adapters.py:148:except Exception as e:  # noqa: BLE001 — must-not-raise contract
+src/symfluence/coupling/adapters/process_adapters.py:169:except Exception as e:  # noqa: BLE001 — must-not-raise contract
+src/symfluence/coupling/adapters/process_adapters.py:226:except Exception as e:  # noqa: BLE001 — must-not-raise contract
+src/symfluence/coupling/adapters/process_adapters.py:252:except Exception as e:  # noqa: BLE001 — must-not-raise contract
+src/symfluence/coupling/adapters/process_adapters.py:310:except Exception as e:  # noqa: BLE001 — must-not-raise contract
+src/symfluence/coupling/adapters/process_adapters.py:334:except Exception as e:  # noqa: BLE001 — must-not-raise contract
+src/symfluence/coupling/adapters/process_adapters.py:379:except Exception as e:  # noqa: BLE001 — must-not-raise contract
+src/symfluence/coupling/adapters/process_adapters.py:408:except Exception as e:  # noqa: BLE001 — must-not-raise contract
+src/symfluence/coupling/adapters/process_adapters.py:456:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/coupling/adapters/process_adapters.py:489:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/coupling/adapters/process_adapters.py:535:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/coupling/adapters/process_adapters.py:551:except Exception as e:  # noqa: BLE001 — must-not-raise contract

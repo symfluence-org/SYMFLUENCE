@@ -74,25 +74,26 @@ jobs:
           ./scripts/check_version_sync.sh
 
       # ========================================================================
-      # Unified Build Dependencies (pixi)
+      # Build Dependencies — pixi (primary) with apt/brew/conda fallback
       # ========================================================================
       - name: Set up Pixi
+        id: pixi
         uses: prefix-dev/setup-pixi@v0.9.4
         with:
           environments: build
           cache: true
+        continue-on-error: true
 
       - name: Export pixi environment paths
+        if: steps.pixi.outcome == 'success'
         run: |
-          # Get pixi env prefix
           PIXI_PREFIX="$(pixi run -e build python3 -c 'import sys; print(sys.prefix)')"
           echo "PIXI_PREFIX=$PIXI_PREFIX"
           echo "CONDA_PREFIX=$PIXI_PREFIX" >> $GITHUB_ENV
           echo "CMAKE_PREFIX_PATH=$PIXI_PREFIX" >> $GITHUB_ENV
-          # Add pixi env bin to PATH so compilers/tools are found by build scripts
           echo "$PIXI_PREFIX/bin" >> $GITHUB_PATH
+          echo "PIXI_OK=true" >> $GITHUB_ENV
 
-          # Platform-specific compiler and env config
           case "${{ runner.os }}" in
             Windows)
               echo "CC=gcc" >> $GITHUB_ENV
@@ -100,7 +101,6 @@ jobs:
               echo "FC=gfortran" >> $GITHUB_ENV
               echo "SYMFLUENCE_NO_VENV=true" >> $GITHUB_ENV
               echo "SYMFLUENCE_PYTHON=python" >> $GITHUB_ENV
-              # t-route has colons in filenames; NTFS protection must be off
               git config --global core.protectNTFS false
               ;;
             macOS)
@@ -114,6 +114,57 @@ jobs:
               echo "FC=gfortran" >> $GITHUB_ENV
               ;;
           esac
+
+      # --- Fallback: platform-specific package managers if pixi failed ---
+      - name: Install system dependencies (Linux fallback)
+        if: env.PIXI_OK != 'true' && runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential gfortran cmake \
+            openmpi-bin libopenmpi-dev \
+            gdal-bin libgdal-dev \
+            libnetcdf-dev libnetcdff-dev \
+            libhdf5-dev libudunits2-dev \
+            libopenblas-dev liblapack-dev \
+            patchelf \
+            tcl-dev libxml2-utils libexpat1-dev
+          echo "CC=mpicc" >> $GITHUB_ENV
+          echo "CXX=mpicxx" >> $GITHUB_ENV
+          echo "FC=gfortran" >> $GITHUB_ENV
+
+      - name: Install system dependencies (macOS fallback)
+        if: env.PIXI_OK != 'true' && runner.os == 'macOS'
+        run: |
+          brew install gcc cmake open-mpi netcdf netcdf-fortran hdf5 gdal udunits m4 libxml2 flex
+          GCC_VER=$(ls /opt/homebrew/bin/gfortran-* 2>/dev/null | sort -t- -k2 -n | tail -1 | sed 's/.*gfortran-//')
+          if [ -n "$GCC_VER" ]; then
+            echo "FC=/opt/homebrew/bin/gfortran-${GCC_VER}" >> $GITHUB_ENV
+            echo "CC=/opt/homebrew/bin/gcc-${GCC_VER}" >> $GITHUB_ENV
+            echo "CXX=/opt/homebrew/bin/g++-${GCC_VER}" >> $GITHUB_ENV
+            echo "/opt/homebrew/bin" >> $GITHUB_PATH
+            ln -sf /opt/homebrew/bin/gfortran-${GCC_VER} /opt/homebrew/bin/gfortran
+          fi
+          echo "CMAKE_PREFIX_PATH=/opt/homebrew" >> $GITHUB_ENV
+
+      - name: Set up Miniconda (Windows fallback)
+        if: env.PIXI_OK != 'true' && runner.os == 'Windows'
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-update-conda: false
+          channels: conda-forge
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install system dependencies (Windows fallback)
+        if: env.PIXI_OK != 'true' && runner.os == 'Windows'
+        run: |
+          conda install -y gcc gfortran cmake make netcdf-fortran hdf5 openblas udunits2 numpy gdal boost-cpp proj
+          echo "CONDA_PREFIX=$CONDA_PREFIX" >> $GITHUB_ENV
+          echo "CC=gcc" >> $GITHUB_ENV
+          echo "CXX=g++" >> $GITHUB_ENV
+          echo "FC=gfortran" >> $GITHUB_ENV
+          echo "SYMFLUENCE_NO_VENV=true" >> $GITHUB_ENV
+          echo "SYMFLUENCE_PYTHON=python" >> $GITHUB_ENV
 
       - name: Install MS-MPI (Windows)
         if: runner.os == 'Windows'
