@@ -205,6 +205,23 @@ class ModelConfig(BaseModel):
                 if values.get(field_name) is None:
                     values[field_name] = config_cls()
 
+        # Forward deprecated ENABLE_* keys into the ngen sub-dict so
+        # NGENConfig._migrate_enable_flags can pick them up (handles flat
+        # configs where these land at the ModelConfig level).
+        _enable_keys = ('ENABLE_SLOTH', 'ENABLE_PET', 'ENABLE_NOAH', 'ENABLE_CFE')
+        found = {k: values[k] for k in _enable_keys if k in values}
+        if found:
+            ngen_dict = values.get('ngen')
+            if ngen_dict is None:
+                ngen_dict = {}
+                values['ngen'] = ngen_dict
+            if isinstance(ngen_dict, dict):
+                for k, v in found.items():
+                    ngen_dict.setdefault(k, v)
+            # Remove from top level so Pydantic doesn't reject them
+            for k in found:
+                values.pop(k, None)
+
         return values
 
 __all__ = [

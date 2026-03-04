@@ -615,7 +615,10 @@ model:
     # Active catchment for single-catchment runs
     active_catchment_id: null
 
-    # Modules to calibrate: CFE, NOAH, PET
+    # Modules to enable: SLOTH, PET, NOAH, CFE
+    modules_selected: "SLOTH,PET,CFE"
+
+    # Modules to calibrate (must be subset of modules_selected)
     modules_to_calibrate: "CFE"
 
     # CFE module parameters

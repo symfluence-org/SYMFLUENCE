@@ -148,13 +148,13 @@ class NgenParameterManager(BaseParameterManager):
         # Load config-specified bounds per module and merge into base_bounds
         # (preserves transform metadata via _apply_config_bounds_override)
         config_bounds_keys = {
-            'CFE': 'NGEN_CFE_PARAM_BOUNDS',
-            'NOAH': 'NGEN_NOAH_PARAM_BOUNDS',
-            'PET': 'NGEN_PET_PARAM_BOUNDS',
+            'CFE': ('NGEN_CFE_PARAM_BOUNDS', lambda: self.config.model.ngen.cfe_param_bounds),
+            'NOAH': ('NGEN_NOAH_PARAM_BOUNDS', lambda: self.config.model.ngen.noah_param_bounds),
+            'PET': ('NGEN_PET_PARAM_BOUNDS', lambda: self.config.model.ngen.pet_param_bounds),
         }
-        for module, config_key in config_bounds_keys.items():
+        for module, (config_key, typed_accessor) in config_bounds_keys.items():
             module_bounds = self._get_config_value(
-                lambda ck=config_key: None,  # type: ignore[misc]
+                typed_accessor,
                 default=None,
                 dict_key=config_key
             )

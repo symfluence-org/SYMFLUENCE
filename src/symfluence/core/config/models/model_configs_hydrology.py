@@ -3,9 +3,10 @@
 
 """Hydrological model configuration classes."""
 
+import warnings
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .base import FROZEN_CONFIG
 from .model_config_types import SpatialModeType
@@ -283,12 +284,79 @@ class NGENConfig(BaseModel):
         alias='NGEN_PET_PARAMS_TO_CALIBRATE'
     )
     active_catchment_id: Optional[str] = Field(default=None, alias='NGEN_ACTIVE_CATCHMENT_ID')
-    # Module enable flags
-    enable_sloth: bool = Field(default=True, alias='ENABLE_SLOTH')
-    enable_pet: bool = Field(default=True, alias='ENABLE_PET')
-    enable_noah: bool = Field(default=False, alias='ENABLE_NOAH')
-    enable_cfe: bool = Field(default=True, alias='ENABLE_CFE')
+    # Parameter bounds overrides (per-module)
+    cfe_param_bounds: Optional[Dict[str, Any]] = Field(default=None, alias='NGEN_CFE_PARAM_BOUNDS')
+    noah_param_bounds: Optional[Dict[str, Any]] = Field(default=None, alias='NGEN_NOAH_PARAM_BOUNDS')
+    pet_param_bounds: Optional[Dict[str, Any]] = Field(default=None, alias='NGEN_PET_PARAM_BOUNDS')
+    # Module selection (replaces individual ENABLE_* flags)
+    modules_selected: str = Field(default='SLOTH,PET,CFE', alias='NGEN_MODULES_SELECTED')
     noah_et_fallback: str = Field(default='ETRAN', alias='NGEN_NOAH_ET_FALLBACK')
+
+    @model_validator(mode='before')
+    @classmethod
+    def _migrate_enable_flags(cls, values: Any) -> Any:
+        """Auto-migrate deprecated ENABLE_* flags to NGEN_MODULES_SELECTED."""
+        if not isinstance(values, dict):
+            return values
+
+        # Check for any legacy ENABLE_* keys
+        enable_keys = {
+            'ENABLE_SLOTH': ('SLOTH', True),
+            'ENABLE_PET': ('PET', True),
+            'ENABLE_NOAH': ('NOAH', False),
+            'ENABLE_CFE': ('CFE', True),
+        }
+        found_legacy = {k: v for k, v in enable_keys.items() if k in values}
+
+        if not found_legacy:
+            return values
+
+        # Only migrate if NGEN_MODULES_SELECTED is not already explicitly set
+        if 'NGEN_MODULES_SELECTED' in values or 'modules_selected' in values:
+            # Remove stale legacy keys so they don't cause Pydantic errors
+            for k in found_legacy:
+                values.pop(k, None)
+            return values
+
+        # Build modules list from legacy flags
+        modules = []
+        for key, (mod_name, default_on) in enable_keys.items():
+            raw = values.get(key, default_on)
+            # Handle string booleans from YAML
+            if isinstance(raw, str):
+                enabled = raw.lower() in ('true', '1', 'yes')
+            else:
+                enabled = bool(raw)
+            if enabled:
+                modules.append(mod_name)
+
+        values['NGEN_MODULES_SELECTED'] = ','.join(modules)
+
+        # Remove legacy keys
+        for k in found_legacy:
+            values.pop(k, None)
+
+        warnings.warn(
+            "ENABLE_SLOTH/ENABLE_PET/ENABLE_NOAH/ENABLE_CFE are deprecated. "
+            f"Use NGEN_MODULES_SELECTED: '{values['NGEN_MODULES_SELECTED']}' instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return values
+
+    @model_validator(mode='after')
+    def _validate_calibrate_subset(self) -> 'NGENConfig':
+        """Ensure modules_to_calibrate is a subset of modules_selected."""
+        selected = {m.strip().upper() for m in self.modules_selected.split(',') if m.strip()}
+        calibrate = {m.strip().upper() for m in self.modules_to_calibrate.split(',') if m.strip()}
+        not_selected = calibrate - selected
+        if not_selected:
+            raise ValueError(
+                f"NGEN_MODULES_TO_CALIBRATE contains modules not in NGEN_MODULES_SELECTED: "
+                f"{not_selected}. Either add them to NGEN_MODULES_SELECTED or remove them "
+                f"from NGEN_MODULES_TO_CALIBRATE."
+            )
+        return self
     run_troute: bool = Field(default=True, alias='NGEN_RUN_TROUTE')
 
 

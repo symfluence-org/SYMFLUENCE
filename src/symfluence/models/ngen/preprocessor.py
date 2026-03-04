@@ -53,15 +53,14 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
         Args:
             config: Configuration dictionary or SymfluenceConfig object containing
-                NGEN settings, module enable flags, and installation paths.
+                NGEN settings, module selection, and installation paths.
             logger: Logger instance for status messages and debugging.
 
         Note:
-            Modules can be enabled/disabled via NGEN config keys:
-            - ENABLE_SLOTH: Ice fraction and soil moisture (default: True)
-            - ENABLE_PET: Evapotranspiration module (default: True)
-            - ENABLE_NOAH: Noah-OWP alternative ET (default: False)
-            - ENABLE_CFE: Core CFE runoff generation (default: True)
+            Modules are selected via ``NGEN_MODULES_SELECTED`` (comma-separated
+            string, e.g. ``"SLOTH,PET,CFE"``).  A module is only enabled when
+            it appears in the selection AND the corresponding shared library
+            exists on disk.
         """
         # Initialize base class (handles standard paths and directories)
         super().__init__(config, logger)
@@ -82,22 +81,23 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             if not exists:
                 self.logger.warning(f"NGEN module library missing for {name}: {path}")
 
-        # Determine which modules to include based on config AND library availability.
-        # A module is only enabled when the config requests it AND the .so exists.
-        # Config flags act as an upper bound; missing libraries force-disable.
-        _module_flags = {
-            'SLOTH': (lambda: self.config.model.ngen.enable_sloth, True),
-            'PET':   (lambda: self.config.model.ngen.enable_pet, True),
-            'NOAH':  (lambda: self.config.model.ngen.enable_noah, False),
-            'CFE':   (lambda: self.config.model.ngen.enable_cfe, True),
-        }
+        # Determine which modules to include based on NGEN_MODULES_SELECTED
+        # AND library availability.  A module is only enabled when it appears
+        # in the selection AND the .so/.dylib exists on disk.
+        modules_selected_str = self._get_config_value(
+            lambda: self.config.model.ngen.modules_selected,
+            default='SLOTH,PET,CFE',
+        )
+        _selected = {m.strip().upper() for m in modules_selected_str.split(',') if m.strip()}
+
+        _all_modules = ['SLOTH', 'PET', 'NOAH', 'CFE']
         _resolved = {}
-        for mod_name, (accessor, default_on) in _module_flags.items():
-            config_enabled = self._get_config_value(accessor, default=default_on)
+        for mod_name in _all_modules:
+            config_enabled = mod_name in _selected
             lib_exists = self._available_modules.get(mod_name, False)
             if config_enabled and not lib_exists:
                 self.logger.warning(
-                    f"{mod_name} is enabled in config but library not found — "
+                    f"{mod_name} is selected in NGEN_MODULES_SELECTED but library not found — "
                     f"disabling to prevent ngen runtime failure"
                 )
             _resolved[mod_name] = config_enabled and lib_exists
@@ -134,7 +134,7 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             self.logger.info(
                 f"NOAH enabled but PET disabled: CFE will receive NOAH's {self._noah_et_fallback} "
                 f"(actual ET) instead of potential ET. For physically correct potential ET, "
-                f"enable PET module (ENABLE_PET: True)."
+                f"add PET to NGEN_MODULES_SELECTED."
             )
         else:
             self._noah_et_fallback = None
