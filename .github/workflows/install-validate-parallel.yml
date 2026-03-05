@@ -132,6 +132,7 @@ jobs:
             gdal-bin libgdal-dev libproj-dev \
             libnetcdf-dev libnetcdff-dev \
             libhdf5-dev hdf5-tools libudunits2-dev \
+            libexpat1-dev \
             libopenblas-dev liblapack-dev \
             libfl-dev libbsd-dev \
             r-base libcurl4-openssl-dev \
@@ -386,7 +387,7 @@ jobs:
             gdal-bin libgdal-dev libproj-dev \
             openmpi-bin libopenmpi-dev \
             libnetcdf-dev libnetcdff-dev libhdf5-dev libudunits2-dev \
-            libfl-dev libbsd-dev cdo
+            libexpat1-dev libfl-dev libbsd-dev cdo
 
       - name: Download installation
         uses: actions/download-artifact@v4
@@ -535,7 +536,7 @@ jobs:
             gdal-bin libgdal-dev libproj-dev \
             openmpi-bin libopenmpi-dev \
             libnetcdf-dev libnetcdff-dev libhdf5-dev libudunits2-dev \
-            libfl-dev libbsd-dev cdo
+            libexpat1-dev libfl-dev libbsd-dev cdo
 
       - name: Download installation
         uses: actions/download-artifact@v4
@@ -636,7 +637,7 @@ jobs:
             gdal-bin libgdal-dev libproj-dev \
             openmpi-bin libopenmpi-dev \
             libnetcdf-dev libnetcdff-dev libhdf5-dev libudunits2-dev \
-            libfl-dev libbsd-dev cdo
+            libexpat1-dev libfl-dev libbsd-dev cdo
 
       - name: Download installation
         uses: actions/download-artifact@v4

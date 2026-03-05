@@ -786,22 +786,30 @@ detect_or_build_udunits2() {
         UDUNITS2_FOUND=true
     fi
 
-    # Try common system locations
+    # Try common system locations (including multiarch lib dirs on Debian/Ubuntu)
     if [ "$UDUNITS2_FOUND" = false ]; then
         for try_path in /usr /usr/local /opt/udunits2 $HOME/.local; do
-            if [ -f "$try_path/include/udunits2.h" ] && \
-               ([ -f "$try_path/lib/libudunits2.so" ] || [ -f "$try_path/lib/libudunits2.dylib" ] || [ -f "$try_path/lib/libudunits2.a" ]); then
+            if [ ! -f "$try_path/include/udunits2.h" ]; then
+                continue
+            fi
+            # Search lib/, lib/<multiarch>/, and lib64/ for the library
+            _ud_lib=""
+            _ud_libdir=""
+            for _ldir in "$try_path/lib" "$try_path/lib/$(uname -m)-linux-gnu" "$try_path/lib64"; do
+                if [ -f "$_ldir/libudunits2.so" ]; then
+                    _ud_lib="$_ldir/libudunits2.so"; _ud_libdir="$_ldir"; break
+                elif [ -f "$_ldir/libudunits2.dylib" ]; then
+                    _ud_lib="$_ldir/libudunits2.dylib"; _ud_libdir="$_ldir"; break
+                elif [ -f "$_ldir/libudunits2.a" ]; then
+                    _ud_lib="$_ldir/libudunits2.a"; _ud_libdir="$_ldir"; break
+                fi
+            done
+            if [ -n "$_ud_lib" ]; then
                 UDUNITS2_DIR="$try_path"
                 UDUNITS2_INCLUDE_DIR="$try_path/include"
-                if [ -f "$try_path/lib/libudunits2.so" ]; then
-                    UDUNITS2_LIBRARY="$try_path/lib/libudunits2.so"
-                elif [ -f "$try_path/lib/libudunits2.dylib" ]; then
-                    UDUNITS2_LIBRARY="$try_path/lib/libudunits2.dylib"
-                else
-                    UDUNITS2_LIBRARY="$try_path/lib/libudunits2.a"
-                fi
-                EXPAT_LIB_DIR="$try_path/lib"
-                echo "Found UDUNITS2 at: $try_path"
+                UDUNITS2_LIBRARY="$_ud_lib"
+                EXPAT_LIB_DIR="$_ud_libdir"
+                echo "Found UDUNITS2 at: $try_path (lib: $_ud_libdir)"
                 UDUNITS2_FOUND=true
                 break
             fi
