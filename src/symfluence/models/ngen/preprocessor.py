@@ -146,6 +146,22 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         self.logger.info(f"  NOAH-OWP: {'ENABLED' if self._include_noah else 'DISABLED'}")
         self.logger.info(f"  CFE: {'ENABLED' if self._include_cfe else 'DISABLED'}")
 
+    def _detect_npm_lib_dir(self) -> Optional[Path]:
+        """Detect the npm-installed symfluence dist/lib/ directory."""
+        import subprocess as _sp
+        try:
+            result = _sp.run(
+                ["npm", "root", "-g"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if result.returncode == 0:
+                lib_dir = Path(result.stdout.strip()) / "symfluence" / "dist" / "lib"
+                if lib_dir.is_dir():
+                    return lib_dir
+        except (FileNotFoundError, OSError, _sp.TimeoutExpired, _sp.SubprocessError):
+            pass
+        return None
+
     def _resolve_ngen_lib_paths(self) -> Dict[str, Path]:
         lib_ext = ".dylib" if sys.platform == "darwin" else ".so"
         install_path = self._get_config_value(
@@ -153,6 +169,33 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             default='default'
         )
 
+        # Module library names (shared across all resolution strategies)
+        module_libs = {
+            "SLOTH": f"libslothmodel{lib_ext}",
+            "PET": f"libpetbmi{lib_ext}",
+            "NOAH": f"libsurfacebmi{lib_ext}",
+            "CFE": f"libcfebmi{lib_ext}",
+        }
+
+        # --- 1. Try npm-bundled libraries first (when install_path is default) ---
+        if install_path == 'default':
+            npm_lib_dir = self._detect_npm_lib_dir()
+            if npm_lib_dir is not None:
+                npm_paths = {}
+                all_found = True
+                for name, libname in module_libs.items():
+                    candidate = npm_lib_dir / libname
+                    if candidate.exists():
+                        npm_paths[name] = candidate
+                    else:
+                        all_found = False
+                if all_found:
+                    self.logger.info(f"Resolved NGEN libraries from npm bundle: {npm_lib_dir}")
+                    return npm_paths
+                else:
+                    self.logger.info("npm bundle found but missing some NGEN libraries, falling back")
+
+        # --- 2. Resolve from install path (explicit or default fallback) ---
         if install_path == 'default':
             ngen_base = self.data_dir / 'installs' / 'ngen'
         else:

@@ -12,6 +12,8 @@ import shutil
 from pathlib import Path
 from typing import List, Optional
 
+from symfluence.core.exceptions import ModelExecutionError
+from symfluence.core.mpi_utils import find_mpirun
 from symfluence.models.base import BaseModelRunner
 from symfluence.models.registry import ModelRegistry
 
@@ -46,7 +48,13 @@ class WRFHydroRunner(BaseModelRunner):
             lambda: self.config.compute.mpi_processes,
             default=1,
         )
-        return ['mpirun', '-np', str(mpi_procs), str(self.wrfhydro_exe)]
+        mpirun = find_mpirun(self.wrfhydro_exe)
+        if mpirun is None:
+            raise ModelExecutionError(
+                "MPI launcher (mpirun/mpiexec) not found. "
+                "Install OpenMPI or use the npm package which bundles it."
+            )
+        return [mpirun, '-np', str(mpi_procs), str(self.wrfhydro_exe)]
 
     def _prepare_run(self) -> None:
         """Copy namelists, symlink domain/routing/TBL files to output dir."""

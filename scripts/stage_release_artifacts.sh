@@ -565,6 +565,68 @@ else
 fi
 
 # ============================================================================
+# Stage MPI Runtime (for WRF-Hydro, ParFlow, CLMParFlow, TauDEM)
+# ============================================================================
+# If any MPI-dependent model was staged, bundle the MPI runtime so npm users
+# get a fully working MPI stack without a separate OpenMPI install.
+
+MPI_NEEDED=0
+for mpi_dep_bin in wrf_hydro.exe parflow pitremove areadinf; do
+    if [ -f "bin/$mpi_dep_bin" ]; then
+        MPI_NEEDED=1
+        break
+    fi
+done
+
+if [ $MPI_NEEDED -eq 1 ]; then
+    print_info "Staging MPI runtime..."
+
+    # Find system mpirun
+    MPIRUN_SRC="$(command -v mpirun 2>/dev/null || true)"
+    if [ -n "$MPIRUN_SRC" ]; then
+        # Resolve symlinks to get the real binary
+        MPIRUN_REAL="$(_realpath "$MPIRUN_SRC")"
+        MPIRUN_BINDIR="$(dirname "$MPIRUN_REAL")"
+        MPIRUN_PREFIX="$(dirname "$MPIRUN_BINDIR")"
+
+        # Stage mpirun
+        if [ ! -f "bin/mpirun" ]; then
+            cp -L "$MPIRUN_REAL" "bin/mpirun"
+            chmod +x "bin/mpirun"
+            STAGED_COUNT=$((STAGED_COUNT + 1))
+            print_success "Staged mpirun (from $MPIRUN_REAL)"
+        fi
+
+        # Stage prted (OpenMPI 5.x) or orted (OpenMPI 4.x) — the daemon
+        # mpirun forks for local launches
+        for daemon in prted orted; do
+            DAEMON_PATH="$MPIRUN_BINDIR/$daemon"
+            if [ -f "$DAEMON_PATH" ] && [ ! -f "bin/$daemon" ]; then
+                cp -L "$DAEMON_PATH" "bin/$daemon"
+                chmod +x "bin/$daemon"
+                STAGED_COUNT=$((STAGED_COUNT + 1))
+                print_success "Staged $daemon (MPI daemon)"
+            fi
+        done
+
+        # Copy share/openmpi/ and share/prte/ data files (help texts, ~1 MB)
+        for share_subdir in openmpi prte; do
+            SHARE_SRC="$MPIRUN_PREFIX/share/$share_subdir"
+            if [ -d "$SHARE_SRC" ]; then
+                mkdir -p "share/$share_subdir"
+                cp -R "$SHARE_SRC/"* "share/$share_subdir/" 2>/dev/null || true
+                print_success "Staged share/$share_subdir/ data files"
+            fi
+        done
+    else
+        print_warning "mpirun not found on PATH — MPI runtime not bundled"
+        print_warning "MPI-dependent models will require a system MPI install"
+    fi
+else
+    print_info "No MPI-dependent models staged — skipping MPI runtime"
+fi
+
+# ============================================================================
 # Stage additional tools (if needed in future)
 # ============================================================================
 
@@ -582,6 +644,36 @@ if [ -d "$DATATOOL_DIR" ] && [ -f "$DATATOOL_DIR/extract-dataset.sh" ]; then
     print_info "Staging Datatool..."
     stage_binary "$DATATOOL_DIR/extract-dataset.sh" "extract-dataset.sh" "Datatool"
     stage_license "$DATATOOL_DIR" "Datatool"
+fi
+
+# ============================================================================
+# Stage udunits2 XML data (required by NGEN, SUMMA, and other models)
+# ============================================================================
+print_info "Staging udunits2 data files..."
+
+UDUNITS_XML=""
+# Search common locations for udunits2.xml
+for udunits_candidate in \
+    /opt/homebrew/share/udunits/udunits2.xml \
+    /opt/homebrew/opt/udunits/share/udunits/udunits2.xml \
+    /usr/share/xml/udunits/udunits2.xml \
+    /usr/local/share/udunits/udunits2.xml \
+    "${CONDA_PREFIX:-/dev/null}/share/udunits/udunits2.xml"; do
+    if [ -f "$udunits_candidate" ]; then
+        UDUNITS_XML="$udunits_candidate"
+        break
+    fi
+done
+
+if [ -n "$UDUNITS_XML" ]; then
+    UDUNITS_SRC_DIR="$(dirname "$UDUNITS_XML")"
+    mkdir -p "share/udunits"
+    cp "$UDUNITS_SRC_DIR"/*.xml "share/udunits/" 2>/dev/null || true
+    UDUNITS_COUNT="$(ls share/udunits/*.xml 2>/dev/null | wc -l | tr -d ' ')"
+    print_success "Staged $UDUNITS_COUNT udunits2 XML files from $UDUNITS_SRC_DIR"
+else
+    print_warning "udunits2.xml not found — NGEN/SUMMA may fail at runtime"
+    print_warning "Install udunits: brew install udunits (macOS) or apt install libudunits2-dev (Linux)"
 fi
 
 # ============================================================================

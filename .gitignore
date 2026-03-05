@@ -47,6 +47,9 @@ env/
 !0_config_files/README.md
 
 
+# Claude Code
+CLAUDE.md
+
 # IDE
 .idea/
 .vscode/

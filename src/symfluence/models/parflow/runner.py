@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 from symfluence.core.exceptions import ModelExecutionError, symfluence_error_handler
+from symfluence.core.mpi_utils import find_mpirun
 from symfluence.models.base.base_runner import BaseModelRunner
 from symfluence.models.registry import ModelRegistry
 
@@ -148,7 +149,13 @@ class ParFlowRunner(BaseModelRunner):
             # Build command
             num_procs = self._get_num_procs()
             if num_procs > 1:
-                cmd = ['mpirun', '-np', str(num_procs), str(pf_exe), runname]
+                mpirun = find_mpirun(pf_exe)
+                if mpirun is None:
+                    raise ModelExecutionError(
+                        "MPI launcher (mpirun/mpiexec) not found. "
+                        "Install OpenMPI or use the npm package which bundles it."
+                    )
+                cmd = [mpirun, '-np', str(num_procs), str(pf_exe), runname]
             else:
                 cmd = [str(pf_exe), runname]
 

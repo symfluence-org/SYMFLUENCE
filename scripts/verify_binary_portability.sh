@@ -468,6 +468,55 @@ elif [ "$PLATFORM" = "macOS" ]; then
 fi
 
 # ============================================================================
+# MPI Completeness Check
+# ============================================================================
+if [ -f "$BINARIES_DIR/mpirun" ]; then
+    print_info "MPI runtime detected — running completeness checks..."
+    echo ""
+
+    RELEASE_ROOT="$(dirname "$BINARIES_DIR")"
+
+    # Check for MPI daemon (prted for OpenMPI 5.x, orted for 4.x)
+    TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+    if [ -f "$BINARIES_DIR/prted" ] || [ -f "$BINARIES_DIR/orted" ]; then
+        DAEMON_NAME=""
+        [ -f "$BINARIES_DIR/prted" ] && DAEMON_NAME="prted"
+        [ -f "$BINARIES_DIR/orted" ] && DAEMON_NAME="orted"
+        print_success "MPI daemon found: $DAEMON_NAME"
+        PASSED_CHECKS=$((PASSED_CHECKS + 1))
+    else
+        print_error "MPI daemon (prted or orted) not found in bin/"
+        PORTABILITY_ISSUES+=("Missing MPI daemon (prted/orted)")
+        FAILED_CHECKS=$((FAILED_CHECKS + 1))
+    fi
+
+    # Check for share/openmpi/ or share/prte/ data files
+    TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+    if [ -d "$RELEASE_ROOT/share/openmpi" ] || [ -d "$RELEASE_ROOT/share/prte" ]; then
+        SHARE_DIR=""
+        [ -d "$RELEASE_ROOT/share/openmpi" ] && SHARE_DIR="share/openmpi"
+        [ -d "$RELEASE_ROOT/share/prte" ] && SHARE_DIR="share/prte"
+
+        # Verify help text files exist
+        HELP_COUNT="$(find "$RELEASE_ROOT/$SHARE_DIR" -name '*.txt' -o -name '*.ini' 2>/dev/null | wc -l | tr -d ' ')"
+        if [ "$HELP_COUNT" -gt 0 ]; then
+            print_success "MPI data files found: $SHARE_DIR ($HELP_COUNT files)"
+            PASSED_CHECKS=$((PASSED_CHECKS + 1))
+        else
+            print_warning "MPI data directory exists but appears empty: $SHARE_DIR"
+            PORTABILITY_ISSUES+=("MPI data directory empty: $SHARE_DIR")
+            WARNING_CHECKS=$((WARNING_CHECKS + 1))
+        fi
+    else
+        print_error "MPI data files not found (expected share/openmpi/ or share/prte/)"
+        PORTABILITY_ISSUES+=("Missing MPI data files (share/openmpi or share/prte)")
+        FAILED_CHECKS=$((FAILED_CHECKS + 1))
+    fi
+
+    echo ""
+fi
+
+# ============================================================================
 # Summary
 # ============================================================================
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

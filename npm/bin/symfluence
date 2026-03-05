@@ -175,6 +175,22 @@ function main() {
   const env = { ...process.env };
   if (fs.existsSync(distBinDir)) {
     env.PATH = `${distBinDir}${path.delimiter}${env.PATH || ''}`;
+
+    // MPI runtime support: set OPAL_PREFIX so bundled OpenMPI finds its
+    // share/openmpi/ data files, and prepend dist/lib/ as safety net for
+    // library resolution (RPATH is primary, this is fallback).
+    if (fs.existsSync(path.join(distBinDir, 'mpirun'))) {
+      if (!env.OPAL_PREFIX) {
+        env.OPAL_PREFIX = distDir;
+      }
+      const distLibDir = path.join(distDir, 'lib');
+      if (fs.existsSync(distLibDir)) {
+        const libPathKey = process.platform === 'darwin' ? 'DYLD_LIBRARY_PATH' : 'LD_LIBRARY_PATH';
+        env[libPathKey] = env[libPathKey]
+          ? `${distLibDir}${path.delimiter}${env[libPathKey]}`
+          : distLibDir;
+      }
+    }
   }
 
   try {

@@ -453,7 +453,8 @@ class WRFHydroWorker(BaseWorker):
                     if not (dest.exists() or dest.is_symlink()):
                         dest.symlink_to(f.resolve())
 
-            mpirun = shutil.which('mpirun') or shutil.which('mpiexec')
+            from symfluence.core.mpi_utils import find_mpirun
+            mpirun = find_mpirun(wrfhydro_exe)
             if mpirun:
                 cmd = [mpirun, '-np', '1', str(wrfhydro_exe)]
             else:

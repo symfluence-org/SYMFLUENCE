@@ -1,10 +1,15 @@
 {
   "name": "symfluence",
-  "version": "0.7.8",
+  "version": "0.7.9",
   "description": "Structure for Unifying Multiple Modeling Alternatives - Pre-compiled hydrological modeling tools",
   "main": "index.js",
   "bin": {
-    "symfluence": "bin/symfluence"
+    "symfluence": "bin/symfluence",
+    "ngen": "bin/ngen",
+    "summa": "bin/summa",
+    "mizuroute": "bin/mizuroute",
+    "fuse": "bin/fuse",
+    "hype": "bin/hype"
   },
   "scripts": {
     "postinstall": "node install.js"

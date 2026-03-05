@@ -645,6 +645,11 @@ async function install() {
         return fs.statSync(fullPath).isFile();
       });
       tools.forEach(tool => console.log(`   ✓ ${tool}`));
+
+      // MPI runtime detection
+      if (fs.existsSync(path.join(binDir, 'mpirun'))) {
+        console.log('\n   MPI runtime bundled (no separate MPI install needed)');
+      }
     }
 
     console.log('\n📖 Next Steps:');

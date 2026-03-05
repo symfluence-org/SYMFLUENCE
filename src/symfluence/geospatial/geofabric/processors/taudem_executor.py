@@ -92,17 +92,27 @@ class TauDEMExecutor:
         Detect the best available MPI launcher.
 
         Respects MPI_LAUNCHER config override. Otherwise uses smart detection:
+        - Checks for bundled mpirun in taudem_dir (npm dist/bin/ layout)
         - If OpenMPI is detected, always use mpirun (OpenMPI's own launcher)
           since srun requires SLURM PMI support that OpenMPI often lacks.
         - If srun is available AND has PMI support, use srun (Intel MPI, MPICH).
         - Falls back to mpirun, then None.
 
         Returns:
-            'srun', 'mpirun', or None if no MPI launcher found
+            Path to mpirun, 'srun', 'mpirun', or None if no MPI launcher found
         """
         override = self.config.get('MPI_LAUNCHER')
         if override and shutil.which(override):
             return override
+
+        # Check for bundled mpirun next to TauDEM tools (npm layout)
+        bundled = os.path.join(self.taudem_dir, 'mpirun')
+        if os.path.isfile(bundled) and os.access(bundled, os.X_OK):
+            self.logger.debug("Using bundled MPI launcher: %s", bundled)
+            # Set OPAL_PREFIX so OpenMPI finds its data files
+            prefix = os.path.dirname(self.taudem_dir)
+            os.environ.setdefault('OPAL_PREFIX', prefix)
+            return bundled
 
         has_srun = shutil.which("srun") is not None
         has_mpirun = shutil.which("mpirun") is not None
