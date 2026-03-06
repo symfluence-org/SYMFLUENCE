@@ -115,6 +115,9 @@ function run(toolName) {
   if (fs.existsSync(distBinDir)) {
     env.PATH = `${distBinDir}${path.delimiter}${env.PATH || ''}`;
   }
+  if (fs.existsSync(distLibDir) && process.platform === 'linux') {
+    env.LD_LIBRARY_PATH = `${distLibDir}${path.delimiter}${env.LD_LIBRARY_PATH || ''}`;
+  }
 
   let args = process.argv.slice(2);
   let patchedFile = null;

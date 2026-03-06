@@ -777,7 +777,7 @@ elif [ "$OS_BUNDLE" = "Linux" ]; then
 
                 # Also force-bundle specific libs that live in system paths
                 # but aren't universally available across Linux distros
-                FORCE_BUNDLE="libopenblas|liblapack|libgfortran|libgomp|libquadmath"
+                FORCE_BUNDLE="libopenblas|liblapack|libgfortran|libgomp|libquadmath|libnetcdf|libnetcdff|libhdf5|libhdf5_hl|libsz|libaec|libcurl|libz"
                 FORCE_DEPS="$(ldd "$elf" 2>/dev/null | grep '=>' | awk '{print $3}' \
                     | grep -E "($FORCE_BUNDLE)" \
                     || true)"
