@@ -1,13 +1,35 @@
 {
   "name": "symfluence",
-  "version": "0.7.10",
+  "version": "0.7.11",
   "description": "Structure for Unifying Multiple Modeling Alternatives - Pre-compiled hydrological modeling tools",
   "main": "index.js",
   "bin": {
-    "symfluence": "bin/symfluence"
+    "symfluence": "bin/symfluence",
+    "summa": "bin/summa",
+    "mizuroute": "bin/mizuroute",
+    "ngen": "bin/ngen",
+    "fuse": "bin/fuse",
+    "taudem": "bin/taudem",
+    "vic": "bin/vic",
+    "swat": "bin/swat",
+    "prms": "bin/prms",
+    "mhm": "bin/mhm",
+    "crhm": "bin/crhm",
+    "wrfhydro": "bin/wrfhydro",
+    "watflood": "bin/watflood",
+    "mf6": "bin/mf6",
+    "parflow": "bin/parflow",
+    "pihm": "bin/pihm",
+    "gsflow": "bin/gsflow",
+    "clm": "bin/clm",
+    "rhessys": "bin/rhessys",
+    "hype": "bin/hype",
+    "mesh": "bin/mesh",
+    "wmfire": "bin/wmfire"
   },
   "scripts": {
-    "postinstall": "node install.js"
+    "postinstall": "node install.js",
+    "preuninstall": "node uninstall.js"
   },
   "os": [
     "darwin",
@@ -46,6 +68,7 @@
     "lib/",
     "dist/",
     "install.js",
+    "uninstall.js",
     "README.md"
   ]
 }

@@ -50,7 +50,6 @@ jobs:
       SYMFLUENCE_CODE: ${{ github.workspace }}
       SYMFLUENCE_DATA: ${{ github.workspace }}/symfluence_data
       SYMFLUENCE_DATA_DIR: ${{ github.workspace }}/symfluence_data
-      RPY2_CFFI_MODE: ABI
 
     steps:
       - name: Checkout
@@ -366,7 +365,9 @@ jobs:
     name: Publish to npm
     needs: build-and-release
     runs-on: ubuntu-24.04
-    if: success()
+    # Proceed even if Windows build fails — it has no required binaries and
+    # shouldn't block npm publishing for Linux/macOS users.
+    if: ${{ !cancelled() && (needs.build-and-release.result == 'success' || needs.build-and-release.result == 'failure') }}
 
     steps:
       - name: Checkout
@@ -377,6 +378,28 @@ jobs:
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
+
+      - name: Verify required platform artifacts exist
+        if: github.event_name == 'push'
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          echo "Checking release $TAG for required platform artifacts..."
+          ASSETS=$(gh release view "$TAG" --json assets -q '.assets[].name' 2>/dev/null || true)
+          MISSING=0
+          for platform in linux-x86_64 macos-arm64; do
+            if echo "$ASSETS" | grep -q "$platform"; then
+              echo "Found artifact for $platform"
+            else
+              echo "ERROR: Missing artifact for $platform"
+              MISSING=$((MISSING + 1))
+            fi
+          done
+          if [ $MISSING -gt 0 ]; then
+            echo "Cannot publish to npm without Linux and macOS artifacts"
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify package version matches release tag
         if: github.event_name == 'push'
