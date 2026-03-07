@@ -50,7 +50,7 @@ esac
 # pass it to CMake so Fortran link tests succeed.
 _SUNDIALS_EXTRA_CMAKE=""
 if echo "${LDFLAGS:-}" | grep -q static-libgcc; then
-    _SUNDIALS_EXTRA_CMAKE="-DCMAKE_EXE_LINKER_FLAGS=-static-libgcc -DCMAKE_SHARED_LINKER_FLAGS=-static-libgcc"
+    _SUNDIALS_EXTRA_CMAKE="-DCMAKE_EXE_LINKER_FLAGS=-static-libgcc -DCMAKE_SHARED_LINKER_FLAGS=-static-libgcc -DCMAKE_Fortran_FLAGS=-static-libgcc"
 fi
 
 cmake .. \

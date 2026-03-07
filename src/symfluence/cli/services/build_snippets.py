@@ -246,18 +246,41 @@ fix_libgcc_glibc_mismatch() {
         _test_fc="$(command -v gfortran 2>/dev/null)" || return 0
     fi
 
-    # Find the libgcc_s.so.1 that gfortran would use
+    # Find the libgcc_s.so.1 that the Fortran compiler would link against.
+    # Strategy 1: ask the compiler directly
     local _libgcc_path=""
     _libgcc_path="$("$_test_fc" -print-file-name=libgcc_s.so.1 2>/dev/null)" || true
-    if [ -z "$_libgcc_path" ] || [ "$_libgcc_path" = "libgcc_s.so.1" ]; then
-        # gfortran couldn't resolve it; try finding it near the compiler
+
+    # -print-file-name returns just the basename if it can't resolve it
+    if [ -z "$_libgcc_path" ] || [ "$_libgcc_path" = "libgcc_s.so.1" ] || [ ! -f "$_libgcc_path" ]; then
+        _libgcc_path=""
+    fi
+
+    # Strategy 2: search relative to the compiler binary
+    if [ -z "$_libgcc_path" ]; then
+        local _fc_real
+        _fc_real="$(readlink -f "$(command -v "$_test_fc")" 2>/dev/null)" || _fc_real="$(command -v "$_test_fc")"
         local _fc_dir
-        _fc_dir="$(dirname "$(command -v "$_test_fc")")"
+        _fc_dir="$(dirname "$_fc_real")"
+
+        # Try common gcc layouts (unquoted to allow glob expansion)
         local _candidate
         for _candidate in \
-            "$_fc_dir/../lib/libgcc_s.so.1" \
-            "$_fc_dir/../lib64/libgcc_s.so.1" \
-            "$_fc_dir/../../lib/gcc/x86_64-pc-linux-gnu/*/libgcc_s.so.1"; do
+            "$_fc_dir"/../lib/libgcc_s.so.1 \
+            "$_fc_dir"/../lib64/libgcc_s.so.1 \
+            "$_fc_dir"/../../../lib/gcc/x86_64-pc-linux-gnu/*/libgcc_s.so.1 \
+            "$_fc_dir"/../../lib/gcc/x86_64-pc-linux-gnu/*/libgcc_s.so.1; do
+            if [ -f "$_candidate" ]; then
+                _libgcc_path="$_candidate"
+                break
+            fi
+        done
+    fi
+
+    # Strategy 3: known Gentoo/ComputeCanada path
+    if [ -z "$_libgcc_path" ]; then
+        local _candidate
+        for _candidate in /cvmfs/soft.computecanada.ca/gentoo/2023/x86-64-v3/usr/lib/gcc/x86_64-pc-linux-gnu/*/libgcc_s.so.1; do
             if [ -f "$_candidate" ]; then
                 _libgcc_path="$_candidate"
                 break
@@ -269,15 +292,14 @@ fix_libgcc_glibc_mismatch() {
         return 0
     fi
 
-    # Check if libgcc_s.so.1 requires GLIBC versions the system doesn't have.
-    # Use objdump/readelf to find required GLIBC versions, then check libc.
+    # Check if libgcc_s.so.1 references GLIBC_2.35+ symbols.
+    # Use strings as a universal fallback since objdump/readelf may not
+    # be available or may produce unexpected output formats.
     local _needs_235=false
-    if command -v objdump >/dev/null 2>&1; then
-        if objdump -p "$_libgcc_path" 2>/dev/null | grep -q "GLIBC_2\.3[5-9]\|GLIBC_2\.[4-9][0-9]"; then
-            _needs_235=true
-        fi
+    if strings "$_libgcc_path" 2>/dev/null | grep -qE "GLIBC_2\.(3[5-9]|[4-9][0-9])"; then
+        _needs_235=true
     elif command -v readelf >/dev/null 2>&1; then
-        if readelf -V "$_libgcc_path" 2>/dev/null | grep -q "GLIBC_2\.3[5-9]\|GLIBC_2\.[4-9][0-9]"; then
+        if readelf -V "$_libgcc_path" 2>/dev/null | grep -qE "GLIBC_2\.(3[5-9]|[4-9][0-9])"; then
             _needs_235=true
         fi
     fi
@@ -286,36 +308,27 @@ fix_libgcc_glibc_mismatch() {
         return 0
     fi
 
-    # libgcc_s needs GLIBC_2.35+; check if the system actually provides it
-    local _libc_path=""
-    _libc_path="$(ldd "$_libgcc_path" 2>/dev/null | grep 'libc\.so' | awk '{print $3}')" || true
-    if [ -z "$_libc_path" ]; then
-        _libc_path="/lib64/libc.so.6"
-    fi
-
-    local _system_has_235=true
-    if [ -f "$_libc_path" ]; then
-        if command -v objdump >/dev/null 2>&1; then
-            if ! objdump -T "$_libc_path" 2>/dev/null | grep -q "GLIBC_2\.35"; then
-                _system_has_235=false
-            fi
-        elif command -v readelf >/dev/null 2>&1; then
-            if ! readelf -V "$_libc_path" 2>/dev/null | grep -q "GLIBC_2\.35"; then
-                _system_has_235=false
-            fi
+    # Verify the system libc doesn't actually provide GLIBC_2.35
+    # (if it does, there's no mismatch and no fix needed)
+    local _sys_glibc_ver=""
+    _sys_glibc_ver="$(ldd --version 2>&1 | head -1 | grep -oE '[0-9]+\.[0-9]+$')" || true
+    if [ -n "$_sys_glibc_ver" ]; then
+        local _major="${_sys_glibc_ver%%.*}"
+        local _minor="${_sys_glibc_ver##*.}"
+        # If system glibc >= 2.35, no mismatch
+        if [ "$_major" -gt 2 ] 2>/dev/null || { [ "$_major" -eq 2 ] && [ "$_minor" -ge 35 ]; } 2>/dev/null; then
+            return 0
         fi
     fi
 
-    if [ "$_system_has_235" = "false" ]; then
-        echo "Detected GLIBC incompatibility: libgcc_s.so.1 requires GLIBC_2.35+ but system lacks it"
-        echo "  libgcc_s: $_libgcc_path"
-        echo "  Adding -static-libgcc to avoid dynamic libgcc_s dependency"
-        export LDFLAGS="-static-libgcc ${LDFLAGS:-}"
-        export FFLAGS="-static-libgcc ${FFLAGS:-}"
-        export FCFLAGS="-static-libgcc ${FCFLAGS:-}"
-        export CMAKE_EXE_LINKER_FLAGS="-static-libgcc ${CMAKE_EXE_LINKER_FLAGS:-}"
-        export CMAKE_SHARED_LINKER_FLAGS="-static-libgcc ${CMAKE_SHARED_LINKER_FLAGS:-}"
-    fi
+    echo "Detected GLIBC incompatibility: libgcc_s.so.1 requires GLIBC_2.35+ but system has $_sys_glibc_ver"
+    echo "  libgcc_s: $_libgcc_path"
+    echo "  Adding -static-libgcc to avoid dynamic libgcc_s dependency"
+    export LDFLAGS="-static-libgcc ${LDFLAGS:-}"
+    export FFLAGS="-static-libgcc ${FFLAGS:-}"
+    export FCFLAGS="-static-libgcc ${FCFLAGS:-}"
+    export CMAKE_EXE_LINKER_FLAGS="-static-libgcc ${CMAKE_EXE_LINKER_FLAGS:-}"
+    export CMAKE_SHARED_LINKER_FLAGS="-static-libgcc ${CMAKE_SHARED_LINKER_FLAGS:-}"
 }
 fix_libgcc_glibc_mismatch
 
