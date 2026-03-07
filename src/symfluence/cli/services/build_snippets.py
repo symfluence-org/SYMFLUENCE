@@ -91,17 +91,6 @@ configure_compilers() {
         return 0
     fi
 
-    # EasyBuild module compiler: prefer EBROOTGCC over Gentoo base gcc.
-    # On ComputeCanada, the Gentoo gcc links against a newer GLIBC than
-    # available on compute nodes, causing link failures.
-    if [ -z "$CC" ] && [ -n "${EBROOTGCC:-}" ] && [ -x "${EBROOTGCC}/bin/gcc" ]; then
-        export CC="${EBROOTGCC}/bin/gcc"
-        [ -x "${EBROOTGCC}/bin/g++" ] && export CXX="${EBROOTGCC}/bin/g++"
-        echo "Using EasyBuild compiler: CC=$CC"
-        [ -n "$CXX" ] && echo "  CXX=$CXX"
-        return 0
-    fi
-
     # If CC is already set (e.g., by user or HPC module), resolve and trust it.
     # This handles both absolute paths and bare names (e.g., CC=gcc).
     if [ -n "$CC" ]; then
@@ -174,14 +163,6 @@ configure_fortran() {
             ;;
     esac
 
-    # EasyBuild module Fortran compiler (same GLIBC reasoning as configure_compilers)
-    if [ -z "$FC" ] && [ -n "${EBROOTGCC:-}" ] && [ -x "${EBROOTGCC}/bin/gfortran" ]; then
-        export FC="${EBROOTGCC}/bin/gfortran"
-        export FC_EXE="$FC"
-        echo "Using EasyBuild Fortran compiler: FC=$FC"
-        return 0
-    fi
-
     # Already set — resolve to full path if needed.
     # Handles both absolute paths (/path/to/gfortran) and bare names (gfortran).
     if [ -n "$FC" ]; then
@@ -248,6 +229,44 @@ configure_fortran() {
     echo "Warning: gfortran not found, set FC=$FC"
 }
 configure_fortran
+
+# ================================================================
+# GLIBC Compatibility Workaround
+# ================================================================
+# On some HPC systems (e.g., ComputeCanada StdEnv/2023), the toolchain's
+# libgcc_s.so.1 was built against a newer GLIBC than is available on
+# compute nodes, causing "_dl_find_object@GLIBC_2.35" link failures.
+# Detect this and add -static-libgcc to avoid the dynamic libgcc_s dependency.
+fix_libgcc_glibc_mismatch() {
+    # Only check on Linux
+    [ "$(uname -s)" = "Linux" ] || return 0
+
+    local _test_cc="${CC:-gcc}"
+    [ -x "$_test_cc" ] || _test_cc="$(command -v gcc 2>/dev/null)" || return 0
+
+    # Quick link test: compile and link a trivial program
+    local _tmpdir
+    _tmpdir="$(mktemp -d)" || return 0
+    echo 'int main(){return 0;}' > "$_tmpdir/test.c"
+    if "$_test_cc" "$_tmpdir/test.c" -o "$_tmpdir/test" 2>/dev/null; then
+        rm -rf "$_tmpdir"
+        return 0  # linking works fine
+    fi
+
+    # Check if the failure is the known GLIBC_2.35 issue
+    local _err
+    _err="$("$_test_cc" "$_tmpdir/test.c" -o "$_tmpdir/test" 2>&1 || true)"
+    if echo "$_err" | grep -q "_dl_find_object.*GLIBC"; then
+        echo "Detected GLIBC incompatibility in libgcc_s.so.1 — adding -static-libgcc"
+        export LDFLAGS="-static-libgcc ${LDFLAGS:-}"
+        export FFLAGS="-static-libgcc ${FFLAGS:-}"
+        export FCFLAGS="-static-libgcc ${FCFLAGS:-}"
+        export CMAKE_EXE_LINKER_FLAGS="-static-libgcc ${CMAKE_EXE_LINKER_FLAGS:-}"
+        export CMAKE_SHARED_LINKER_FLAGS="-static-libgcc ${CMAKE_SHARED_LINKER_FLAGS:-}"
+    fi
+    rm -rf "$_tmpdir"
+}
+fix_libgcc_glibc_mismatch
 
 # ================================================================
 # Library Discovery

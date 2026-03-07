@@ -46,6 +46,13 @@ case "$(uname -s 2>/dev/null)" in
         ;;
 esac
 
+# If LDFLAGS contains -static-libgcc (set by fix_libgcc_glibc_mismatch),
+# pass it to CMake so Fortran link tests succeed.
+_SUNDIALS_EXTRA_CMAKE=""
+if echo "${LDFLAGS:-}" | grep -q static-libgcc; then
+    _SUNDIALS_EXTRA_CMAKE="-DCMAKE_EXE_LINKER_FLAGS=-static-libgcc -DCMAKE_SHARED_LINKER_FLAGS=-static-libgcc"
+fi
+
 cmake .. \
   -DBUILD_FORTRAN_MODULE_INTERFACE=ON \
   -DCMAKE_Fortran_COMPILER="$FC" \
@@ -56,7 +63,8 @@ cmake .. \
   -DEXAMPLES_ENABLE_C=OFF \
   -DEXAMPLES_ENABLE_CXX=OFF \
   -DEXAMPLES_ENABLE_F2003=OFF \
-  -DBUILD_TESTING=OFF
+  -DBUILD_TESTING=OFF \
+  $_SUNDIALS_EXTRA_CMAKE
 
 cmake --build . --target install -j ${NCORES:-4}
 

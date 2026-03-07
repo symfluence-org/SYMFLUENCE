@@ -1686,22 +1686,7 @@ else:
         # CC/CXX/FC to a consistent toolchain to prevent version mismatches.
         if [[ "$IS_2I2C_ENVIRONMENT" != "true" && "$PLATFORM" == "linux" ]]; then
             _lock_hpc_compilers() {
-                # Strategy 1: Use EasyBuild module compiler (EBROOTGCC) when available.
-                # On ComputeCanada, the Gentoo base gcc has the same version as
-                # the module gcc but links against a newer GLIBC than is available
-                # on the compute nodes, causing "_dl_find_object@GLIBC_2.35" errors.
-                if [[ -n "${EBROOTGCC:-}" && -x "${EBROOTGCC}/bin/gcc" ]]; then
-                    export CC="${EBROOTGCC}/bin/gcc"
-                    [[ -x "${EBROOTGCC}/bin/g++" ]] && export CXX="${EBROOTGCC}/bin/g++"
-                    [[ -x "${EBROOTGCC}/bin/gfortran" ]] && export FC="${EBROOTGCC}/bin/gfortran"
-                    local _cc_ver _fc_ver
-                    _cc_ver=$("$CC" -dumpversion 2>/dev/null || echo "?")
-                    _fc_ver=$("${FC:-gfortran}" -dumpversion 2>/dev/null || echo "?")
-                    print_info "Locked compilers (EasyBuild): CC=$CC (${_cc_ver}), FC=${FC:-gfortran} (${_fc_ver})"
-                    return
-                fi
-
-                # Strategy 2: Find the newest gcc on PATH (prefer module gcc over /usr/bin)
+                # Find the newest gcc on PATH (prefer module gcc over /usr/bin)
                 local best_gcc="" best_ver=0
                 IFS=':' read -ra _dirs <<< "$PATH"
                 for _d in "${_dirs[@]}"; do
