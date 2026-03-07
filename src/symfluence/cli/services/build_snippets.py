@@ -308,22 +308,18 @@ fix_libgcc_glibc_mismatch() {
         return 0
     fi
 
-    # Verify the system libc doesn't actually provide GLIBC_2.35
-    # (if it does, there's no mismatch and no fix needed)
-    local _sys_glibc_ver=""
-    _sys_glibc_ver="$(ldd --version 2>&1 | head -1 | grep -oE '[0-9]+\.[0-9]+$')" || true
-    if [ -n "$_sys_glibc_ver" ]; then
-        local _major="${_sys_glibc_ver%%.*}"
-        local _minor="${_sys_glibc_ver##*.}"
-        # If system glibc >= 2.35, no mismatch
-        if [ "$_major" -gt 2 ] 2>/dev/null || { [ "$_major" -eq 2 ] && [ "$_minor" -ge 35 ]; } 2>/dev/null; then
-            return 0
-        fi
-    fi
-
-    echo "Detected GLIBC incompatibility: libgcc_s.so.1 requires GLIBC_2.35+ but system has $_sys_glibc_ver"
+    # libgcc_s.so.1 references GLIBC_2.35+.  On HPC systems (e.g.,
+    # ComputeCanada), the toolchain overlay may have a newer glibc than the
+    # host OS kernel supports. CMake converts LIBRARY_PATH to -L flags which
+    # pull in the host's older libc, causing _dl_find_object link failures.
+    # Using -static-libgcc is harmless (slightly larger binary) and avoids
+    # the dynamic libgcc_s dependency entirely.
+    #
+    # NOTE: We intentionally do NOT check the system glibc version here
+    # because on overlay systems (Gentoo CVMFS), `ldd --version` reports the
+    # overlay's glibc (e.g. 2.37), not the host's, masking the mismatch.
+    echo "Detected GLIBC_2.35+ dependency in libgcc_s.so.1 — adding -static-libgcc"
     echo "  libgcc_s: $_libgcc_path"
-    echo "  Adding -static-libgcc to avoid dynamic libgcc_s dependency"
     export LDFLAGS="-static-libgcc ${LDFLAGS:-}"
     export FFLAGS="-static-libgcc ${FFLAGS:-}"
     export FCFLAGS="-static-libgcc ${FCFLAGS:-}"
