@@ -1,0 +1,217 @@
+### ============================================= SYMFLUENCE configuration file ============================================================
+# RHESSys Configuration for Bow at Banff - Section 4.7 Sensitivity Analysis
+# Based on Section 4.2 ensemble config with unique experiment ID for sensitivity outputs
+### ============================================= 1. Global settings: =====================================================================
+
+# Main paths
+SYMFLUENCE_DATA_DIR: "/Users/darrieythorsson/compHydro/code/SYMFLUENCE_data/"
+SYMFLUENCE_CODE_DIR: "/Users/darrieythorsson/compHydro/code/SYMFLUENCE"
+
+# Experiment settings
+DOMAIN_NAME: Bow_at_Banff_lumped_era5
+EXPERIMENT_ID: sensitivity_RHESSys
+EXPERIMENT_TIME_START: 2002-01-01 01:00
+EXPERIMENT_TIME_END: 2009-12-31 23:00
+CALIBRATION_PERIOD: 2004-01-01, 2007-12-31
+EVALUATION_PERIOD:  2008-01-01, 2009-12-31
+SPINUP_PERIOD: 2002-01-01, 2003-12-31
+
+# Computational settings
+MPI_PROCESSES: 1
+FORCE_RUN_ALL_STEPS: False
+
+### ============================================= 2. Geospatial settings: =================================================================
+POUR_POINT_COORDS: 51.1722/-115.5717
+BOUNDING_BOX_COORDS: 51.76/-116.55/50.95/-115.5
+POUR_POINT_SHP_PATH: default
+POUR_POINT_SHP_NAME: default
+DOMAIN_DEFINITION_METHOD: lumped
+ROUTING_DELINEATION: lumped
+GEOFABRIC_TYPE: TDX
+STREAM_THRESHOLD: 5000
+LUMPED_WATERSHED_METHOD: TauDEM
+CLEANUP_INTERMEDIATE_FILES: True
+DELINEATE_BY_POURPOINT: True
+MOVE_OUTLETS_MAX_DISTANCE: 200
+MIN_GRU_SIZE: 1
+SUB_GRID_DISCRETIZATION: GRUS
+ELEVATION_BAND_SIZE: 200
+MIN_HRU_SIZE: 4
+RADIATION_CLASS_NUMBER: 5
+ASPECT_CLASS_NUMBER: 8
+ASPECT_PATH: default
+CATCHMENT_PATH: default
+CATCHMENT_SHP_NAME: default
+CATCHMENT_SHP_LAT: center_lat
+CATCHMENT_SHP_LON: center_lon
+CATCHMENT_SHP_AREA: HRU_area
+CATCHMENT_SHP_ELEV: elev_mean
+CATCHMENT_SHP_SLOPE: slope
+CATCHMENT_SHP_SLOPE_UNITS: radians
+CATCHMENT_SHP_HRUID: HRU_ID
+CATCHMENT_SHP_GRUID: GRU_ID
+RIVER_BASINS_PATH: default
+RIVER_BASINS_NAME: default
+RIVER_BASIN_SHP_RM_GRUID: GRU_ID
+RIVER_BASIN_SHP_HRU_TO_SEG: gru_to_seg
+RIVER_BASIN_SHP_AREA: GRU_area
+RIVER_NETWORK_SHP_PATH: default
+RIVER_NETWORK_SHP_NAME: default
+RIVER_NETWORK_SHP_LENGTH: Length
+RIVER_NETWORK_SHP_SEGID: LINKNO
+RIVER_NETWORK_SHP_DOWNSEGID: DSLINKNO
+RIVER_NETWORK_SHP_SLOPE: Slope
+OUTPUT_BASINS_PATH: default
+OUTPUT_RIVERS_PATH: default
+DEM_PATH: default
+DEM_NAME: default
+SOURCE_GEOFABRIC_BASINS_PATH: /Users/darrieythorsson/compHydro/data/CWARHM_data/domain_NorthAmerica/shapefiles/catchment/8020000010-basins.gpkg
+SOURCE_GEOFABRIC_RIVERS_PATH: /Users/darrieythorsson/compHydro/data/CWARHM_data/domain_NorthAmerica/shapefiles/river_network/8020000010-streamnet.gpkg
+TAUDEM_DIR: default
+OUTPUT_DIR: default
+CATCHMENT_PLOT_DIR: default
+SOIL_CLASS_PATH: default
+SOIL_CLASS_NAME: default
+LAND_CLASS_PATH: default
+LAND_CLASS_NAME: default
+RADIATION_PATH: default
+DATATOOL_PATH: default
+GISTOOL_PATH: default
+EASYMORE_CLIENT: easymore cli
+DATATOOL_DATASET_ROOT: /work/comphyd_lab/data/meteorological-data/
+DATATOOL_CACHE: /home/darri.eythorsson
+TOOL_ACCOUNT: def-mclark
+GISTOOL_DATASET_ROOT: /work/comphyd_lab/data/geospatial-data/
+GISTOOL_LIB_PATH: /work/comphyd_lab/envs/r-env/
+TOOL_CACHE: /home/darri.eythorsson/cache
+EASYMORE_CACHE: /home/darri.eythorsson/easymore/
+EASYMORE_JOB_CONF: "installs/MAF/02_model_agnostic_component/easymore-job.slurm"
+CLUSTER_JSON: /work/comphyd_lab/users/darri/data/SYMFLUENCE_data/installs/datatool/etc/clusters/ucalgary-arc.json
+
+### ============================================= 3. Model Agnostic settings: =============================================================
+
+FORCING_DATASET: ERA5
+FORCING_VARIABLES: default
+FORCING_MEASUREMENT_HEIGHT: 2
+FORCING_TIME_STEP_SIZE: 3600
+APPLY_LAPSE_RATE: True
+LAPSE_RATE: 0.0065
+FORCING_SHAPE_LAT_NAME: lat
+FORCING_SHAPE_LON_NAME: lon
+FORCING_PATH: default
+SUPPLEMENT_FORCING: False
+EM_EARTH_PRCP_DIR: "/anvil/datasets/meteorological/EM-Earth/EM_Earth_v1/deterministic_hourly/prcp/NorthAmerica"
+EM_EARTH_TMEAN_DIR: "/anvil/datasets/meteorological/EM-Earth/EM_Earth_v1/deterministic_hourly/tmean/NorthAmerica"
+INTERSECT_SOIL_PATH: default
+INTERSECT_SOIL_NAME: catchment_with_soilclass.shp
+INTERSECT_ROUTING_PATH: default
+INTERSECT_ROUTING_NAME: catchment_with_routing_basins.shp
+INTERSECT_DEM_PATH: default
+INTERSECT_DEM_NAME: catchment_with_dem.shp
+INTERSECT_LAND_PATH: default
+INTERSECT_LAND_NAME: catchment_with_landclass.shp
+
+### ============================================= 4. Model Specific settings: =============================================================
+
+HYDROLOGICAL_MODEL: RHESSYS
+ROUTING_MODEL: none
+
+RHESSYS_INSTALL_PATH: default
+RHESSYS_EXE: rhessys
+SETTINGS_RHESSYS_PATH: default
+EXPERIMENT_OUTPUT_RHESSYS: default
+FORCING_RHESSYS_PATH: default
+RHESSYS_WORLD_TEMPLATE: world.template
+RHESSYS_FLOW_TEMPLATE: flow.template
+RHESSYS_TIMEOUT: 7200
+RHESSYS_LNA_AREA_CAP_M2: 100000
+RHESSYS_LNA_MIN: 5.0
+RHESSYS_LNA_MAX: 12.0
+
+RHESSYS_SKIP_CALIBRATION: False
+
+RHESSYS_PARAMS_TO_CALIBRATE: 'sat_to_gw_coeff,gw_loss_coeff,gw_loss_fast_coeff,gw_loss_fast_threshold,m,Ksat_0,Ksat_0_v,porosity_0,porosity_decay,soil_depth,m_z,active_zone_z,snow_melt_Tcoef,snow_water_capacity,max_snow_temp,min_rain_temp,maximum_snow_energy_deficit,epc.gl_smax,epc.max_lai'
+
+RHESSYS_USE_WMFIRE: False
+RHESSYS_USE_VMFIRE: False
+RHESSYS_USE_GROW_MODE: True
+
+### ============================================= 5. Evaluation settings: =================================================================
+
+SIM_REACH_ID: 228
+SIMULATIONS_PATH: default
+OBSERVATIONS_PATH: default
+STREAMFLOW_DATA_PROVIDER: WSC
+DOWNLOAD_USGS_DATA: True
+DOWNLOAD_WSC_DATA: True
+STATION_ID: 05BB001
+STREAMFLOW_RAW_PATH: default
+STREAMFLOW_RAW_NAME: default
+STREAMFLOW_PROCESSED_PATH: default
+HYDAT_PATH: /work/comphyd_lab/data/geospatial-data/hydat/Hydat.sqlite3
+
+### ============================================= 6. Optimization settings: ===============================================================
+
+OPTIMIZATION_METHODS: [iteration]
+
+EMULATION_NUM_SAMPLES: 100
+EMULATION_SEED: 22
+EMULATION_SAMPLING_METHOD: lhs
+EMULATION_PARALLEL_ENSEMBLE: false
+EMULATION_MAX_PARALLEL_JOBS: 100
+EMULATION_SKIP_MIZUROUTE: false
+EMULATION_USE_ATTRIBUTES: false
+EMULATION_MAX_ITERATIONS': 3
+
+ITERATIVE_OPTIMIZATION_ALGORITHM: DDS
+NUMBER_OF_ITERATIONS: 1000
+DDS_R: 0.2
+POPULATION_SIZE: 20
+OPTIMIZATION_METRIC: KGE
+TARGET_METRIC: KGE
+
+RANDOM_SEED: null
+SKIP_WARM_START: true
+
+GLUE_THRESHOLD: -3.0
+GLUE_SHAPING_FACTOR: 1.0
+
+RHESSYS_PARAM_BOUNDS:
+  sat_to_gw_coeff: [0.005, 0.99]
+  gw_loss_coeff: [0.05, 25.0]
+  gw_loss_fast_coeff: [0.05, 25.0]
+  gw_loss_fast_threshold: [0.0005, 2.0]
+  m: [0.03, 2.5]
+  Ksat_0: [0.0001, 1.0]
+  Ksat_0_v: [0.001, 15.0]
+  porosity_0: [0.25, 0.70]
+  porosity_decay: [0.05, 0.90]
+  soil_depth: [0.3, 5.0]
+  m_z: [0.1, 4.0]
+  active_zone_z: [0.2, 3.0]
+  snow_melt_Tcoef: [0.3, 15.0]
+  snow_water_capacity: [0.1, 8.0]
+  max_snow_temp: [-8.0, 8.0]
+  min_rain_temp: [-12.0, 4.0]
+  maximum_snow_energy_deficit: [-800.0, -10.0]
+  epc.gl_smax: [0.0003, 0.03]
+  epc.gl_c: [0.000005, 0.01]
+  epc.vpd_open: [50.0, 2500.0]
+  epc.vpd_close: [1000.0, 7000.0]
+  epc.max_lai: [0.3, 10.0]
+  theta_mean_std_p1: [0.01, 0.60]
+  theta_mean_std_p2: [0.0, 0.60]
+  precip_lapse_rate: [0.5, 1.5]
+
+# DDS specific settings
+DDS_R: 0.2
+ASYNC_DDS_POOL_SIZE: 10
+ASYNC_DDS_BATCH_SIZE: 10
+MAX_STAGNATION_BATCHES: 5
+
+# SCE-UA specific settings
+NUMBER_OF_COMPLEXES: 2
+POINTS_PER_SUBCOMPLEX: 5
+NUMBER_OF_EVOLUTION_STEPS: 20
+EVOLUTION_STAGNATION: 5
+PERCENT_CHANGE_THRESHOLD: 0.01

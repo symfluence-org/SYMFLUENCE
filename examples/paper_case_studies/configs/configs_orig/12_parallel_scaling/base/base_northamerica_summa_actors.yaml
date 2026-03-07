@@ -1,0 +1,142 @@
+# =============================================================================
+# Base config: SUMMA Actors distributed GRU scaling - North America
+# Section 4.12.3: Distributed GRU parallelism on HPC (10-1000 processors)
+# Compare default SUMMA output to 1400 CAMELS SPST basins
+# =============================================================================
+
+# --- Environment paths (HPC) ---
+SYMFLUENCE_DATA_DIR: /anvil/projects/x-ees250064/users/darri/SYMFLUENCE_data/
+SYMFLUENCE_CODE_DIR: /anvil/projects/x-ees250064/users/darri/SYMFLUENCE
+
+# --- Domain definition ---
+DOMAIN_NAME: North_America
+POUR_POINT_COORDS: default
+BOUNDING_BOX_COORDS: 72.0/-170.0/24.0/-50.0
+DOMAIN_DEFINITION_METHOD: delineate
+ROUTING_DELINEATION: distributed
+GEOFABRIC_TYPE: TDX
+STREAM_THRESHOLD: 5000
+LUMPED_WATERSHED_METHOD: TauDEM
+DOMAIN_DISCRETIZATION: GRUs
+DELINEATE_BY_POURPOINT: false
+MIN_GRU_SIZE: 1
+
+# --- Time periods ---
+EXPERIMENT_TIME_START: 2000-01-01 01:00
+EXPERIMENT_TIME_END: 2014-12-31 23:00
+CALIBRATION_PERIOD: 2002-01-01, 2010-12-31
+EVALUATION_PERIOD: 2011-01-01, 2014-12-31
+SPINUP_PERIOD: 2000-01-01, 2001-12-31
+
+# --- Forcing ---
+FORCING_DATASET: ERA5
+FORCING_VARIABLES: default
+FORCING_MEASUREMENT_HEIGHT: 2
+FORCING_TIME_STEP_SIZE: 3600
+APPLY_LAPSE_RATE: true
+LAPSE_RATE: 0.0065
+DATA_ACCESS: cloud
+
+# --- Model ---
+HYDROLOGICAL_MODEL: SUMMA
+ROUTING_MODEL: mizuRoute
+SUMMA_EXE: summa_sundials.exe
+SUMMA_INSTALL_PATH: default
+SETTINGS_SUMMA_CONNECT_HRUS: true
+SETTINGS_SUMMA_TRIALPARAM_N: 0
+
+# --- Parallel SUMMA (SUMMA Actors) ---
+SETTINGS_SUMMA_USE_PARALLEL_SUMMA: true
+SETTINGS_SUMMA_PARALLEL_PATH: default
+SETTINGS_SUMMA_PARALLEL_EXE: summa_actors.exe
+SETTINGS_SUMMA_CPUS_PER_TASK: 32
+SETTINGS_SUMMA_TIME_LIMIT: 04:00:00
+SETTINGS_SUMMA_MEM: 8
+SETTINGS_SUMMA_GRU_COUNT: default
+SETTINGS_SUMMA_GRU_PER_JOB: 10
+
+# --- SUMMA decisions ---
+SUMMA_DECISION_OPTIONS:
+  snowIncept:
+    - lightSnow
+  compaction:
+    - anderson
+  snowLayers:
+    - CLM_2010
+  alb_method:
+    - varDecay
+  thCondSnow:
+    - jrdn1991
+  vegeParTbl:
+    - MODIFIED_IGBP_MODIS_NOAH
+  soilStress:
+    - NoahType
+  stomResist:
+    - BallBerry
+  LAI_method:
+    - monTable
+  canopySrad:
+    - BeersLaw
+  soilCatTbl:
+    - ROSETTA
+  f_Richards:
+    - mixdform
+  groundwatr:
+    - bigBuckt
+  bcLowrSoiH:
+    - drainage
+
+# --- Parameters (default/uncalibrated for initial run) ---
+PARAMS_TO_CALIBRATE: tempCritRain,k_soil,vGn_n,theta_sat
+BASIN_PARAMS_TO_CALIBRATE: routingGammaScale
+
+# --- Observations - CAMELS SPST validation ---
+STREAMFLOW_DATA_PROVIDER: USGS
+DOWNLOAD_USGS_DATA: true
+STATION_ID: default
+
+# --- CAMELS validation ---
+CAMELS_DATASET: camels_us
+CAMELS_DATA_PATH: default
+CAMELS_GAUGE_FILE: default
+CAMELS_NUM_BASINS: 1400
+
+# --- mizuRoute settings ---
+SETTINGS_MIZU_WITHIN_BASIN: 0
+SETTINGS_MIZU_ROUTING_DT: 3600
+SETTINGS_MIZU_ROUTING_UNITS: m/s
+SETTINGS_MIZU_ROUTING_VAR: averageRoutedRunoff
+SETTINGS_MIZU_OUTPUT_FREQ: single
+SETTINGS_MIZU_OUTPUT_VARS: 1
+SETTINGS_MIZU_NEEDS_REMAP: false
+INSTALL_PATH_MIZUROUTE: default
+EXE_NAME_MIZUROUTE: mizuRoute.exe
+
+# --- Evaluation ---
+EVALUATION_DATA:
+- streamflow
+OPTIMIZATION_METRIC: KGE
+ANALYSES:
+- benchmarking
+
+# --- Parallelism (overridden per experiment) ---
+NUM_PROCESSES: 10
+MPI_PROCESSES: 10
+
+# --- Experiment ---
+EXPERIMENT_ID: summa_actors_base
+FORCE_RUN_ALL_STEPS: false
+
+# --- Logging ---
+LOG_LEVEL: INFO
+LOG_TO_FILE: true
+LOG_FORMAT: detailed
+
+# --- Data tool paths (HPC) ---
+DATATOOL_PATH: default
+GISTOOL_PATH: default
+DATATOOL_DATASET_ROOT: /anvil/projects/x-ees250064/data/meteorological-data/
+GISTOOL_DATASET_ROOT: /anvil/projects/x-ees250064/data/geospatial-data/
+TOOL_CACHE: /home/x-deythorsson/cache
+CLUSTER_JSON: /anvil/projects/x-ees250064/users/darri/SYMFLUENCE_data/installs/datatool/etc/clusters/anvil.json
+GISTOOL_LIB_PATH: default

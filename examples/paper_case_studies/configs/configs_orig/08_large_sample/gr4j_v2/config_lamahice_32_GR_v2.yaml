@@ -1,0 +1,179 @@
+### ============================================= SYMFLUENCE configuration file ============================================================
+# GR4J+CemaNeige Configuration for LamaH-Ice Domain 32 - Large Sample Study
+### ============================================= 1. Global settings: =====================================================================
+
+# Main paths
+SYMFLUENCE_DATA_DIR: "/Users/darrieythorsson/compHydro/code/SYMFLUENCE_data/lamahice"
+SYMFLUENCE_CODE_DIR: "/Users/darrieythorsson/compHydro/code/SYMFLUENCE"
+
+# Experiment settings
+DOMAIN_NAME: "32"
+BOUNDING_BOX_COORDS: 65.40586249520786/-19.172020629003526/64.76619029592524/-18.38707634901832
+EXPERIMENT_ID: run_gr_v2
+EXPERIMENT_TIME_START: 2000-01-01 03:00
+EXPERIMENT_TIME_END: 2008-12-31 21:00
+CALIBRATION_PERIOD: 2001-01-01, 2007-12-31
+EVALUATION_PERIOD: 2008-01-01, 2008-12-31
+SPINUP_PERIOD: 2000-01-01, 2000-12-31
+
+# Computational settings
+MPI_PROCESSES: 1
+FORCE_RUN_ALL_STEPS: False
+SKIP_WARM_START: True
+
+### ============================================= 2. Geospatial settings: =================================================================
+
+# Domain representation settings
+DOMAIN_DEFINITION_METHOD: lumped
+ROUTING_DELINEATION: lumped
+
+GEOFABRIC_TYPE: TDX
+STREAM_THRESHOLD: 5000
+LUMPED_WATERSHED_METHOD: TauDEM
+CLEANUP_INTERMEDIATE_FILES: True
+DELINEATE_BY_POURPOINT: True
+MOVE_OUTLETS_MAX_DISTANCE: 200
+MIN_GRU_SIZE: 1
+
+# Domain discretization settings
+SUB_GRID_DISCRETIZATION: GRUS
+ELEVATION_BAND_SIZE: 200
+MIN_HRU_SIZE: 4
+RADIATION_CLASS_NUMBER: 5
+ASPECT_CLASS_NUMBER: 8
+ASPECT_PATH: default
+
+# Shapefile settings - Catchment shape
+CATCHMENT_PATH: default
+CATCHMENT_SHP_NAME: default
+CATCHMENT_SHP_LAT: center_lat
+CATCHMENT_SHP_LON: center_lon
+CATCHMENT_SHP_AREA: HRU_area
+CATCHMENT_SHP_HRUID: HRU_ID
+CATCHMENT_SHP_GRUID: GRU_ID
+
+# Shapefile settings - Basins shape
+RIVER_BASINS_PATH: default
+RIVER_BASINS_NAME: default
+RIVER_BASIN_SHP_RM_GRUID: GRU_ID
+RIVER_BASIN_SHP_HRU_TO_SEG: gru_to_seg
+RIVER_BASIN_SHP_AREA: GRU_area
+
+# Shapefile settings - River network shape
+RIVER_NETWORK_SHP_PATH: default
+RIVER_NETWORK_SHP_NAME: default
+RIVER_NETWORK_SHP_LENGTH: Length
+RIVER_NETWORK_SHP_SEGID: LINKNO
+RIVER_NETWORK_SHP_DOWNSEGID: DSLINKNO
+RIVER_NETWORK_SHP_SLOPE: Slope
+
+# Geospatial data paths
+OUTPUT_BASINS_PATH: default
+OUTPUT_RIVERS_PATH: default
+DEM_PATH: default
+DEM_NAME: default
+SOURCE_GEOFABRIC_BASINS_PATH: default
+SOURCE_GEOFABRIC_RIVERS_PATH: default
+TAUDEM_DIR: default
+OUTPUT_DIR: default
+CATCHMENT_PLOT_DIR: default
+SOIL_CLASS_PATH: default
+SOIL_CLASS_NAME: default
+LAND_CLASS_PATH: default
+LAND_CLASS_NAME: default
+RADIATION_PATH: default
+
+# Tool paths
+DATATOOL_PATH: default
+GISTOOL_PATH: default
+EASYMORE_CLIENT: easymore cli
+DATATOOL_DATASET_ROOT: default
+GISTOOL_DATASET_ROOT: default
+TOOL_CACHE: default
+EASYMORE_CACHE: default
+EASYMORE_JOB_CONF: default
+GISTOOL_LIB_PATH: default
+
+### ============================================= 3. Model Agnostic settings: =============================================================
+
+# Forcing data settings
+FORCING_DATASET: CARRA
+DATA_ACCESS: CLOUD
+CARRA_DOMAIN: west_domain
+FORCING_VARIABLES: default
+FORCING_MEASUREMENT_HEIGHT: 2
+FORCING_TIME_STEP_SIZE: 10800
+APPLY_LAPSE_RATE: True
+LAPSE_RATE: 0.0065
+FORCING_SHAPE_LAT_NAME: lat
+FORCING_SHAPE_LON_NAME: lon
+FORCING_PATH: default
+
+# EM-Earth forcing supplementation settings
+SUPPLEMENT_FORCING: False
+
+# Intersection paths
+INTERSECT_SOIL_PATH: default
+INTERSECT_SOIL_NAME: default
+INTERSECT_ROUTING_PATH: default
+INTERSECT_ROUTING_NAME: default
+INTERSECT_DEM_PATH: default
+INTERSECT_DEM_NAME: default
+INTERSECT_LAND_PATH: default
+INTERSECT_LAND_NAME: default
+
+### ============================================= 4. Model Specific settings: =============================================================
+
+# Model settings
+HYDROLOGICAL_MODEL: GR
+ROUTING_MODEL: none
+
+# GR Model settings
+GR_MODEL_TYPE: GR4J
+GR_SPATIAL_MODE: lumped
+GR_PARAMS_TO_CALIBRATE: X1,X2,X3,X4,CTG,Kf,Gratio,Albedo_diff
+
+### ============================================= 5. Evaluation settings: =================================================================
+
+# Simulation settings
+SIM_REACH_ID: 1
+SIMULATIONS_PATH: default
+
+# Observation data settings
+OBSERVATIONS_PATH: default
+
+# LamaH-Ice observation data
+STREAMFLOW_DATA_PROVIDER: LAMAH_ICE
+LAMAH_ICE_DOMAIN_ID: 32
+LAMAH_ICE_PATH: /Users/darrieythorsson/compHydro/code/SYMFLUENCE_data/lamahice
+DOWNLOAD_LAMAH_ICE_DATA: true
+STREAMFLOW_RAW_PATH: default
+STREAMFLOW_RAW_NAME: default
+STREAMFLOW_PROCESSED_PATH: default
+
+### ============================================= 6. Optimization settings: ===============================================================
+
+OPTIMIZATION_METHODS: [iteration]
+
+# Iterative optimization settings
+ITERATIVE_OPTIMIZATION_ALGORITHM: DDS
+NUMBER_OF_ITERATIONS: 1000
+DDS_R: 0.2
+OPTIMIZATION_METRIC: KGE
+TARGET_METRIC: KGE
+
+# GR4J parameter bounds (tuned for Iceland)
+GR4J_PARAM_BOUNDS:
+  X1: [100, 1500]
+  X2: [-5.0, 15.0]
+  X3: [20, 500]
+  X4: [0.5, 10.0]
+  CTG: [0.0, 1.0]
+  Kf: [0.5, 20.0]
+  Gratio: [0.01, 200.0]
+  Albedo_diff: [0.001, 1.0]
+
+# DDS specific settings
+ASYNC_DDS_POOL_SIZE: 10
+ASYNC_DDS_BATCH_SIZE: 10
+MAX_STAGNATION_BATCHES: 5

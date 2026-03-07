@@ -1,0 +1,310 @@
+### ============================================= SYMFLUENCE configuration file ============================================================
+# This configuration file contains all settings required to run the SYMFLUENCE workflow, from conceptualisation to evaluation.
+# VIC (Variable Infiltration Capacity) Model Configuration for Bow at Banff
+#
+### ============================================= 1. Global settings: =====================================================================
+
+# Main paths
+SYMFLUENCE_DATA_DIR: "/Users/darrieythorsson/compHydro/code/SYMFLUENCE_data/"
+SYMFLUENCE_CODE_DIR: "/Users/darrieythorsson/compHydro/code/SYMFLUENCE"
+
+# Experiment settings
+DOMAIN_NAME: Bow_at_Banff_lumped_era5                          # Name of experimental domain
+EXPERIMENT_ID: run_1                                           # Name of experiment
+EXPERIMENT_TIME_START: 2002-01-01 01:00                        # Start time of experiment e.g. '2010-01-01 00:00'
+EXPERIMENT_TIME_END: 2009-12-31 23:00                          # End time of experiment e.g. '2010-12-31 23:00'
+CALIBRATION_PERIOD: 2004-01-01, 2007-12-31                     # start_date, end_date in format YYYY-MM-DD
+EVALUATION_PERIOD:  2008-01-01, 2009-12-31                     # start_date, end_date in format YYYY-MM-DD
+SPINUP_PERIOD: 2002-01-01, 2003-12-31
+
+# Computatational settings
+MPI_PROCESSES: 1                                               # Number of parallel processes allowed, based on your system's capabilities
+FORCE_RUN_ALL_STEPS: False                                      # Run all steps in the workflow and overwrite existing files
+
+### ============================================= 2. Geopsatial settings: =================================================================
+# Coordinate settings
+POUR_POINT_COORDS: 51.1722/-115.5717                          # Pour point coordinates lat/lon, if default use user provided shapefile.
+BOUNDING_BOX_COORDS: 51.76/-116.55/50.95/-115.5               # Bounding box of the domain: lat_max/lon_min/lat_min/lon_max.
+
+# Pour point shapefile path
+POUR_POINT_SHP_PATH: default                                   # If 'default', uses 'root_path/domain_[name]/shapefiles/pour_point'.
+POUR_POINT_SHP_NAME: default                                   # If 'default', uses '[domain_name]_pourPoint.shp'.
+
+# Domain representation settings
+DOMAIN_DEFINITION_METHOD: lumped                               # Define domain representation method, current options: subset_geofabric, delineate_geofabric, lumped_watershed
+ROUTING_DELINEATION: lumped
+
+GEOFABRIC_TYPE: TDX                                            # Source geofabric to subset from, current options: Merit, TDX, NWS
+STREAM_THRESHOLD: 5000                                         # Threshold flow accumulation for stream vectorisation
+LUMPED_WATERSHED_METHOD: TauDEM                                # Use pysheds or TauDEM for lumped delineation
+CLEANUP_INTERMEDIATE_FILES: True                               # Remove temporary files from delieation
+DELINEATE_BY_POURPOINT: True                                   # Delineate watershed from pour point
+MOVE_OUTLETS_MAX_DISTANCE: 200                                 # Maximum distance to move outlets to stream
+MIN_GRU_SIZE: 1                                                # Minimum HRU size in km^2
+
+# Domain discretization settings
+SUB_GRID_DISCRETIZATION: GRUS                               # Sub-grid discretization method
+ELEVATION_BAND_SIZE: 200                                       # Elevation band size in meters
+MIN_HRU_SIZE: 4                                                # Minimum HRU size in km^2
+RADIATION_CLASS_NUMBER: 5                                      # Number of radiation classes for discretisation
+ASPECT_CLASS_NUMBER: 8                                    # Number of aspect classes for discretisation (4, 8, or custom number)
+ASPECT_PATH: default                                      # Path to aspect classification raster. If 'default', uses root_path/domain_[name]/attributes/aspect
+
+# Shapefile settings - Catchment shape (with HRU sub-basins)
+CATCHMENT_PATH: default                                        # Path to domain catchment shapefile. If default, uses self.data_dir / shapefiles / catchment /
+CATCHMENT_SHP_NAME: default                                    # Name of domain catchment shapefile used in data acquisition and modelling
+CATCHMENT_SHP_LAT: center_lat                                  # Name of the latitude column. Should be a value representative for the HRU. Typically the centroid
+CATCHMENT_SHP_LON: center_lon                                  # Name of the longitude column. Should be a value representative for the HRU. Typically the centroid.
+CATCHMENT_SHP_AREA: HRU_area                                   # Name of the catchment area column. Area must be in units [m^2]
+CATCHMENT_SHP_HRUID: HRU_ID                                    # HRU ID column in riverBasin shapefile
+CATCHMENT_SHP_GRUID: GRU_ID                                    # GRU ID column in riverBasin shapefile
+
+# Shapefile settings - Basins shape (GRUs from watershed delineation)
+RIVER_BASINS_PATH: default                                     # Path to delineated river basins shapefile. If default, uses self.data_dir / shapefiles / river_basins
+RIVER_BASINS_NAME: default                                     # Name of river basin shapefile
+RIVER_BASIN_SHP_RM_GRUID: GRU_ID                               # GRU ID column in riverBasin shapefile
+RIVER_BASIN_SHP_HRU_TO_SEG: gru_to_seg                         # Name of the column that shows which river segment each HRU connects to.
+RIVER_BASIN_SHP_AREA: GRU_area                                 # Name of the catchment area column. Area must be in units [m^2]
+
+# Shapefile settings - River network shape
+RIVER_NETWORK_SHP_PATH: default                                # Path to river network shapefile. If default, uses self.data_dir / shapefiles / river_network
+RIVER_NETWORK_SHP_NAME: default                                # Name of domain river network shapefile
+RIVER_NETWORK_SHP_LENGTH: Length                               # Name of the segment length column. Length must be in units [m].
+RIVER_NETWORK_SHP_SEGID: LINKNO                                # Name of the segment ID column.
+RIVER_NETWORK_SHP_DOWNSEGID: DSLINKNO                          # Name of the downstream segment ID column.
+RIVER_NETWORK_SHP_SLOPE: Slope                                 # Name of the slope column. Slope must be in in units [length/length].
+
+# Geospatial data paths
+OUTPUT_BASINS_PATH: default                                    # If 'default', uses 'root_path/domain_[name]/shapefiles/river_basins/[domain_name]_riverBasins.shp'
+OUTPUT_RIVERS_PATH: default                                    # If 'default', uses 'root_path/domain_[name]/shapefiles/river_network/[domain_name]_riverNetwork.shp'
+DEM_PATH: default                                              # If 'default', uses 'root_path/domain_[name]/attributes/elevation/dem/'
+DEM_NAME: default                                                # Name of elevation dem tiff
+SOURCE_GEOFABRIC_BASINS_PATH: /Users/darrieythorsson/compHydro/data/CWARHM_data/domain_NorthAmerica/shapefiles/catchment/8020000010-basins.gpkg                                   # Path to source geofabric basins
+SOURCE_GEOFABRIC_RIVERS_PATH: /Users/darrieythorsson/compHydro/data/CWARHM_data/domain_NorthAmerica/shapefiles/river_network/8020000010-streamnet.gpkg                                  # Path to source geofabric rivers
+TAUDEM_DIR: default                                            # If 'default', uses 'root_path/installs/TauDEM
+OUTPUT_DIR: default                                            # If 'default', uses 'root_path/domain_[name]/shapefiles/r
+CATCHMENT_PLOT_DIR: default                                    # Directory to output plots of domain catchment
+SOIL_CLASS_PATH: default                                       # Path to soil classification raster. If 'default', uses root_path/domain_[name]/attributes/soilclass
+SOIL_CLASS_NAME: default                                        # Name of soil classification raster
+LAND_CLASS_PATH: default                                       # Path to land classification raster. If 'default', uses root_path/domain_[name]/attributes/landclass
+LAND_CLASS_NAME: default                                       # Name of land classification raster
+RADIATION_PATH: default                                        # Path to radiation classification raster. If 'default', uses root_path/domain_[name]/attributes/radiation
+
+# Tool paths
+DATATOOL_PATH: default                                         # Path to datatool executable
+GISTOOL_PATH: default                                          # Path to gistool executable
+EASYMORE_CLIENT: easymore cli                                  # Name of easymore client
+DATATOOL_DATASET_ROOT: /work/comphyd_lab/data/meteorological-data/    # Path to datatool datasets root directory
+DATATOOL_CACHE: /home/darri.eythorsson                             # Cache directory used in datatool
+TOOL_ACCOUNT: def-mclark                                   # HPC account for running datatool
+GISTOOL_DATASET_ROOT: /work/comphyd_lab/data/geospatial-data/         # Path to gistool datasets root directory
+GISTOOL_LIB_PATH: /work/comphyd_lab/envs/r-env/                     # Path to gistool libraries
+TOOL_CACHE: /home/darri.eythorsson/cache                                      # Path to gistool cache directory
+EASYMORE_CACHE: /home/darri.eythorsson/easymore/                          # Path to easymore cache directory
+EASYMORE_JOB_CONF: "installs/MAF/02_model_agnostic_component/easymore-job.slurm" #Path to easymore job config
+CLUSTER_JSON: /work/comphyd_lab/users/darri/data/SYMFLUENCE_data/installs/datatool/etc/clusters/ucalgary-arc.json
+
+### ============================================= 3. Model Agnostic settings: =============================================================
+
+# Forcing data settings
+FORCING_DATASET: ERA5                                          # Forcing dataset to use
+FORCING_VARIABLES: default                                     # Forcing dataset variables to use or acquire
+FORCING_MEASUREMENT_HEIGHT: 2                                  # Reference height for forcing measurements [m].
+FORCING_TIME_STEP_SIZE: 3600                                   # Size of the forcing time step in [s]. Must be constant.
+APPLY_LAPSE_RATE: True                                         # Flag for applying lapse rate options: True or False
+LAPSE_RATE: 0.0065                                             # [K m-1]
+FORCING_SHAPE_LAT_NAME: lat                                    # Name of the latitude field that contains the latitude of forcing.
+FORCING_SHAPE_LON_NAME: lon                                    # Name of the longitude field that contains the latitude of forcing.
+FORCING_PATH: default                                          # If default, uses, self.project_dir / forcing / raw_data
+
+# EM-Earth forcing supplementation settings
+SUPPLEMENT_FORCING: False                                      # Supplement forcing data with precip and temperature from EM-EARTH
+EM_EARTH_PRCP_DIR: "/anvil/datasets/meteorological/EM-Earth/EM_Earth_v1/deterministic_hourly/prcp/NorthAmerica"  # Path to EM-Earth precipitation data
+EM_EARTH_TMEAN_DIR: "/anvil/datasets/meteorological/EM-Earth/EM_Earth_v1/deterministic_hourly/tmean/NorthAmerica" # Path to EM-Earth temperature data
+
+# Intersection paths (for zonal statistics)
+INTERSECT_SOIL_PATH: default                                   # If 'default', uses 'root_path/domain_[name]/shapefiles/catchment_intersection/with_soilgrids'.
+INTERSECT_SOIL_NAME: catchment_with_soilclass.shp              # Name of the shapefile with intersection between catchment and SOILGRIDS-derived USDA soil classes, stored in columns 'USDA_{1,...n}'
+INTERSECT_ROUTING_PATH: default                                # If 'default', uses 'root_path/domain_[name]/shapefiles/catchment_intersection/with_routing'.
+INTERSECT_ROUTING_NAME: catchment_with_routing_basins.shp      # Name of the shapefile with intersection between hydrologic model catchments and routing model catchments.
+INTERSECT_DEM_PATH: default                                    # If 'default', uses 'root_path/domain_[name]/shapefiles/catchment_intersection/with_routing'.
+INTERSECT_DEM_NAME: catchment_with_dem.shp                     # Name of the shapefile with intersection between hydrologic model catchments and routing model catchments.
+INTERSECT_LAND_PATH: default                                   # If 'default', uses 'root_path/domain_[name]/shapefiles/catchment_intersection/with_routing'.
+INTERSECT_LAND_NAME: catchment_with_landclass.shp              # Name of the shapefile with intersection between hydrologic model catchments and routing model catchments.
+
+### ============================================= 4. Model Specific settings: =============================================================
+## Model settings
+HYDROLOGICAL_MODEL: VIC                                        # Hydrological model: VIC (Variable Infiltration Capacity)
+ROUTING_MODEL: none                                            # No external routing for lumped VIC
+
+# ============================================= VIC Settings =============================================================
+# VIC Installation
+VIC_INSTALL_PATH: default                                      # Path to VIC installation, if default uses installs/vic/bin
+VIC_EXE: vic_image.exe                                         # VIC executable name
+VIC_DRIVER: image                                              # VIC driver type: 'image' (NetCDF) or 'classic'
+
+# VIC Model Settings
+VIC_SPATIAL_MODE: lumped                                       # Spatial mode: 'lumped' or 'distributed'
+SETTINGS_VIC_PATH: default                                     # Path to VIC settings directory
+VIC_GLOBAL_PARAM_FILE: vic_global.txt                          # Global parameter file name
+VIC_DOMAIN_FILE: vic_domain.nc                                 # Domain file name
+VIC_PARAMS_FILE: vic_params.nc                                 # Parameter file name
+
+# VIC Model Options
+VIC_FULL_ENERGY: False                                         # Simplified energy mode (more calibratable)
+VIC_FROZEN_SOIL: False                                         # Enable frozen soil algorithm
+VIC_SNOW_BAND: True                                            # Enable snow/elevation bands
+VIC_STEPS_PER_DAY: 24                                          # Model timesteps per day (24 = hourly)
+
+# VIC Output Settings
+VIC_OUTPUT_PREFIX: vic_output                                  # Output file prefix
+EXPERIMENT_OUTPUT_VIC: default                                 # Output directory
+
+# VIC Calibration Parameters
+# Key VIC parameters for calibration:
+#   infilt: Variable infiltration curve parameter (b_infilt) [0.001-0.9]
+#   Ds: Fraction of Dsmax where non-linear baseflow begins [0-1]
+#   Dsmax: Maximum baseflow velocity [mm/day]
+#   Ws: Fraction of soil moisture where non-linear baseflow begins [0-1]
+#   c: ARNO baseflow exponent [1-4]
+#   depth1/2/3: Soil layer depths [m]
+#   expt: Brooks-Corey soil drainage exponent [4-30]
+#   Ksat: Saturated hydraulic conductivity [mm/day]
+#   Wcr_FRACT: Critical soil moisture fraction for ET [0.3-0.9]
+#   Wpwp_FRACT: Wilting point fraction [0.05-0.45]
+#   snow_rough: Snow surface roughness affecting melt rate [m]
+VIC_PARAMS_TO_CALIBRATE: infilt,Ds,Dsmax,Ws,c,depth1,depth2,depth3,expt,Ksat,Wcr_FRACT,Wpwp_FRACT,snow_rough
+
+# VIC Execution
+VIC_TIMEOUT: 3600                                              # Model execution timeout in seconds
+
+# ============================================= End VIC Settings =========================================================
+
+# SUMMA settings (not used when HYDROLOGICAL_MODEL=VIC)
+SETTINGS_SUMMA_CONNECT_HRUS: yes                               # Attribute setting: "no" or "yes". If no; all HRUs modeled as independent columns
+SETTINGS_SUMMA_TRIALPARAM_N: 0                                 # Number of trial parameter specifications. Specify 0 if none are wanted (they can still be included in this file but won't be read).
+SETTINGS_SUMMA_TRIALPARAM_1:                                   # Name of trial parameter and value to assign. Value assumed to be float.
+
+DECISION_OPTIONS:                                              # Select which SUMMA model decisions to analyse
+  snowIncept:
+    - lightSnow
+    - stickySnow
+  compaction:
+    - consettl
+    - anderson
+  snowLayers:
+    - CLM_2010
+    - jrdn1991
+  alb_method:
+    - conDecay
+    - varDecay
+  thCondSnow:
+    - tyen1965
+    - melr1977
+    - jrdn1991
+    - smnv2000
+
+# SUMMMA Paths and filenames
+SETTINGS_SUMMA_PATH: default                                   # Path to SUMMA run settings, if default self.data_dir / settings / SUMMA
+SETTINGS_SUMMA_FILEMANAGER: fileManager.txt                    # Name of SUMMA file manager
+SETTINGS_SUMMA_FORCING_LIST: forcingFileList.txt               # Name of SUMMA forcing file list
+SETTINGS_SUMMA_COLDSTATE: coldState.nc                         # Name of SUMMA initial conditions file
+SETTINGS_SUMMA_TRIALPARAMS: trialParams.nc                     # Name of SUMMA trial parameters file
+SETTINGS_SUMMA_ATTRIBUTES: attributes.nc                       # Name of SUMMA attributes file
+SETTINGS_SUMMA_OUTPUT: outputControl.txt                       # Name of SUMMA output control file
+SETTINGS_SUMMA_BASIN_PARAMS_FILE: basinParamInfo.txt           # Name of SUMMA basin parameters file
+SETTINGS_SUMMA_LOCAL_PARAMS_FILE: localParamInfo.txt           # Name of SUMMA basin parameters file
+SUMMA_INSTALL_PATH: default                                    # SUMMA installation path, if default, self.code_dir / installs / summa / bin
+SUMMA_EXE: summa_sundials.exe                                  # Name of SUMMA executable
+
+# Mizuroute settings
+SETTINGS_MIZU_WITHIN_BASIN: 0                                  # '0' (no) or '1' (IRF routing). Flag to enable within-basin routing by mizuRoute. Should be set to 0 if SUMMA is run with "subRouting" decision "timeDlay".
+SETTINGS_MIZU_ROUTING_DT: 3600                                 # Duration of the routing time step [s].
+SETTINGS_MIZU_ROUTING_UNITS: m/s                               # Units of the variable to be routed.
+SETTINGS_MIZU_ROUTING_VAR: averageRoutedRunoff                 # Name of output variable to use for routing.
+SETTINGS_MIZU_OUTPUT_FREQ: single                              # Frequency with which mizuRoute generates new output files. Must be one of 'single', 'daily', 'monthly', 'yearly'.
+SETTINGS_MIZU_OUTPUT_VARS: 1                                   # Routing output. '0' for both KWT and IRF; '1' IRF only; '2' KWT only.
+SETTINGS_MIZU_MAKE_OUTLET: n/a                                 # Segment ID or IDs that should be set as network outlet. Specify multiple IDs separated by commas: X,Y,Z. Specify no IDs as: n/a. Note that this can also be done in the network shapefile.
+SETTINGS_MIZU_NEEDS_REMAP: no                                  # 'no' if routing basins map 1:1 onto model GRUs. 'yes' if river segments span multiple GRUs or if multiple segments are inside a single GRU.
+
+# Mizuroute Paths and filenames
+SETTINGS_MIZU_PATH: default                                    # Directory containing mizuroute settings. If "default" self.data_dir / settings / mizuRoute
+INSTALL_PATH_MIZUROUTE: default                                # Mizuroute installation path. If "default", self.code_dir / installs / mizuRoute / route / bin
+EXE_NAME_MIZUROUTE: mizuroute.exe                              # Name of mizuroute executable
+SETTINGS_MIZU_TOPOLOGY: topology.nc                            # Name of the river network topology file.
+SETTINGS_MIZU_PARAMETERS: param.nml.default                    # Mizuroute parameter file
+SETTINGS_MIZU_CONTROL_FILE: mizuroute.control                  # Name of the control file.
+SETTINGS_MIZU_REMAP: routing_remap.nc                          # Name of the optional catchment remapping file, for cases when SUMMA uses different catchments than mizuRoute.
+
+# Model results path
+EXPERIMENT_OUTPUT_SUMMA: default                               # Path to SUMMA output. If 'default', uses 'root_path/domain_[name]/simulations/[experiment_id]/SUMMA'.
+EXPERIMENT_OUTPUT_MIZUROUTE: default                           # Path to mizuRoute output. If 'default', uses 'root_path/domain_[name]/simulations/[experiment_id]/mizuRoute'.
+EXPERIMENT_LOG_MIZUROUTE: default                              # Path to mizuRoute experiment log file. If 'default', uses 'root_path/domain_[name]/simulations/[experiment_id]/SUMMA'/SUMMA_logs.
+EXPERIMENT_LOG_SUMMA: default                                  # Path to SUMMA experiment log file. If 'default', uses 'root_path/domain_[name]/simulations/[experiment_id]/mizuRoute/mizuRoute_logs'
+
+# FUSE settings
+SETTINGS_FUSE_FILEMANAGER: fm_catch.txt                        # Name of FUSE file manager
+FUSE_EXE: fuse.exe                                             # Name of FUSE executable
+
+# GR settings
+GR_EXE: GR.r                                                   # Name of GR executable script
+
+# HYPE settings
+SETTINGS_HYPE_PATH: default                                    # Path to HYPE run settings, if default self.data_dir / settings / HYPE
+SETTINGS_HYPE_CONTROL_FILE: info.txt                       # Name of HYPE file manager
+HYPE_INSTALL_PATH: default                                     # HYPE installation path, if default, self.code_dir / installs / hype / bin
+HYPE_EXE: hype                                                 # Name of HYPE executable
+
+### ============================================= 5. Evaluation settings: =================================================================
+## Simulation settings
+SIM_REACH_ID: 228                                              # River reach ID used for streamflow evaluation and optimization
+SIMULATIONS_PATH: default                                      # Path to streamflow simulation results, if default, uses self.data_dir / simulations / config['EXPERIMENT_ID'] / mizuRoute /
+
+# Observation data settings
+OBSERVATIONS_PATH: default                                     # Path to observed streamflow data for evaluation. If default, uses self.data_dir / observations / streamflow / preprocessed / config['DOMAIN_NAME']_streamflow_processed.csv
+
+# Observation data paths
+STREAMFLOW_DATA_PROVIDER: WSC                                 # Provider of streamflow data, current options: USGS, WSC, VI
+DOWNLOAD_USGS_DATA: True
+DOWNLOAD_WSC_DATA: True
+STATION_ID: 05BB001
+STREAMFLOW_RAW_PATH: default                                   # Path to streamflow raw data
+STREAMFLOW_RAW_NAME: default                                   # Name of streamflow raw data file
+STREAMFLOW_PROCESSED_PATH: default                             # Path to streamflow processed dataset. If default, uses self.data_dir / observations / streamflow / preprocessed / config['DOMAIN_NAME']_streamflow_processed.csv
+HYDAT_PATH: /work/comphyd_lab/data/geospatial-data/hydat/Hydat.sqlite3 #Path to HYDAT database
+
+
+### ============================================= 6. Optimization settings: ===============================================================
+
+OPTIMIZATION_METHODS: [iteration]                   # Methods to optimize the model performance, options: 'emulation', 'iteration'
+
+# Iterative optimization settings
+ITERATIVE_OPTIMIZATION_ALGORITHM: DDS                           # Options DDS, PSO, ABC or SCE-UA (DDS recommended)
+NUMBER_OF_ITERATIONS: 1000                                       # Number of iterations for calibration
+DDS_R: 0.2                                                      # DDS perturbation parameter (0.1-0.3 typical)
+POPULATION_SIZE: 20                                             # Population size for genetic algorithms (not used for DDS)
+OPTIMIZATION_METRIC: KGE                                       # Options: Root mean square error : "RMSE", Nash-Suthcliffe efficiency: "NSE", Kling-Gupta Efficiency: "KGE", KGE projected: "KGEp", Mean absolute error: "MAE"
+TARGET_METRIC: KGE                                             # Target metric for optimization
+
+# VIC Parameter Bounds for calibration
+VIC_PARAM_BOUNDS:
+  infilt: [0.001, 0.9]                                         # Variable infiltration curve parameter
+  Ds: [0.0, 1.0]                                               # Fraction of Dsmax where non-linear baseflow begins
+  Dsmax: [0.1, 30.0]                                           # Maximum baseflow velocity [mm/day]
+  Ws: [0.1, 1.0]                                               # Fraction of max soil moisture for non-linear baseflow
+  c: [1.0, 6.0]                                                # ARNO baseflow exponent
+  depth1: [0.01, 0.5]                                          # Layer 1 depth [m]
+  depth2: [0.1, 2.0]                                           # Layer 2 depth [m]
+  depth3: [0.1, 3.0]                                           # Layer 3 depth [m]
+  expt: [4.0, 30.0]                                            # Brooks-Corey soil drainage exponent
+  Ksat: [10.0, 5000.0]                                         # Saturated hydraulic conductivity [mm/day]
+  Wcr_FRACT: [0.3, 0.9]                                        # Critical soil moisture fraction for ET
+  Wpwp_FRACT: [0.05, 0.45]                                     # Wilting point fraction
+  snow_rough: [0.00001, 0.01]                                   # Snow surface roughness [m]
+  elev_offset: [0.0, 1000.0]                                     # Snow band elevation offset [m] (temp bias: +100m = -0.65°C)
+
+  # -- DDS specific settings
+DDS_R:  0.2                                                    # DDS perturbation parameter
+ASYNC_DDS_POOL_SIZE: 10                                        # Size of shared solution pool
+ASYNC_DDS_BATCH_SIZE: 10                                       # Evaluations per batch
+MAX_STAGNATION_BATCHES: 5                                     # Stop after N batches without improvement

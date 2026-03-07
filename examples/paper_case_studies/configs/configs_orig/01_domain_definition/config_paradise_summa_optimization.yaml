@@ -1,0 +1,112 @@
+# ================================================================================
+# Paradise SNOTEL Single-Target Optimization Configuration
+# Stable working configuration for SWE-only calibration
+# ================================================================================
+# Test validates complete workflow:
+# - Point-scale domain definition (Paradise SNOTEL, WA)
+# - Cloud data acquisition (ERA5, SNOTEL)
+# - SUMMA preprocessing and execution
+# - Single-objective DDS optimization with SWE (Snow Water Equivalent)
+# ================================================================================
+
+# Experiment metadata
+EXPERIMENT_ID: paradise_full_example
+DOMAIN_NAME: paradise_snotel_wa
+
+# Domain definition - Point scale (Paradise SNOTEL station)
+DOMAIN_DEFINITION_METHOD: point
+SUB_GRID_DISCRETIZATION: GRUs
+POUR_POINT_COORDS: 46.78/-121.75  # Paradise SNOTEL, Mount Rainier, WA
+BOUNDING_BOX_COORDS: 47.0/-122.0/46.5/-121.5  # Expanded for ERA5 download
+DELINEATE_BY_POURPOINT: false
+GEOFABRIC_TYPE: na
+ROUTING_DELINEATION: lumped
+
+# Time periods (5 years total: 2015-2019)
+EXPERIMENT_TIME_START: '2015-01-01 00:00'
+EXPERIMENT_TIME_END: '2019-12-31 23:00'
+SPINUP_PERIOD: '2015-01-01, 2015-12-31'           # 1 year spinup
+CALIBRATION_PERIOD: '2016-01-01, 2017-12-31'       # 2 year calibration
+EVALUATION_PERIOD: '2018-01-01, 2019-12-31'        # 2 year evaluation
+CALIBRATION_TIMESTEP: daily
+
+# Cloud data access
+DATA_ACCESS: cloud
+DEM_SOURCE: copernicus
+DOWNLOAD_DEM: true
+DOWNLOAD_SOIL: true
+DOWNLOAD_LAND_COVER: true
+LAND_CLASS_SOURCE: modis
+
+# Forcing dataset - ERA5 from Copernicus Climate Data Store
+FORCING_DATASET: ERA5
+FORCING_TIME_STEP_SIZE: 3600
+FORCING_MEASUREMENT_HEIGHT: 2
+ERA5_USE_CDS: true
+
+# Observations - SNOTEL only (working configuration)
+SNOTEL_STATION: '679'  # Paradise SNOTEL station ID
+SNOTEL_STATE: WA
+DOWNLOAD_SNOTEL: true
+
+DOWNLOAD_MODIS_SNOW: false
+DOWNLOAD_ISMN: false
+DOWNLOAD_SMAP: false
+
+ADDITIONAL_OBSERVATIONS: SNOTEL
+
+# Disable other observation sources
+DOWNLOAD_USGS_DATA: false
+DOWNLOAD_WSC_DATA: false
+DOWNLOAD_USGS_GW: false
+DOWNLOAD_GRACE: false
+
+# Model configuration - SUMMA point-scale
+HYDROLOGICAL_MODEL: SUMMA
+SUMMA_EXE: summa_sundials.exe
+SUMMA_INSTALL_PATH: default
+SETTINGS_SUMMA_PATH: default
+SETTINGS_SUMMA_GRU_COUNT: 1  # Point scale = 1 GRU
+SETTINGS_SUMMA_USE_PARALLEL_SUMMA: false
+SETTINGS_SUMMA_ATTRIBUTES: attributes.nc
+SETTINGS_SUMMA_BASIN_PARAMS_FILE: basinParamInfo.txt
+SETTINGS_SUMMA_LOCAL_PARAMS_FILE: localParamInfo.txt
+SETTINGS_SUMMA_FILEMANAGER: fileManager.txt
+SETTINGS_SUMMA_FORCING_LIST: forcingFileList.txt
+
+# Routing - None for point scale
+ROUTING_MODEL: none
+
+# Optimization configuration - Single-target DDS (stable and working)
+OPTIMIZATION_METHODS: ['iteration']
+ITERATIVE_OPTIMIZATION_ALGORITHM: DDS
+OPTIMIZATION_TARGET: SWE
+OPTIMIZATION_METRIC: KGE
+EVALUATION_DATA: ['SWE']
+NUMBER_OF_ITERATIONS: 1000
+
+# DDS settings
+DDS_POPULATION_SIZE: 20
+
+# Parameters to calibrate - Snow-focused for SNOTEL site
+# Focus on snow accumulation, melt, and albedo processes
+# Added frozenPrecipMultip and tempCritRain to handle ERA5 bias and partitioning
+PARAMS_TO_CALIBRATE: frozenPrecipMultip,tempCritRain,snowfrz_scale,z0Snow,albedoMax,albedoMinWinter
+
+# No basin routing parameters for point-scale
+BASIN_PARAMS_TO_CALIBRATE: ""
+
+# Project paths
+SYMFLUENCE_CODE_DIR: /Users/darrieythorsson/compHydro/code/SYMFLUENCE
+SYMFLUENCE_DATA_DIR: /Users/darrieythorsson/compHydro/code/SYMFLUENCE_data
+OUTPUT_DIR: default
+
+# Analysis and reporting
+ANALYSES: [benchmarking, attributes, visualization, optimization]
+
+# Other settings
+LOG_LEVEL: DEBUG
+RANDOM_SEED: null
+FORCE_RUN_ALL_STEPS: false
+NUM_PROCESSES: 5
+SUPPLEMENT_FORCING: false

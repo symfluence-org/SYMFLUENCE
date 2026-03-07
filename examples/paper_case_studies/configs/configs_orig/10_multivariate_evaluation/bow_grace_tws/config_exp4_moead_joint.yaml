@@ -1,0 +1,336 @@
+### ============================================= SYMFLUENCE configuration file ============================================================
+# EXPERIMENT 4: Joint Streamflow + TWS calibration using MOEA/D
+# Bow at Banff - Section 4.10 Multivariate Evaluation
+# Comparison with NSGA-II (Experiment 3) using same budget
+### ============================================= 1. Global settings: =====================================================================
+
+# Main paths
+SYMFLUENCE_DATA_DIR: "/Users/darrieythorsson/compHydro/code/SYMFLUENCE_data/"
+SYMFLUENCE_CODE_DIR: "/Users/darrieythorsson/compHydro/code/SYMFLUENCE"
+
+# Experiment settings
+DOMAIN_NAME: Bow_at_Banff_multivar
+EXPERIMENT_ID: bow_exp4_moead_joint
+EXPERIMENT_TIME_START: 2002-04-01 01:00
+EXPERIMENT_TIME_END: 2017-12-31 23:00
+CALIBRATION_PERIOD: 2004-01-01, 2010-12-31
+EVALUATION_PERIOD:  2011-01-01, 2017-12-31
+SPINUP_PERIOD: 2002-04-01, 2003-12-31
+
+# Data access settings
+DATA_ACCESS: "cloud"
+DEM_SOURCE: "copernicus"
+DOWNLOAD_DEM: true
+LAND_CLASS_SOURCE: "modis"
+DOWNLOAD_LAND_COVER: true
+DOWNLOAD_SOIL: true
+
+# Computational settings
+MPI_PROCESSES: 1
+FORCE_RUN_ALL_STEPS: False
+
+### ============================================= 2. Geospatial settings: =================================================================
+# Coordinate settings (Bow at Banff)
+POUR_POINT_COORDS: 51.1722/-115.5717
+BOUNDING_BOX_COORDS: 51.76/-116.55/50.95/-115.5
+
+# Pour point shapefile path
+POUR_POINT_SHP_PATH: default
+POUR_POINT_SHP_NAME: default
+
+# Domain representation settings
+DOMAIN_DEFINITION_METHOD: lumped
+ROUTING_DELINEATION: lumped
+
+GEOFABRIC_TYPE: TDX
+STREAM_THRESHOLD: 5000
+LUMPED_WATERSHED_METHOD: TauDEM
+CLEANUP_INTERMEDIATE_FILES: True
+DELINEATE_BY_POURPOINT: True
+MOVE_OUTLETS_MAX_DISTANCE: 200
+MIN_GRU_SIZE: 1
+
+# Domain discretization settings
+SUB_GRID_DISCRETIZATION: GRUS
+ELEVATION_BAND_SIZE: 200
+MIN_HRU_SIZE: 4
+RADIATION_CLASS_NUMBER: 5
+ASPECT_CLASS_NUMBER: 8
+ASPECT_PATH: default
+
+# Shapefile settings - Catchment shape
+CATCHMENT_PATH: /Users/darrieythorsson/compHydro/code/SYMFLUENCE_data/domain_Bow_at_Banff_multivar/shapefiles/catchment/lumped/bow_tws_uncalibrated
+CATCHMENT_SHP_NAME: Bow_at_Banff_multivar_HRUs_GRUS.shp
+CATCHMENT_SHP_LAT: center_lat
+CATCHMENT_SHP_LON: center_lon
+CATCHMENT_SHP_AREA: HRU_area
+CATCHMENT_SHP_HRUID: HRU_ID
+CATCHMENT_SHP_GRUID: GRU_ID
+
+# Shapefile settings - Basins shape
+RIVER_BASINS_PATH: default
+RIVER_BASINS_NAME: default
+RIVER_BASIN_SHP_RM_GRUID: GRU_ID
+RIVER_BASIN_SHP_HRU_TO_SEG: gru_to_seg
+RIVER_BASIN_SHP_AREA: GRU_area
+
+# Shapefile settings - River network shape
+RIVER_NETWORK_SHP_PATH: default
+RIVER_NETWORK_SHP_NAME: default
+RIVER_NETWORK_SHP_LENGTH: Length
+RIVER_NETWORK_SHP_SEGID: LINKNO
+RIVER_NETWORK_SHP_DOWNSEGID: DSLINKNO
+RIVER_NETWORK_SHP_SLOPE: Slope
+
+# Geospatial data paths
+OUTPUT_BASINS_PATH: default
+OUTPUT_RIVERS_PATH: default
+DEM_PATH: default
+DEM_NAME: default
+SOURCE_GEOFABRIC_BASINS_PATH: /Users/darrieythorsson/compHydro/data/CWARHM_data/domain_NorthAmerica/shapefiles/catchment/8020000010-basins.gpkg
+SOURCE_GEOFABRIC_RIVERS_PATH: /Users/darrieythorsson/compHydro/data/CWARHM_data/domain_NorthAmerica/shapefiles/river_network/8020000010-streamnet.gpkg
+TAUDEM_DIR: default
+OUTPUT_DIR: default
+CATCHMENT_PLOT_DIR: default
+SOIL_CLASS_PATH: default
+SOIL_CLASS_NAME: default
+LAND_CLASS_PATH: default
+LAND_CLASS_NAME: default
+RADIATION_PATH: default
+
+# Tool paths
+DATATOOL_PATH: default
+GISTOOL_PATH: default
+EASYMORE_CLIENT: easymore cli
+DATATOOL_DATASET_ROOT: /work/comphyd_lab/data/meteorological-data/
+DATATOOL_CACHE: /home/darri.eythorsson
+TOOL_ACCOUNT: def-mclark
+GISTOOL_DATASET_ROOT: /work/comphyd_lab/data/geospatial-data/
+GISTOOL_LIB_PATH: /work/comphyd_lab/envs/r-env/
+TOOL_CACHE: /home/darri.eythorsson/cache
+EASYMORE_CACHE: /home/darri.eythorsson/easymore/
+EASYMORE_JOB_CONF: "installs/MAF/02_model_agnostic_component/easymore-job.slurm"
+CLUSTER_JSON: /work/comphyd_lab/users/darri/data/SYMFLUENCE_data/installs/datatool/etc/clusters/ucalgary-arc.json
+
+### ============================================= 3. Model Agnostic settings: =============================================================
+
+# Forcing data settings
+FORCING_DATASET: RDRS
+FORCING_VARIABLES: default
+FORCING_MEASUREMENT_HEIGHT: 2
+FORCING_TIME_STEP_SIZE: 3600
+APPLY_LAPSE_RATE: True
+LAPSE_RATE: 0.0065
+FORCING_SHAPE_LAT_NAME: lat
+FORCING_SHAPE_LON_NAME: lon
+FORCING_PATH: default
+
+# EM-Earth forcing supplementation settings
+SUPPLEMENT_FORCING: False
+EM_EARTH_PRCP_DIR: "/anvil/datasets/meteorological/EM-Earth/EM_Earth_v1/deterministic_hourly/prcp/NorthAmerica"
+EM_EARTH_TMEAN_DIR: "/anvil/datasets/meteorological/EM-Earth/EM_Earth_v1/deterministic_hourly/tmean/NorthAmerica"
+
+# Intersection paths
+INTERSECT_SOIL_PATH: default
+INTERSECT_SOIL_NAME: catchment_with_soilclass.shp
+INTERSECT_ROUTING_PATH: default
+INTERSECT_ROUTING_NAME: catchment_with_routing_basins.shp
+INTERSECT_DEM_PATH: default
+INTERSECT_DEM_NAME: catchment_with_dem.shp
+INTERSECT_LAND_PATH: default
+INTERSECT_LAND_NAME: catchment_with_landclass.shp
+
+### ============================================= 4. Model Specific settings: =============================================================
+
+# Model settings
+HYDROLOGICAL_MODEL: SUMMA
+ROUTING_MODEL: none
+
+# SUMMA settings
+SETTINGS_SUMMA_CONNECT_HRUS: yes
+SETTINGS_SUMMA_TRIALPARAM_N: 0
+
+# SUMMA Decision options
+DECISION_OPTIONS:
+  snowIncept:
+    - lightSnow
+  compaction:
+    - anderson
+  snowLayers:
+    - CLM_2010
+  alb_method:
+    - varDecay
+  thCondSnow:
+    - jrdn1991
+
+# Soil depth calibration settings
+CALIBRATE_DEPTH: False
+DEPTH_TOTAL_MULT_BOUNDS: [0.1, 5.0]
+DEPTH_SHAPE_FACTOR_BOUNDS: [0.1, 3.0]
+
+# SUMMA Paths and filenames
+SETTINGS_SUMMA_PATH: default
+SETTINGS_SUMMA_FILEMANAGER: fileManager.txt
+SETTINGS_SUMMA_FORCING_LIST: forcingFileList.txt
+SETTINGS_SUMMA_COLDSTATE: coldState.nc
+SETTINGS_SUMMA_TRIALPARAMS: trialParams.nc
+SETTINGS_SUMMA_ATTRIBUTES: attributes.nc
+SETTINGS_SUMMA_OUTPUT: outputControl.txt
+SETTINGS_SUMMA_BASIN_PARAMS_FILE: basinParamInfo.txt
+SETTINGS_SUMMA_LOCAL_PARAMS_FILE: localParamInfo.txt
+SUMMA_INSTALL_PATH: default
+SUMMA_EXE: summa_sundials.exe
+
+# SUMMA Parameters to calibrate - EXTENDED SET for joint calibration
+# Includes both standard hydrological + groundwater/storage parameters
+PARAMS_TO_CALIBRATE: albedoMax,albedoMinWinter,newSnowDenMin,Fcapil,k_soil,theta_sat,critSoilWilting,critSoilTranspire,theta_res,f_impede,aquiferBaseflowExp,aquiferBaseflowRate,aquiferScaleFactor,specificStorage,specificYield
+BASIN_PARAMS_TO_CALIBRATE: routingGammaShape,routingGammaScale
+
+# Parallel SUMMA settings
+SETTINGS_SUMMA_USE_PARALLEL_SUMMA: false
+SETTINGS_SUMMA_CPUS_PER_TASK: 32
+SETTINGS_SUMMA_TIME_LIMIT: 01:00:00
+SETTINGS_SUMMA_MEM: 5
+SETTINGS_SUMMA_GRU_COUNT: 1
+SETTINGS_SUMMA_GRU_PER_JOB: 1
+SETTINGS_SUMMA_PARALLEL_PATH: default
+SETTINGS_SUMMA_PARALLEL_EXE: summa.exe
+
+# Mizuroute settings
+SETTINGS_MIZU_WITHIN_BASIN: 0
+SETTINGS_MIZU_ROUTING_DT: 3600
+SETTINGS_MIZU_ROUTING_UNITS: m/s
+SETTINGS_MIZU_ROUTING_VAR: averageRoutedRunoff
+SETTINGS_MIZU_OUTPUT_FREQ: single
+SETTINGS_MIZU_OUTPUT_VARS: 1
+SETTINGS_MIZU_MAKE_OUTLET: n/a
+SETTINGS_MIZU_NEEDS_REMAP: no
+
+# Mizuroute Paths and filenames
+SETTINGS_MIZU_PATH: default
+MIZUROUTE_INSTALL_PATH: default
+MIZUROUTE_EXE: mizuroute.exe
+SETTINGS_MIZU_TOPOLOGY: topology.nc
+SETTINGS_MIZU_PARAMETERS: param.nml.default
+SETTINGS_MIZU_CONTROL_FILE: mizuroute.control
+SETTINGS_MIZU_REMAP: routing_remap.nc
+
+# Model results path
+EXPERIMENT_OUTPUT_SUMMA: default
+EXPERIMENT_OUTPUT_MIZUROUTE: default
+EXPERIMENT_LOG_MIZUROUTE: default
+EXPERIMENT_LOG_SUMMA: default
+
+### ============================================= 5. Evaluation settings: =================================================================
+
+# Simulation settings
+SIM_REACH_ID: 228
+SIMULATIONS_PATH: default
+
+# Observation data settings
+OBSERVATIONS_PATH: default
+
+# Observation data paths
+STREAMFLOW_DATA_PROVIDER: WSC
+DOWNLOAD_USGS_DATA: True
+DOWNLOAD_WSC_DATA: True
+STATION_ID: 05BB001
+STREAMFLOW_RAW_PATH: default
+STREAMFLOW_RAW_NAME: default
+STREAMFLOW_PROCESSED_PATH: default
+HYDAT_PATH: /work/comphyd_lab/data/geospatial-data/hydat/Hydat.sqlite3
+
+### ============================================= 6. Multivariate evaluation settings: ====================================================
+
+# Enable multivariate evaluation
+MULTIVAR_EVALUATION: True
+
+# CALIBRATION TARGETS: Joint Streamflow + TWS (Multi-objective)
+# Same targets as Experiment 3 for fair comparison
+CALIBRATION_TARGETS:
+  - variable: streamflow
+    source: WSC
+    station_id: 05BB001
+    metric: KGE
+    weight: 0.5
+  - variable: TWS
+    source: GRACE
+    product: GRACE_JPL_RL06_mascon
+    metric: correlation
+    weight: 0.5
+
+# EVALUATION TARGETS: All variables for post-hoc comparison
+EVALUATION_TARGETS:
+  - variable: TWS
+    source: GRACE
+    metric: correlation
+  - variable: streamflow
+    source: WSC
+    metric: KGE
+  - variable: SWE
+    source: CanSWE
+    metric: correlation
+  - variable: ET
+    source: SSEBop
+    metric: correlation
+
+# GRACE data settings
+DOWNLOAD_GRACE: true
+GRACE_PRODUCT: GRACE_JPL_RL06_mascon
+GRACE_PATH: default
+GRACE_TWS_PRODUCT: GRACE_JPL_RL06_mascon
+GRACE_TWS_PATH: default
+GRACE_TWS_VARIABLE: lwe_thickness
+GRACE_ANOMALY_BASELINE: 2004-01-01, 2009-12-31
+
+# TWS computation settings
+TWS_COMPONENTS:
+  - scalarSWE
+  - scalarTotalSoilWat
+  - scalarCanopyWat
+  - scalarAquiferStorage
+TWS_AQUIFER_SCALE: 1000  # Convert m to mm
+
+# CanSWE in-situ SWE data settings
+DOWNLOAD_CANSWE: true
+CANSWE_VERSION: v6
+CANSWE_MIN_OBSERVATIONS: 10
+CANSWE_PATH: default
+
+### ============================================= 7. Optimization settings: ===============================================================
+
+OPTIMIZATION_METHODS: [iteration]
+
+# Iterative optimization settings - MULTI-OBJECTIVE using MOEA/D
+# Budget: 40 population × 50 generations = 2000 function evaluations (same as NSGA-II)
+ITERATIVE_OPTIMIZATION_ALGORITHM: MOEAD
+NUMBER_OF_ITERATIONS: 50
+POPULATION_SIZE: 40
+SKIP_WARM_START: true
+
+# MOEA/D multi-objective configuration
+# Reference: Zhang, Q. and Li, H. (2007). MOEA/D: A Multiobjective Evolutionary
+#            Algorithm Based on Decomposition. IEEE TEVC, 11(6), 712-731.
+MOEAD_MULTI_TARGET: true
+MOEAD_PRIMARY_TARGET: streamflow
+MOEAD_SECONDARY_TARGET: TWS
+MOEAD_PRIMARY_METRIC: KGE
+MOEAD_SECONDARY_METRIC: correlation
+
+# MOEA/D algorithm parameters
+MOEAD_NEIGHBORS: 20           # Neighborhood size (T in Zhang & Li 2007)
+MOEAD_CR: 1.0                 # Crossover rate for DE reproduction
+MOEAD_F: 0.5                  # DE scaling factor
+MOEAD_MUTATION: 0.1           # Polynomial mutation rate
+MOEAD_DECOMPOSITION: tchebycheff  # Decomposition method: 'tchebycheff', 'weighted_sum', 'pbi'
+
+# Alternative: Try weighted_sum for comparison
+# MOEAD_DECOMPOSITION: weighted_sum
+
+# SUMMA parameter bounds - Using SUMMA defaults from localParamInfo.txt / basinParamInfo.txt
+# to match what NSGA-II (Exp 3) actually used (its SUMMA_PARAM_BOUNDS key was silently
+# ignored by the parameter manager). Only override soil constraint parameters to prevent
+# SUMMA crashes from physically impossible combinations (crit* > theta_sat).
+PARAMETER_BOUNDS:
+  critSoilWilting: [0.05, 0.3]     # Must be < theta_sat_min (0.35); SUMMA default [0, 1] causes crashes
+  critSoilTranspire: [0.05, 0.3]   # Must be < theta_sat_min (0.35); SUMMA default [0, 1] causes crashes
