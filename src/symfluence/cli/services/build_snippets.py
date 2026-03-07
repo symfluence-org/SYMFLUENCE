@@ -91,6 +91,17 @@ configure_compilers() {
         return 0
     fi
 
+    # EasyBuild module compiler: prefer EBROOTGCC over Gentoo base gcc.
+    # On ComputeCanada, the Gentoo gcc links against a newer GLIBC than
+    # available on compute nodes, causing link failures.
+    if [ -z "$CC" ] && [ -n "${EBROOTGCC:-}" ] && [ -x "${EBROOTGCC}/bin/gcc" ]; then
+        export CC="${EBROOTGCC}/bin/gcc"
+        [ -x "${EBROOTGCC}/bin/g++" ] && export CXX="${EBROOTGCC}/bin/g++"
+        echo "Using EasyBuild compiler: CC=$CC"
+        [ -n "$CXX" ] && echo "  CXX=$CXX"
+        return 0
+    fi
+
     # If CC is already set (e.g., by user or HPC module), resolve and trust it.
     # This handles both absolute paths and bare names (e.g., CC=gcc).
     if [ -n "$CC" ]; then
@@ -162,6 +173,14 @@ configure_fortran() {
             fi
             ;;
     esac
+
+    # EasyBuild module Fortran compiler (same GLIBC reasoning as configure_compilers)
+    if [ -z "$FC" ] && [ -n "${EBROOTGCC:-}" ] && [ -x "${EBROOTGCC}/bin/gfortran" ]; then
+        export FC="${EBROOTGCC}/bin/gfortran"
+        export FC_EXE="$FC"
+        echo "Using EasyBuild Fortran compiler: FC=$FC"
+        return 0
+    fi
 
     # Already set — resolve to full path if needed.
     # Handles both absolute paths (/path/to/gfortran) and bare names (gfortran).
