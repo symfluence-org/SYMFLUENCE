@@ -241,21 +241,38 @@ fix_libgcc_glibc_mismatch() {
     # Only check on Linux
     [ "$(uname -s)" = "Linux" ] || return 0
 
-    local _test_cc="${CC:-gcc}"
-    [ -x "$_test_cc" ] || _test_cc="$(command -v gcc 2>/dev/null)" || return 0
+    local _test_fc="${FC:-${FC_EXE:-gfortran}}"
+    if ! command -v "$_test_fc" >/dev/null 2>&1; then
+        _test_fc="$(command -v gfortran 2>/dev/null)" || return 0
+    fi
 
-    # Quick link test: compile and link a trivial program
     local _tmpdir
     _tmpdir="$(mktemp -d)" || return 0
-    echo 'int main(){return 0;}' > "$_tmpdir/test.c"
-    if "$_test_cc" "$_tmpdir/test.c" -o "$_tmpdir/test" 2>/dev/null; then
+    echo '      program test' > "$_tmpdir/test.f"
+    echo '      end program test' >> "$_tmpdir/test.f"
+
+    # Build link flags that mimic what cmake does: it converts LIBRARY_PATH
+    # to -L flags, which can expose a broken libgcc_s.so.1 from the Gentoo
+    # toolchain even though gfortran alone would link fine.
+    local _link_flags=""
+    if [ -n "${LIBRARY_PATH:-}" ]; then
+        local _oldIFS="$IFS"
+        IFS=':'
+        for _lp in $LIBRARY_PATH; do
+            [ -n "$_lp" ] && _link_flags="$_link_flags -L$_lp"
+        done
+        IFS="$_oldIFS"
+    fi
+
+    # Try linking with LIBRARY_PATH dirs — this is what cmake does
+    if "$_test_fc" $_link_flags "$_tmpdir/test.f" -o "$_tmpdir/test" 2>/dev/null; then
         rm -rf "$_tmpdir"
-        return 0  # linking works fine
+        return 0
     fi
 
     # Check if the failure is the known GLIBC_2.35 issue
     local _err
-    _err="$("$_test_cc" "$_tmpdir/test.c" -o "$_tmpdir/test" 2>&1 || true)"
+    _err="$("$_test_fc" $_link_flags "$_tmpdir/test.f" -o "$_tmpdir/test" 2>&1 || true)"
     if echo "$_err" | grep -q "_dl_find_object.*GLIBC"; then
         echo "Detected GLIBC incompatibility in libgcc_s.so.1 — adding -static-libgcc"
         export LDFLAGS="-static-libgcc ${LDFLAGS:-}"
