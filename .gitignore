@@ -135,6 +135,10 @@ config_template.yaml
 benchmark_results/
 plots/
 results/
+results\\*
+debug/
+debug\\*
+stop.txt
 
 # Temporary calibration/comparison outputs
 hbv_calibration_comparison/
