@@ -246,42 +246,76 @@ fix_libgcc_glibc_mismatch() {
         _test_fc="$(command -v gfortran 2>/dev/null)" || return 0
     fi
 
-    local _tmpdir
-    _tmpdir="$(mktemp -d)" || return 0
-    echo '      program test' > "$_tmpdir/test.f"
-    echo '      end program test' >> "$_tmpdir/test.f"
-
-    # Build link flags that mimic what cmake does: it converts LIBRARY_PATH
-    # to -L flags, which can expose a broken libgcc_s.so.1 from the Gentoo
-    # toolchain even though gfortran alone would link fine.
-    local _link_flags=""
-    if [ -n "${LIBRARY_PATH:-}" ]; then
-        local _oldIFS="$IFS"
-        IFS=':'
-        for _lp in $LIBRARY_PATH; do
-            [ -n "$_lp" ] && _link_flags="$_link_flags -L$_lp"
+    # Find the libgcc_s.so.1 that gfortran would use
+    local _libgcc_path=""
+    _libgcc_path="$("$_test_fc" -print-file-name=libgcc_s.so.1 2>/dev/null)" || true
+    if [ -z "$_libgcc_path" ] || [ "$_libgcc_path" = "libgcc_s.so.1" ]; then
+        # gfortran couldn't resolve it; try finding it near the compiler
+        local _fc_dir
+        _fc_dir="$(dirname "$(command -v "$_test_fc")")"
+        local _candidate
+        for _candidate in \
+            "$_fc_dir/../lib/libgcc_s.so.1" \
+            "$_fc_dir/../lib64/libgcc_s.so.1" \
+            "$_fc_dir/../../lib/gcc/x86_64-pc-linux-gnu/*/libgcc_s.so.1"; do
+            if [ -f "$_candidate" ]; then
+                _libgcc_path="$_candidate"
+                break
+            fi
         done
-        IFS="$_oldIFS"
     fi
 
-    # Try linking with LIBRARY_PATH dirs — this is what cmake does
-    if "$_test_fc" $_link_flags "$_tmpdir/test.f" -o "$_tmpdir/test" 2>/dev/null; then
-        rm -rf "$_tmpdir"
+    if [ -z "$_libgcc_path" ] || [ ! -f "$_libgcc_path" ]; then
         return 0
     fi
 
-    # Check if the failure is the known GLIBC_2.35 issue
-    local _err
-    _err="$("$_test_fc" $_link_flags "$_tmpdir/test.f" -o "$_tmpdir/test" 2>&1 || true)"
-    if echo "$_err" | grep -q "_dl_find_object.*GLIBC"; then
-        echo "Detected GLIBC incompatibility in libgcc_s.so.1 — adding -static-libgcc"
+    # Check if libgcc_s.so.1 requires GLIBC versions the system doesn't have.
+    # Use objdump/readelf to find required GLIBC versions, then check libc.
+    local _needs_235=false
+    if command -v objdump >/dev/null 2>&1; then
+        if objdump -p "$_libgcc_path" 2>/dev/null | grep -q "GLIBC_2\.3[5-9]\|GLIBC_2\.[4-9][0-9]"; then
+            _needs_235=true
+        fi
+    elif command -v readelf >/dev/null 2>&1; then
+        if readelf -V "$_libgcc_path" 2>/dev/null | grep -q "GLIBC_2\.3[5-9]\|GLIBC_2\.[4-9][0-9]"; then
+            _needs_235=true
+        fi
+    fi
+
+    if [ "$_needs_235" = "false" ]; then
+        return 0
+    fi
+
+    # libgcc_s needs GLIBC_2.35+; check if the system actually provides it
+    local _libc_path=""
+    _libc_path="$(ldd "$_libgcc_path" 2>/dev/null | grep 'libc\.so' | awk '{print $3}')" || true
+    if [ -z "$_libc_path" ]; then
+        _libc_path="/lib64/libc.so.6"
+    fi
+
+    local _system_has_235=true
+    if [ -f "$_libc_path" ]; then
+        if command -v objdump >/dev/null 2>&1; then
+            if ! objdump -T "$_libc_path" 2>/dev/null | grep -q "GLIBC_2\.35"; then
+                _system_has_235=false
+            fi
+        elif command -v readelf >/dev/null 2>&1; then
+            if ! readelf -V "$_libc_path" 2>/dev/null | grep -q "GLIBC_2\.35"; then
+                _system_has_235=false
+            fi
+        fi
+    fi
+
+    if [ "$_system_has_235" = "false" ]; then
+        echo "Detected GLIBC incompatibility: libgcc_s.so.1 requires GLIBC_2.35+ but system lacks it"
+        echo "  libgcc_s: $_libgcc_path"
+        echo "  Adding -static-libgcc to avoid dynamic libgcc_s dependency"
         export LDFLAGS="-static-libgcc ${LDFLAGS:-}"
         export FFLAGS="-static-libgcc ${FFLAGS:-}"
         export FCFLAGS="-static-libgcc ${FCFLAGS:-}"
         export CMAKE_EXE_LINKER_FLAGS="-static-libgcc ${CMAKE_EXE_LINKER_FLAGS:-}"
         export CMAKE_SHARED_LINKER_FLAGS="-static-libgcc ${CMAKE_SHARED_LINKER_FLAGS:-}"
     fi
-    rm -rf "$_tmpdir"
 }
 fix_libgcc_glibc_mismatch
 
