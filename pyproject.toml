@@ -39,6 +39,7 @@ dependencies = [
   "fiona>=1.9.0,<2.0.0",
   "easymore",
   "rasterstats",
+  "exactextract>=0.3.0",
   "pvlib",
   "cdo>=1.6.0,<3.0.0",
   # Visualization

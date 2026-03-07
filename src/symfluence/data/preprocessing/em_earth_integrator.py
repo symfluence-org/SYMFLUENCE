@@ -31,9 +31,9 @@ def _perform_em_earth_remapping_logic(input_file: Path, output_file: Path, basin
     """
     try:
         import geopandas as gpd
-        import rasterio
         import xarray as xr
-        from rasterstats import zonal_stats
+        from exactextract import exact_extract
+        from exactextract.raster import NumPyRasterSource
 
         # Read EM-Earth data
         em_ds = xr.open_dataset(input_file)
@@ -68,6 +68,25 @@ def _perform_em_earth_remapping_logic(input_file: Path, output_file: Path, basin
         small_watershed_flag = em_ds.attrs.get('small_watershed_processing', 0)
         spatial_averaging_flag = em_ds.attrs.get('spatial_averaging_applied', 0)
         is_single_point = is_single_point or (small_watershed_flag == 1) or (spatial_averaging_flag == 1)
+
+        # Compute grid bounds once (half-pixel extension for cell-edge alignment)
+        lats = em_ds.lat.values
+        lons = em_ds.lon.values
+        dlat = abs(float(lats[1] - lats[0])) if len(lats) > 1 else 0.1
+        dlon = abs(float(lons[1] - lons[0])) if len(lons) > 1 else 0.1
+        xmin = float(lons.min()) - dlon / 2
+        xmax = float(lons.max()) + dlon / 2
+        ymin = float(lats.min()) - dlat / 2
+        ymax = float(lats.max()) + dlat / 2
+
+        # Ensure lat is descending (north-up) for raster convention
+        lat_ascending = bool(lats[-1] > lats[0]) if len(lats) > 1 else False
+
+        # Build basin_id -> column index mapping
+        basin_id_to_idx = {bid: i for i, bid in enumerate(basin_ids)}
+
+        # Prepare GeoDataFrame with basin_id column for exact_extract
+        extract_gdf = basins_gdf[[basin_id_col, 'geometry']].copy()
 
         # Process variables
         for var_name in em_ds.data_vars:
@@ -106,34 +125,30 @@ def _perform_em_earth_remapping_logic(input_file: Path, output_file: Path, basin
                     )
 
                 else:
-                    # Multi-point processing with zonal statistics
+                    # Multi-point processing with exactextract (coverage-weighted)
                     basin_values = np.full((len(em_ds.time), len(basin_ids)), np.nan)
 
-                    # Create transform
-                    lat_min, lat_max = float(em_ds.lat.min()), float(em_ds.lat.max())
-                    lon_min, lon_max = float(em_ds.lon.min()), float(em_ds.lon.max())
+                    for t_idx in range(len(em_ds.time)):
+                        grid = var_data.isel(time=t_idx).values.astype(np.float64)
 
-                    transform = rasterio.transform.from_bounds(
-                        lon_min, lat_min, lon_max, lat_max,
-                        len(em_ds.lon), len(em_ds.lat)
-                    )
+                        # Flip to north-up if lat is ascending
+                        if lat_ascending:
+                            grid = grid[::-1]
 
-                    # Process each time step
-                    for t_idx, time_val in enumerate(em_ds.time):
-                        time_data = var_data.isel(time=t_idx)
-
-                        stats = zonal_stats(
-                            basins_gdf.geometry,
-                            time_data.values,
-                            affine=transform,
-                            stats=['mean'],
+                        raster_src = NumPyRasterSource(
+                            grid, xmin=xmin, ymin=ymin, xmax=xmax, ymax=ymax,
                             nodata=np.nan
                         )
 
-                        for b_idx, basin_id in enumerate(basin_ids):
-                            geom_idx = basins_gdf.index[basins_gdf[basin_id_col] == basin_id].tolist()[0]
-                            if geom_idx < len(stats) and stats[geom_idx]['mean'] is not None:
-                                basin_values[t_idx, b_idx] = stats[geom_idx]['mean']
+                        results = exact_extract(
+                            raster_src, extract_gdf, 'mean',
+                            include_cols=[basin_id_col], output='pandas'
+                        )
+
+                        for _, row in results.iterrows():
+                            bid = row[basin_id_col]
+                            if bid in basin_id_to_idx:
+                                basin_values[t_idx, basin_id_to_idx[bid]] = row['mean']
 
                     output_ds[var_name] = xr.DataArray(
                         basin_values,
@@ -143,7 +158,7 @@ def _perform_em_earth_remapping_logic(input_file: Path, output_file: Path, basin
                     )
 
         # Add metadata
-        processing_method = 'single_point_replication' if is_single_point else 'zonal_statistics'
+        processing_method = 'single_point_replication' if is_single_point else 'exact_extract'
         output_ds.attrs.update({
             'remapped_from': str(input_file),
             'remapping_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
