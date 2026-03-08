@@ -308,23 +308,43 @@ fix_libgcc_glibc_mismatch() {
         return 0
     fi
 
-    # libgcc_s.so.1 references GLIBC_2.35+.  On HPC systems (e.g.,
-    # ComputeCanada), the toolchain overlay may have a newer glibc than the
-    # host OS kernel supports. CMake converts LIBRARY_PATH to -L flags which
-    # pull in the host's older libc, causing _dl_find_object link failures.
-    # Using -static-libgcc is harmless (slightly larger binary) and avoids
-    # the dynamic libgcc_s dependency entirely.
+    # libgcc_s.so.1 references GLIBC_2.35+.  Check whether LIBRARY_PATH
+    # includes system paths (like /usr/lib64) whose libc is older than the
+    # toolchain's — this is the actual conflict that cmake exposes by
+    # converting LIBRARY_PATH to -L flags.
     #
+    # On normal Linux desktops, the toolchain and system libc match, so
+    # there's no conflict.  On HPC overlay systems (e.g., ComputeCanada
+    # Gentoo CVMFS), the overlay's compiler links against glibc 2.37+ but
+    # LIBRARY_PATH includes /usr/lib64 with the host's older glibc.
+    #
+    # We check /usr/lib64/libc.so.6 (the HOST libc, not the overlay's)
+    # to see if the system actually has GLIBC_2.35.  We can't use
+    # `ldd --version` because on overlay systems it reports the overlay's
+    # glibc version, not the host's.
+    local _host_libc=""
+    for _candidate in /usr/lib64/libc.so.6 /lib/x86_64-linux-gnu/libc.so.6 /lib64/libc.so.6; do
+        if [ -f "$_candidate" ]; then
+            _host_libc="$_candidate"
+            break
+        fi
+    done
+    if [ -n "$_host_libc" ]; then
+        # Check if host libc provides GLIBC_2.35
+        if strings "$_host_libc" 2>/dev/null | grep -qE "^GLIBC_2\.(3[5-9]|[4-9][0-9])$"; then
+            # Host libc is new enough — no mismatch
+            return 0
+        fi
+    fi
+
     # Also add -static-libstdc++ because the overlay's libstdc++.so may
     # reference newer GLIBC symbols (e.g. arc4random@GLIBC_2.36) that the
     # host's libc doesn't provide.
-    #
-    # NOTE: We intentionally do NOT check the system glibc version here
-    # because on overlay systems (Gentoo CVMFS), `ldd --version` reports the
-    # overlay's glibc (e.g. 2.37), not the host's, masking the mismatch.
     local _static_flags="-static-libgcc -static-libstdc++"
-    echo "Detected GLIBC_2.35+ dependency in libgcc_s.so.1 — adding $_static_flags"
+    echo "Detected GLIBC mismatch: toolchain needs GLIBC_2.35+ but host libc is older"
     echo "  libgcc_s: $_libgcc_path"
+    echo "  host libc: ${_host_libc:-(not found)}"
+    echo "  Adding: $_static_flags"
     export LDFLAGS="$_static_flags ${LDFLAGS:-}"
     export FFLAGS="$_static_flags ${FFLAGS:-}"
     export FCFLAGS="$_static_flags ${FCFLAGS:-}"
