@@ -1,0 +1,75 @@
+name: CLA Check
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  cla-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+
+      - name: Check CLA signature
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const pr = context.payload.pull_request;
+            const author = pr.user.login;
+
+            // Repository owner and bots are exempt
+            const exemptUsers = ['DarriEy', 'dependabot[bot]', 'github-actions[bot]'];
+            if (exemptUsers.includes(author)) {
+              console.log(`${author} is exempt from CLA.`);
+              return;
+            }
+
+            // Check CLA_SIGNATURES file
+            let signed = false;
+            try {
+              const signatures = fs.readFileSync('CLA_SIGNATURES', 'utf8');
+              const lines = signatures.split('\n');
+              for (const line of lines) {
+                if (line.startsWith('GitHub:')) {
+                  const gh = line.replace('GitHub:', '').trim();
+                  if (gh.toLowerCase() === author.toLowerCase()) {
+                    signed = true;
+                    break;
+                  }
+                }
+              }
+            } catch (e) {
+              console.log('CLA_SIGNATURES file not found.');
+            }
+
+            if (!signed) {
+              const body = `### CLA Required
+
+            Thank you for your contribution! Before we can merge this pull request, you need to sign the [Contributor License Agreement](../blob/main/CLA.md).
+
+            **How to sign:**
+            1. Read the [CLA](../blob/main/CLA.md)
+            2. Add your information to the \`CLA_SIGNATURES\` file via a separate PR
+            3. Once merged, this check will pass automatically on your next push
+
+            This is required for all external contributors to ensure SYMFLUENCE can be properly licensed.`;
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: body
+              });
+
+              core.setFailed(`${author} has not signed the CLA.`);
+            } else {
+              console.log(`${author} has signed the CLA.`);
+            }
