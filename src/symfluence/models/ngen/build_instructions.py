@@ -346,6 +346,11 @@ if [ -n "$EXTRA_LINK_FLAGS" ]; then
     ALL_CMAKE_LINK_FLAGS="$ALL_CMAKE_LINK_FLAGS $EXTRA_LINK_FLAGS"
     echo "Adding extra linker flags: $EXTRA_LINK_FLAGS"
 fi
+# If LDFLAGS contains -static-libgcc (set by fix_libgcc_glibc_mismatch),
+# add static linking flags so cmake compiler tests pass.
+if echo "${LDFLAGS:-}" | grep -q static-libgcc; then
+    ALL_CMAKE_LINK_FLAGS="$ALL_CMAKE_LINK_FLAGS -static-libgcc -static-libstdc++"
+fi
 # Build the unified CMake linker args
 CMAKE_LINKER_ARGS=""
 if [ -n "$ALL_CMAKE_LINK_FLAGS" ]; then

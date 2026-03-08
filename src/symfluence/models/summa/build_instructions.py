@@ -307,8 +307,9 @@ esac
 _SUMMA_LINKER_FLAGS=""
 _SUMMA_STATIC_LIBGCC=""
 if echo "${LDFLAGS:-}" | grep -q static-libgcc; then
-    _SUMMA_LINKER_FLAGS="-DCMAKE_EXE_LINKER_FLAGS=-static-libgcc -DCMAKE_SHARED_LINKER_FLAGS=-static-libgcc"
-    _SUMMA_STATIC_LIBGCC="-static-libgcc"
+    _STATIC_FLAGS="-static-libgcc -static-libstdc++"
+    _SUMMA_LINKER_FLAGS="-DCMAKE_EXE_LINKER_FLAGS=$_STATIC_FLAGS -DCMAKE_SHARED_LINKER_FLAGS=$_STATIC_FLAGS"
+    _SUMMA_STATIC_LIBGCC="$_STATIC_FLAGS"
 fi
 
 cmake -S build -B cmake_build \

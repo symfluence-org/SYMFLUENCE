@@ -315,16 +315,22 @@ fix_libgcc_glibc_mismatch() {
     # Using -static-libgcc is harmless (slightly larger binary) and avoids
     # the dynamic libgcc_s dependency entirely.
     #
+    # Also add -static-libstdc++ because the overlay's libstdc++.so may
+    # reference newer GLIBC symbols (e.g. arc4random@GLIBC_2.36) that the
+    # host's libc doesn't provide.
+    #
     # NOTE: We intentionally do NOT check the system glibc version here
     # because on overlay systems (Gentoo CVMFS), `ldd --version` reports the
     # overlay's glibc (e.g. 2.37), not the host's, masking the mismatch.
-    echo "Detected GLIBC_2.35+ dependency in libgcc_s.so.1 — adding -static-libgcc"
+    local _static_flags="-static-libgcc -static-libstdc++"
+    echo "Detected GLIBC_2.35+ dependency in libgcc_s.so.1 — adding $_static_flags"
     echo "  libgcc_s: $_libgcc_path"
-    export LDFLAGS="-static-libgcc ${LDFLAGS:-}"
-    export FFLAGS="-static-libgcc ${FFLAGS:-}"
-    export FCFLAGS="-static-libgcc ${FCFLAGS:-}"
-    export CMAKE_EXE_LINKER_FLAGS="-static-libgcc ${CMAKE_EXE_LINKER_FLAGS:-}"
-    export CMAKE_SHARED_LINKER_FLAGS="-static-libgcc ${CMAKE_SHARED_LINKER_FLAGS:-}"
+    export LDFLAGS="$_static_flags ${LDFLAGS:-}"
+    export FFLAGS="$_static_flags ${FFLAGS:-}"
+    export FCFLAGS="$_static_flags ${FCFLAGS:-}"
+    export CXXFLAGS="$_static_flags ${CXXFLAGS:-}"
+    export CMAKE_EXE_LINKER_FLAGS="$_static_flags ${CMAKE_EXE_LINKER_FLAGS:-}"
+    export CMAKE_SHARED_LINKER_FLAGS="$_static_flags ${CMAKE_SHARED_LINKER_FLAGS:-}"
 }
 fix_libgcc_glibc_mismatch
 

@@ -50,7 +50,8 @@ esac
 # pass it to CMake so Fortran link tests succeed.
 _SUNDIALS_EXTRA_CMAKE=""
 if echo "${LDFLAGS:-}" | grep -q static-libgcc; then
-    _SUNDIALS_EXTRA_CMAKE="-DCMAKE_EXE_LINKER_FLAGS=-static-libgcc -DCMAKE_SHARED_LINKER_FLAGS=-static-libgcc -DCMAKE_Fortran_FLAGS=-static-libgcc"
+    _STATIC_FLAGS="-static-libgcc -static-libstdc++"
+    _SUNDIALS_EXTRA_CMAKE="-DCMAKE_EXE_LINKER_FLAGS=$_STATIC_FLAGS -DCMAKE_SHARED_LINKER_FLAGS=$_STATIC_FLAGS -DCMAKE_Fortran_FLAGS=$_STATIC_FLAGS"
 fi
 
 cmake .. \
@@ -96,7 +97,12 @@ if [ -d "/cvmfs/soft.computecanada.ca" ]; then
     MPI_ROOT=$(dirname $(dirname $(which mpicc 2>/dev/null))) || true
     if [ -n "$MPI_ROOT" ] && [ -d "$MPI_ROOT" ]; then
         echo "Found MPI at: $MPI_ROOT"
-        CMAKE_MPI_FLAGS="-DMPI_HOME=$MPI_ROOT -DCMAKE_EXE_LINKER_FLAGS=-Wl,--allow-shlib-undefined -DCMAKE_SHARED_LINKER_FLAGS=-Wl,--allow-shlib-undefined"
+        _TAUDEM_LINK_FLAGS="-Wl,--allow-shlib-undefined"
+        # Also add static lib flags if set by fix_libgcc_glibc_mismatch
+        if echo "${LDFLAGS:-}" | grep -q static-libgcc; then
+            _TAUDEM_LINK_FLAGS="$_TAUDEM_LINK_FLAGS -static-libgcc -static-libstdc++"
+        fi
+        CMAKE_MPI_FLAGS="-DMPI_HOME=$MPI_ROOT -DCMAKE_EXE_LINKER_FLAGS=$_TAUDEM_LINK_FLAGS -DCMAKE_SHARED_LINKER_FLAGS=$_TAUDEM_LINK_FLAGS"
     fi
 else
     # On other systems, mpicc/mpicxx as CC/CXX works fine
