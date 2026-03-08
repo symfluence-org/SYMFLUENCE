@@ -45,6 +45,30 @@ class TestParFlowReadOutputs:
             [1.0, 2.0, 3.0], dtype=np.float32
         )
 
+        # Ensure the parflow.extractor module is importable for patch() to
+        # traverse the dotted path, even when the parflow package failed to
+        # load at models/__init__.py time (e.g. missing optional deps on CI).
+        import importlib
+        try:
+            importlib.import_module('symfluence.models.parflow.extractor')
+        except Exception:  # noqa: BLE001
+            # If the real module cannot be imported, inject a stub so patch()
+            # can resolve the attribute chain.
+            import sys
+            import types  # noqa: E401
+            for mod_name in (
+                'symfluence.models.parflow',
+                'symfluence.models.parflow.extractor',
+            ):
+                if mod_name not in sys.modules:
+                    sys.modules[mod_name] = types.ModuleType(mod_name)
+            import symfluence.models as _models
+            if not hasattr(_models, 'parflow'):
+                _models.parflow = sys.modules['symfluence.models.parflow']
+            pf = sys.modules['symfluence.models.parflow']
+            if not hasattr(pf, 'extractor'):
+                pf.extractor = sys.modules['symfluence.models.parflow.extractor']
+
         with patch(
             'symfluence.models.parflow.extractor.ParFlowResultExtractor',
             return_value=mock_extractor

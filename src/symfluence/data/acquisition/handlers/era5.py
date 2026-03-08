@@ -112,7 +112,7 @@ def _safe_to_netcdf(ds: xr.Dataset, path: Path, encoding: dict = None,
     import shutil
     import tempfile
 
-    tmpdir = os.environ.get('TMPDIR') or '/tmp'  # nosec B108 — respects $TMPDIR
+    tmpdir = os.environ.get('TMPDIR') or tempfile.gettempdir()  # nosec B108 — respects $TMPDIR
     fd, tmp_path = tempfile.mkstemp(suffix='.nc', dir=tmpdir)
     os.close(fd)
     try:
