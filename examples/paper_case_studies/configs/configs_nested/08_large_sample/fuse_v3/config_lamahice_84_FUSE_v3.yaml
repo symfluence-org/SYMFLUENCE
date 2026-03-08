@@ -1,0 +1,214 @@
+### ============================================= SYMFLUENCE configuration file ============================================================
+# FUSE Model Configuration for LamaH-Ice Domain 84 - Large Sample Study
+### ============================================= 1. Global settings: =====================================================================
+
+# Main paths
+
+system:
+  data_dir: ./data/
+  code_dir: ./
+  num_processes: 1
+  force_run_all_steps: false
+domain:
+  name: '84'
+  bounding_box_coords: 65.59466453377198/-19.613965454249872/65.00593977234136/-18.997904707778094
+  experiment_id: run_3
+  time_start: 2000-01-01 03:00
+  time_end: 2008-12-31 21:00
+  calibration_period: 2001-01-01, 2007-12-31
+  evaluation_period: 2008-01-01, 2008-12-31
+  spinup_period: 2000-01-01, 2000-12-31
+  definition_method: lumped
+  delineation:
+    routing: lumped
+    geofabric_type: TDX
+    stream_threshold: 5000
+    lumped_watershed_method: TauDEM
+    cleanup_intermediate_files: true
+    delineate_by_pourpoint: true
+    move_outlets_max_distance: 200
+  min_gru_size: 1
+  discretization: GRUS
+  elevation_band_size: 200
+  min_hru_size: 4
+  radiation_class_number: 5
+  aspect_class_number: 8
+  aspect_path: default
+  land_class_name: default
+  data_access: CLOUD
+data:
+  streamflow_data_provider: LAMAH_ICE
+  lamah_ice:
+    domain_id: 84
+forcing:
+  dataset: CARRA
+  variables: default
+  measurement_height: 2
+  time_step_size: 10800
+  apply_lapse_rate: true
+  lapse_rate: 0.0065
+  shape_lat_name: lat
+  shape_lon_name: lon
+  supplement: false
+  carra_domain: west_domain
+model:
+  hydrological_model: FUSE
+  routing_model: none
+  fuse:
+    spatial_mode: lumped
+    exe: fuse.exe
+    install_path: default
+    settings_path: default
+    filemanager: fm_catch.txt
+    run_internal_calibration: false
+    params_to_calibrate: MAXWATR_1,MAXWATR_2,BASERTE,QB_POWR,TIMEDELAY,PERCRTE,FRACTEN,RTFRAC1,MBASE,MFMAX,MFMIN,PXTEMP,LAPSE
+    param_bounds:
+      MAXWATR_1:
+      - 50
+      - 500
+      MAXWATR_2:
+      - 50
+      - 1000
+      BASERTE:
+      - 0.001
+      - 0.5
+      QB_POWR:
+      - 1.0
+      - 5.0
+      TIMEDELAY:
+      - 0.5
+      - 5.0
+      PERCRTE:
+      - 0.01
+      - 10.0
+      FRACTEN:
+      - 0.1
+      - 0.7
+      RTFRAC1:
+      - 0.1
+      - 0.9
+      MBASE:
+      - -2.0
+      - 2.0
+      MFMAX:
+      - 1.0
+      - 8.0
+      MFMIN:
+      - 0.5
+      - 4.0
+      PXTEMP:
+      - -2.0
+      - 4.0
+      LAPSE:
+      - -10.0
+      - -3.0
+    decision_options:
+      RFERR:
+      - multiplc_e
+      ARCH1:
+      - tension2_1
+      ARCH2:
+      - unlimfrc_2
+      QSURF:
+      - prms_varnt
+      QPERC:
+      - perc_f2sat
+      ESOIL:
+      - sequential
+      QINTF:
+      - intflwnone
+      Q_TDH:
+      - rout_gamma
+      SNOWM:
+      - temp_index
+  mizuroute:
+    within_basin: 0
+    routing_dt: 3600
+    routing_units: m/s
+    routing_var: averageRoutedRunoff
+    output_freq: single
+    output_vars: 1
+    make_outlet: n/a
+    needs_remap: false
+    from_model: default
+    settings_path: default
+    install_path: default
+    exe: mizuRoute.exe
+    topology: topology.nc
+    parameters: param.nml.default
+    control_file: mizuroute.control
+    remap: routing_remap.nc
+optimization:
+  methods:
+  - iteration
+  algorithm: DDS
+  iterations: 5000
+  dds:
+    r: 0.2
+    async_pool_size: 10
+    async_batch_size: 10
+    max_stagnation_batches: 5
+  metric: KGE
+  skip_warm_start: true
+  target_metric: KGE
+evaluation:
+  sim_reach_id: 1
+  lamah_ice:
+    path: ./data/
+    download: true
+  streamflow:
+    raw_path: default
+    raw_name: default
+    processed_path: default
+paths:
+  catchment_path: default
+  catchment_name: default
+  catchment_lat: center_lat
+  catchment_lon: center_lon
+  catchment_area: HRU_area
+  catchment_hruid: HRU_ID
+  catchment_gruid: GRU_ID
+  river_basins_path: default
+  river_basins_name: default
+  river_basin_rm_gruid: GRU_ID
+  river_basin_hru_to_seg: gru_to_seg
+  river_basin_area: GRU_area
+  river_network_path: default
+  river_network_name: default
+  river_network_length: Length
+  river_network_segid: LINKNO
+  river_network_downsegid: DSLINKNO
+  river_network_slope: Slope
+  output_basins_path: default
+  output_rivers_path: default
+  dem_path: default
+  dem_name: default
+  source_geofabric_basins_path: default
+  source_geofabric_rivers_path: default
+  taudem_dir: default
+  output_dir: default
+  catchment_plot_dir: default
+  soil_class_path: default
+  soil_class_name: default
+  land_class_path: default
+  radiation_path: default
+  datatool_path: default
+  gistool_path: default
+  easymore_client: easymore cli
+  datatool_dataset_root: default
+  gistool_dataset_root: default
+  tool_cache: default
+  easymore_cache: default
+  easymore_job_conf: default
+  gistool_lib_path: default
+  forcing_path: default
+  intersect_soil_path: default
+  intersect_soil_name: default
+  intersect_routing_path: default
+  intersect_routing_name: default
+  intersect_dem_path: default
+  intersect_dem_name: default
+  intersect_land_path: default
+  intersect_land_name: default
+  simulations_path: default
+  observations_path: default

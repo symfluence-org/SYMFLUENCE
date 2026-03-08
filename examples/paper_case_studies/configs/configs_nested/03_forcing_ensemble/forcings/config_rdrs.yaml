@@ -1,0 +1,34 @@
+# RDRS - Section 3.2 Forcing Ensemble
+# Inherits from: ../_base_paradise_summa.yaml
+# Regional Deterministic Reforecast System
+
+system:
+  data_dir: ./data/
+  code_dir: ./
+domain:
+  name: paradise_snotel_wa
+  definition_method: point
+  pour_point_coords: 46.78/-121.75
+  time_start: 2015-01-01 01:00
+  time_end: 2020-12-31 23:00
+  calibration_period: 2015-10-01, 2018-09-30
+  evaluation_period: 2018-10-01, 2020-09-30
+  spinup_period: 2015-01-01, 2015-09-30
+  discretization: GRUs
+  experiment_id: forcing_ensemble_rdrs
+forcing:
+  dataset: RDRS
+model:
+  hydrological_model: SUMMA
+  routing_model: none
+optimization:
+  methods:
+  - iteration
+  algorithm: DDS
+  iterations: 1000
+  metric: RMSE
+  target: swe
+evaluation:
+  snotel:
+    station_id: '679'
+    station_name: Paradise

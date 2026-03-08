@@ -1,0 +1,23 @@
+# Experiment 1d: Regional distributed domain - Iceland
+# Paper Section 2 - Domain Definition
+# Tests: Large-scale distributed domain with CARRA reanalysis forcing
+
+system:
+  data_dir: ./data/
+  code_dir: ./
+domain:
+  name: Iceland_regional
+  definition_method: semidistributed
+  delineation:
+    routing: distributed
+  time_start: 2000-01-01 01:00
+  time_end: 2008-12-31 23:00
+  discretization: GRUs
+  experiment_id: Iceland_regional
+  bounding_box_coords: 66.6/-24.6/63.2/-13.2
+  pour_point_coords: 63.93/-21.03
+forcing:
+  dataset: CARRA
+model:
+  hydrological_model: FUSE
+  routing_model: mizuRoute

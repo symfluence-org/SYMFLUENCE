@@ -1,0 +1,55 @@
+system:
+  data_dir: default
+  code_dir: default
+  num_processes: 1
+  force_run_all_steps: false
+  random_seed: 1042
+domain:
+  name: Bow_at_Banff_lumped_calibration_ensemble
+  pour_point_coords: 51.1722/-115.5717
+  bounding_box_coords: 51.76/-116.55/50.95/-115.5
+  definition_method: lumped
+  discretization: GRUs
+  delineation:
+    routing: lumped
+    geofabric_type: TDX
+    stream_threshold: 10000
+    lumped_watershed_method: TauDEM
+  time_start: 2002-01-01 01:00
+  time_end: 2009-12-31 23:00
+  calibration_period: 2004-01-01, 2007-12-31
+  evaluation_period: 2008-01-01, 2009-12-31
+  spinup_period: 2002-01-01, 2003-12-31
+  experiment_id: cal_ensemble_hechms_sceua_seed1042
+data:
+  streamflow_data_provider: WSC
+forcing:
+  dataset: RDRS
+  variables: default
+  measurement_height: 2
+  time_step_size: 3600
+model:
+  hydrological_model: HECHMS
+  routing_model: none
+  hechms:
+    backend: jax
+    warmup_days: 730
+    initial_params: px_temp=1.0,base_temp=0.0,ati_meltrate_coeff=1.0,meltrate_max=6.0,meltrate_min=1.5,cold_limit=25.0,ati_cold_rate_coeff=0.15,water_capacity=0.15,cn=64.0,initial_abstraction_ratio=0.175,tc=10.25,r_coeff=10.25,gw_storage_coeff=50.5,deep_perc_fraction=0.25
+optimization:
+  methods:
+  - iteration
+  metric: KGE
+  algorithm: SCE-UA
+  iterations: 7
+  sce_ua:
+    number_of_complexes: 3
+    points_per_subcomplex: 5
+    number_of_evolution_steps: 20
+    evolution_stagnation: 5
+    percent_change_threshold: 0.01
+  target_metric: KGE
+  skip_warm_start: true
+evaluation:
+  streamflow:
+    station_id: 05BB001
+    download_wsc: true

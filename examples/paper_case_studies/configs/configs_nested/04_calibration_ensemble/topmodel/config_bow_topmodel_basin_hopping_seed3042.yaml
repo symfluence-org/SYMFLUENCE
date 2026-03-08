@@ -1,0 +1,50 @@
+system:
+  data_dir: default
+  code_dir: default
+  num_processes: 1
+  force_run_all_steps: false
+  random_seed: 3042
+domain:
+  name: Bow_at_Banff_lumped_calibration_ensemble
+  pour_point_coords: 51.1722/-115.5717
+  bounding_box_coords: 51.76/-116.55/50.95/-115.5
+  definition_method: lumped
+  discretization: GRUs
+  delineation:
+    routing: lumped
+    geofabric_type: TDX
+    stream_threshold: 10000
+    lumped_watershed_method: TauDEM
+  time_start: 2002-01-01 01:00
+  time_end: 2009-12-31 23:00
+  calibration_period: 2004-01-01, 2007-12-31
+  evaluation_period: 2008-01-01, 2009-12-31
+  spinup_period: 2002-01-01, 2003-12-31
+  experiment_id: cal_ensemble_topmodel_basin_hopping_seed3042
+data:
+  streamflow_data_provider: WSC
+forcing:
+  dataset: RDRS
+  variables: default
+  measurement_height: 2
+  time_step_size: 3600
+model:
+  hydrological_model: TOPMODEL
+  routing_model: none
+  topmodel:
+    backend: jax
+    warmup_days: 730
+    initial_params: m=0.1505,lnTe=1.5,Srmax=0.2525,Sr0=0.05,td=25.05,k_route=100.5,DDF=5.25,T_melt=0.5,T_snow=0.5,ti_std=5.5,S0=1.0
+optimization:
+  methods:
+  - iteration
+  metric: KGE
+  algorithm: BASIN-HOPPING
+  iterations: 20
+  target_metric: KGE
+  skip_warm_start: true
+  bh_local_steps: 50
+evaluation:
+  streamflow:
+    station_id: 05BB001
+    download_wsc: true

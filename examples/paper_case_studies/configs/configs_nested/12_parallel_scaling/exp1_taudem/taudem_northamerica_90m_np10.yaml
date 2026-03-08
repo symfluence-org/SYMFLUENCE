@@ -1,0 +1,128 @@
+# 4.12.1b TauDEM North America - 90m DEM, 10 processors
+# Delineation scaling on HPC
+
+system:
+  data_dir: default
+  code_dir: default
+  num_processes: 10
+  force_run_all_steps: true
+  log_level: INFO
+  log_to_file: true
+  log_format: detailed
+domain:
+  name: NorthAmerica
+  pour_point_coords: 48.0/-110.0
+  bounding_box_coords: 72.0/-170.0/24.0/-50.0
+  definition_method: distributed
+  delineation:
+    routing: distributed
+    geofabric_type: na
+    method: stream_threshold
+    stream_threshold: 5000
+    multi_scale_thresholds: 50000,25000,10000,5000,2500
+    lumped_watershed_method: TauDEM
+    cleanup_intermediate_files: false
+    delineate_coastal_watersheds: true
+    delineate_by_pourpoint: false
+    move_outlets_max_distance: 500
+  min_gru_size: 10
+  dem_source: fabdem
+  data_access: cloud
+  land_class_name: default
+  discretization: GRUs
+  elevation_band_size: 200
+  min_hru_size: 4
+  aspect_path: default
+  experiment_id: taudem_northamerica_90m_np10
+  time_start: 2010-01-01 01:00
+  time_end: 2010-12-31 23:00
+  calibration_period: 2010-01-01 01:00, 2010-06-30 23:00
+  evaluation_period: 2010-07-01 01:00, 2010-12-31 23:00
+  spinup_period: 2004-01-01, 2004-01-04
+  dem_resolution: 90m
+data:
+  streamflow_data_provider: USGS
+  download_usgs_data: true
+forcing:
+  dataset: ERA5
+  variables: default
+  measurement_height: 2
+  time_step_size: 3600
+  apply_lapse_rate: true
+  lapse_rate: 0.0065
+model:
+  hydrological_model: SUMMA
+  routing_model: none
+  summa:
+    exe: summa_sundials.exe
+    install_path: default
+    connect_hrus: true
+    trialparam_n: 0
+    use_parallel: false
+    settings_path: default
+    filemanager: fileManager.txt
+    forcing_list: forcingFileList.txt
+    coldstate: coldState.nc
+    trialparams: trialParams.nc
+    attributes: attributes.nc
+    output: outputControl.txt
+    basin_params_file: basinParamInfo.txt
+    local_params_file: localParamInfo.txt
+    params_to_calibrate: tempCritRain,k_soil
+    basin_params_to_calibrate: routingGammaScale
+optimization:
+  methods:
+  - iteration
+  metric: KGE
+  algorithm: DDS
+  iterations: 10
+  dds:
+    r: 0.2
+  target_metric: KGE
+evaluation:
+  streamflow:
+    raw_path: default
+    raw_name: default
+    processed_path: default
+    station_id: default
+paths:
+  taudem_dir: default
+  datatool_path: default
+  gistool_path: default
+  datatool_dataset_root: default
+  gistool_dataset_root: default
+  tool_cache: default
+  cluster_json: default
+  catchment_path: default
+  catchment_name: default
+  catchment_lat: center_lat
+  catchment_lon: center_lon
+  catchment_area: HRU_area
+  catchment_hruid: HRU_ID
+  catchment_gruid: GRU_ID
+  river_basins_path: default
+  river_basins_name: default
+  river_basin_rm_gruid: GRU_ID
+  river_basin_hru_to_seg: gru_to_seg
+  river_basin_area: GRU_area
+  river_network_path: default
+  river_network_name: default
+  river_network_length: Length
+  river_network_segid: LINKNO
+  river_network_downsegid: DSLINKNO
+  river_network_slope: Slope
+  pour_point_path: default
+  pour_point_name: default
+  forcing_path: default
+  observations_path: default
+  simulations_path: default
+  output_basins_path: default
+  output_rivers_path: default
+  dem_path: default
+  dem_name: default
+  output_dir: default
+  catchment_plot_dir: default
+  soil_class_path: default
+  soil_class_name: default
+  land_class_path: default
+  radiation_path: default

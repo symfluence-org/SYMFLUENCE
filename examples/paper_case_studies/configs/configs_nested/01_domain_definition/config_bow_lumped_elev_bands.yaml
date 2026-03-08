@@ -1,0 +1,30 @@
+# Experiment 1: Lumped + elevation bands - Bow River at Banff
+# Paper Section 2.2, Table 2, Figure 1g
+# 1 GRU, 12 HRUs (elevation bands at 200m intervals), 0 segments
+# Captures orographic precipitation gradients without sub-basin delineation
+
+system:
+  data_dir: ./data/
+  code_dir: ./
+domain:
+  name: Bow_at_Banff_lumped_elev_bands
+  definition_method: lumped
+  pour_point_coords: 51.1722/-115.5717
+  bounding_box_coords: 51.76/-116.55/50.95/-115.5
+  delineation:
+    routing: lumped
+  discretization: elevation_bands
+  elevation_band_size: 200
+  time_start: 2002-01-01 01:00
+  time_end: 2009-12-31 23:00
+  calibration_period: 2004-01-01, 2007-12-31
+  evaluation_period: 2008-01-01, 2009-12-31
+  spinup_period: 2002-01-01, 2003-12-31
+  experiment_id: Bow_at_Banff_lumped_elev_bands
+forcing:
+  dataset: ERA5
+  apply_lapse_rate: true
+  lapse_rate: 0.0065
+model:
+  hydrological_model: SUMMA
+  routing_model: none

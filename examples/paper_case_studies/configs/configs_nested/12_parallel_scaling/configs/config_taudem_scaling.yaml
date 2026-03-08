@@ -1,0 +1,21 @@
+# Parallel Scaling - TauDEM domain delineation (Section 3.10, Figure 14a)
+# Tests parallel scaling of watershed delineation
+
+system:
+  data_dir: ./data/
+  code_dir: ./
+  num_processes: 10
+domain:
+  name: NorthAmerica_scaling
+  experiment_id: taudem_scaling
+  definition_method: distributed
+  delineation:
+    geofabric_type: TDX
+  dem_resolution: 90m
+  discretization: GRUs
+  time_start: 2000-01-01 01:00
+  time_end: 2010-12-31 23:00
+forcing:
+  dataset: ERA5
+model:
+  hydrological_model: SUMMA

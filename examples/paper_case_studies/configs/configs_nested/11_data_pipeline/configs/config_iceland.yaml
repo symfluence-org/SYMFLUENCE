@@ -1,0 +1,25 @@
+# Data Pipeline - Iceland distributed (Section 3.10)
+
+system:
+  data_dir: ./data/
+  code_dir: ./
+domain:
+  name: Iceland_distributed
+  experiment_id: pipeline_iceland
+  time_start: 2000-01-01 03:00
+  time_end: 2008-12-31 21:00
+  definition_method: semidistributed
+  delineation:
+    routing: distributed
+    geofabric_type: TDX
+    stream_threshold: 5000
+  data_access: cloud
+  discretization: GRUs
+forcing:
+  dataset: CARRA
+  time_step_size: 3600
+model:
+  hydrological_model: FUSE
+  routing_model: mizuRoute
+  fuse:
+    spatial_mode: distributed

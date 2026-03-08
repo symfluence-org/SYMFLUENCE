@@ -1,0 +1,32 @@
+# Large Sample Study - GR4J+CemaNeige template (Section 3.7)
+# 59 Icelandic catchments - comparison with FUSE
+
+system:
+  data_dir: ./data/
+  code_dir: ./
+domain:
+  name: DOMAIN_ID
+  experiment_id: run_2
+  time_start: 2000-01-01 03:00
+  time_end: 2008-12-31 21:00
+  calibration_period: 2001-01-01, 2007-12-31
+  evaluation_period: 2008-01-01, 2008-12-31
+  spinup_period: 2000-01-01, 2000-12-31
+  definition_method: lumped
+  delineation:
+    routing: lumped
+  discretization: GRUs
+forcing:
+  dataset: CARRA
+model:
+  hydrological_model: GR4J
+  routing_model: none
+  gr:
+    spatial_mode: lumped
+optimization:
+  methods:
+  - iteration
+  algorithm: DDS
+  iterations: 1000
+  metric: KGE
+  skip_warm_start: true

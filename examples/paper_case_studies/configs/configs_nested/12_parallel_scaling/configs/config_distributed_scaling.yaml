@@ -1,0 +1,25 @@
+# Parallel Scaling - Distributed model actors (Section 3.10, Figure 14c)
+# Tests SUMMA actors parallel framework for large distributed domains
+
+system:
+  data_dir: ./data/
+  code_dir: ./
+domain:
+  name: NorthAmerica_distributed
+  experiment_id: actors_scaling
+  definition_method: semidistributed
+  delineation:
+    routing: distributed
+  discretization: GRUs
+  time_start: 2000-01-01 01:00
+  time_end: 2010-12-31 23:00
+forcing:
+  dataset: ERA5
+model:
+  hydrological_model: SUMMA
+  routing_model: mizuRoute
+  summa:
+    use_parallel: true
+    parallel_exe: summa_actors.exe
+    cpus_per_task: 100
+    gru_per_job: 10
