@@ -37,8 +37,8 @@ class TestSnow17XAJEquivalence:
         if not jax_available:
             pytest.skip("JAX not installed")
         try:
-            from symfluence.models.snow17.model import snow17_step  # noqa: F401
-            from symfluence.models.xinanjiang.model import simulate_coupled_jax, step_jax  # noqa: F401
+            from jsnow17.model import snow17_step  # noqa: F401
+            from jxaj.model import simulate_coupled_jax, step_jax  # noqa: F401
         except ImportError:
             pytest.skip("Snow-17 or XAJ model not available in SYMFLUENCE")
 
@@ -90,8 +90,8 @@ class TestSnow17SacSmaEquivalence:
         if not jax_available:
             pytest.skip("JAX not installed")
         try:
-            from symfluence.models.sacsma.sacsma import sacsma_step  # noqa: F401
-            from symfluence.models.snow17.model import snow17_step  # noqa: F401
+            from jsacsma.sacsma import sacsma_step  # noqa: F401
+            from jsnow17.model import snow17_step  # noqa: F401
         except ImportError:
             pytest.skip("Snow-17 or SAC-SMA model not available")
 
@@ -223,7 +223,7 @@ class TestNativeFallbackPaths:
 
     def test_xaj_native_coupling(self):
         """XAJ coupled simulation works with coupling_mode='native'."""
-        from symfluence.models.xinanjiang.model import simulate
+        from jxaj.model import simulate
 
         n = 30
         precip = np.random.uniform(0, 10, n)
@@ -245,7 +245,7 @@ class TestNativeFallbackPaths:
 
     def test_sacsma_native_coupling(self):
         """SAC-SMA coupled simulation works with coupling_mode='native'."""
-        from symfluence.models.sacsma.model import simulate
+        from jsacsma.model import simulate
 
         n = 30
         precip = np.random.uniform(0, 10, n)

@@ -2,9 +2,8 @@
 
 import numpy as np
 import pytest
-
-from symfluence.models.snow17.bmi import Snow17BMI
-from symfluence.models.snow17.parameters import SNOW17_DEFAULTS
+from jsnow17.bmi import Snow17BMI
+from jsnow17.parameters import SNOW17_DEFAULTS
 
 
 class TestSnow17BMI:

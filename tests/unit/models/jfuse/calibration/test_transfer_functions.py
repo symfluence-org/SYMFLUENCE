@@ -21,8 +21,8 @@ import pytest
 
 # Check for jFUSE/JAX availability
 try:
-    from symfluence.models.jfuse import HAS_JAX as _HAS_JAX
-    from symfluence.models.jfuse import HAS_JFUSE as _HAS_JFUSE
+    from jfuse import HAS_JAX as _HAS_JAX
+    from jfuse import HAS_JFUSE as _HAS_JFUSE
     HAS_JFUSE = _HAS_JFUSE and _HAS_JAX
 except ImportError:
     HAS_JFUSE = False
@@ -78,7 +78,7 @@ def sample_gru_attributes(tmp_path):
 @pytest.fixture
 def tf_config(sample_gru_attributes, test_logger):
     """Create a JaxTransferFunctionConfig instance."""
-    from symfluence.models.jfuse.calibration.transfer_functions import (
+    from jfuse.calibration.transfer_functions import (
         JaxTransferFunctionConfig,
     )
 
@@ -97,7 +97,7 @@ class TestModuleConstants:
 
     def test_param_attr_map_covers_default_params(self):
         """PARAM_ATTR_MAP should cover all default calibrated params."""
-        from symfluence.models.jfuse.calibration.transfer_functions import (
+        from jfuse.calibration.transfer_functions import (
             DEFAULT_CALIBRATED_PARAMS,
             PARAM_ATTR_MAP,
         )
@@ -107,7 +107,7 @@ class TestModuleConstants:
 
     def test_default_b_bounds_are_symmetric(self):
         """DEFAULT_B_BOUNDS should be symmetric around zero."""
-        from symfluence.models.jfuse.calibration.transfer_functions import (
+        from jfuse.calibration.transfer_functions import (
             DEFAULT_B_BOUNDS,
         )
 
@@ -115,7 +115,7 @@ class TestModuleConstants:
 
     def test_default_calibrated_params_length(self):
         """Should have 14 default calibrated parameters."""
-        from symfluence.models.jfuse.calibration.transfer_functions import (
+        from jfuse.calibration.transfer_functions import (
             DEFAULT_CALIBRATED_PARAMS,
         )
 
@@ -123,7 +123,7 @@ class TestModuleConstants:
 
     def test_smooth_frac_is_constant(self):
         """smooth_frac should be mapped to 'constant'."""
-        from symfluence.models.jfuse.calibration.transfer_functions import (
+        from jfuse.calibration.transfer_functions import (
             PARAM_ATTR_MAP,
         )
 
@@ -143,7 +143,7 @@ class TestJaxTransferFunctionConfigInit:
 
     def test_filters_coastal_grus(self, tmp_path, test_logger):
         """Should auto-filter coastal GRUs."""
-        from symfluence.models.jfuse.calibration.transfer_functions import (
+        from jfuse.calibration.transfer_functions import (
             JaxTransferFunctionConfig,
         )
 
@@ -167,7 +167,7 @@ class TestJaxTransferFunctionConfigInit:
 
     def test_uses_non_coastal_indices(self, tmp_path, test_logger):
         """Should use explicit non_coastal_indices if provided."""
-        from symfluence.models.jfuse.calibration.transfer_functions import (
+        from jfuse.calibration.transfer_functions import (
             JaxTransferFunctionConfig,
         )
 
@@ -194,7 +194,7 @@ class TestJaxTransferFunctionConfigInit:
 
     def test_custom_calibrated_params(self, sample_gru_attributes, test_logger):
         """Should accept custom list of calibrated parameters."""
-        from symfluence.models.jfuse.calibration.transfer_functions import (
+        from jfuse.calibration.transfer_functions import (
             JaxTransferFunctionConfig,
         )
 
@@ -308,7 +308,7 @@ class TestJAXArrayAccessors:
 
     def test_constant_attribute_is_zero(self, tf_config):
         """Columns for 'constant' attributes (smooth_frac) should be zero."""
-        from symfluence.models.jfuse.calibration.transfer_functions import (
+        from jfuse.calibration.transfer_functions import (
             PARAM_ATTR_MAP,
         )
 
@@ -352,7 +352,7 @@ class TestApplyTransferFunctions:
 
     def test_output_shape(self, tf_config):
         """Should return (n_grus, NUM_PARAMETERS) array."""
-        from symfluence.models.jfuse.calibration.transfer_functions import (
+        from jfuse.calibration.transfer_functions import (
             apply_transfer_functions,
         )
 
@@ -372,7 +372,7 @@ class TestApplyTransferFunctions:
 
     def test_default_coeffs_give_uniform_params(self, tf_config):
         """With b=0, all GRUs should get the same parameter values."""
-        from symfluence.models.jfuse.calibration.transfer_functions import (
+        from jfuse.calibration.transfer_functions import (
             apply_transfer_functions,
         )
 
@@ -395,7 +395,7 @@ class TestApplyTransferFunctions:
 
     def test_results_within_bounds(self, tf_config):
         """All output values should be within parameter bounds."""
-        from symfluence.models.jfuse.calibration.transfer_functions import (
+        from jfuse.calibration.transfer_functions import (
             apply_transfer_functions,
         )
 
@@ -421,7 +421,7 @@ class TestApplyTransferFunctions:
 
     def test_nonzero_b_creates_spatial_variation(self, tf_config):
         """Non-zero b should create spatial variation in calibrated params."""
-        from symfluence.models.jfuse.calibration.transfer_functions import (
+        from jfuse.calibration.transfer_functions import (
             PARAM_ATTR_MAP,
             apply_transfer_functions,
         )
@@ -458,7 +458,7 @@ class TestApplyTransferFunctions:
 
     def test_non_calibrated_params_unchanged(self, tf_config):
         """Non-calibrated params should remain at default values."""
-        from symfluence.models.jfuse.calibration.transfer_functions import (
+        from jfuse.calibration.transfer_functions import (
             apply_transfer_functions,
         )
 

@@ -116,8 +116,8 @@ class TestParameterManagerRoundTrip:
     def test_normalize_denormalize_round_trip(self):
         import logging
 
-        from symfluence.models.sacsma.calibration.parameter_manager import SacSmaParameterManager
-        from symfluence.models.sacsma.parameters import DEFAULT_PARAMS
+        from jsacsma.calibration.parameter_manager import SacSmaParameterManager
+        from jsacsma.parameters import DEFAULT_PARAMS
 
         config = {
             'DOMAIN_NAME': 'test',
@@ -141,8 +141,8 @@ class TestParameterManagerRoundTrip:
     def test_log_transform_geometric_mean_initial(self):
         import logging
 
-        from symfluence.models.sacsma.calibration.parameter_manager import SacSmaParameterManager
-        from symfluence.models.sacsma.parameters import LOG_TRANSFORM_PARAMS, PARAM_BOUNDS
+        from jsacsma.calibration.parameter_manager import SacSmaParameterManager
+        from jsacsma.parameters import LOG_TRANSFORM_PARAMS, PARAM_BOUNDS
 
         config = {'DOMAIN_NAME': 'test', 'EXPERIMENT_ID': 'exp1'}
         pm = SacSmaParameterManager(config, logging.getLogger('test'), '/tmp')
@@ -158,8 +158,8 @@ class TestWorkerSimulation:
     """Test worker-based simulation."""
 
     def test_run_simulation(self):
-        from symfluence.models.sacsma.calibration.worker import SacSmaWorker
-        from symfluence.models.sacsma.parameters import DEFAULT_PARAMS
+        from jsacsma.calibration.worker import SacSmaWorker
+        from jsacsma.parameters import DEFAULT_PARAMS
 
         config = {
             'DOMAIN_NAME': 'test',
@@ -188,8 +188,8 @@ class TestEndToEndSmoke:
     """Smoke test: run full simulation and verify basic sanity."""
 
     def test_one_year_simulation(self):
-        from symfluence.models.sacsma.model import simulate
-        from symfluence.models.sacsma.parameters import DEFAULT_PARAMS
+        from jsacsma.model import simulate
+        from jsacsma.parameters import DEFAULT_PARAMS
 
         n = 365
         # Synthetic annual forcing

@@ -49,7 +49,7 @@ class TestXAJCouplingMode:
 
     def test_native_mode_works(self, synthetic_forcing):
         """coupling_mode='native' should skip dCoupler and use lax.scan/numpy."""
-        from symfluence.models.xinanjiang.model import simulate
+        from jxaj.model import simulate
 
         snow17_params = {
             'SCF': 1.0, 'PXTEMP': 1.0, 'MFMAX': 1.0, 'MFMIN': 0.3,
@@ -71,7 +71,7 @@ class TestXAJCouplingMode:
 
     def test_auto_mode_works(self, synthetic_forcing):
         """coupling_mode='auto' should try dCoupler then fall back to native."""
-        from symfluence.models.xinanjiang.model import simulate
+        from jxaj.model import simulate
 
         snow17_params = {
             'SCF': 1.0, 'PXTEMP': 1.0, 'MFMAX': 1.0, 'MFMIN': 0.3,
@@ -94,7 +94,7 @@ class TestXAJCouplingMode:
         """Default coupling_mode should be 'auto'."""
         import inspect
 
-        from symfluence.models.xinanjiang.model import simulate
+        from jxaj.model import simulate
         sig = inspect.signature(simulate)
         assert sig.parameters['coupling_mode'].default == 'auto'
 
@@ -114,7 +114,7 @@ class TestSacSmaCouplingMode:
 
     def test_native_mode_works(self, synthetic_forcing):
         """coupling_mode='native' should skip dCoupler and use native path."""
-        from symfluence.models.sacsma.model import simulate
+        from jsacsma.model import simulate
 
         runoff, state = simulate(
             precip=synthetic_forcing['precip'],
@@ -130,7 +130,7 @@ class TestSacSmaCouplingMode:
 
     def test_auto_mode_works(self, synthetic_forcing):
         """coupling_mode='auto' should try dCoupler then fall back to native."""
-        from symfluence.models.sacsma.model import simulate
+        from jsacsma.model import simulate
 
         runoff, state = simulate(
             precip=synthetic_forcing['precip'],
@@ -145,7 +145,7 @@ class TestSacSmaCouplingMode:
 
     def test_standalone_mode_ignores_coupling_mode(self, synthetic_forcing):
         """snow_module='none' should ignore coupling_mode entirely."""
-        from symfluence.models.sacsma.model import simulate
+        from jsacsma.model import simulate
 
         runoff, state = simulate(
             precip=synthetic_forcing['precip'],
@@ -161,7 +161,7 @@ class TestSacSmaCouplingMode:
         """Default coupling_mode should be 'auto'."""
         import inspect
 
-        from symfluence.models.sacsma.model import simulate
+        from jsacsma.model import simulate
         sig = inspect.signature(simulate)
         assert sig.parameters['coupling_mode'].default == 'auto'
 

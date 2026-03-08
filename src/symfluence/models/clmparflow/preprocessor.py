@@ -197,8 +197,7 @@ class CLMParFlowPreProcessor:
                           lapse_rate=None):
         """Apply elevation-band Snow-17 model to hourly forcing."""
         import pandas as pd
-
-        from symfluence.models.snow17.bmi import Snow17BMI
+        from jsnow17.bmi import Snow17BMI
 
         if lapse_rate is None:
             lapse_rate = self.DEFAULT_LAPSE_RATE

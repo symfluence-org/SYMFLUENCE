@@ -14,11 +14,11 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+from jfuse import HAS_JAX as _HAS_JAX
 
-from symfluence.models.jfuse import HAS_JAX as _HAS_JAX
+# Check for jFUSE availability using jfuse package detection
+from jfuse import HAS_JFUSE as _HAS_JFUSE
 
-# Check for jFUSE availability using symfluence's detection
-from symfluence.models.jfuse import HAS_JFUSE as _HAS_JFUSE
 from symfluence.models.spatial_modes import SpatialMode
 
 HAS_JFUSE = _HAS_JFUSE and _HAS_JAX
@@ -49,19 +49,19 @@ else:
     jax = None
     jnp = None
 
-# Import symfluence components
-from symfluence.models.jfuse import (
+# Import jfuse components
+from jfuse import (
     JFUSEConfig,
     JFUSEConfigAdapter,
     JFUSEParameterManager,
     JFUSEWorker,
     check_jfuse_installation,
 )
-from symfluence.models.jfuse.calibration.parameter_manager import (
+from jfuse.calibration.parameter_manager import (
     DEFAULT_PARAMS,
     FALLBACK_PARAM_BOUNDS,
 )
-from symfluence.models.jfuse.calibration.parameter_manager import (
+from jfuse.calibration.parameter_manager import (
     PARAM_BOUNDS as SYMFLUENCE_PARAM_BOUNDS,
 )
 

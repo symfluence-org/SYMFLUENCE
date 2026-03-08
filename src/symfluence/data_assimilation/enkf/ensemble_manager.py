@@ -114,7 +114,7 @@ class HBVEnsembleManager(EnsembleManager):
         Args:
             initial_state: Optional base HBVState to perturb from.
         """
-        from symfluence.models.hbv.model import create_initial_state
+        from jhbv.model import create_initial_state
 
         self.member_params = []
         self.member_states = []
@@ -144,7 +144,7 @@ class HBVEnsembleManager(EnsembleManager):
 
         t_start and t_end are interpreted as integer timestep indices.
         """
-        from symfluence.models.hbv.model import (
+        from jhbv.model import (
             HAS_JAX,
             create_params_from_dict,
             scale_params_for_timestep,
@@ -206,7 +206,7 @@ class HBVEnsembleManager(EnsembleManager):
 
     def inject_states(self, updated_states: np.ndarray) -> None:
         """Write updated state matrix back into member HBVState objects."""
-        from symfluence.models.hbv.model import HAS_JAX, HBVState
+        from jhbv.model import HAS_JAX, HBVState
 
         for i in range(self.n_members):
             sv = updated_states[i]
