@@ -416,6 +416,13 @@ jobs:
           echo "$TOOLS_DIR/mizuRoute/route/bin" >> $GITHUB_PATH
           echo "$TOOLS_DIR/TauDEM/bin" >> $GITHUB_PATH
 
+          # Set LD_LIBRARY_PATH for runtime dependencies (SUNDIALS, libsumma, etc.)
+          SUNDIALS_LIB="$TOOLS_DIR/sundials/install/sundials/lib"
+          SUMMA_LIB="$TOOLS_DIR/summa/lib"
+          if [ -d "$SUNDIALS_LIB" ]; then
+            echo "LD_LIBRARY_PATH=$SUNDIALS_LIB:$SUMMA_LIB:/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-/usr/lib/x86_64-linux-gnu}" >> $GITHUB_ENV
+          fi
+
       - name: Run binary validation
         env:
           SYMFLUENCE_DATA: ${{ github.workspace }}/symfluence_data
@@ -458,7 +465,10 @@ jobs:
       - name: Install system deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y gdal-bin libgdal-dev libproj-dev openmpi-bin libfl-dev libbsd-dev cdo
+          sudo apt-get install -y gdal-bin libgdal-dev libproj-dev \
+            openmpi-bin libopenmpi-dev \
+            libnetcdf-dev libnetcdff-dev libhdf5-dev libudunits2-dev \
+            libfl-dev libbsd-dev cdo
 
       - name: Download installation
         uses: actions/download-artifact@v4
@@ -483,6 +493,13 @@ jobs:
           echo "$TOOLS_DIR/summa/bin" >> $GITHUB_PATH
           echo "$TOOLS_DIR/mizuRoute/route/bin" >> $GITHUB_PATH
           echo "$TOOLS_DIR/TauDEM/bin" >> $GITHUB_PATH
+
+          # Set LD_LIBRARY_PATH for runtime dependencies (SUNDIALS, libsumma, etc.)
+          SUNDIALS_LIB="$TOOLS_DIR/sundials/install/sundials/lib"
+          SUMMA_LIB="$TOOLS_DIR/summa/lib"
+          if [ -d "$SUNDIALS_LIB" ]; then
+            echo "LD_LIBRARY_PATH=$SUNDIALS_LIB:$SUMMA_LIB:/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-/usr/lib/x86_64-linux-gnu}" >> $GITHUB_ENV
+          fi
 
           # Restore test data (needed for integration tests)
           if [ -f testdata.tar.gz ]; then
