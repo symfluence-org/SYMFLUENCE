@@ -6,6 +6,8 @@
 import numpy as np
 import pytest
 
+jsacsma = pytest.importorskip("jsacsma", reason="jsacsma package not installed")
+
 
 class TestModelRegistration:
     """Test that SAC-SMA is registered correctly in the framework."""
