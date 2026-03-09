@@ -1,7 +1,7 @@
 {
   "name": "symfluence",
-  "version": "0.7.11",
-  "description": "Structure for Unifying Multiple Modeling Alternatives - Pre-compiled hydrological modeling tools",
+  "version": "0.8.0",
+  "description": "SYnergistic Modelling Framework for Linking and Unifying Earth-system Nexii for Computational Exploration - Pre-compiled hydrological modeling tools",
   "main": "index.js",
   "bin": {
     "symfluence": "bin/symfluence",

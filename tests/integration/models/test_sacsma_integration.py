@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2024-2026 SYMFLUENCE Team <dev@symfluence.org>
+
 """Integration tests for SAC-SMA + Snow-17 model in SYMFLUENCE framework."""
 
 import numpy as np
@@ -31,29 +34,6 @@ class TestModelRegistration:
         assert extractor is not None
         assert type(extractor).__name__ == 'SacSmaResultExtractor'
 
-    def test_spatial_mode_capabilities(self):
-        from symfluence.models.spatial_modes import (
-            MODEL_SPATIAL_CAPABILITIES,
-            SpatialMode,
-            validate_spatial_mode,
-        )
-        assert 'SACSMA' in MODEL_SPATIAL_CAPABILITIES
-        cap = MODEL_SPATIAL_CAPABILITIES['SACSMA']
-        assert cap.default_mode == SpatialMode.LUMPED
-        assert SpatialMode.LUMPED in cap.supported_modes
-        # Only lumped supported
-        assert len(cap.supported_modes) == 1
-
-    def test_spatial_mode_validation(self):
-        from symfluence.models.spatial_modes import SpatialMode, validate_spatial_mode
-        valid, msg = validate_spatial_mode('SACSMA', SpatialMode.LUMPED)
-        assert valid is True
-
-    def test_spatial_mode_distributed_invalid(self):
-        from symfluence.models.spatial_modes import SpatialMode, validate_spatial_mode
-        valid, msg = validate_spatial_mode('SACSMA', SpatialMode.DISTRIBUTED)
-        assert valid is False
-
 
 class TestCalibrationRegistration:
     """Test calibration infrastructure registration."""
@@ -61,9 +41,9 @@ class TestCalibrationRegistration:
     @pytest.fixture(autouse=True)
     def _import_calibration(self):
         """Ensure calibration modules are imported to trigger registration."""
-        import symfluence.models.sacsma.calibration.optimizer  # noqa: F401
-        import symfluence.models.sacsma.calibration.parameter_manager  # noqa: F401
-        import symfluence.models.sacsma.calibration.worker  # noqa: F401
+        import jsacsma.calibration.optimizer  # noqa: F401
+        import jsacsma.calibration.parameter_manager  # noqa: F401
+        import jsacsma.calibration.worker  # noqa: F401
 
     def test_optimizer_registered(self):
         from symfluence.optimization.registry import OptimizerRegistry

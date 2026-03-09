@@ -41,7 +41,7 @@ class ModelManager(BaseManager):
 
         # Models that support routing via mizuRoute or dRoute
         # Note: MESH, HYPE, and NGEN have internal routing, so don't need external routing
-        routable_models = {'SUMMA', 'FUSE', 'GR', 'HBV'}
+        routable_models = {'SUMMA', 'FUSE', 'GR'}
 
         # Determine which routing model to use
         routing_model = self._get_config_value(

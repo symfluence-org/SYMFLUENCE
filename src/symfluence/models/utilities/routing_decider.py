@@ -37,13 +37,11 @@ class RoutingDecider:
         'GR': 'GR_SPATIAL_MODE',
         'MESH': 'MESH_SPATIAL_MODE',
         'NGEN': 'NGEN_SPATIAL_MODE',
-        'HBV': 'DOMAIN_DEFINITION_METHOD',  # HBV uses same key as SUMMA
     }
 
     # Model-specific routing integration config keys
     ROUTING_INTEGRATION_KEYS: Dict[str, str] = {
         'FUSE': 'FUSE_ROUTING_INTEGRATION',
-        'HBV': 'HBV_ROUTING_INTEGRATION',
     }
 
     def needs_routing(
@@ -144,17 +142,6 @@ class RoutingDecider:
                     diagnostics['checks']['model_spatial_mode'] = model_spatial
                     diagnostics['checks']['routing_delineation'] = routing_delineation
                     return False, diagnostics
-
-        # Check for lumped mode with models that have internal routing (HBV)
-        # HBV has internal routing via SUZ/SLZ reservoirs, so lumped HBV doesn't need mizuRoute
-        if model == 'HBV' and domain_method == 'lumped':
-            # Check if HBV explicitly requests routing integration
-            hbv_routing = config.get('HBV_ROUTING_INTEGRATION', 'none').lower()
-            if hbv_routing != 'mizuroute':
-                diagnostics['reason'] = 'hbv_lumped_has_internal_routing'
-                diagnostics['checks']['domain_method'] = domain_method
-                diagnostics['checks']['hbv_routing_integration'] = hbv_routing
-                return False, diagnostics
 
         # If explicitly set to a routing model, enable routing (for non-point domains)
         if routing_model in ['mizuroute', 'mizu_route', 'mizu']:

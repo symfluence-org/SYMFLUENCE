@@ -20,8 +20,6 @@ from .model_configs_hydrology import (
     FUSEConfig,
     GRConfig,
     GSFLOWConfig,
-    HBVConfig,
-    HECHMSConfig,
     HYPEConfig,
     MESHConfig,
     MHMConfig,
@@ -30,7 +28,6 @@ from .model_configs_hydrology import (
     RHESSysConfig,
     SUMMAConfig,
     SWATConfig,
-    TOPMODELConfig,
     VICConfig,
     WATFLOODConfig,
     WflowConfig,
@@ -54,9 +51,6 @@ HYDROLOGICAL_MODEL_REGISTRY: dict[str, ConfigRegistryEntry] = {
     'SUMMA': ('summa', SUMMAConfig),
     'FUSE': ('fuse', FUSEConfig),
     'GR': ('gr', GRConfig),
-    'HBV': ('hbv', HBVConfig),
-    'HECHMS': ('hechms', HECHMSConfig),
-    'TOPMODEL': ('topmodel', TOPMODELConfig),
     'HYPE': ('hype', HYPEConfig),
     'NGEN': ('ngen', NGENConfig),
     'MESH': ('mesh', MESHConfig),
@@ -114,9 +108,6 @@ class ModelConfig(BaseModel):
     summa: Optional[SUMMAConfig] = Field(default=None)
     fuse: Optional[FUSEConfig] = Field(default=None)
     gr: Optional[GRConfig] = Field(default=None)
-    hbv: Optional[HBVConfig] = Field(default=None)
-    hechms: Optional[HECHMSConfig] = Field(default=None)
-    topmodel: Optional[TOPMODELConfig] = Field(default=None)
     hype: Optional[HYPEConfig] = Field(default=None)
     ngen: Optional[NGENConfig] = Field(default=None)
     mesh: Optional[MESHConfig] = Field(default=None)
@@ -230,9 +221,6 @@ __all__ = [
     'SUMMAConfig',
     'FUSEConfig',
     'GRConfig',
-    'HBVConfig',
-    'HECHMSConfig',
-    'TOPMODELConfig',
     'HYPEConfig',
     'NGENConfig',
     'MESHConfig',
