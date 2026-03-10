@@ -237,12 +237,16 @@ class SYMFLUENCE:
             self.logger.info(f"Configuration overrides applied: {list(self.config_overrides.keys())}")
 
 
-        # Capture provenance metadata
-        self.provenance = capture_provenance(
-            experiment_id=getattr(self.typed_config.domain, 'experiment_id', 'unknown') or 'unknown',
-            domain_name=getattr(self.typed_config.domain, 'name', 'unknown') or 'unknown',
-            config_path=str(self.config_path) if self.config_path else None,
-        )
+        # Capture provenance metadata (can be disabled via record_provenance: false)
+        if getattr(self.typed_config.system, 'record_provenance', True):
+            self.provenance = capture_provenance(
+                experiment_id=getattr(self.typed_config.domain, 'experiment_id', 'unknown') or 'unknown',
+                domain_name=getattr(self.typed_config.domain, 'name', 'unknown') or 'unknown',
+                config_path=str(self.config_path) if self.config_path else None,
+            )
+        else:
+            self.logger.info("Provenance capture disabled via configuration")
+            self.provenance = None
 
         # Initialize managers (lazy loaded)
         self.managers = LazyManagerDict(self.typed_config, self.logger, self.visualize, self.diagnostic)
@@ -320,8 +324,9 @@ class SYMFLUENCE:
             # Write provenance manifest
             finalize_provenance(self.provenance, status,
                                 errors=[e.get("error", str(e)) for e in errors] if errors else None)
-            manifest = self.provenance.write(self.logging_manager.log_dir)
-            self.logger.info(f"Run manifest written to: {manifest}")
+            if self.provenance is not None:
+                manifest = self.provenance.write(self.logging_manager.log_dir)
+                self.logger.info(f"Run manifest written to: {manifest}")
 
     def run_individual_steps(self, step_names: List[str]) -> None:
         """
@@ -368,8 +373,9 @@ class SYMFLUENCE:
             # Write provenance manifest
             finalize_provenance(self.provenance, status,
                                 errors=[e.get("error", str(e)) for e in errors] if errors else None)
-            manifest = self.provenance.write(self.logging_manager.log_dir)
-            self.logger.info(f"Run manifest written to: {manifest}")
+            if self.provenance is not None:
+                manifest = self.provenance.write(self.logging_manager.log_dir)
+                self.logger.info(f"Run manifest written to: {manifest}")
 
     def get_workflow_status(self) -> Dict[str, Any]:
         """

@@ -114,6 +114,13 @@ RANDOM_SEED: null
 #   Usage:      8
 STOP_ON_ERROR: true
 
+# RECORD_PROVENANCE
+#   Type:        bool
+#   Default:     True
+#   Source:      SystemConfig (system.py)
+#   Usage:      1
+RECORD_PROVENANCE: true
+
 # SYMFLUENCE_CODE_DIR
 #   Type:        Path
 #   Default:     None
