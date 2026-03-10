@@ -85,6 +85,9 @@ class BaseModelRunner(ABC, ModelComponentMixin, PathResolverMixin, ShapefileAcce
         # Workers set quiet=True to suppress per-iteration INFO messages
         self.quiet = False
 
+        # Track resolved executables for provenance capture
+        self._resolved_executables: List[tuple] = []
+
         # Allow subclasses to perform custom setup before output dir creation
         self._setup_model_specific_paths()
 
@@ -623,6 +626,10 @@ class BaseModelRunner(ABC, ModelComponentMixin, PathResolverMixin, ShapefileAcce
                     f"Install path key: {install_path_key}\n"
                     f"Exe name key: {exe_name_key}"
                 )
+
+        # Track for provenance capture
+        label = install_path_key.replace('_INSTALL_PATH', '').replace('_PATH', '')
+        self._resolved_executables.append((label, exe_path))
 
         return exe_path
 

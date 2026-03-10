@@ -18,7 +18,7 @@ from symfluence.core.config.coercion import ensure_config
 from symfluence.core.exceptions import SYMFLUENCEError
 from symfluence.core.mixins import ConfigMixin
 from symfluence.core.mixins.project import resolve_data_subdir
-from symfluence.core.provenance import record_step
+from symfluence.core.provenance import record_executable, record_step
 from symfluence.core.stage_marker import (
     STAGE_CONFIG_SECTIONS,
     clear_markers,
@@ -451,6 +451,12 @@ class WorkflowOrchestrator(ConfigMixin):
                     self.logger.info(f"Executing: {step.description}")
 
                     step.func()
+
+                    # Record model executable versions in provenance
+                    if step_name == "run_models" and self.provenance is not None:
+                        model_mgr = self.managers.get('model')
+                        for label, exe_path in getattr(model_mgr, 'resolved_executables', []):
+                            record_executable(self.provenance, label, exe_path)
 
                     step_end_time = datetime.now()
                     duration = (step_end_time - step_start_time).total_seconds()

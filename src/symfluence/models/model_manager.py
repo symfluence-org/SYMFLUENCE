@@ -439,6 +439,7 @@ class ModelManager(BaseManager):
 
     def _run_sequential(self, workflow: List[str]):
         """Execute models sequentially using registered runners (legacy path)."""
+        self.resolved_executables: List[tuple] = []
         for model in workflow:
             with symfluence_error_handler(
                 f"running model {model}",
@@ -452,6 +453,9 @@ class ModelManager(BaseManager):
                     continue
 
                 runner = runner_class(self.config, self.logger, reporting_manager=self.reporting_manager)
+                # Collect resolved executables for provenance
+                if hasattr(runner, '_resolved_executables'):
+                    self.resolved_executables.extend(runner._resolved_executables)
                 method_name = R.runners.meta(model).get("runner_method", "run")
                 if isinstance(runner, ModelRunner) and hasattr(runner, method_name):
                     getattr(runner, method_name)()
