@@ -58,7 +58,7 @@ class GeofabricSubsetter(BaseGeofabricDelineator):
             },
             'NWS': {
                 'basin_id_col': 'divide_id',
-                'river_id_col': 'divide_id',
+                'river_id_col': 'id',
                 'upstream_cols': ['toid'],
                 'upstream_default': 0
             },
@@ -121,13 +121,52 @@ class GeofabricSubsetter(BaseGeofabricDelineator):
 
         # Build graph and find upstream using shared processor
         river_graph = self.graph.build_river_graph(rivers, fabric_config)
+
+        # NWS NextGen uses different ID prefixes: cat-N (divides), wb-N (flowpaths),
+        # nex-N (nexuses). The graph is built from flowpaths (wb-/nex- nodes) but
+        # the pour point lookup returns a cat-N ID. Translate to wb-N for graph query,
+        # then translate results back to cat-N for basin subsetting.
+        graph_query_id = downstream_basin_id
+        nws_id_translation = False
+        if (hydrofabric_type == 'NWS'
+                and isinstance(downstream_basin_id, str)
+                and downstream_basin_id.startswith('cat-')):
+            numeric_part = downstream_basin_id.replace('cat-', '')
+            wb_id = f'wb-{numeric_part}'
+            if river_graph.has_node(wb_id):
+                graph_query_id = wb_id
+                nws_id_translation = True
+                self.logger.info(
+                    f"Translated {downstream_basin_id} -> {wb_id} for graph query"
+                )
+
         upstream_basin_ids = self.graph.find_upstream_basins(
-            downstream_basin_id, river_graph, self.logger
+            graph_query_id, river_graph, self.logger
         )
 
-        # Subset basins and rivers
-        subset_basins = basins[basins[fabric_config['basin_id_col']].isin(upstream_basin_ids)].copy()
-        subset_rivers = rivers[rivers[fabric_config['river_id_col']].isin(upstream_basin_ids)].copy()
+        if nws_id_translation:
+            # Translate wb-N/nex-N IDs back to cat-N for basin subsetting
+            translated_cat_ids = set()
+            translated_wb_ids = set()
+            for uid in upstream_basin_ids:
+                if isinstance(uid, str):
+                    if uid.startswith('wb-'):
+                        translated_cat_ids.add(uid.replace('wb-', 'cat-'))
+                        translated_wb_ids.add(uid)
+                    elif uid.startswith('cat-'):
+                        translated_cat_ids.add(uid)
+                    # nex-N nodes are graph connectors, skip for subsetting
+            # Use cat-N IDs for basin subsetting, wb-N for river subsetting
+            self.logger.info(
+                f"Upstream trace: {len(translated_cat_ids)} catchments, "
+                f"{len(translated_wb_ids)} flowpaths"
+            )
+            subset_basins = basins[basins[fabric_config['basin_id_col']].isin(translated_cat_ids)].copy()
+            subset_rivers = rivers[rivers[fabric_config['river_id_col']].isin(translated_wb_ids)].copy()
+        else:
+            # Standard path for MERIT, TDX, HydroSHEDS (same ID namespace)
+            subset_basins = basins[basins[fabric_config['basin_id_col']].isin(upstream_basin_ids)].copy()
+            subset_rivers = rivers[rivers[fabric_config['river_id_col']].isin(upstream_basin_ids)].copy()
 
         # Add SYMFLUENCE-specific columns
         self._add_symfluence_columns(subset_basins, subset_rivers, hydrofabric_type)
@@ -268,12 +307,22 @@ class GeofabricSubsetter(BaseGeofabricDelineator):
                 rivers_path = riv_files[0]
 
         elif hydrofabric_type == 'NWS':
-            cat_files = sorted(download_dir.glob("nws_catchments_*.gpkg"))
-            riv_files = sorted(download_dir.glob("nws_flowpaths_*.gpkg"))
-            if cat_files:
-                basins_path = cat_files[0]
-            if riv_files:
-                rivers_path = riv_files[0]
+            # Single subset files (no per-VPU split)
+            cat_file = download_dir / "nws_catchments.gpkg"
+            riv_file = download_dir / "nws_flowpaths.gpkg"
+            if cat_file.exists():
+                basins_path = cat_file
+            else:
+                # Fallback: glob for legacy per-VPU naming
+                cat_files = sorted(download_dir.glob("nws_catchments*.gpkg"))
+                if cat_files:
+                    basins_path = cat_files[0]
+            if riv_file.exists():
+                rivers_path = riv_file
+            else:
+                riv_files = sorted(download_dir.glob("nws_flowpaths*.gpkg"))
+                if riv_files:
+                    rivers_path = riv_files[0]
 
         elif hydrofabric_type == 'HYDROSHEDS':
             # HydroBASINS provides both catchment polygons and topology
@@ -310,8 +359,8 @@ class GeofabricSubsetter(BaseGeofabricDelineator):
             # Calculate area in metric
             basins_metric = basins.to_crs('epsg:3763')
             basins['GRU_area'] = basins_metric.geometry.area
-            # Rivers
-            rivers['LINKNO'] = rivers['divide_id']
+            # Rivers — flowpaths layer uses 'id' and 'toid'
+            rivers['LINKNO'] = rivers['id']
             rivers['DSLINKNO'] = rivers['toid']
 
         elif hydrofabric_type == 'TDX':
