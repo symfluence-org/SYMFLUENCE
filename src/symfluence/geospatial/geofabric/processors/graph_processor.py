@@ -10,7 +10,7 @@ Eliminates code duplication across GeofabricDelineator and GeofabricSubsetter.
 Supports multiple hydrofabric formats:
 - MERIT: COMID with up1, up2, up3 columns
 - TDX: streamID/LINKNO with USLINKNO1, USLINKNO2 columns
-- NWS: COMID with toCOMID column (reverse direction)
+- NWS: divide_id with toid column (reverse direction)
 
 Refactored from geofabric_utils.py (2026-01-01)
 """
@@ -59,7 +59,7 @@ class RiverGraphProcessor:
         direction = fabric_config.get('direction', 'upstream')
 
         # Auto-detect downstream-pointer columns (NWS toCOMID, HydroSHEDS NEXT_DOWN)
-        downstream_cols = {'toCOMID', 'NEXT_DOWN'}
+        downstream_cols = {'toCOMID', 'toid', 'NEXT_DOWN'}
         if fabric_config.get('upstream_cols') and set(fabric_config['upstream_cols']) <= downstream_cols:
             direction = 'downstream'
 

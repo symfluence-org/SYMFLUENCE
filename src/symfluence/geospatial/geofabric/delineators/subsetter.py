@@ -28,7 +28,7 @@ class GeofabricSubsetter(BaseGeofabricDelineator):
     Supports four hydrofabric formats with different column naming conventions:
     - MERIT: COMID-based with up1, up2, up3 upstream columns
     - TDX: streamID/LINKNO with USLINKNO1, USLINKNO2 upstream columns
-    - NWS: COMID-based with toCOMID (reverse direction)
+    - NWS: divide_id-based with toid (reverse direction)
     - HYDROSHEDS: HYBAS_ID with NEXT_DOWN (reverse direction)
     """
 
@@ -57,9 +57,9 @@ class GeofabricSubsetter(BaseGeofabricDelineator):
                 'upstream_default': -9999
             },
             'NWS': {
-                'basin_id_col': 'COMID',
-                'river_id_col': 'COMID',
-                'upstream_cols': ['toCOMID'],
+                'basin_id_col': 'divide_id',
+                'river_id_col': 'divide_id',
+                'upstream_cols': ['toid'],
                 'upstream_default': 0
             },
             'HYDROSHEDS': {
@@ -305,14 +305,14 @@ class GeofabricSubsetter(BaseGeofabricDelineator):
             hydrofabric_type: Type of hydrofabric (NWS, TDX, Merit)
         """
         if hydrofabric_type == 'NWS':
-            basins['GRU_ID'] = basins['COMID']
-            basins['gru_to_seg'] = basins['COMID']
+            basins['GRU_ID'] = basins['divide_id']
+            basins['gru_to_seg'] = basins['divide_id']
             # Calculate area in metric
             basins_metric = basins.to_crs('epsg:3763')
             basins['GRU_area'] = basins_metric.geometry.area
             # Rivers
-            rivers['LINKNO'] = rivers['COMID']
-            rivers['DSLINKNO'] = rivers['toCOMID']
+            rivers['LINKNO'] = rivers['divide_id']
+            rivers['DSLINKNO'] = rivers['toid']
 
         elif hydrofabric_type == 'TDX':
             basins['GRU_ID'] = basins['fid']
