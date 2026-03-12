@@ -119,52 +119,17 @@ class GeofabricSubsetter(BaseGeofabricDelineator):
             logger=self.logger,
         )
 
-        # Build graph and find upstream using shared processor
-        river_graph = self.graph.build_river_graph(rivers, fabric_config)
-
-        # NWS NextGen uses different ID prefixes: cat-N (divides), wb-N (flowpaths),
-        # nex-N (nexuses). The graph is built from flowpaths (wb-/nex- nodes) but
-        # the pour point lookup returns a cat-N ID. Translate to wb-N for graph query,
-        # then translate results back to cat-N for basin subsetting.
-        graph_query_id = downstream_basin_id
-        nws_id_translation = False
-        if (hydrofabric_type == 'NWS'
-                and isinstance(downstream_basin_id, str)
-                and downstream_basin_id.startswith('cat-')):
-            numeric_part = downstream_basin_id.replace('cat-', '')
-            wb_id = f'wb-{numeric_part}'
-            if river_graph.has_node(wb_id):
-                graph_query_id = wb_id
-                nws_id_translation = True
-                self.logger.info(
-                    f"Translated {downstream_basin_id} -> {wb_id} for graph query"
-                )
-
-        upstream_basin_ids = self.graph.find_upstream_basins(
-            graph_query_id, river_graph, self.logger
-        )
-
-        if nws_id_translation:
-            # Translate wb-N/nex-N IDs back to cat-N for basin subsetting
-            translated_cat_ids = set()
-            translated_wb_ids = set()
-            for uid in upstream_basin_ids:
-                if isinstance(uid, str):
-                    if uid.startswith('wb-'):
-                        translated_cat_ids.add(uid.replace('wb-', 'cat-'))
-                        translated_wb_ids.add(uid)
-                    elif uid.startswith('cat-'):
-                        translated_cat_ids.add(uid)
-                    # nex-N nodes are graph connectors, skip for subsetting
-            # Use cat-N IDs for basin subsetting, wb-N for river subsetting
-            self.logger.info(
-                f"Upstream trace: {len(translated_cat_ids)} catchments, "
-                f"{len(translated_wb_ids)} flowpaths"
+        # Build graph and find upstream basins
+        if hydrofabric_type == 'NWS':
+            subset_basins, subset_rivers = self._nws_upstream_subset(
+                basins, rivers, downstream_basin_id, fabric_config
             )
-            subset_basins = basins[basins[fabric_config['basin_id_col']].isin(translated_cat_ids)].copy()
-            subset_rivers = rivers[rivers[fabric_config['river_id_col']].isin(translated_wb_ids)].copy()
         else:
             # Standard path for MERIT, TDX, HydroSHEDS (same ID namespace)
+            river_graph = self.graph.build_river_graph(rivers, fabric_config)
+            upstream_basin_ids = self.graph.find_upstream_basins(
+                downstream_basin_id, river_graph, self.logger
+            )
             subset_basins = basins[basins[fabric_config['basin_id_col']].isin(upstream_basin_ids)].copy()
             subset_rivers = rivers[rivers[fabric_config['river_id_col']].isin(upstream_basin_ids)].copy()
 
@@ -178,6 +143,109 @@ class GeofabricSubsetter(BaseGeofabricDelineator):
             basins_path, rivers_path,
             self.logger
         )
+
+        return subset_basins, subset_rivers
+
+    def _nws_upstream_subset(
+        self,
+        basins: gpd.GeoDataFrame,
+        rivers: gpd.GeoDataFrame,
+        downstream_basin_id,
+        fabric_config: dict,
+    ) -> Tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
+        """Build NWS NextGen network graph and subset upstream basins/rivers.
+
+        NextGen hydrofabric uses three ID namespaces:
+        - cat-N (divides/catchments)
+        - wb-N (waterbodies/flowpaths)
+        - nex-N (nexuses — confluence/routing points)
+
+        The flowpaths layer only has wb→nex edges. The nex→wb edges that
+        connect catchments together are NOT in the flowpaths layer (they live
+        in the 'network' table of the gpkg). We infer them: nex-N feeds into
+        wb-N (the nexus named after a waterbody feeds that waterbody).
+
+        Args:
+            basins: Divides GeoDataFrame (has divide_id, toid)
+            rivers: Flowpaths GeoDataFrame (has id, toid)
+            downstream_basin_id: Pour point basin ID (cat-N)
+            fabric_config: NWS fabric configuration dict
+
+        Returns:
+            Tuple of (subset_basins, subset_rivers)
+        """
+        import networkx as nx
+
+        G = nx.DiGraph()
+
+        # All nex IDs that exist as targets (from flowpath toid values)
+        all_nex_ids = set()
+
+        # Add wb → nex edges from flowpaths (each waterbody drains to a nexus)
+        for _, row in rivers.iterrows():
+            wb_id = row[fabric_config['river_id_col']]  # e.g. 'wb-661267'
+            nex_id = row['toid']                         # e.g. 'nex-661265'
+            if nex_id and nex_id != 0 and nex_id != '0':
+                G.add_edge(wb_id, nex_id)
+                all_nex_ids.add(str(nex_id))
+
+        # Infer nex → wb edges: nex-N feeds into wb-N
+        # This is the NextGen convention — a nexus named nex-N is the inlet
+        # of waterbody wb-N. Multiple waterbodies can drain TO the same nexus
+        # (confluence), but each nexus feeds exactly one downstream waterbody.
+        wb_ids_in_rivers = set(rivers[fabric_config['river_id_col']].astype(str))
+        for nex_id in all_nex_ids:
+            if nex_id.startswith('nex-'):
+                numeric = nex_id.replace('nex-', '')
+                target_wb = f'wb-{numeric}'
+                if target_wb in wb_ids_in_rivers:
+                    G.add_edge(nex_id, target_wb)
+
+        self.logger.info(
+            f"NWS graph: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges"
+        )
+
+        # Translate cat-N → wb-N for graph query
+        graph_query_id = downstream_basin_id
+        if (isinstance(downstream_basin_id, str)
+                and downstream_basin_id.startswith('cat-')):
+            numeric_part = downstream_basin_id.replace('cat-', '')
+            wb_id = f'wb-{numeric_part}'
+            if G.has_node(wb_id):
+                graph_query_id = wb_id
+                self.logger.info(
+                    f"Translated {downstream_basin_id} -> {wb_id} for graph query"
+                )
+
+        # Trace upstream
+        if G.has_node(graph_query_id):
+            upstream = nx.ancestors(G, graph_query_id)
+            upstream.add(graph_query_id)
+        else:
+            self.logger.warning(
+                f"Node {graph_query_id} not found in NWS network graph"
+            )
+            upstream = {graph_query_id}
+
+        # Translate back to cat-N and wb-N sets
+        cat_ids = set()
+        wb_ids = set()
+        for uid in upstream:
+            uid_str = str(uid)
+            if uid_str.startswith('wb-'):
+                cat_ids.add(uid_str.replace('wb-', 'cat-'))
+                wb_ids.add(uid_str)
+
+        self.logger.info(
+            f"Upstream trace: {len(cat_ids)} catchments, {len(wb_ids)} flowpaths"
+        )
+
+        subset_basins = basins[
+            basins[fabric_config['basin_id_col']].isin(cat_ids)
+        ].copy()
+        subset_rivers = rivers[
+            rivers[fabric_config['river_id_col']].isin(wb_ids)
+        ].copy()
 
         return subset_basins, subset_rivers
 
