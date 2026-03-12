@@ -525,7 +525,8 @@ class ForcingResampler(PathResolverMixin):
             forcing_files=forcing_files,
             output_dir=self.forcing_basin_path,
             catchment_file_path=catchment_file_path,
-            output_filename_func=self.file_processor.determine_output_filename
+            output_filename_func=self.file_processor.determine_output_filename,
+            dem_path=self.dem_path
         )
 
     def _create_parallelized_weighted_forcing(self):

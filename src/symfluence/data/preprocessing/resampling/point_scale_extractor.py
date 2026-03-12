@@ -9,10 +9,12 @@ Simplified forcing extraction for point-scale or small grid domains.
 
 import logging
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import geopandas as gpd
+import numpy as np
 import pandas as pd
+import rasterio
 import xarray as xr
 
 from symfluence.core.mixins import ConfigMixin
@@ -107,7 +109,8 @@ class PointScaleForcingExtractor(ConfigMixin):
         forcing_files: List[Path],
         output_dir: Path,
         catchment_file_path: Path,
-        output_filename_func
+        output_filename_func,
+        dem_path: Optional[Path] = None
     ) -> None:
         """
         Process forcing files using simplified point-scale extraction.
@@ -117,6 +120,7 @@ class PointScaleForcingExtractor(ConfigMixin):
             output_dir: Output directory for processed files
             catchment_file_path: Full path to catchment shapefile (resolved by caller)
             output_filename_func: Function to determine output filename
+            dem_path: Optional path to DEM raster for forcing grid elevation lookup
         """
         output_dir.mkdir(parents=True, exist_ok=True)
         intersect_path = self.project_dir / 'shapefiles' / 'catchment_intersection' / 'with_forcing'
@@ -127,7 +131,7 @@ class PointScaleForcingExtractor(ConfigMixin):
         intersect_csv = intersect_path / f"{case_name}_intersected_shapefile.csv"
 
         if not intersect_csv.exists():
-            self._create_intersection_csv(intersect_csv, catchment_file_path)
+            self._create_intersection_csv(intersect_csv, catchment_file_path, forcing_files, dem_path)
 
         # Process each file
         for file in forcing_files:
@@ -140,25 +144,102 @@ class PointScaleForcingExtractor(ConfigMixin):
     def _create_intersection_csv(
         self,
         intersect_csv: Path,
-        catchment_file_path: Path
+        catchment_file_path: Path,
+        forcing_files: Optional[List[Path]] = None,
+        dem_path: Optional[Path] = None
     ) -> None:
-        """Create minimal intersection artifact for SUMMA preprocessor."""
+        """Create minimal intersection artifact for SUMMA preprocessor.
+
+        Computes the forcing grid elevation (S_2_elev_m) from the DEM by
+        sampling at the forcing grid cell centre.  Falls back to the catchment
+        mean elevation when the DEM is unavailable, so that no lapse-rate
+        correction is applied rather than applying a spurious one.
+        """
         self.logger.info(f"Creating minimal intersection artifact: {intersect_csv.name}")
 
         target_gdf = gpd.read_file(catchment_file_path)
         hru_id_field = self._get_config_value(lambda: self.config.paths.catchment_hruid, dict_key='CATCHMENT_SHP_HRUID')
 
         hru_id_field_val = target_gdf[hru_id_field].values
+        catchment_elevs = target_gdf['elev_mean'].values if 'elev_mean' in target_gdf.columns else None
+
+        # Determine forcing grid elevation from DEM
+        forcing_elev = self._get_forcing_elevation_from_dem(forcing_files, dem_path)
+
+        if forcing_elev is None and catchment_elevs is not None:
+            # No DEM available — use catchment elevation so lapse correction is zero
+            forcing_elev_arr = catchment_elevs
+            self.logger.info(
+                "DEM not available for forcing elevation; setting S_2_elev_m = S_1_elev_m "
+                "(no lapse-rate correction will be applied)"
+            )
+        elif forcing_elev is not None:
+            forcing_elev_arr = [forcing_elev] * len(target_gdf)
+            self.logger.info(f"Forcing grid elevation from DEM: {forcing_elev:.1f} m")
+        else:
+            # Neither DEM nor catchment elevation available — use 0 as neutral default
+            forcing_elev_arr = [0.0] * len(target_gdf)
+            self.logger.warning(
+                "Neither DEM nor catchment elevation available; setting S_2_elev_m = 0"
+            )
+
         df_int = pd.DataFrame({
             hru_id_field: hru_id_field_val,
             'S_1_HRU_ID': hru_id_field_val,
             'S_1_GRU_ID': target_gdf['GRU_ID'].values if 'GRU_ID' in target_gdf.columns else [1],
             'ID': [1] * len(target_gdf),
             'weight': [1.0] * len(target_gdf),
-            'S_1_elev_m': target_gdf['elev_mean'].values if 'elev_mean' in target_gdf.columns else [1600.0],
-            'S_2_elev_m': [1600.0] * len(target_gdf)
+            'S_1_elev_m': catchment_elevs if catchment_elevs is not None else [0.0] * len(target_gdf),
+            'S_2_elev_m': forcing_elev_arr
         })
         df_int.to_csv(intersect_csv, index=False)
+
+    def _get_forcing_elevation_from_dem(
+        self,
+        forcing_files: Optional[List[Path]],
+        dem_path: Optional[Path]
+    ) -> Optional[float]:
+        """Sample the DEM at the forcing grid cell centre to get forcing elevation.
+
+        Returns the mean DEM elevation under the forcing grid cell, or None if
+        the DEM or forcing files are unavailable.
+        """
+        if dem_path is None or not Path(dem_path).exists():
+            return None
+        if not forcing_files:
+            return None
+
+        try:
+            # Get forcing grid cell coordinates from first file
+            var_lat, var_lon = self.dataset_handler.get_coordinate_names()
+            with xr.open_dataset(forcing_files[0], engine="h5netcdf") as ds:
+                lats = ds[var_lat].values
+                lons = ds[var_lon].values
+
+                # Get centre of the forcing grid
+                if lats.ndim >= 1:
+                    lat_center = float(np.mean(lats))
+                    lon_center = float(np.mean(lons))
+                else:
+                    lat_center = float(lats)
+                    lon_center = float(lons)
+
+            # Sample DEM at the forcing grid centre
+            with rasterio.open(dem_path) as src:
+                # rasterio.sample expects (x, y) = (lon, lat) for geographic CRS
+                samples = list(src.sample([(lon_center, lat_center)]))
+                if samples and samples[0][0] != src.nodata and samples[0][0] != -9999:
+                    return float(samples[0][0])
+
+                self.logger.warning(
+                    f"DEM returned nodata at forcing grid centre "
+                    f"({lat_center:.4f}, {lon_center:.4f})"
+                )
+                return None
+
+        except Exception as e:  # noqa: BLE001 — preprocessing resilience
+            self.logger.warning(f"Could not extract forcing elevation from DEM: {e}")
+            return None
 
     def _process_single_file(
         self,
