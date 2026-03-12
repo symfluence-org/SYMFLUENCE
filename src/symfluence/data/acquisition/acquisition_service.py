@@ -1071,11 +1071,18 @@ class AcquisitionService(ConfigurableMixin):
 
             for var in tmean_subset.data_vars:
                 if 'tmean' in var or 'temp' in var:
-                    temp_interp = tmean_subset[var].interp(
-                        lat=prcp_subset.lat,
-                        lon=prcp_subset.lon,
-                        method='linear'
-                    )
+                    if tmean_subset.sizes.get('lat', 0) < 2 or tmean_subset.sizes.get('lon', 0) < 2:
+                        temp_interp = tmean_subset[var].interp(
+                            lat=prcp_subset.lat,
+                            lon=prcp_subset.lon,
+                            method='nearest'
+                        )
+                    else:
+                        temp_interp = tmean_subset[var].interp(
+                            lat=prcp_subset.lat,
+                            lon=prcp_subset.lon,
+                            method='linear'
+                        )
                     merged_ds[var] = temp_interp
 
             is_small_watershed = lat_range < min_bbox_size or lon_range < min_bbox_size
