@@ -167,12 +167,15 @@ symfluence = "symfluence.main_cli:main"
 # should reference a zero-arg callable that performs registrations using
 # R.*.add(), model_manifest(), or any other registry API.
 #
-# Example (in an external package's pyproject.toml):
+# The six bundled JAX model packages (jhbv, jhechms, jtopmodel, jsnow17,
+# jsacsma, jxaj) each declare their own entry points in their respective
+# pyproject.toml files — they are discovered automatically at runtime
+# via importlib.metadata and do not need to be repeated here.
+#
+# To add a new external model plugin, declare in your package's pyproject.toml:
 #
 #   [project.entry-points."symfluence.plugins"]
 #   my_model = "my_package:register"
-#
-# [project.entry-points."symfluence.plugins"]
 
 [project.urls]
 Homepage = "https://symfluence.org"

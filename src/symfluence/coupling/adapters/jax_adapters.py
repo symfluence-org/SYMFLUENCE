@@ -46,6 +46,24 @@ def _get_sacsma_step():
     return sacsma_step
 
 
+def _get_hbv_step():
+    """Import HBV step function."""
+    from jhbv.model import step_jax
+    return step_jax
+
+
+def _get_hechms_step():
+    """Import HEC-HMS step function."""
+    from jhechms.model import step
+    return step
+
+
+def _get_topmodel_step():
+    """Import TOPMODEL step function."""
+    from jtopmodel.model import step
+    return step
+
+
 class Snow17JAXComponent(JAXComponent):
     """Wraps Snow-17 as JAXComponent with BMI lifecycle.
 
@@ -302,6 +320,290 @@ class SacSmaJAXComponent(JAXComponent):
             jax_step_fn=step_wrapper,
             param_specs=param_specs,
             state_size=6,
+            input_flux_specs=input_flux_specs,
+            output_flux_specs=output_flux_specs,
+        )
+
+
+class HBVJAXComponent(JAXComponent):
+    """Wraps HBV as JAXComponent with BMI lifecycle.
+
+    15 parameters governing snow, soil moisture, and response routines:
+        tt, cfmax, sfcf, cfr, cwh, fc, lp, beta, k0, k1, k2, uzl, perc,
+        maxbas, smoothing
+    """
+
+    HBV_PARAMS = [
+        ("tt", -3.0, 3.0),          # Threshold temperature (°C)
+        ("cfmax", 1.0, 10.0),       # Degree-day melt factor (mm/°C/dt)
+        ("sfcf", 0.5, 1.5),         # Snowfall correction factor
+        ("cfr", 0.0, 0.1),          # Refreezing coefficient
+        ("cwh", 0.0, 0.2),          # Water holding capacity of snow
+        ("fc", 50.0, 700.0),        # Field capacity (mm)
+        ("lp", 0.3, 1.0),           # Soil moisture threshold for ET
+        ("beta", 1.0, 6.0),         # Shape coefficient for runoff generation
+        ("k0", 0.05, 0.5),          # Near-surface flow recession (1/dt)
+        ("k1", 0.01, 0.3),          # Upper zone recession (1/dt)
+        ("k2", 0.0001, 0.1),        # Lower zone recession (1/dt)
+        ("uzl", 0.0, 100.0),        # Upper zone threshold (mm)
+        ("perc", 0.0, 20.0),        # Percolation rate (mm/dt)
+        ("maxbas", 1.0, 7.0),       # Routing triangle base (dt)
+        ("smoothing", 1.0, 50.0),   # Smoothing parameter for thresholds
+    ]
+
+    def __init__(self, name: str = "hbv", config: Optional[dict] = None):
+        try:
+            jax_step = _get_hbv_step()
+        except ImportError:
+            raise ImportError("HBV model (jhbv) not available") from None
+
+        param_specs = [
+            ParameterSpec(pname, lo, hi)
+            for pname, lo, hi in self.HBV_PARAMS
+        ]
+
+        input_flux_specs = [
+            FluxSpec("precip", "mm/dt", FluxDirection.INPUT, "hru", 86400, ("time",)),
+            FluxSpec("temp", "C", FluxDirection.INPUT, "hru", 86400, ("time",)),
+            FluxSpec("pet", "mm/dt", FluxDirection.INPUT, "hru", 86400, ("time",)),
+        ]
+        output_flux_specs = [
+            FluxSpec("runoff", "mm/dt", FluxDirection.OUTPUT, "hru", 86400,
+                     ("time",), conserved_quantity="water_mass"),
+        ]
+
+        def step_wrapper(inputs, state, params, dt):
+            import jax.numpy as jnp
+            from jhbv.model import HBVState, create_params_from_dict
+            hbv_params = create_params_from_dict(params, use_jax=True)
+            # Unpack flat array → HBVState namedtuple
+            # State: snow, snow_water, sm, suz, slz, routing_buffer
+            # Routing buffer length depends on maxbas; use remaining state slots
+            n_core = 5  # snow, snow_water, sm, suz, slz
+            hbv_state = HBVState(
+                snow=state[0],
+                snow_water=state[1],
+                sm=state[2],
+                suz=state[3],
+                slz=state[4],
+                routing_buffer=state[n_core:],
+            )
+            timestep_hours = max(1, int(dt / 3600))
+            new_hbv_state, runoff = jax_step(
+                precip=inputs["precip"],
+                temp=inputs["temp"],
+                pet=inputs["pet"],
+                state=hbv_state,
+                params=hbv_params,
+                timestep_hours=timestep_hours,
+            )
+            # Pack HBVState back to flat array
+            new_state = jnp.concatenate([
+                jnp.stack([
+                    new_hbv_state.snow, new_hbv_state.snow_water,
+                    new_hbv_state.sm, new_hbv_state.suz, new_hbv_state.slz,
+                ]),
+                new_hbv_state.routing_buffer,
+            ])
+            return runoff, new_state
+
+        # HBV state: 5 core + routing buffer (7 slots for maxbas up to 7)
+        from jhbv.model import get_routing_buffer_length
+        buf_len = get_routing_buffer_length(lag_days=7, timestep_hours=24)
+        super().__init__(
+            name=name,
+            jax_step_fn=step_wrapper,
+            param_specs=param_specs,
+            state_size=5 + buf_len,
+            input_flux_specs=input_flux_specs,
+            output_flux_specs=output_flux_specs,
+        )
+
+
+class HecHmsJAXComponent(JAXComponent):
+    """Wraps HEC-HMS as JAXComponent with BMI lifecycle.
+
+    14 parameters spanning snow accumulation/melt (temperature-index),
+    SCS curve-number loss, Clark unit hydrograph transform, and
+    linear-reservoir baseflow:
+        px_temp, base_temp, ati_meltrate_coeff, meltrate_max, meltrate_min,
+        cold_limit, ati_cold_rate_coeff, water_capacity, cn,
+        initial_abstraction_ratio, tc, r_coeff, gw_storage_coeff,
+        deep_perc_fraction
+    """
+
+    HECHMS_PARAMS = [
+        ("px_temp", -2.0, 4.0),                # Rain/snow temperature threshold (°C)
+        ("base_temp", -3.0, 3.0),              # Base temperature for melt (°C)
+        ("ati_meltrate_coeff", 0.5, 1.5),      # ATI melt-rate coefficient
+        ("meltrate_max", 2.0, 10.0),           # Maximum melt rate (mm/°C/dt)
+        ("meltrate_min", 0.0, 3.0),            # Minimum melt rate (mm/°C/dt)
+        ("cold_limit", 0.0, 50.0),             # Cold content limit (mm)
+        ("ati_cold_rate_coeff", 0.0, 0.3),     # ATI cold rate coefficient
+        ("water_capacity", 0.0, 0.3),          # Liquid water capacity of snowpack
+        ("cn", 30.0, 98.0),                    # SCS curve number
+        ("initial_abstraction_ratio", 0.05, 0.3),  # Initial abstraction ratio
+        ("tc", 0.5, 20.0),                     # Time of concentration (hr)
+        ("r_coeff", 0.5, 20.0),                # Clark storage coefficient (hr)
+        ("gw_storage_coeff", 1.0, 100.0),      # Groundwater storage coefficient (hr)
+        ("deep_perc_fraction", 0.0, 0.5),      # Deep percolation fraction
+    ]
+
+    def __init__(self, name: str = "hechms", config: Optional[dict] = None):
+        try:
+            jax_step = _get_hechms_step()
+        except ImportError:
+            raise ImportError("HEC-HMS model (jhechms) not available") from None
+
+        param_specs = [
+            ParameterSpec(pname, lo, hi)
+            for pname, lo, hi in self.HECHMS_PARAMS
+        ]
+
+        input_flux_specs = [
+            FluxSpec("precip", "mm/dt", FluxDirection.INPUT, "hru", 86400, ("time",)),
+            FluxSpec("temp", "C", FluxDirection.INPUT, "hru", 86400, ("time",)),
+            FluxSpec("pet", "mm/dt", FluxDirection.INPUT, "hru", 86400, ("time",)),
+            FluxSpec("doy", "day", FluxDirection.INPUT, "hru", 86400, ("time",),
+                     optional=True),
+        ]
+        output_flux_specs = [
+            FluxSpec("runoff", "mm/dt", FluxDirection.OUTPUT, "hru", 86400,
+                     ("time",), conserved_quantity="water_mass"),
+        ]
+
+        def step_wrapper(inputs, state, params, dt):
+            import jax.numpy as jnp
+            from jhechms.model import HecHmsState, create_params_from_dict
+            hms_params = create_params_from_dict(params, use_jax=True)
+            # Unpack flat array → HecHmsState namedtuple
+            hms_state = HecHmsState(
+                snow_swe=state[0],
+                snow_liquid=state[1],
+                snow_ati=state[2],
+                snow_cold_content=state[3],
+                soil_deficit=state[4],
+                clark_storage=state[5],
+                gw_storage_1=state[6],
+                gw_storage_2=state[7],
+            )
+            doy = inputs.get("doy", jnp.float32(1))
+            new_hms_state, runoff = jax_step(
+                precip=inputs["precip"],
+                temp=inputs["temp"],
+                pet=inputs["pet"],
+                state=hms_state,
+                params=hms_params,
+                day_of_year=doy,
+                use_jax=True,
+            )
+            # Pack HecHmsState back to flat array
+            new_state = jnp.stack([
+                new_hms_state.snow_swe, new_hms_state.snow_liquid,
+                new_hms_state.snow_ati, new_hms_state.snow_cold_content,
+                new_hms_state.soil_deficit, new_hms_state.clark_storage,
+                new_hms_state.gw_storage_1, new_hms_state.gw_storage_2,
+            ])
+            return runoff, new_state
+
+        # HecHmsState: 8 variables
+        super().__init__(
+            name=name,
+            jax_step_fn=step_wrapper,
+            param_specs=param_specs,
+            state_size=8,
+            input_flux_specs=input_flux_specs,
+            output_flux_specs=output_flux_specs,
+        )
+
+
+class TopmodelJAXComponent(JAXComponent):
+    """Wraps TOPMODEL as JAXComponent with BMI lifecycle.
+
+    11 parameters governing the topographic-index-based variable
+    contributing area formulation with snow and routing:
+        m, lnTe, Srmax, Sr0, td, k_route, DDF, T_melt, T_snow, ti_std, S0
+    """
+
+    TOPMODEL_PARAMS = [
+        ("m", 0.001, 0.3),         # Transmissivity decay parameter (m)
+        ("lnTe", -7.0, 10.0),      # Log effective transmissivity (ln m²/hr)
+        ("Srmax", 0.005, 0.5),     # Maximum root-zone storage (m)
+        ("Sr0", 0.0, 0.1),         # Initial root-zone storage deficit (m)
+        ("td", 0.1, 50.0),         # Unsaturated zone time delay (hr/m)
+        ("k_route", 1.0, 200.0),   # Channel routing velocity parameter
+        ("DDF", 0.5, 10.0),        # Degree-day factor (mm/°C/dt)
+        ("T_melt", -2.0, 3.0),     # Snowmelt threshold temperature (°C)
+        ("T_snow", -2.0, 3.0),     # Snowfall threshold temperature (°C)
+        ("ti_std", 1.0, 10.0),     # Topographic index standard deviation
+        ("S0", 0.0, 2.0),          # Initial saturation deficit (m)
+    ]
+
+    def __init__(self, name: str = "topmodel", config: Optional[dict] = None):
+        try:
+            jax_step = _get_topmodel_step()
+        except ImportError:
+            raise ImportError("TOPMODEL (jtopmodel) not available") from None
+
+        param_specs = [
+            ParameterSpec(pname, lo, hi)
+            for pname, lo, hi in self.TOPMODEL_PARAMS
+        ]
+
+        input_flux_specs = [
+            FluxSpec("precip", "mm/dt", FluxDirection.INPUT, "hru", 86400, ("time",)),
+            FluxSpec("temp", "C", FluxDirection.INPUT, "hru", 86400, ("time",)),
+            FluxSpec("pet", "mm/dt", FluxDirection.INPUT, "hru", 86400, ("time",)),
+        ]
+        output_flux_specs = [
+            FluxSpec("runoff", "mm/dt", FluxDirection.OUTPUT, "hru", 86400,
+                     ("time",), conserved_quantity="water_mass"),
+        ]
+
+        def step_wrapper(inputs, state, params, dt):
+            import jax.numpy as jnp
+            from jtopmodel.model import TopmodelState, create_params_from_dict, generate_ti_distribution
+            tm_params = create_params_from_dict(params, use_jax=True)
+            # Unpack flat array → TopmodelState namedtuple
+            tm_state = TopmodelState(
+                s_bar=state[0],
+                srz=state[1],
+                suz=state[2],
+                swe=state[3],
+                q_routed=state[4],
+            )
+            # Generate topographic index distribution from ti_std parameter
+            lnaotb, dist_area = generate_ti_distribution(
+                ti_mean=jnp.float32(8.0),
+                ti_std=params.get("ti_std", jnp.float32(3.0)),
+                n_classes=30,
+                use_jax=True,
+            )
+            dt_hours = max(1.0, dt / 3600.0)
+            new_tm_state, runoff = jax_step(
+                precip=inputs["precip"],
+                temp=inputs["temp"],
+                pet=inputs["pet"],
+                state=tm_state,
+                params=tm_params,
+                lnaotb=lnaotb,
+                dist_area=dist_area,
+                dt=dt_hours,
+                use_jax=True,
+            )
+            # Pack TopmodelState back to flat array
+            new_state = jnp.stack([
+                new_tm_state.s_bar, new_tm_state.srz, new_tm_state.suz,
+                new_tm_state.swe, new_tm_state.q_routed,
+            ])
+            return runoff, new_state
+
+        # TopmodelState: 5 variables (s_bar, srz, suz, swe, q_routed)
+        super().__init__(
+            name=name,
+            jax_step_fn=step_wrapper,
+            param_specs=param_specs,
+            state_size=5,
             input_flux_specs=input_flux_specs,
             output_flux_specs=output_flux_specs,
         )
