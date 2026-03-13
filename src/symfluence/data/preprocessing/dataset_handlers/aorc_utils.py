@@ -234,8 +234,10 @@ class AORCHandler(BaseDatasetHandler):
             2. Fill any remaining NaN with the variable's spatial mean
         """
         lat_name, lon_name = self.get_coordinate_names()
+        # Support both lat-lon grid (latitude/longitude dims) and
+        # NWM projected grid (y/x dims)
         spatial_dims: List[str] = [
-            d for d in (lat_name, lon_name) if d in ds.dims
+            d for d in (lat_name, lon_name, 'y', 'x') if d in ds.dims
         ]
 
         for var_name in list(ds.data_vars):
