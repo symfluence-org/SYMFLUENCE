@@ -29,8 +29,6 @@ if TYPE_CHECKING:
     from symfluence.core.config.models import SymfluenceConfig
 
 
-@EvaluationRegistry.register('SCA')
-@EvaluationRegistry.register('SWE')
 @EvaluationRegistry.register('SNOW')
 class SnowEvaluator(ModelEvaluator):
     """Snow evaluator for SWE and SCA calibration.

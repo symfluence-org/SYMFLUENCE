@@ -48,6 +48,7 @@ from symfluence.evaluation.metrics_hydrograph import (
 )
 from symfluence.evaluation.metrics_registry import (
     METRIC_REGISTRY,
+    canonicalize_metric_name,
     get_metric_function,
     get_metric_info,
     interpret_metric,
@@ -80,6 +81,7 @@ __all__ = [
     # Convenience functions
     "calculate_all_metrics",
     "calculate_metrics",
+    "canonicalize_metric_name",
     "get_metric_function",
     "get_metric_info",
     "list_available_metrics",
@@ -109,16 +111,17 @@ def calculate_metrics(
 
     result: Dict[str, float] = {}
     for metric_name in metrics:
-        func = get_metric_function(metric_name)
+        canonical = canonicalize_metric_name(metric_name)
+        func = get_metric_function(canonical)
         if func is not None:
             try:
-                if metric_name in ("correlation", "R2", "logNSE", "MARE", "VE"):
-                    result[metric_name] = float(func(observed, simulated))
+                if canonical in ("correlation", "R2", "logNSE", "MARE", "VE"):
+                    result[canonical] = float(func(observed, simulated))
                 else:
-                    result[metric_name] = float(func(observed, simulated, transfo))
+                    result[canonical] = float(func(observed, simulated, transfo))
             except TypeError:
-                result[metric_name] = float(func(observed, simulated))
+                result[canonical] = float(func(observed, simulated))
         else:
-            result[metric_name] = np.nan
+            result[canonical] = np.nan
 
     return result
