@@ -462,6 +462,28 @@ class CONUS404Handler(BaseDatasetHandler):
             self.logger.error(msg)
             raise FileNotFoundError(msg)
 
+        # Filter to files whose year range overlaps the configured period
+        all_files = files
+        files = [
+            f for f in all_files
+            if self._file_overlaps_period(f, start_year, end_year)
+        ]
+        skipped = len(all_files) - len(files)
+        if skipped:
+            self.logger.info(
+                f"Skipped {skipped} CONUS404 file(s) outside configured period "
+                f"{start_year}-{end_year}"
+            )
+
+        if not files:
+            self.logger.error(
+                f"No CONUS404 files match the configured period {start_year}-{end_year}"
+            )
+            raise FileNotFoundError(
+                f"No CONUS404 forcing files match the configured period "
+                f"{start_year}-{end_year} in {raw_forcing_path}"
+            )
+
         for f in files:
             self.logger.info(f"Processing CONUS404 file: {f}")
             try:

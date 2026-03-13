@@ -386,6 +386,28 @@ class NEXGDDPCMIP6Handler(BaseDatasetHandler):
             self.logger.error(msg)
             raise FileNotFoundError(msg)
 
+        # Filter to files whose year range overlaps the configured period
+        all_files = files
+        files = [
+            f for f in all_files
+            if self._file_overlaps_period(f, start_year, end_year)
+        ]
+        skipped = len(all_files) - len(files)
+        if skipped:
+            self.logger.info(
+                f"Skipped {skipped} NEX-GDDP-CMIP6 file(s) outside configured period "
+                f"{start_year}-{end_year}"
+            )
+
+        if not files:
+            self.logger.error(
+                f"No NEX-GDDP-CMIP6 files match the configured period {start_year}-{end_year}"
+            )
+            raise FileNotFoundError(
+                f"No NEX-GDDP-CMIP6 forcing files match the configured period "
+                f"{start_year}-{end_year} in {raw_forcing_path}"
+            )
+
         for f in files:
             self.logger.info(f"Processing NEX-GDDP-CMIP6 file: {f}")
             try:
