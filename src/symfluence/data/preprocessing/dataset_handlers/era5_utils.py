@@ -101,10 +101,22 @@ class ERA5Handler(BaseDatasetHandler):
         """
         self.logger.info("Processing ERA5 files to standardize variables...")
 
-        raw_files = sorted(list(raw_forcing_path.glob('*.nc')))
-        if not raw_files:
+        all_raw_files = sorted(list(raw_forcing_path.glob('*.nc')))
+        if not all_raw_files:
             self.logger.warning(f"No raw ERA5 files found in {raw_forcing_path}")
             return
+
+        # Filter to files whose year range overlaps the configured period
+        raw_files = [
+            f for f in all_raw_files
+            if self._file_overlaps_period(f, start_year, end_year)
+        ]
+        skipped = len(all_raw_files) - len(raw_files)
+        if skipped:
+            self.logger.info(
+                f"Skipped {skipped} ERA5 file(s) outside configured period "
+                f"{start_year}-{end_year}"
+            )
 
         # Create a temp dir for processing to avoid lock/permission issues
         temp_dir = merged_forcing_path.parent / 'temp_processing'

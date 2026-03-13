@@ -9,7 +9,7 @@ variable standardization, and unit conversion support.
 """
 
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 import geopandas as gpd
 import numpy as np
@@ -208,9 +208,68 @@ class AORCHandler(BaseDatasetHandler):
             ds['pptrate'] = p_rate
 
 
+        # Clean NaN values across all forcing variables.
+        # The AORC lat-lon grid contains NaN cells outside CONUS coverage
+        # (ocean/border regions). These must be handled to prevent NaN
+        # propagation through the spatial remapping step.
+        ds = self._fill_nan_forcing_variables(ds)
+
         # Apply standard CF-compliant attributes (uses centralized definitions)
         # Skip pptrate since we already set it with custom units above
         ds = self.apply_standard_attributes(ds)
+
+        return ds
+
+    def _fill_nan_forcing_variables(self, ds: xr.Dataset) -> xr.Dataset:
+        """Replace NaN values in all forcing variables using nearest-neighbor interpolation.
+
+        The AORC lat-lon gridded dataset (v1.1) stores NaN in the rectangular
+        bounding box outside the actual CONUS data coverage. For catchments
+        near the edges of CONUS, the spatial subsetting can include these NaN
+        cells. If left untreated, NaN propagates through the EASMORE
+        remapping weights into the model forcing.
+
+        Strategy:
+            1. Interpolate along each spatial dimension using nearest-neighbor
+            2. Fill any remaining NaN with the variable's spatial mean
+        """
+        lat_name, lon_name = self.get_coordinate_names()
+        spatial_dims: List[str] = [
+            d for d in (lat_name, lon_name) if d in ds.dims
+        ]
+
+        for var_name in list(ds.data_vars):
+            if ds[var_name].dtype.kind != 'f':  # skip non-float variables
+                continue
+
+            nan_count = int(ds[var_name].isnull().sum())
+            if nan_count == 0:
+                continue
+
+            self.logger.info(
+                f"Filling {nan_count} NaN values in '{var_name}' "
+                f"using nearest-neighbor interpolation"
+            )
+
+            # Interpolate along each spatial dimension
+            filled = ds[var_name]
+            for dim in spatial_dims:
+                if dim in filled.dims:
+                    filled = filled.interpolate_na(
+                        dim=dim, method='nearest', fill_value='extrapolate'
+                    )
+
+            # Fallback: fill any remaining NaN with spatial mean
+            remaining_nan = int(filled.isnull().sum())
+            if remaining_nan > 0:
+                spatial_mean = float(filled.mean(skipna=True))
+                filled = filled.fillna(spatial_mean)
+                self.logger.warning(
+                    f"Filled {remaining_nan} remaining NaN in '{var_name}' "
+                    f"with spatial mean ({spatial_mean:.4g})"
+                )
+
+            ds[var_name] = filled
 
         return ds
 
@@ -280,6 +339,28 @@ class AORCHandler(BaseDatasetHandler):
             )
             raise FileNotFoundError(
                 f"No AORC forcing files found in {raw_forcing_path}"
+            )
+
+        # Filter to files whose year range overlaps the configured period
+        all_files = files
+        files = [
+            f for f in all_files
+            if self._file_overlaps_period(f, start_year, end_year)
+        ]
+        skipped = len(all_files) - len(files)
+        if skipped:
+            self.logger.info(
+                f"Skipped {skipped} AORC file(s) outside configured period "
+                f"{start_year}-{end_year}"
+            )
+
+        if not files:
+            self.logger.error(
+                f"No AORC files match the configured period {start_year}-{end_year}"
+            )
+            raise FileNotFoundError(
+                f"No AORC forcing files match the configured period "
+                f"{start_year}-{end_year} in {raw_forcing_path}"
             )
 
         for f in files:
