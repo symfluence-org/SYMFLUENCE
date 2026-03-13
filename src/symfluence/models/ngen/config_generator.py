@@ -67,6 +67,9 @@ class NgenConfigGenerator(ConfigMixin):
         self._include_pet = True
         self._include_noah = True
         self._include_sloth = False
+        self._include_topmodel = False
+        self._include_sacsma = False
+        self._include_snow17 = False
         self._noah_et_fallback = 'EVAPOTRANS'  # Default when PET disabled but NOAH enabled
 
     def set_module_availability(
@@ -75,7 +78,10 @@ class NgenConfigGenerator(ConfigMixin):
         pet: bool = True,
         noah: bool = True,
         sloth: bool = False,
-        noah_et_fallback: str = 'EVAPOTRANS'
+        noah_et_fallback: str = 'EVAPOTRANS',
+        topmodel: bool = False,
+        sacsma: bool = False,
+        snow17: bool = False,
     ):
         """Set which NGEN modules are available.
 
@@ -85,19 +91,21 @@ class NgenConfigGenerator(ConfigMixin):
             noah: Enable NOAH-OWP land surface module
             sloth: Enable SLOTH ice fraction module
             noah_et_fallback: When PET disabled but NOAH enabled, which NOAH output
-                to use as CFE's ET input. Options:
-                - 'EVAPOTRANS': Total evapotranspiration rate [m/s] (default) -
-                    correct units for CFE's water_potential_evaporation_flux
-                - 'ETRAN': Transpiration [mm] - WRONG UNITS (accumulated depth,
-                    dimensionally incompatible with CFE's m/s requirement)
+                to use as the runoff module's ET input. Options:
+                - 'EVAPOTRANS': Total evapotranspiration rate [m/s] (default)
+                - 'ETRAN': Transpiration [mm] - WRONG UNITS
                 - 'QSEVA': Evaporation rate [mm/s] - rate but wrong dimension
-                Note: All are ACTUAL ET (soil-moisture limited), not potential ET.
-                For proper potential ET, enable the PET module.
+            topmodel: Enable TOPMODEL runoff module (alternative to CFE)
+            sacsma: Enable SAC-SMA runoff module (alternative to CFE)
+            snow17: Enable Snow-17 snow module (alternative to NOAH snow physics)
         """
         self._include_cfe = cfe
         self._include_pet = pet
         self._include_noah = noah
         self._include_sloth = sloth
+        self._include_topmodel = topmodel
+        self._include_sacsma = sacsma
+        self._include_snow17 = snow17
         self._noah_et_fallback = noah_et_fallback
 
     def generate_all_configs(
@@ -120,10 +128,16 @@ class NgenConfigGenerator(ConfigMixin):
 
             if self._include_cfe:
                 self.generate_cfe_config(cat_id, catchment)
+            if self._include_topmodel:
+                self.generate_topmodel_config(cat_id, catchment)
+            if self._include_sacsma:
+                self.generate_sacsma_config(cat_id, catchment)
             if self._include_pet:
                 self.generate_pet_config(cat_id, catchment)
             if self._include_noah:
                 self.generate_noah_config(cat_id, catchment)
+            if self._include_snow17:
+                self.generate_snow17_config(cat_id, catchment)
 
         self.logger.info(f"Generated configs for {len(catchment_gdf)} catchments")
 
@@ -544,6 +558,176 @@ shortwave_radiation_provided=1
 
         return config_file
 
+    def generate_topmodel_config(
+        self,
+        catchment_id: str,
+        catchment_row: Optional[gpd.GeoSeries] = None,
+        **overrides
+    ) -> Path:
+        """Generate TOPMODEL BMI configuration file.
+
+        Args:
+            catchment_id: Catchment identifier
+            catchment_row: Optional GeoSeries with catchment data
+            **overrides: Parameter overrides
+
+        Returns:
+            Path to generated config file
+        """
+        params = {
+            'szm': 0.05,         # Transmissivity decay parameter [m]
+            't0': 2.0,           # Effective log transmissivity [ln(m²/h)]
+            'td': 5.0,           # Unsaturated zone time delay [h/m]
+            'srmax': 0.04,       # Max root zone storage [m]
+            'sr0': 0.01,         # Initial root zone deficit [m]
+            'chv': 1000.0,       # Channel flow velocity [m/h]
+            'Q0': 0.0001,        # Initial subsurface flow [m/h]
+        }
+        params.update(overrides)
+
+        # Generate synthetic topographic index distribution
+        # (mean TI ~7, std ~3, discretized into 30 classes)
+        import math
+        n_classes = 30
+        ti_min, ti_max = 1.0, 20.0
+        ti_step = (ti_max - ti_min) / n_classes
+        ti_values = []
+        area_fracs = []
+        total = 0.0
+        for i in range(n_classes):
+            ti = ti_min + (i + 0.5) * ti_step
+            # Approximate log-normal distribution
+            frac = math.exp(-0.5 * ((ti - 7.0) / 3.0) ** 2)
+            ti_values.append(ti)
+            area_fracs.append(frac)
+            total += frac
+        area_fracs = [f / total for f in area_fracs]
+
+        ti_lines = "\n".join(
+            f"{ti:.4f} {frac:.6f}" for ti, frac in zip(ti_values, area_fracs)
+        )
+
+        config_text = f"""szm={params['szm']}
+t0={params['t0']}
+td={params['td']}
+srmax={params['srmax']}
+sr0={params['sr0']}
+chv={params['chv']}
+Q0={params['Q0']}
+num_topodex_values={n_classes}
+{ti_lines}
+"""
+
+        config_file = self.setup_dir / "TOPMODEL" / f"cat-{catchment_id}_topmodel_config.txt"
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(config_file, 'w', encoding='utf-8') as f:
+            f.write(config_text)
+
+        return config_file
+
+    def generate_sacsma_config(
+        self,
+        catchment_id: str,
+        catchment_row: Optional[gpd.GeoSeries] = None,
+        **overrides
+    ) -> Path:
+        """Generate SAC-SMA BMI configuration file.
+
+        Args:
+            catchment_id: Catchment identifier
+            catchment_row: Optional GeoSeries with catchment data
+            **overrides: Parameter overrides
+
+        Returns:
+            Path to generated config file
+        """
+        params = {
+            # Upper zone
+            'UZTWM': 50.0,    # Upper zone tension water max [mm]
+            'UZFWM': 40.0,    # Upper zone free water max [mm]
+            'UZK': 0.3,       # Upper zone lateral depletion [1/day]
+            # Lower zone
+            'LZTWM': 130.0,   # Lower zone tension water max [mm]
+            'LZFPM': 50.0,    # Lower zone primary free water max [mm]
+            'LZFSM': 25.0,    # Lower zone supplemental free water max [mm]
+            'LZPK': 0.01,     # Primary baseflow depletion [1/day]
+            'LZSK': 0.05,     # Supplemental baseflow depletion [1/day]
+            # Percolation
+            'ZPERC': 40.0,    # Max percolation rate scaling [-]
+            'REXP': 2.0,      # Percolation curve exponent [-]
+            'PFREE': 0.3,     # Fraction percolation to free water [-]
+            # Area fractions
+            'PCTIM': 0.01,    # Permanent impervious fraction [-]
+            'ADIMP': 0.1,     # Additional impervious fraction [-]
+            'RIVA': 0.0,      # Riparian vegetation fraction [-]
+            'SIDE': 0.0,      # Deep recharge fraction [-]
+            'RSERV': 0.3,     # Lower zone free water reserve fraction [-]
+        }
+        params.update(overrides)
+
+        lines = [f"{k}={v}" for k, v in params.items()]
+        config_text = "\n".join(lines) + "\n"
+
+        config_file = self.setup_dir / "SACSMA" / f"cat-{catchment_id}_sacsma_config.txt"
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(config_file, 'w', encoding='utf-8') as f:
+            f.write(config_text)
+
+        return config_file
+
+    def generate_snow17_config(
+        self,
+        catchment_id: str,
+        catchment_row: Optional[gpd.GeoSeries] = None,
+        **overrides
+    ) -> Path:
+        """Generate Snow-17 BMI configuration file.
+
+        Args:
+            catchment_id: Catchment identifier
+            catchment_row: Optional GeoSeries with catchment data
+            **overrides: Parameter overrides
+
+        Returns:
+            Path to generated config file
+        """
+        # Extract latitude and elevation from catchment
+        lat = 45.0
+        elevation = 1000.0
+        if catchment_row is not None:
+            centroid = self._get_wgs84_centroid(catchment_row)
+            lat = centroid.y
+            for elev_attr in ['elevation_m', 'elevation', 'elev_mean', 'mean_elev', 'elev_m']:
+                if elev_attr in catchment_row.index and pd.notna(catchment_row[elev_attr]):
+                    elevation = float(catchment_row[elev_attr])
+                    break
+
+        params = {
+            'SCF': 1.0,       # Snowfall correction factor [-]
+            'PXTEMP': 1.0,    # Rain/snow threshold [°C]
+            'MFMAX': 1.0,     # Max melt factor [mm/°C/6hr]
+            'MFMIN': 0.2,     # Min melt factor [mm/°C/6hr]
+            'NMF': 0.15,      # Negative melt factor [mm/°C/6hr]
+            'MBASE': 0.0,     # Base melt temperature [°C]
+            'TIPM': 0.1,      # Antecedent temperature index weight [-]
+            'UADJ': 0.04,     # Rain-on-snow wind function [mm/mb/6hr]
+            'PLWHC': 0.04,    # Liquid water holding capacity [-]
+            'DAYGM': 0.0,     # Daily ground melt [mm/day]
+        }
+        params.update(overrides)
+
+        lines = [f"{k}={v}" for k, v in params.items()]
+        lines.append(f"latitude={lat:.4f}")
+        lines.append(f"elevation={elevation:.1f}")
+        config_text = "\n".join(lines) + "\n"
+
+        config_file = self.setup_dir / "SNOW17" / f"cat-{catchment_id}_snow17_config.txt"
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(config_file, 'w', encoding='utf-8') as f:
+            f.write(config_text)
+
+        return config_file
+
     def generate_realization_config(
         self,
         forcing_file: Path,
@@ -567,6 +751,9 @@ shortwave_radiation_provided=1
         cfe_config_base = str((self.setup_dir / "CFE").resolve())
         pet_config_base = str((self.setup_dir / "PET").resolve())
         noah_config_base = str((self.setup_dir / "NOAH").resolve())
+        topmodel_config_base = str((self.setup_dir / "TOPMODEL").resolve())
+        sacsma_config_base = str((self.setup_dir / "SACSMA").resolve())
+        snow17_config_base = str((self.setup_dir / "SNOW17").resolve())
 
         lib_ext = ".dylib" if sys.platform == "darwin" else ".so"
 
@@ -616,21 +803,41 @@ shortwave_radiation_provided=1
         # Build module configurations
         modules = self._build_module_configs(
             cfe_config_base, pet_config_base, noah_config_base, lib_ext,
-            lib_paths=lib_paths
+            lib_paths=lib_paths,
+            topmodel_base=topmodel_config_base,
+            sacsma_base=sacsma_config_base,
+            snow17_base=snow17_config_base,
         )
 
         experiment_id = self._get_config_value(lambda: self.config.domain.experiment_id, default='default_run', dict_key='EXPERIMENT_ID')
         output_root = str((project_dir / "simulations" / experiment_id / "NGEN").resolve())
+
+        # Determine model_type_name and main_output_variable based on active modules
+        if self._include_topmodel:
+            model_type = "bmi_multi_topmodel"
+            main_output = "Qout"
+        elif self._include_sacsma:
+            model_type = "bmi_multi_sacsma"
+            main_output = "channel_inflow"
+        else:
+            model_type = "bmi_multi_noahowp_cfe"
+            main_output = "Q_OUT"
+
+        # Prepend land-surface/snow prefix
+        if self._include_noah:
+            model_type = f"bmi_multi_noahowp_{model_type.split('_', 3)[-1]}"
+        elif self._include_snow17:
+            model_type = f"bmi_multi_snow17_{model_type.split('_', 3)[-1]}"
 
         config = {
             "global": {
                 "formulations": [{
                     "name": "bmi_multi",
                     "params": {
-                        "model_type_name": "bmi_multi_noahowp_cfe",
+                        "model_type_name": model_type,
                         "init_config": "",
                         "allow_exceed_end_time": True,
-                        "main_output_variable": "Q_OUT",
+                        "main_output_variable": main_output,
                         "modules": modules,
                     }
                 }],
@@ -651,13 +858,45 @@ shortwave_radiation_provided=1
         self.logger.info(f"Created realization config: {config_file}")
         return config_file
 
+    def _build_runoff_variables_map(self) -> dict:
+        """Build the variables_names_map for the active runoff module.
+
+        Determines precipitation and ET sources based on which upstream
+        modules are enabled:
+        - Precip: NOAH QINSUR > Snow-17 rain_plus_melt > raw forcing
+        - ET: PET > NOAH fallback
+        """
+        variables_map = {}
+
+        # Precipitation source
+        if self._include_noah:
+            variables_map["atmosphere_water__liquid_equivalent_precipitation_rate"] = "QINSUR"
+        elif self._include_snow17:
+            variables_map["atmosphere_water__liquid_equivalent_precipitation_rate"] = "rain_plus_melt"
+        else:
+            variables_map["atmosphere_water__liquid_equivalent_precipitation_rate"] = (
+                "atmosphere_water__liquid_equivalent_precipitation_rate"
+            )
+
+        # ET source
+        if self._include_pet:
+            variables_map["water_potential_evaporation_flux"] = "water_potential_evaporation_flux"
+        elif self._include_noah:
+            et_var = getattr(self, '_noah_et_fallback', 'EVAPOTRANS')
+            variables_map["water_potential_evaporation_flux"] = et_var
+
+        return variables_map
+
     def _build_module_configs(
         self,
         cfe_base: str,
         pet_base: str,
         noah_base: str,
         lib_ext: str,
-        lib_paths: Optional[Dict[str, Path]] = None
+        lib_paths: Optional[Dict[str, Path]] = None,
+        topmodel_base: str = "",
+        sacsma_base: str = "",
+        snow17_base: str = "",
     ) -> list:
         """Build the list of module configurations for realization."""
         modules = []
@@ -743,46 +982,35 @@ shortwave_radiation_provided=1
                 }
             })
 
+        if self._include_snow17:
+            lib_file = str(lib_paths.get("SNOW17", f"./extern/snow17/cmake_build/libsnow17_bmi{lib_ext}"))
+            snow17_vars = {
+                "TAIR": "land_surface_air__temperature",
+                "precip": "atmosphere_water__liquid_equivalent_precipitation_rate",
+            }
+            modules.append({
+                "name": "bmi_fortran",
+                "params": {
+                    "model_type_name": "bmi_fortran_snow17",
+                    "library_file": lib_file,
+                    "forcing_file": "",
+                    "init_config": f"{snow17_base}/{{{{id}}}}_snow17_config.txt",
+                    "allow_exceed_end_time": True,
+                    "main_output_variable": "rain_plus_melt",
+                    "variables_names_map": snow17_vars,
+                    "output_variables": ["rain_plus_melt", "sneqv"]
+                }
+            })
+
         if self._include_cfe:
             lib_file = str(lib_paths.get("CFE", f"./extern/cfe/cmake_build/libcfebmi{lib_ext}"))
-
-            # Build variables_names_map for CFE
-            # QINSUR-based coupling when NOAH is enabled:
-            # - CFE receives NOAH's QINSUR (net water input to soil surface, post-snow
-            #   and post-interception) as its precipitation input
-            # - PET provides potential ET for CFE's internal soil moisture accounting
-            # When NOAH is NOT enabled (PET-only, standard coupling):
-            # - CFE receives raw forcing precipitation directly
-            # - PET provides potential ET
-            if self._include_noah:
-                variables_map = {
-                    # CFE receives NOAH's net surface water input (post-snow, post-interception)
-                    "atmosphere_water__liquid_equivalent_precipitation_rate": "QINSUR",
-                }
-            else:
-                variables_map = {
-                    # Standard coupling: CFE receives forcing precipitation directly
-                    "atmosphere_water__liquid_equivalent_precipitation_rate": "atmosphere_water__liquid_equivalent_precipitation_rate",
-                }
+            variables_map = self._build_runoff_variables_map()
 
             # Add SLOTH variables if SLOTH is enabled (provides ice fraction for partitioning)
             if self._include_sloth:
                 variables_map["ice_fraction_schaake"] = "sloth_ice_fraction_schaake"
                 variables_map["ice_fraction_xinanjiang"] = "sloth_ice_fraction_xinanjiang"
                 variables_map["soil_moisture_profile"] = "sloth_smp"
-
-            # Add evapotranspiration source: PET provides potential ET for CFE's
-            # soil moisture depletion, regardless of whether NOAH is enabled
-            if self._include_pet:
-                variables_map["water_potential_evaporation_flux"] = "water_potential_evaporation_flux"
-            elif self._include_noah:
-                # Fallback: if PET is not enabled but NOAH is, use configured NOAH output
-                # EVAPOTRANS (m/s) is the only NOAH output with correct units for CFE.
-                # ETRAN/ECAN are in mm (accumulated depth) — dimensionally incompatible.
-                # NOTE: This is ACTUAL ET (soil-moisture limited), not potential ET.
-                # For proper potential ET, enable PET module.
-                et_var = getattr(self, '_noah_et_fallback', 'EVAPOTRANS')
-                variables_map["water_potential_evaporation_flux"] = et_var
 
             modules.append({
                 "name": "bmi_c",
@@ -794,6 +1022,43 @@ shortwave_radiation_provided=1
                     "allow_exceed_end_time": True,
                     "main_output_variable": "Q_OUT",
                     "registration_function": "register_bmi_cfe",
+                    "variables_names_map": variables_map,
+                    "output_variable_units": "m3/s"
+                }
+            })
+
+        if self._include_topmodel:
+            lib_file = str(lib_paths.get("TOPMODEL", f"./extern/topmodel/cmake_build/libtopmodelbmi{lib_ext}"))
+            variables_map = self._build_runoff_variables_map()
+
+            modules.append({
+                "name": "bmi_c",
+                "params": {
+                    "model_type_name": "bmi_c_topmodel",
+                    "library_file": lib_file,
+                    "forcing_file": "",
+                    "init_config": f"{topmodel_base}/{{{{id}}}}_topmodel_config.txt",
+                    "allow_exceed_end_time": True,
+                    "main_output_variable": "Qout",
+                    "registration_function": "register_bmi_topmodel",
+                    "variables_names_map": variables_map,
+                    "output_variable_units": "m3/s"
+                }
+            })
+
+        if self._include_sacsma:
+            lib_file = str(lib_paths.get("SACSMA", f"./extern/sac-sma/cmake_build/libsacbmi{lib_ext}"))
+            variables_map = self._build_runoff_variables_map()
+
+            modules.append({
+                "name": "bmi_fortran",
+                "params": {
+                    "model_type_name": "bmi_fortran_sacsma",
+                    "library_file": lib_file,
+                    "forcing_file": "",
+                    "init_config": f"{sacsma_base}/{{{{id}}}}_sacsma_config.txt",
+                    "allow_exceed_end_time": True,
+                    "main_output_variable": "channel_inflow",
                     "variables_names_map": variables_map,
                     "output_variable_units": "m3/s"
                 }

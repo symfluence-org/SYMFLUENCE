@@ -841,9 +841,45 @@ def get_ngen_pet_bounds() -> Dict[str, Dict[str, float]]:
     return get_registry().get_bounds_for_params(pet_params)
 
 
+def get_ngen_topmodel_bounds() -> Dict[str, Dict[str, float]]:
+    """
+    Get TOPMODEL module parameter bounds for NGEN.
+
+    Returns:
+        Dictionary mapping TOPMODEL param_name -> {'min': float, 'max': float}
+        Keys use unprefixed names (m, lnTe, ...) matching TOPMODEL config conventions.
+    """
+    return get_topmodel_bounds()
+
+
+def get_ngen_sacsma_bounds() -> Dict[str, Dict[str, float]]:
+    """
+    Get SAC-SMA module parameter bounds for NGEN.
+
+    Returns:
+        Dictionary mapping SAC-SMA param_name -> {'min': float, 'max': float}
+        Only SAC-SMA soil moisture accounting params (not Snow-17).
+    """
+    sacsma_only = [
+        'UZTWM', 'UZFWM', 'UZK', 'LZTWM', 'LZFPM', 'LZFSM', 'LZPK', 'LZSK',
+        'ZPERC', 'REXP', 'PFREE', 'PCTIM', 'ADIMP', 'RIVA', 'SIDE', 'RSERV',
+    ]
+    return get_registry().get_bounds_for_params(sacsma_only)
+
+
+def get_ngen_snow17_bounds() -> Dict[str, Dict[str, float]]:
+    """
+    Get Snow-17 module parameter bounds for NGEN.
+
+    Returns:
+        Dictionary mapping Snow-17 param_name -> {'min': float, 'max': float}
+    """
+    return get_snow17_bounds()
+
+
 def get_ngen_bounds() -> Dict[str, Dict[str, float]]:
     """
-    Get all NGEN parameter bounds (CFE + NOAH + PET).
+    Get all NGEN parameter bounds (CFE + NOAH + PET + TOPMODEL + SACSMA + SNOW17).
 
     Returns:
         Dictionary mapping param_name -> {'min': float, 'max': float}
@@ -852,6 +888,9 @@ def get_ngen_bounds() -> Dict[str, Dict[str, float]]:
     bounds.update(get_ngen_cfe_bounds())
     bounds.update(get_ngen_noah_bounds())
     bounds.update(get_ngen_pet_bounds())
+    bounds.update(get_ngen_topmodel_bounds())
+    bounds.update(get_ngen_sacsma_bounds())
+    bounds.update(get_ngen_snow17_bounds())
     return bounds
 
 

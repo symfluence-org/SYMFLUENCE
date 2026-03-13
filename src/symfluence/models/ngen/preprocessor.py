@@ -90,7 +90,7 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         )
         _selected = {m.strip().upper() for m in modules_selected_str.split(',') if m.strip()}
 
-        _all_modules = ['SLOTH', 'PET', 'NOAH', 'CFE']
+        _all_modules = ['SLOTH', 'PET', 'NOAH', 'CFE', 'TOPMODEL', 'SACSMA', 'SNOW17']
         _resolved = {}
         for mod_name in _all_modules:
             config_enabled = mod_name in _selected
@@ -106,17 +106,26 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         self._include_pet = _resolved['PET']
         self._include_noah = _resolved['NOAH']
         self._include_cfe = _resolved['CFE']
+        self._include_topmodel = _resolved['TOPMODEL']
+        self._include_sacsma = _resolved['SACSMA']
+        self._include_snow17 = _resolved['SNOW17']
 
-        # QINSUR-based coupling: NOAH and PET serve complementary roles.
-        # NOAH handles snow physics, canopy interception, and surface energy balance,
-        # outputting QINSUR (net water input to soil surface) as CFE's precipitation input.
-        # PET provides potential evapotranspiration for CFE's internal soil moisture accounting.
-        # No double-counting: QINSUR is post-interception water; PET drives CFE's soil ET.
+        # Validate module exclusivity
+        self._validate_module_exclusivity()
+
+        # Determine the active runoff module name for logging
+        active_runoff = [m for m in ['CFE', 'TOPMODEL', 'SACSMA']
+                         if getattr(self, f'_include_{m.lower()}', False)]
+        runoff_name = active_runoff[0] if active_runoff else 'none'
+
+        # Coupling logic: NOAH/Snow-17 and PET serve complementary roles.
+        # The land-surface/snow module outputs net water input as the runoff module's
+        # precipitation input. PET provides potential ET for soil moisture accounting.
         if self._include_noah and self._include_pet:
             self.logger.info(
-                "NOAH+PET both enabled: using QINSUR-based coupling. "
-                "NOAH provides QINSUR (post-snow/interception water) to CFE as precipitation; "
-                "PET provides potential ET for CFE's soil moisture depletion."
+                f"NOAH+PET both enabled: using QINSUR-based coupling. "
+                f"NOAH provides QINSUR (post-snow/interception water) to {runoff_name} as precipitation; "
+                f"PET provides potential ET for {runoff_name}'s soil moisture depletion."
             )
         elif self._include_noah and not self._include_pet:
             # Get the ET fallback configuration
@@ -132,7 +141,7 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                 self._noah_et_fallback = 'EVAPOTRANS'
 
             self.logger.info(
-                f"NOAH enabled but PET disabled: CFE will receive NOAH's {self._noah_et_fallback} "
+                f"NOAH enabled but PET disabled: {runoff_name} will receive NOAH's {self._noah_et_fallback} "
                 f"(actual ET) instead of potential ET. For physically correct potential ET, "
                 f"add PET to NGEN_MODULES_SELECTED."
             )
@@ -145,6 +154,36 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         self.logger.info(f"  PET: {'ENABLED' if self._include_pet else 'DISABLED'}")
         self.logger.info(f"  NOAH-OWP: {'ENABLED' if self._include_noah else 'DISABLED'}")
         self.logger.info(f"  CFE: {'ENABLED' if self._include_cfe else 'DISABLED'}")
+        self.logger.info(f"  TOPMODEL: {'ENABLED' if self._include_topmodel else 'DISABLED'}")
+        self.logger.info(f"  SAC-SMA: {'ENABLED' if self._include_sacsma else 'DISABLED'}")
+        self.logger.info(f"  Snow-17: {'ENABLED' if self._include_snow17 else 'DISABLED'}")
+
+    def _validate_module_exclusivity(self):
+        """Validate that mutually exclusive modules are not both enabled.
+
+        Enforces:
+        - Rainfall-runoff slot: exactly one of CFE, TOPMODEL, SAC-SMA
+        - Snow/land-surface slot: at most one of NOAH, Snow-17
+        """
+        # Rainfall-runoff: at most one
+        runoff_modules = [m for m in ['CFE', 'TOPMODEL', 'SACSMA']
+                          if getattr(self, f'_include_{m.lower()}', False)]
+        if len(runoff_modules) > 1:
+            keep = runoff_modules[0]
+            for drop in runoff_modules[1:]:
+                setattr(self, f'_include_{drop.lower()}', False)
+            self.logger.warning(
+                f"Multiple runoff modules enabled ({', '.join(runoff_modules)}). "
+                f"Keeping {keep}, disabling {', '.join(runoff_modules[1:])}."
+            )
+
+        # Snow/land-surface: at most one
+        if self._include_noah and self._include_snow17:
+            self.logger.warning(
+                "Both NOAH and Snow-17 enabled. They occupy the same slot. "
+                "Keeping NOAH, disabling Snow-17."
+            )
+            self._include_snow17 = False
 
     def _detect_npm_lib_dir(self) -> Optional[Path]:
         """Detect the npm-installed symfluence dist/lib/ directory."""
@@ -175,6 +214,9 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             "PET": f"libpetbmi{lib_ext}",
             "NOAH": f"libsurfacebmi{lib_ext}",
             "CFE": f"libcfebmi{lib_ext}",
+            "TOPMODEL": f"libtopmodelbmi{lib_ext}",
+            "SACSMA": f"libsacbmi{lib_ext}",
+            "SNOW17": f"libsnow17_bmi{lib_ext}",
         }
 
         # --- 1. Try npm-bundled libraries first (when install_path is default) ---
@@ -214,6 +256,9 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             "PET": ("extern/evapotranspiration/evapotranspiration/cmake_build", f"libpetbmi{lib_ext}"),
             "NOAH": ("extern/noah-owp-modular/cmake_build", f"libsurfacebmi{lib_ext}"),
             "CFE": ("extern/cfe/cmake_build", f"libcfebmi{lib_ext}"),
+            "TOPMODEL": ("extern/topmodel/cmake_build", f"libtopmodelbmi{lib_ext}"),
+            "SACSMA": ("extern/sac-sma/cmake_build", f"libsacbmi{lib_ext}"),
+            "SNOW17": ("extern/snow17/cmake_build", f"libsnow17_bmi{lib_ext}"),
         }
 
         for name, (subpath, libname) in module_subpaths.items():
@@ -283,6 +328,9 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             self.setup_dir / "PET",
             self.setup_dir / "NOAH",
             self.setup_dir / "NOAH" / "parameters",
+            self.setup_dir / "TOPMODEL",
+            self.setup_dir / "SACSMA",
+            self.setup_dir / "SNOW17",
             self.forcing_dir / "csv"
         ]
         if additional_dirs:
@@ -870,7 +918,12 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         catchment_gdf = gpd.read_file(self.get_catchment_path())
         config_gen = NgenConfigGenerator(self.config_dict, self.logger, self.setup_dir, catchment_gdf.crs)
         noah_et_fallback = getattr(self, '_noah_et_fallback', 'EVAPOTRANS')
-        config_gen.set_module_availability(cfe=self._include_cfe, pet=self._include_pet, noah=self._include_noah, sloth=self._include_sloth, noah_et_fallback=noah_et_fallback)
+        config_gen.set_module_availability(
+            cfe=self._include_cfe, pet=self._include_pet, noah=self._include_noah,
+            sloth=self._include_sloth, noah_et_fallback=noah_et_fallback,
+            topmodel=self._include_topmodel, sacsma=self._include_sacsma,
+            snow17=self._include_snow17,
+        )
         config_gen.generate_all_configs(catchment_gdf, self.hru_id_col)
 
     def generate_realization_config(self, catchment_file: Path, nexus_file: Path, forcing_file: Path):
@@ -888,7 +941,12 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         """
         config_gen = NgenConfigGenerator(self.config_dict, self.logger, self.setup_dir, getattr(self, 'catchment_crs', None))
         noah_et_fallback = getattr(self, '_noah_et_fallback', 'EVAPOTRANS')
-        config_gen.set_module_availability(cfe=self._include_cfe, pet=self._include_pet, noah=self._include_noah, sloth=self._include_sloth, noah_et_fallback=noah_et_fallback)
+        config_gen.set_module_availability(
+            cfe=self._include_cfe, pet=self._include_pet, noah=self._include_noah,
+            sloth=self._include_sloth, noah_et_fallback=noah_et_fallback,
+            topmodel=self._include_topmodel, sacsma=self._include_sacsma,
+            snow17=self._include_snow17,
+        )
         config_gen.generate_realization_config(forcing_file, self.project_dir, lib_paths=self._ngen_lib_paths)
 
         # Generate t-route config if routing is enabled

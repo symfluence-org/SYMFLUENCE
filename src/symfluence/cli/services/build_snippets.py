@@ -912,7 +912,7 @@ detect_or_build_udunits2() {
 
     # Try common system locations (including multiarch lib dirs on Debian/Ubuntu)
     if [ "$UDUNITS2_FOUND" = false ]; then
-        for try_path in /usr /usr/local /opt/udunits2 $HOME/.local; do
+        for try_path in /usr /usr/local /opt/homebrew /opt/udunits2 $HOME/.local; do
             if [ ! -f "$try_path/include/udunits2.h" ]; then
                 continue
             fi
@@ -988,7 +988,7 @@ detect_or_build_udunits2() {
 
             # Check for expat in common locations
             if [ "$EXPAT_FOUND" = false ]; then
-                for expat_path in "$CONDA_PREFIX" /usr /usr/local; do
+                for expat_path in "$CONDA_PREFIX" /usr /usr/local /opt/homebrew; do
                     if [ -n "$expat_path" ] && [ -f "$expat_path/include/expat.h" ]; then
                         echo "Found EXPAT at: $expat_path"
                         EXPAT_FLAGS="CPPFLAGS=-I$expat_path/include LDFLAGS=-L$expat_path/lib"
