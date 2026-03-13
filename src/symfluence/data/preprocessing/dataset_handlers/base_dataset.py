@@ -377,8 +377,9 @@ class BaseDatasetHandler(ABC, ConfigMixin):
             if 1900 <= year <= 2200:
                 return start_year <= year <= end_year
 
-        # Try standalone 4-digit year
-        year_matches = re.findall(r'\b(\d{4})\b', name)
+        # Try standalone 4-digit year (use lookaround instead of \b
+        # because \b treats underscore as a word character)
+        year_matches = re.findall(r'(?<!\d)(\d{4})(?!\d)', name)
         plausible = [int(y) for y in year_matches if 1900 <= int(y) <= 2200]
         if plausible:
             return any(start_year <= y <= end_year for y in plausible)
