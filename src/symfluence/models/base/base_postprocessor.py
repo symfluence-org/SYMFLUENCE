@@ -327,6 +327,9 @@ class BaseModelPostProcessor(ABC, ModelComponentMixin, PathResolverMixin):  # ty
         results_df.to_csv(output_file)
         self.logger.info(f"Streamflow saved to: {output_file}")
 
+        # Also write to the model-output data store as CF-compliant NetCDF
+        self._save_to_model_output_store(results_df)
+
         # Automatically visualize results if reporting manager is available
         self.visualize_streamflow_results()
 
@@ -353,6 +356,58 @@ class BaseModelPostProcessor(ABC, ModelComponentMixin, PathResolverMixin):  # ty
                 self.logger.error(f"Error creating streamflow plots: {str(e)}")
         else:
             self.logger.debug("Skipping visualization (manager not available or visualization disabled)")
+
+    def _save_to_model_output_store(self, results_df: pd.DataFrame) -> None:
+        """Write postprocessed results to the model-output data store as CF-compliant NetCDF.
+
+        Creates ``data/model_output/{domain}_{experiment}_results.nc`` alongside
+        the model-ready *input* store, embedding provenance metadata (model name,
+        experiment, framework version, creation timestamp) directly in the file.
+        """
+        try:
+            from symfluence.data.model_ready.cf_conventions import (
+                CF_STANDARD_NAMES,
+                build_global_attrs,
+            )
+
+            output_store = self.project_dir / "data" / "model_output"
+            output_store.mkdir(parents=True, exist_ok=True)
+            nc_path = output_store / f"{self.experiment_id}_results.nc"
+
+            # Build xarray Dataset from the results DataFrame
+            ds = xr.Dataset()
+
+            for col in results_df.columns:
+                da = xr.DataArray(
+                    results_df[col].values,
+                    dims=["time"],
+                    coords={"time": results_df.index.values},
+                )
+                # Attach CF attributes when available
+                base_var = col.replace(f"{self.model_name}_", "").replace("_cms", "")
+                if "discharge" in base_var:
+                    cf_key = "discharge_cms"
+                else:
+                    cf_key = base_var
+                if cf_key in CF_STANDARD_NAMES:
+                    da.attrs.update(CF_STANDARD_NAMES[cf_key])
+                da.attrs["column_name"] = col
+                ds[col] = da
+
+            # Global attributes with provenance
+            ds.attrs.update(build_global_attrs(
+                domain_name=self.domain_name,
+                title=f"SYMFLUENCE model output — {self.experiment_id}",
+                history=f"Postprocessed by {self.model_name} postprocessor",
+            ))
+            ds.attrs["model_name"] = self.model_name
+            ds.attrs["experiment_id"] = self.experiment_id
+
+            ds.to_netcdf(nc_path)
+            self.logger.info(f"Model output NetCDF saved to: {nc_path}")
+
+        except Exception as e:  # noqa: BLE001 — non-critical; CSV is the primary output
+            self.logger.debug(f"Could not write model-output NetCDF: {e}")
 
     def read_netcdf_streamflow(
         self,
