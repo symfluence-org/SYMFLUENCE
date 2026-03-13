@@ -58,6 +58,15 @@ class ERA5Handler(BaseDatasetHandler):
         if existing_vars:
             ds = ds.rename(existing_vars)
 
+        # Normalize longitude from 0-360 to -180/+180 if needed
+        # ARCO-ERA5 uses 0-360 convention, but shapefiles use -180/+180
+        lon_name = 'longitude' if 'longitude' in ds.coords else 'lon'
+        if lon_name in ds.coords and float(ds[lon_name].max()) > 180:
+            new_lons = ds[lon_name].values.copy()
+            new_lons[new_lons > 180] -= 360
+            ds = ds.assign_coords({lon_name: new_lons})
+            ds = ds.sortby(lon_name)
+
         # Apply standard CF-compliant attributes (uses centralized definitions)
         # ERA5 precipitation is typically in mm/s, override the default
         ds = self.apply_standard_attributes(ds, overrides={
