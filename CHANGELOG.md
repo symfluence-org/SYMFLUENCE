@@ -319,7 +319,7 @@ This release formalizes SYMFLUENCE's **reproducibility framework**, guaranteeing
 - Main script: `CONFLUENCE.py` → `symfluence.py`
 - Shell command: `./confluence` → `./symfluence`
 - Config parameters: `CONFLUENCE_*` → `SYMFLUENCE_*`
-- Repository: `DarriEy/CONFLUENCE` → `DarriEy/SYMFLUENCE`
+- Repository: `DarriEy/CONFLUENCE` → `symfluence-org/SYMFLUENCE`
 
 ### Deprecated
 - All CONFLUENCE naming (removed in v0.6.0)
@@ -330,5 +330,5 @@ This release formalizes SYMFLUENCE's **reproducibility framework**, guaranteeing
 
 - **PyPI**: [pypi.org/project/symfluence](https://pypi.org/project/symfluence)
 - **Documentation**: [symfluence.readthedocs.io](https://symfluence.readthedocs.io)
-- **GitHub**: [github.com/DarriEy/SYMFLUENCE](https://github.com/DarriEy/SYMFLUENCE)
-- **Issues**: [github.com/DarriEy/SYMFLUENCE/issues](https://github.com/DarriEy/SYMFLUENCE/issues)
+- **GitHub**: [github.com/symfluence-org/SYMFLUENCE](https://github.com/symfluence-org/SYMFLUENCE)
+- **Issues**: [github.com/symfluence-org/SYMFLUENCE/issues](https://github.com/symfluence-org/SYMFLUENCE/issues)

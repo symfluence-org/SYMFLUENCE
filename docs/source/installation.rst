@@ -44,7 +44,7 @@ installer:
 
 .. code-block:: bash
 
-   git clone https://github.com/DarriEy/SYMFLUENCE.git
+   git clone https://github.com/symfluence-org/SYMFLUENCE.git
    cd SYMFLUENCE
    ./scripts/symfluence-bootstrap --install
 

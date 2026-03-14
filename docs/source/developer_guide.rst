@@ -516,7 +516,7 @@ Key points:
 Contribution Workflow
 ---------------------
 
-See the `Contribution Guidelines <https://github.com/DarriEy/SYMFLUENCE/blob/main/CONTRIBUTING.md>`_ for complete information.
+See the `Contribution Guidelines <https://github.com/symfluence-org/SYMFLUENCE/blob/main/CONTRIBUTING.md>`_ for complete information.
 
 **Quick Start**
 
@@ -580,9 +580,9 @@ Additional Resources
 
 **Community**
 
-- GitHub Issues: https://github.com/DarriEy/SYMFLUENCE/issues
-- GitHub Discussions: https://github.com/DarriEy/SYMFLUENCE/discussions
-- `Contributing Guide <https://github.com/DarriEy/SYMFLUENCE/blob/main/CONTRIBUTING.md>`_
+- GitHub Issues: https://github.com/symfluence-org/SYMFLUENCE/issues
+- GitHub Discussions: https://github.com/symfluence-org/SYMFLUENCE/discussions
+- `Contributing Guide <https://github.com/symfluence-org/SYMFLUENCE/blob/main/CONTRIBUTING.md>`_
 
 ---
 

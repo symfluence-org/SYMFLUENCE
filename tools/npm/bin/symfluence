@@ -68,7 +68,7 @@ function showHelp() {
   console.log('Environment:');
   console.log('  To use tools directly, add to your PATH:');
   console.log(`  export PATH="$(npm root -g)/symfluence/dist/bin:$PATH"\n`);
-  console.log('Documentation: https://github.com/DarriEy/SYMFLUENCE');
+  console.log('Documentation: https://github.com/symfluence-org/SYMFLUENCE');
 }
 
 /**
@@ -165,8 +165,8 @@ function showInfo() {
   }
 
   console.log('\n📖 Documentation:');
-  console.log('   https://github.com/DarriEy/SYMFLUENCE');
-  console.log('   https://github.com/DarriEy/SYMFLUENCE/blob/main/docs/SYSTEM_REQUIREMENTS.md\n');
+  console.log('   https://github.com/symfluence-org/SYMFLUENCE');
+  console.log('   https://github.com/symfluence-org/SYMFLUENCE/blob/main/docs/SYSTEM_REQUIREMENTS.md\n');
 }
 
 /**

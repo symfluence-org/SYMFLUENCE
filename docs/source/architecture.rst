@@ -722,5 +722,5 @@ Additional Resources
 
 **Contributing:**
 
-- `Contribution Guidelines <https://github.com/DarriEy/SYMFLUENCE/blob/main/CONTRIBUTING.md>`_
-- GitHub: https://github.com/DarriEy/SYMFLUENCE
+- `Contribution Guidelines <https://github.com/symfluence-org/SYMFLUENCE/blob/main/CONTRIBUTING.md>`_
+- GitHub: https://github.com/symfluence-org/SYMFLUENCE

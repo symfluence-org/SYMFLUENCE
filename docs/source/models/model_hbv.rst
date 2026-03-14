@@ -5,7 +5,7 @@ HBV Model Guide
 .. warning::
    **EXPERIMENTAL MODULE** - The HBV model is in active development and should be
    used at your own risk. The API may change without notice in future releases.
-   Please report any issues at https://github.com/DarriEy/SYMFLUENCE/issues
+   Please report any issues at https://github.com/symfluence-org/SYMFLUENCE/issues
 
    **Known Limitations:**
 

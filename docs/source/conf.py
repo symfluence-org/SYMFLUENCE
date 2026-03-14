@@ -114,7 +114,7 @@ html_theme_options = {
     "icon_links": [
         {
             "name": "GitHub",
-            "url": "https://github.com/DarriEy/SYMFLUENCE",
+            "url": "https://github.com/symfluence-org/SYMFLUENCE",
             "icon": "fa-brands fa-github",
         },
     ],

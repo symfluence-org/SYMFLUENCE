@@ -12,7 +12,7 @@ const { execSync } = require('child_process');
 const { getPlatform, getPlatformName } = require('./lib/platform');
 
 const PACKAGE_VERSION = require('./package.json').version;
-const GITHUB_REPO = 'DarriEy/SYMFLUENCE';
+const GITHUB_REPO = 'symfluence-org/SYMFLUENCE';
 
 /**
  * Construct the download URL for the current platform
@@ -183,7 +183,7 @@ async function install() {
   } catch (err) {
     console.error('❌', err.message);
     console.error('\n📖 For manual installation, see:');
-    console.error('   https://github.com/DarriEy/SYMFLUENCE#installation\n');
+    console.error('   https://github.com/symfluence-org/SYMFLUENCE#installation\n');
     process.exit(1);
   }
 
@@ -239,7 +239,7 @@ async function install() {
     console.log('   2. View available tools: ls $(npm root -g)/symfluence/dist/bin');
     console.log('   3. Install Python package: pip install symfluence\n');
 
-    console.log('📚 Documentation: https://github.com/DarriEy/SYMFLUENCE\n');
+    console.log('📚 Documentation: https://github.com/symfluence-org/SYMFLUENCE\n');
 
   } catch (err) {
     console.error('\n❌ Installation failed:', err.message);
@@ -248,9 +248,9 @@ async function install() {
     console.error('   2. Verify the release exists:');
     console.error(`      https://github.com/${GITHUB_REPO}/releases/tag/v${PACKAGE_VERSION}`);
     console.error('   3. Check system requirements:');
-    console.error('      https://github.com/DarriEy/SYMFLUENCE/blob/main/docs/SYSTEM_REQUIREMENTS.md');
+    console.error('      https://github.com/symfluence-org/SYMFLUENCE/blob/main/docs/SYSTEM_REQUIREMENTS.md');
     console.error('   4. Try manual installation:');
-    console.error('      https://github.com/DarriEy/SYMFLUENCE#installation\n');
+    console.error('      https://github.com/symfluence-org/SYMFLUENCE#installation\n');
 
     // Clean up on failure
     if (fs.existsSync(tarballPath)) {

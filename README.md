@@ -5,7 +5,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Documentation](https://img.shields.io/badge/docs-symfluence.org-brightgreen)](https://symfluence.org)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/DarriEy/SYMFLUENCE/ci.yml?branch=main)](https://github.com/DarriEy/SYMFLUENCE/actions)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/symfluence-org/SYMFLUENCE/ci.yml?branch=main)](https://github.com/symfluence-org/SYMFLUENCE/actions)
 [![Tests](https://img.shields.io/badge/tests-99%20files-green)](tests/)
 
 ---
@@ -20,8 +20,8 @@
 - **Install:** `pip install symfluence` or `uv pip install symfluence`
 - **Documentation:** [symfluence.readthedocs.io](https://symfluence.readthedocs.io)
 - **Website:** [symfluence.org](https://symfluence.org)
-- **Discussions:** [GitHub Discussions](https://github.com/DarriEy/SYMFLUENCE/discussions)
-- **Issues:** [GitHub Issues](https://github.com/DarriEy/SYMFLUENCE/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/symfluence-org/SYMFLUENCE/discussions)
+- **Issues:** [GitHub Issues](https://github.com/symfluence-org/SYMFLUENCE/issues)
 
 ---
 
@@ -57,7 +57,7 @@ symfluence binary install
 
 ```bash
 # Clone repository
-git clone https://github.com/DarriEy/SYMFLUENCE.git
+git clone https://github.com/symfluence-org/SYMFLUENCE.git
 cd SYMFLUENCE
 
 # Use built-in installer

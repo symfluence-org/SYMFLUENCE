@@ -179,8 +179,8 @@ symfluence = "symfluence.main_cli:main"
 
 [project.urls]
 Homepage = "https://symfluence.org"
-Source = "https://github.com/DarriEy/SYMFLUENCE"
-Issues = "https://github.com/DarriEy/SYMFLUENCE/issues"
+Source = "https://github.com/symfluence-org/SYMFLUENCE"
+Issues = "https://github.com/symfluence-org/SYMFLUENCE/issues"
 Documentation = "https://symfluence.org/"
 
 [tool.hatch.build.targets.sdist]
