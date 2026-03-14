@@ -56,7 +56,7 @@ src/symfluence/cli/services/tool_installer.py:859:except Exception:  # noqa: BLE
 src/symfluence/cli/services/tool_installer.py:898:except Exception as e:  # noqa: BLE001 — top-level fallback
 src/symfluence/cli/services/tool_validator.py:150:except Exception as e:  # noqa: BLE001 — top-level fallback
 src/symfluence/cli/services/tool_validator.py:431:except Exception as test_error:  # noqa: BLE001 — top-level fallback
-src/symfluence/core/_bootstrap.py:172:except Exception:  # noqa: BLE001 — never let a broken plugin crash the framework
+src/symfluence/core/_bootstrap.py:176:except Exception:  # noqa: BLE001 — never let a broken plugin crash the framework
 src/symfluence/core/base_manager.py:145:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/core/config/models/root.py:308:except Exception as e:  # noqa: BLE001 — configuration resilience
 src/symfluence/core/exceptions.py:332:except Exception as e:  # noqa: BLE001 — error handler implementation
@@ -76,7 +76,8 @@ src/symfluence/core/profiling/platform_monitors.py:211:except Exception as e:  #
 src/symfluence/core/profiling/platform_monitors.py:72:except Exception as e:  # noqa: BLE001 — monitoring thread
 src/symfluence/core/profiling/profiler_context.py:106:except Exception:  # noqa: BLE001 — monitoring thread
 src/symfluence/core/profiling/system_io_profiler.py:579:except Exception as e:  # noqa: BLE001 — monitoring thread
-src/symfluence/core/registry.py:373:except Exception:  # noqa: BLE001 — advisory only, never fail
+src/symfluence/core/registry.py:132:except Exception:  # noqa: BLE001
+src/symfluence/core/registry.py:388:except Exception:  # noqa: BLE001 — advisory only, never fail
 src/symfluence/core/system.py:308:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/core/system.py:420:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/core/system.py:441:except Exception as e:  # noqa: BLE001 — must-not-raise contract
@@ -103,7 +104,9 @@ src/symfluence/coupling/worker.py:224:except Exception as e:  # noqa: BLE001 —
 src/symfluence/coupling/worker.py:249:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/data/acquisition/base.py:127:except Exception as e:  # noqa: BLE001 — diagnostic plots are non-critical
 src/symfluence/data/acquisition/handlers/__init__.py:91:except Exception as _e:  # noqa: BLE001 — optional handler import resilience
-src/symfluence/data/acquisition/handlers/aorc.py:214:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
+src/symfluence/data/acquisition/handlers/aorc.py:140:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
+src/symfluence/data/acquisition/handlers/aorc.py:85:except Exception as primary_err:  # noqa: BLE001
+src/symfluence/data/acquisition/handlers/aorc.py:92:except Exception as fallback_err:  # noqa: BLE001
 src/symfluence/data/acquisition/handlers/aridity_index.py:225:except Exception as e:  # noqa: BLE001 — summary logging is non-critical
 src/symfluence/data/acquisition/handlers/ascat_sm.py:79:except Exception as exc:  # noqa: BLE001 — data acquisition resilience
 src/symfluence/data/acquisition/handlers/ascat_sm.py:87:except Exception as exc:  # noqa: BLE001 — data acquisition resilience
@@ -303,38 +306,38 @@ src/symfluence/data/preprocessing/attribute_processors/soil.py:467:except Except
 src/symfluence/data/preprocessing/attribute_processors/soil.py:503:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/dataset_alignment_manager.py:177:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/dataset_handlers/__init__.py:73:except Exception as _e:  # noqa: BLE001 — optional dependency
-src/symfluence/data/preprocessing/dataset_handlers/aorc_utils.py:289:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/dataset_handlers/aorc_utils.py:317:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/preprocessing/dataset_handlers/aorc_utils.py:372:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/preprocessing/dataset_handlers/aorc_utils.py:400:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/dataset_handlers/carra_utils.py:228:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/dataset_handlers/carra_utils.py:405:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
-src/symfluence/data/preprocessing/dataset_handlers/casr_utils.py:215:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/dataset_handlers/casr_utils.py:228:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/dataset_handlers/casr_utils.py:415:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
-src/symfluence/data/preprocessing/dataset_handlers/cerra_utils.py:158:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/dataset_handlers/cerra_utils.py:167:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/dataset_handlers/cerra_utils.py:266:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/dataset_handlers/cerra_utils.py:313:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/dataset_handlers/cerra_utils.py:446:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
-src/symfluence/data/preprocessing/dataset_handlers/conus404_utils.py:469:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/dataset_handlers/conus404_utils.py:479:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/dataset_handlers/conus404_utils.py:576:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/preprocessing/dataset_handlers/casr_utils.py:281:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/preprocessing/dataset_handlers/casr_utils.py:294:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/preprocessing/dataset_handlers/casr_utils.py:563:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
+src/symfluence/data/preprocessing/dataset_handlers/cerra_utils.py:180:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/preprocessing/dataset_handlers/cerra_utils.py:189:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/preprocessing/dataset_handlers/cerra_utils.py:288:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/preprocessing/dataset_handlers/cerra_utils.py:335:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/preprocessing/dataset_handlers/cerra_utils.py:468:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
+src/symfluence/data/preprocessing/dataset_handlers/conus404_utils.py:491:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/preprocessing/dataset_handlers/conus404_utils.py:501:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/preprocessing/dataset_handlers/conus404_utils.py:598:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/dataset_handlers/daymet_utils.py:321:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/dataset_handlers/daymet_utils.py:347:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/dataset_handlers/hrrr_utils.py:384:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/dataset_handlers/hrrr_utils.py:393:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/preprocessing/dataset_handlers/hrrr_utils.py:406:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/preprocessing/dataset_handlers/hrrr_utils.py:415:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/dataset_handlers/nex_gddp_utils.py:192:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/dataset_handlers/nex_gddp_utils.py:393:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/dataset_handlers/nex_gddp_utils.py:402:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/dataset_handlers/rdrs_utils.py:276:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/dataset_handlers/rdrs_utils.py:289:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/dataset_handlers/rdrs_utils.py:445:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
+src/symfluence/data/preprocessing/dataset_handlers/nex_gddp_utils.py:415:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/preprocessing/dataset_handlers/nex_gddp_utils.py:424:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/preprocessing/dataset_handlers/rdrs_utils.py:280:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/preprocessing/dataset_handlers/rdrs_utils.py:293:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/preprocessing/dataset_handlers/rdrs_utils.py:449:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/data/preprocessing/elevation_calculator.py:105:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/elevation_calculator.py:137:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/elevation_calculator.py:161:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/elevation_calculator.py:95:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/forcing_resampler.py:487:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/forcing_resampler.py:494:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/forcing_resampler.py:653:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/preprocessing/forcing_resampler.py:505:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/preprocessing/forcing_resampler.py:512:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/preprocessing/forcing_resampler.py:673:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/remapping_weights.py:218:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/remapping_weights.py:435:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/remapping_weights.py:561:except Exception as e:  # noqa: BLE001 — preprocessing resilience
@@ -366,11 +369,11 @@ src/symfluence/data/preprocessing/shapefile_manager.py:215:except Exception as e
 src/symfluence/data/preprocessing/shapefile_manager.py:274:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/time_window_manager.py:166:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/utils/archive_utils.py:66:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/utils/variable_utils.py:1016:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
-src/symfluence/data/utils/variable_utils.py:1032:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
-src/symfluence/data/utils/variable_utils.py:1047:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
-src/symfluence/data/utils/variable_utils.py:875:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
-src/symfluence/data/utils/variable_utils.py:993:except Exception as pe:  # noqa: BLE001 — must-not-raise contract
+src/symfluence/data/utils/variable_utils.py:1001:except Exception as pe:  # noqa: BLE001 — must-not-raise contract
+src/symfluence/data/utils/variable_utils.py:1024:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
+src/symfluence/data/utils/variable_utils.py:1040:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
+src/symfluence/data/utils/variable_utils.py:1055:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
+src/symfluence/data/utils/variable_utils.py:883:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/data_assimilation/da_manager.py:168:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/data_assimilation/enkf/ensemble_manager.py:291:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/data_assimilation/enkf/ensemble_manager.py:362:except Exception:  # noqa: BLE001 — must-not-raise contract
@@ -414,7 +417,7 @@ src/symfluence/evaluation/evaluators/tws.py:775:except Exception as exc:  # noqa
 src/symfluence/evaluation/evaluators/tws.py:799:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/evaluation/evaluators/tws.py:894:except Exception as exc:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/evaluation/koopman_analysis.py:569:except Exception as e:  # noqa: BLE001 — must-not-raise contract
-src/symfluence/evaluation/likelihood.py:307:except Exception as e:
+src/symfluence/evaluation/likelihood.py:308:except Exception as e:  # noqa: BLE001 — optional feature, must not break evaluation
 src/symfluence/evaluation/sensitivity_analysis.py:132:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/evaluation/structure_ensemble.py:174:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/evaluation/structure_ensemble.py:236:except Exception as e:  # noqa: BLE001 — must-not-raise contract
@@ -859,32 +862,35 @@ src/symfluence/models/modflow/postprocessor.py:215:except Exception as e:  # noq
 src/symfluence/models/modflow/postprocessor.py:235:except Exception:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/modflow/postprocessor.py:92:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/modflow/preprocessor.py:113:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/ngen/calibration/parameter_manager.py:344:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/ngen/calibration/parameter_manager.py:495:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/ngen/calibration/parameter_manager.py:526:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/ngen/calibration/parameter_manager.py:883:except Exception as e:  # noqa: BLE001 — calibration resilience
+src/symfluence/models/ngen/calibration/parameter_manager.py:1026:except Exception as e:  # noqa: BLE001 — calibration resilience
+src/symfluence/models/ngen/calibration/parameter_manager.py:1067:except Exception as e:  # noqa: BLE001 — calibration resilience
+src/symfluence/models/ngen/calibration/parameter_manager.py:393:except Exception as e:  # noqa: BLE001 — calibration resilience
+src/symfluence/models/ngen/calibration/parameter_manager.py:544:except Exception as e:  # noqa: BLE001 — calibration resilience
+src/symfluence/models/ngen/calibration/parameter_manager.py:575:except Exception as e:  # noqa: BLE001 — calibration resilience
+src/symfluence/models/ngen/calibration/parameter_manager.py:932:except Exception as e:  # noqa: BLE001 — calibration resilience
+src/symfluence/models/ngen/calibration/parameter_manager.py:985:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/ngen/calibration/targets.py:216:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/ngen/calibration/targets.py:269:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/ngen/calibration/targets.py:369:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/ngen/calibration/targets.py:443:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/ngen/calibration/targets.py:67:except Exception:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/ngen/calibration/worker.py:263:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/ngen/calibration/worker.py:312:except Exception as e:  # noqa: BLE001 — calibration resilience
+src/symfluence/models/ngen/calibration/worker.py:307:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/ngen/calibration/worker.py:356:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/ngen/calibration/worker.py:441:except Exception as e:  # noqa: BLE001 — calibration resilience
+src/symfluence/models/ngen/calibration/worker.py:400:except Exception as e:  # noqa: BLE001 — calibration resilience
+src/symfluence/models/ngen/calibration/worker.py:485:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/ngen/plotter.py:77:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/ngen/postprocessor.py:135:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/ngen/postprocessor.py:226:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/ngen/preprocessor.py:1036:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/ngen/preprocessor.py:1195:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/ngen/runner.py:1107:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/ngen/runner.py:420:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/ngen/runner.py:504:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/ngen/runner.py:539:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/ngen/runner.py:643:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/ngen/runner.py:677:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/ngen/runner.py:695:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/ngen/runner.py:934:except Exception as e:  # noqa: BLE001 — model execution resilience
+src/symfluence/models/ngen/preprocessor.py:1094:except Exception as e:  # noqa: BLE001 — model execution resilience
+src/symfluence/models/ngen/preprocessor.py:1253:except Exception as e:  # noqa: BLE001 — model execution resilience
+src/symfluence/models/ngen/runner.py:1119:except Exception as e:  # noqa: BLE001 — model execution resilience
+src/symfluence/models/ngen/runner.py:432:except Exception as e:  # noqa: BLE001 — model execution resilience
+src/symfluence/models/ngen/runner.py:516:except Exception as e:  # noqa: BLE001 — model execution resilience
+src/symfluence/models/ngen/runner.py:551:except Exception as e:  # noqa: BLE001 — model execution resilience
+src/symfluence/models/ngen/runner.py:655:except Exception as e:  # noqa: BLE001 — model execution resilience
+src/symfluence/models/ngen/runner.py:689:except Exception as e:  # noqa: BLE001 — model execution resilience
+src/symfluence/models/ngen/runner.py:707:except Exception as e:  # noqa: BLE001 — model execution resilience
+src/symfluence/models/ngen/runner.py:946:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/ngen/visualizer.py:29:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/parflow/calibration/parameter_manager.py:269:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/parflow/calibration/parameter_manager.py:369:except Exception as e:  # noqa: BLE001 — calibration resilience
