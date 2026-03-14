@@ -286,8 +286,11 @@ What this document does prescribe is that any future governance model must:
 If the lead maintainer is unable to continue in the role:
 
 - Commit access and PyPI publishing credentials are documented in a sealed
-  succession plan held by [to be designated — a trusted colleague or
-  institutional contact].
+  succession plan held by Martyn Clark. In the event
+  that the lead maintainer is unable to continue, Prof. Clark assumes
+  interim maintainer responsibilities until the community designates a
+  permanent successor through the process described in Section 5.2.
+
 - The designated successor(s) assume maintainer responsibilities.
 - This governance document remains in effect unless explicitly amended through
   the process described in Section 5.2.
@@ -332,4 +335,4 @@ series:
 
 | Version | Date       | Author           | Summary                    |
 |---------|------------|------------------|----------------------------|
-| 1.0     | 2026-03-XX | Darri Eythorsson | Initial governance document |
+| 1.0     | 2026-03-13 | Darri Eythorsson | Initial governance document |
