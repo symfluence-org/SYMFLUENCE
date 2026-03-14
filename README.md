@@ -284,6 +284,14 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for:
 Licensed under the GPL-3.0 License.
 See [LICENSE](LICENSE) for details.
 
+## Commercial Licensing
+SYMFLUENCE is free and open-source software under GPL-3.0-or-later.
+For organizations that require alternative licensing terms — including
+proprietary integration, redistribution without copyleft obligations,
+or operational deployment support — commercial licenses are available.
+
+Contact: darri@symfluence.org
+
 ---
 
 Happy modelling!
