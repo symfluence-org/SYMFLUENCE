@@ -32,13 +32,17 @@ class RDRSHandler(BaseDatasetHandler):
         """
         RDRS variable name mapping to standard names.
 
-        Uses centralized VariableStandardizer for consistency across the codebase.
+        Combines v2.1 and v3.1 rename maps so this handler can process
+        either version. Unit differences are handled by heuristic checks
+        in process_dataset().
 
         Returns:
             Dictionary mapping RDRS variable names to standard names
         """
         standardizer = VariableStandardizer(self.logger)
-        return standardizer.get_rename_map('RDRS')
+        combined = standardizer.get_rename_map('RDRS')
+        combined.update(standardizer.get_rename_map('RDRS_v3.1'))
+        return combined
 
     def process_dataset(self, ds: xr.Dataset) -> xr.Dataset:
         """

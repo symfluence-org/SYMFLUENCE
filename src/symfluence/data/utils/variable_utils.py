@@ -204,7 +204,7 @@ class VariableStandardizer:
             'rsds': 'SWRadAtm',
             'sfcWind': 'windspd',
         },
-        'GWF': {  # GWF-I and GWF-II share same mapping
+        'GWF': {
             'PSFC': 'airpres',
             'Q2': 'spechum',
             'T2': 'airtemp',
@@ -224,7 +224,8 @@ class VariableStandardizer:
             'RDRS_v2.1_P_FI_SFC': 'LWRadAtm',
             'RDRS_v2.1_P_FB_SFC': 'SWRadAtm',
             'RDRS_v2.1_A_PR0_SFC': 'pptrate',
-            # v3.1 short names
+        },
+        'RDRS_v3.1': {
             'TT': 'airtemp',
             'P0': 'airpres',
             'HU': 'spechum',
@@ -234,20 +235,8 @@ class VariableStandardizer:
             'FI': 'LWRadAtm',
             'FB': 'SWRadAtm',
             'PR0': 'pptrate',
-            # CaSR v3.2 CF-standard names (from PAVICS OPeNDAP)
-            'tas': 'airtemp',
-            'ta': 'airtemp',
-            'ps': 'airpres',
-            'huss': 'spechum',
-            'hus': 'spechum',
-            'sfcWind': 'windspd',
-            'uas': 'windspd_u',
-            'vas': 'windspd_v',
-            'rlds': 'LWRadAtm',
-            'rsds': 'SWRadAtm',
-            'pr': 'pptrate',
         },
-        'CASR': {
+        'CASR_v3.1': {
             'CaSR_v3.1_A_TT_1.5m': 'airtemp',
             'CaSR_v3.1_P_TT_1.5m': 'airtemp',
             'CaSR_v3.1_A_PR0_SFC': 'pptrate',
@@ -259,6 +248,28 @@ class VariableStandardizer:
             'CaSR_v3.1_P_VVC_10m': 'windspd_v',
             'CaSR_v3.1_P_FB_SFC': 'SWRadAtm',
             'CaSR_v3.1_P_FI_SFC': 'LWRadAtm',
+            'TT': 'airtemp',
+            'P0': 'airpres',
+            'HU': 'spechum',
+            'UVC': 'windspd',
+            'UUC': 'windspd_u',
+            'VVC': 'windspd_v',
+            'FI': 'LWRadAtm',
+            'FB': 'SWRadAtm',
+            'PR0': 'pptrate',
+        },
+        'CASR_v3.2': {
+            'tas': 'airtemp',
+            'ta': 'airtemp',
+            'ps': 'airpres',
+            'huss': 'spechum',
+            'hus': 'spechum',
+            'sfcWind': 'windspd',
+            'uas': 'windspd_u',
+            'vas': 'windspd_v',
+            'rlds': 'LWRadAtm',
+            'rsds': 'SWRadAtm',
+            'pr': 'pptrate',
         },
         'DayMet': {
             'prcp': 'pptrate',
@@ -312,7 +323,7 @@ class VariableStandardizer:
         Get the variable rename map for a dataset.
 
         Args:
-            dataset: Dataset name (e.g., 'ERA5', 'CONUS404', 'HRRR')
+            dataset: Dataset name (e.g., 'ERA5', 'CONUS404', 'CASR')
 
         Returns:
             Dictionary mapping source variable names to standard names
@@ -320,10 +331,10 @@ class VariableStandardizer:
         Raises:
             ValueError: If dataset is not supported
         """
-        # Handle aliases
-        dataset_key = self._normalize_dataset_name(dataset)
+        # Case-insensitive lookup against RENAME_MAPS keys
+        dataset_key = self._find_dataset_key(dataset)
 
-        if dataset_key not in self.RENAME_MAPS:
+        if dataset_key is None:
             available = ', '.join(sorted(self.RENAME_MAPS.keys()))
             raise ValueError(
                 f"Unknown dataset '{dataset}'. Available: {available}"
@@ -331,31 +342,17 @@ class VariableStandardizer:
 
         return self.RENAME_MAPS[dataset_key].copy()
 
-    def _normalize_dataset_name(self, dataset: str) -> str:
-        """Normalize dataset name to match RENAME_MAPS keys."""
-        # Handle common aliases and case variations
-        dataset_upper = dataset.upper()
-
-        aliases = {
-            'ERA5-LAND': 'ERA5',
-            'ERA5_LAND': 'ERA5',
-            'GWF-I': 'GWF',
-            'GWF-II': 'GWF',
-            'GWF_I': 'GWF',
-            'GWF_II': 'GWF',
-            'RDRS_V2.1': 'RDRS',
-            'RDRS_V3.1': 'RDRS',
-            'RDRS_V3.2': 'RDRS',
-            'CASR_V3.1': 'CASR',
-            'CASR_V3.2': 'RDRS',
-            'CASR': 'RDRS',
-            'DAYMET': 'DayMet',
-            'NEX_GDDP': 'NEX-GDDP',
-            'NEX_GDDP_CMIP6': 'NEX-GDDP-CMIP6',
-        }
-
-        return aliases.get(dataset_upper, dataset_upper if dataset_upper in self.RENAME_MAPS
-                          else dataset)
+    def _find_dataset_key(self, dataset: str) -> Optional[str]:
+        """Find the RENAME_MAPS key matching the dataset name (case-insensitive)."""
+        # Exact match first
+        if dataset in self.RENAME_MAPS:
+            return dataset
+        # Case-insensitive match
+        dataset_lower = dataset.lower()
+        for key in self.RENAME_MAPS:
+            if key.lower() == dataset_lower:
+                return key
+        return None
 
     def standardize(
         self,
@@ -577,7 +574,7 @@ class VariableHandler:
             'FB': {'standard_name': 'surface_downwelling_shortwave_flux', 'units': 'W/m^2'},
             'PR0': {'standard_name': 'precipitation_flux', 'units': 'mm/s'}
         },
-        'CASR': {
+        'CASR_v3.1': {
             'CaSR_v3.1_A_TT_1.5m': {'standard_name': 'air_temperature', 'units': 'K'},
             'CaSR_v3.1_P_P0_SFC': {'standard_name': 'surface_air_pressure', 'units': 'Pa'},
             'CaSR_v3.1_P_HU_1.5m': {'standard_name': 'specific_humidity', 'units': '1'},
@@ -585,6 +582,17 @@ class VariableHandler:
             'CaSR_v3.1_P_FI_SFC': {'standard_name': 'surface_downwelling_longwave_flux', 'units': 'W/m^2'},
             'CaSR_v3.1_P_FB_SFC': {'standard_name': 'surface_downwelling_shortwave_flux', 'units': 'W/m^2'},
             'CaSR_v3.1_P_PR0_SFC': {'standard_name': 'precipitation_flux', 'units': 'm'}
+        },
+        'CASR_v3.2': {
+            'tas': {'standard_name': 'air_temperature', 'units': 'K'},
+            'ps': {'standard_name': 'surface_air_pressure', 'units': 'Pa'},
+            'huss': {'standard_name': 'specific_humidity', 'units': '1'},
+            'sfcWind': {'standard_name': 'wind_speed', 'units': 'm/s'},
+            'uas': {'standard_name': 'eastward_wind', 'units': 'm/s'},
+            'vas': {'standard_name': 'northward_wind', 'units': 'm/s'},
+            'rlds': {'standard_name': 'surface_downwelling_longwave_flux', 'units': 'W/m^2'},
+            'rsds': {'standard_name': 'surface_downwelling_shortwave_flux', 'units': 'W/m^2'},
+            'pr': {'standard_name': 'precipitation_flux', 'units': 'kg/m^2/s'}
         },
         'DayMet': {
             'pr': {'standard_name': 'precipitation_flux', 'units': 'mm/s'},
