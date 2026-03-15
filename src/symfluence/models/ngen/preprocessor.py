@@ -640,6 +640,10 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         forcing_data = fdp.load_forcing_data(self.forcing_basin_path)
         forcing_data = forcing_data.sortby('time')
 
+        # Normalize legacy SUMMA-style names to CFIF standard at the boundary
+        from symfluence.data.preprocessing.cfif.variables import normalize_to_cfif
+        forcing_data = normalize_to_cfif(forcing_data)
+
         # Convert units to NGEN/AORC standards (K, Pa, kg/m²/s, W/m²)
         forcing_data = self._convert_forcing_units_to_ngen(forcing_data)
 
@@ -763,10 +767,10 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             forcing_data: Forcing dataset possibly containing 'wind_speed'
 
         Returns:
-            Dataset with 'windspeed_u' and 'windspeed_v' added if needed
+            Dataset with 'eastward_wind' and 'northward_wind' added if needed
         """
-        has_u = 'windspeed_u' in forcing_data
-        has_v = 'windspeed_v' in forcing_data
+        has_u = 'eastward_wind' in forcing_data
+        has_v = 'northward_wind' in forcing_data
         has_scalar = 'wind_speed' in forcing_data
 
         # If we already have both components, nothing to do
@@ -781,21 +785,21 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # Assume westerly wind (from west, blowing east): U = windspd, V = 0
         # This is a common assumption when direction is unknown
         self.logger.warning(
-            "Converting scalar wind speed (windspd) to U/V components. "
-            "Assuming westerly wind (U=windspd, V=0) since wind direction is not available. "
+            "Converting scalar wind speed to U/V components. "
+            "Assuming westerly wind (U=wind_speed, V=0) since wind direction is not available. "
             "This approximation may affect PET and energy balance calculations."
         )
 
         if not has_u:
-            forcing_data['windspeed_u'] = forcing_data['wind_speed'].copy()
-            forcing_data['windspeed_u'].attrs['long_name'] = 'U-component of wind (assumed from scalar windspd)'
-            forcing_data['windspeed_u'].attrs['units'] = 'm/s'
+            forcing_data['eastward_wind'] = forcing_data['wind_speed'].copy()
+            forcing_data['eastward_wind'].attrs['long_name'] = 'U-component of wind (assumed from scalar wind speed)'
+            forcing_data['eastward_wind'].attrs['units'] = 'm/s'
 
         if not has_v:
             # Create V-component as zeros (westerly wind assumption)
-            forcing_data['windspeed_v'] = xr.zeros_like(forcing_data['wind_speed'])
-            forcing_data['windspeed_v'].attrs['long_name'] = 'V-component of wind (assumed zero for westerly wind)'
-            forcing_data['windspeed_v'].attrs['units'] = 'm/s'
+            forcing_data['northward_wind'] = xr.zeros_like(forcing_data['wind_speed'])
+            forcing_data['northward_wind'].attrs['long_name'] = 'V-component of wind (assumed zero for westerly wind)'
+            forcing_data['northward_wind'].attrs['units'] = 'm/s'
 
         return forcing_data
 
@@ -841,8 +845,8 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             'surface_air_pressure': 'land_surface_air__pressure',
             'surface_downwelling_shortwave_flux': 'land_surface_radiation~incoming~shortwave__energy_flux',
             'surface_downwelling_longwave_flux': 'land_surface_radiation~incoming~longwave__energy_flux',
-            'windspeed_u': 'land_surface_wind__x_component_of_velocity',
-            'windspeed_v': 'land_surface_wind__y_component_of_velocity',
+            'eastward_wind': 'land_surface_wind__x_component_of_velocity',
+            'northward_wind': 'land_surface_wind__y_component_of_velocity',
         }
 
         for idx, cat_id in enumerate(catchment_ids):
@@ -876,9 +880,9 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             # After decomposition, these should exist, but check just in case
             missing_wind_vars = []
             if 'land_surface_wind__x_component_of_velocity' not in df.columns:
-                missing_wind_vars.append('windspeed_u (U-component of wind)')
+                missing_wind_vars.append('eastward_wind (U-component of wind)')
             if 'land_surface_wind__y_component_of_velocity' not in df.columns:
-                missing_wind_vars.append('windspeed_v (V-component of wind)')
+                missing_wind_vars.append('northward_wind (V-component of wind)')
 
             if missing_wind_vars:
                 raise ValueError(
