@@ -72,33 +72,33 @@ class RDRSHandler(BaseDatasetHandler):
         ds = ds.rename(rename_dict)
 
         # Apply unit conversions (must happen before attribute setting)
-        if 'airpres' in ds:
+        if 'surface_air_pressure' in ds:
             # RDRS v2.1 uses mb, but v3.1 might use Pa
-            if ds['airpres'].max() < 2000: # Probably mb
-                ds['airpres'] = ds['airpres'] * 100
+            if ds['surface_air_pressure'].max() < 2000: # Probably mb
+                ds['surface_air_pressure'] = ds['surface_air_pressure'] * 100
 
-        if 'airtemp' in ds:
+        if 'air_temperature' in ds:
             # RDRS v2.1 uses Celsius, but v3.1 might use Kelvin
-            if ds['airtemp'].max() < 100: # Probably Celsius
-                ds['airtemp'] = ds['airtemp'] + PhysicalConstants.KELVIN_OFFSET
+            if ds['air_temperature'].max() < 100: # Probably Celsius
+                ds['air_temperature'] = ds['air_temperature'] + PhysicalConstants.KELVIN_OFFSET
 
-        if 'pptrate' in ds:
+        if 'precipitation_flux' in ds:
             # RDRS v2.1 uses mm/hr, but v3.1 might use kg/m2/s (which is mm/s)
             # Check if it's already small enough to be mm/s
-            if ds['pptrate'].max() > 0.1: # Probably mm/hr
-                ds['pptrate'] = ds['pptrate'] / UnitConversion.SECONDS_PER_HOUR
+            if ds['precipitation_flux'].max() > 0.1: # Probably mm/hr
+                ds['precipitation_flux'] = ds['precipitation_flux'] / UnitConversion.SECONDS_PER_HOUR
 
-        if 'windspd' in ds:
+        if 'wind_speed' in ds:
             # RDRS v2.1 uses knots, but v3.1 uses m/s
             if 'UVC' in rename_dict: # v3.1 names
                 pass
             else:
-                ds['windspd'] = ds['windspd'] * 0.514444
+                ds['wind_speed'] = ds['wind_speed'] * 0.514444
 
         # Apply standard CF-compliant attributes (uses centralized definitions)
         # RDRS precipitation is in mm/s (or kg m-2 s-1, which is equivalent) after conversion
         ds = self.apply_standard_attributes(ds, overrides={
-            'pptrate': {'units': 'kg m-2 s-1', 'standard_name': 'precipitation_rate'}
+            'precipitation_flux': {'units': 'kg m-2 s-1', 'standard_name': 'precipitation_rate'}
         })
 
         return ds

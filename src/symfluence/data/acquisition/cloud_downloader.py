@@ -316,11 +316,11 @@ def get_aorc_variable_mapping() -> Dict[str, str]:
 
     Returns:
         dict: Mapping from AORC names to standard names
-              (e.g., 'APCP_surface' -> 'pptrate')
+              (e.g., 'APCP_surface' -> 'precipitation_flux')
     """
     return {
-        'APCP_surface': 'pptrate', 'TMP_2maboveground': 'airtemp', 'SPFH_2maboveground': 'spechum',
-        'PRES_surface': 'airpres', 'DLWRF_surface': 'LWRadAtm', 'DSWRF_surface': 'SWRadAtm',
+        'APCP_surface': 'precipitation_flux', 'TMP_2maboveground': 'air_temperature', 'SPFH_2maboveground': 'specific_humidity',
+        'PRES_surface': 'surface_air_pressure', 'DLWRF_surface': 'surface_downwelling_longwave_flux', 'DSWRF_surface': 'surface_downwelling_shortwave_flux',
         'UGRD_10maboveground': 'wind_u', 'VGRD_10maboveground': 'wind_v'
     }
 
@@ -334,11 +334,11 @@ def get_era5_variable_mapping() -> Dict[str, str]:
 
     Returns:
         dict: Mapping from ERA5 names to standard names
-              (e.g., 't2m' -> 'airtemp')
+              (e.g., 't2m' -> 'air_temperature')
     """
     return {
-        't2m': 'airtemp', 'u10': 'wind_u', 'v10': 'wind_v', 'sp': 'airpres',
-        'd2m': 'dewpoint', 'q': 'spechum', 'tp': 'pptrate', 'ssrd': 'SWRadAtm', 'strd': 'LWRadAtm'
+        't2m': 'air_temperature', 'u10': 'wind_u', 'v10': 'wind_v', 'sp': 'surface_air_pressure',
+        'd2m': 'dewpoint', 'q': 'specific_humidity', 'tp': 'precipitation_flux', 'ssrd': 'surface_downwelling_shortwave_flux', 'strd': 'surface_downwelling_longwave_flux'
     }
 
 def get_emearth_variable_mapping() -> Dict[str, str]:
@@ -352,7 +352,7 @@ def get_emearth_variable_mapping() -> Dict[str, str]:
     Returns:
         dict: Mapping from EM-Earth names to standard names
     """
-    return {"prcp": "pptrate", "prcp_corrected": "pptrate", "tmean": "airtemp", "trange": "temp_range", "tdew": "dewpoint"}
+    return {"prcp": "precipitation_flux", "prcp_corrected": "precipitation_flux", "tmean": "air_temperature", "trange": "temp_range", "tdew": "dewpoint"}
 
 def get_hrrr_variable_mapping() -> Dict[str, str]:
     """Get variable name mapping for HRRR forcing dataset.
@@ -366,8 +366,8 @@ def get_hrrr_variable_mapping() -> Dict[str, str]:
         dict: Mapping from HRRR names to standard names
     """
     return {
-        'TMP': 'airtemp', 'SPFH': 'spechum', 'PRES': 'airpres', 'UGRD': 'wind_u',
-        'VGRD': 'wind_v', 'DSWRF': 'SWRadAtm', 'DLWRF': 'LWRadAtm', 'APCP': 'pptrate'
+        'TMP': 'air_temperature', 'SPFH': 'specific_humidity', 'PRES': 'surface_air_pressure', 'UGRD': 'wind_u',
+        'VGRD': 'wind_v', 'DSWRF': 'surface_downwelling_shortwave_flux', 'DLWRF': 'surface_downwelling_longwave_flux', 'APCP': 'precipitation_flux'
     }
 
 def get_conus404_variable_mapping() -> Dict[str, str]:
@@ -382,6 +382,6 @@ def get_conus404_variable_mapping() -> Dict[str, str]:
         dict: Mapping from CONUS404 names to standard names
     """
     return {
-        'T2': 'airtemp', 'Q2': 'spechum', 'PSFC': 'airpres', 'U10': 'wind_u',
-        'V10': 'wind_v', 'GLW': 'LWRadAtm', 'SWDOWN': 'SWRadAtm', 'RAINRATE': 'pptrate'
+        'T2': 'air_temperature', 'Q2': 'specific_humidity', 'PSFC': 'surface_air_pressure', 'U10': 'wind_u',
+        'V10': 'wind_v', 'GLW': 'surface_downwelling_longwave_flux', 'SWDOWN': 'surface_downwelling_shortwave_flux', 'RAINRATE': 'precipitation_flux'
     }

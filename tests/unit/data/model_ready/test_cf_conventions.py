@@ -12,7 +12,7 @@ class TestCFStandardNames:
     """Tests for the CF standard name mapping dict."""
 
     def test_forcing_vars_present(self):
-        for var in ('airtemp', 'pptrate', 'windspd', 'spechum', 'SWRadAtm', 'LWRadAtm', 'airpres'):
+        for var in ('air_temperature', 'precipitation_flux', 'wind_speed', 'specific_humidity', 'surface_downwelling_shortwave_flux', 'surface_downwelling_longwave_flux', 'surface_air_pressure'):
             assert var in CF_STANDARD_NAMES, f"Missing forcing variable: {var}"
 
     def test_observation_vars_present(self):

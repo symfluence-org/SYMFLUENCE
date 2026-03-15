@@ -692,13 +692,13 @@ class CDSRegionalReanalysisHandler(BaseAcquisitionHandler, ABC):
     def _calculate_derived_variables(self, ds: xr.Dataset) -> xr.Dataset:
         """Calculate derived meteorological variables."""
         # Wind speed from components (if not already present)
-        if 'windspd_u' in ds and 'windspd_v' in ds and 'windspd' not in ds:
-            ds['windspd'] = np.sqrt(ds['windspd_u']**2 + ds['windspd_v']**2)
+        if 'eastward_wind' in ds and 'northward_wind' in ds and 'wind_speed' not in ds:
+            ds['wind_speed'] = np.sqrt(ds['eastward_wind']**2 + ds['northward_wind']**2)
 
         # Specific humidity from relative humidity
-        if 'relhum' in ds and 'airtemp' in ds and 'airpres' in ds:
-            ds['spechum'] = self._calculate_specific_humidity(
-                ds['airtemp'], ds['relhum'], ds['airpres']
+        if 'relative_humidity' in ds and 'air_temperature' in ds and 'surface_air_pressure' in ds:
+            ds['specific_humidity'] = self._calculate_specific_humidity(
+                ds['air_temperature'], ds['relative_humidity'], ds['surface_air_pressure']
             )
 
         return ds
@@ -789,23 +789,23 @@ class CDSRegionalReanalysisHandler(BaseAcquisitionHandler, ABC):
         # CARRA/CERRA total_precipitation is in kg/m² (equivalent to mm) accumulated per LEADTIME
         # Convert: mm/leadtime / seconds = mm/s = kg/m²/s
         # NOTE: Do NOT multiply by 1000 - precipitation is already in mm, not meters
-        if 'pptrate' in ds:
-            ds['pptrate'] = ds['pptrate'] / accumulation_seconds
-            ds['pptrate'].attrs['units'] = 'kg m-2 s-1'
+        if 'precipitation_flux' in ds:
+            ds['precipitation_flux'] = ds['precipitation_flux'] / accumulation_seconds
+            ds['precipitation_flux'].attrs['units'] = 'kg m-2 s-1'
 
         # Radiation: J/m2 per leadtime -> W/m2
-        if 'SWRadAtm' in ds:
-            ds['SWRadAtm'] = ds['SWRadAtm'] / accumulation_seconds
+        if 'surface_downwelling_shortwave_flux' in ds:
+            ds['surface_downwelling_shortwave_flux'] = ds['surface_downwelling_shortwave_flux'] / accumulation_seconds
 
-        if 'LWRadAtm' in ds:
-            ds['LWRadAtm'] = ds['LWRadAtm'] / accumulation_seconds
+        if 'surface_downwelling_longwave_flux' in ds:
+            ds['surface_downwelling_longwave_flux'] = ds['surface_downwelling_longwave_flux'] / accumulation_seconds
 
         return ds
 
     def _save_final_dataset(self, ds: xr.Dataset, output_dir: Path) -> Path:
         """Save final processed dataset with compression."""
-        final_vars = ['airtemp', 'airpres', 'pptrate', 'SWRadAtm',
-                     'windspd', 'spechum', 'LWRadAtm']
+        final_vars = ['air_temperature', 'surface_air_pressure', 'precipitation_flux', 'surface_downwelling_shortwave_flux',
+                     'wind_speed', 'specific_humidity', 'surface_downwelling_longwave_flux']
         available_vars = [v for v in final_vars if v in ds.variables]
 
         final_f = output_dir / (
@@ -826,8 +826,8 @@ class CDSRegionalReanalysisHandler(BaseAcquisitionHandler, ABC):
         Raises:
             ValueError: If required variables are missing
         """
-        required_vars = ['airtemp', 'airpres', 'pptrate', 'SWRadAtm',
-                        'windspd', 'spechum', 'LWRadAtm']
+        required_vars = ['air_temperature', 'surface_air_pressure', 'precipitation_flux', 'surface_downwelling_shortwave_flux',
+                        'wind_speed', 'specific_humidity', 'surface_downwelling_longwave_flux']
 
         with xr.open_dataset(file_path) as ds:
             missing_vars = [v for v in required_vars if v not in ds.variables]

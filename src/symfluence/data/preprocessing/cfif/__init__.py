@@ -40,6 +40,7 @@ from .variables import (
     get_cfif_standard_name,
     get_cfif_units,
     get_cfif_variable,
+    normalize_to_cfif,
     validate_cfif_dataset,
 )
 
@@ -51,6 +52,7 @@ __all__ = [
     'get_cfif_variable',
     'get_cfif_standard_name',
     'get_cfif_units',
+    'normalize_to_cfif',
     'validate_cfif_dataset',
     # Unit conversions
     'UnitConverter',

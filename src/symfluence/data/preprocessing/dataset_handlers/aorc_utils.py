@@ -129,7 +129,7 @@ class AORCHandler(BaseDatasetHandler):
             >>> ds_processed = handler.process_dataset(ds)
             >>> print(ds_processed.data_vars)
             # Variables: airtemp, spechum, airpres, SWRadAtm, LWRadAtm, pptrate, windspd
-            >>> print(ds_processed['pptrate'].units)
+            >>> print(ds_processed['precipitation_flux'].units)
             # 'mm s-1'
 
         Notes:
@@ -155,21 +155,21 @@ class AORCHandler(BaseDatasetHandler):
         ds = ds.rename(existing)
 
         # ---- Derive wind speed magnitude if components are present ----
-        if 'windspd_u' in ds and 'windspd_v' in ds:
-            u = ds['windspd_u']
-            v = ds['windspd_v']
+        if 'eastward_wind' in ds and 'northward_wind' in ds:
+            u = ds['eastward_wind']
+            v = ds['northward_wind']
             windspd = np.sqrt(u**2 + v**2)
-            windspd.name = 'windspd'
+            windspd.name = 'wind_speed'
             windspd.attrs = {
                 'units': 'm s-1',
                 'long_name': 'wind speed',
                 'standard_name': 'wind_speed'
             }
-            ds['windspd'] = windspd
+            ds['wind_speed'] = windspd
 
         # ---- Precip: convert accumulation -> rate (mm/s) ----
-        if 'pptrate' in ds:
-            p = ds['pptrate']
+        if 'precipitation_flux' in ds:
+            p = ds['precipitation_flux']
 
             # Units before rename
             units = (apcp_attrs.get('units') or p.attrs.get('units', '')).lower()
@@ -205,7 +205,7 @@ class AORCHandler(BaseDatasetHandler):
                 'long_name': 'Mean total precipitation rate',
                 'standard_name': 'precipitation_flux',
             }
-            ds['pptrate'] = p_rate
+            ds['precipitation_flux'] = p_rate
 
 
         # Clean NaN values across all forcing variables.

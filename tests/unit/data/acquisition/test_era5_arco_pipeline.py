@@ -18,7 +18,7 @@ from symfluence.data.acquisition.handlers.era5_processing import (
 )
 from symfluence.data.preprocessing.dataset_handlers.era5_utils import ERA5Handler
 
-EXPECTED_VARS = {'airtemp', 'airpres', 'windspd', 'spechum', 'pptrate', 'SWRadAtm', 'LWRadAtm'}
+EXPECTED_VARS = {'air_temperature', 'surface_air_pressure', 'wind_speed', 'specific_humidity', 'precipitation_flux', 'surface_downwelling_shortwave_flux', 'surface_downwelling_longwave_flux'}
 
 
 def _make_arco_era5_dataset(n_time=25, lats=None, lons=None):
@@ -106,36 +106,36 @@ class TestEra5ToSummaSchema:
     def test_temperature_in_kelvin(self):
         ds = _make_arco_era5_dataset()
         result = era5_to_summa_schema(ds, source='arco')
-        assert result['airtemp'].min() > 200  # sanity: Kelvin
-        assert result['airtemp'].max() < 350
+        assert result['air_temperature'].min() > 200  # sanity: Kelvin
+        assert result['air_temperature'].max() < 350
 
     def test_pressure_in_pascals(self):
         ds = _make_arco_era5_dataset()
         result = era5_to_summa_schema(ds, source='arco')
-        assert result['airpres'].min() > 50000
-        assert result['airpres'].max() < 110000
+        assert result['surface_air_pressure'].min() > 50000
+        assert result['surface_air_pressure'].max() < 110000
 
     def test_wind_speed_non_negative(self):
         ds = _make_arco_era5_dataset()
         result = era5_to_summa_schema(ds, source='arco')
-        assert float(result['windspd'].min()) >= 0
+        assert float(result['wind_speed'].min()) >= 0
 
     def test_specific_humidity_in_range(self):
         ds = _make_arco_era5_dataset()
         result = era5_to_summa_schema(ds, source='arco')
-        assert float(result['spechum'].min()) >= 0
-        assert float(result['spechum'].max()) < 0.05  # max ~40 g/kg
+        assert float(result['specific_humidity'].min()) >= 0
+        assert float(result['specific_humidity'].max()) < 0.05  # max ~40 g/kg
 
     def test_precipitation_rate_non_negative(self):
         ds = _make_arco_era5_dataset()
         result = era5_to_summa_schema(ds, source='arco')
-        assert float(result['pptrate'].min()) >= 0
+        assert float(result['precipitation_flux'].min()) >= 0
 
     def test_radiation_non_negative(self):
         ds = _make_arco_era5_dataset()
         result = era5_to_summa_schema(ds, source='arco')
-        assert float(result['SWRadAtm'].min()) >= 0
-        assert float(result['LWRadAtm'].min()) >= 0
+        assert float(result['surface_downwelling_shortwave_flux'].min()) >= 0
+        assert float(result['surface_downwelling_longwave_flux'].min()) >= 0
 
     def test_retains_arco_longitude_convention(self):
         """era5_to_summa_schema does NOT convert longitude — that's process_dataset's job."""
@@ -159,7 +159,7 @@ class TestERA5HandlerLongitudeNormalization:
     def test_converts_0_360_to_negative_180(self, handler):
         """Longitudes >180 should be converted to negative values."""
         ds = xr.Dataset(
-            {'airtemp': (['time', 'latitude', 'longitude'], np.ones((2, 3, 4)))},
+            {'air_temperature': (['time', 'latitude', 'longitude'], np.ones((2, 3, 4)))},
             coords={
                 'time': [0, 1],
                 'latitude': [51.5, 51.25, 51.0],
@@ -178,7 +178,7 @@ class TestERA5HandlerLongitudeNormalization:
         """Longitudes already in -180/+180 should be unchanged."""
         lons = np.array([-116.5, -116.25, -116.0, -115.75])
         ds = xr.Dataset(
-            {'airtemp': (['time', 'latitude', 'longitude'], np.ones((2, 3, 4)))},
+            {'air_temperature': (['time', 'latitude', 'longitude'], np.ones((2, 3, 4)))},
             coords={
                 'time': [0, 1],
                 'latitude': [51.5, 51.25, 51.0],
@@ -191,7 +191,7 @@ class TestERA5HandlerLongitudeNormalization:
     def test_sorts_longitude_after_conversion(self, handler):
         """After 0-360 → -180/+180 conversion, longitudes must be ascending."""
         ds = xr.Dataset(
-            {'airtemp': (['time', 'latitude', 'longitude'], np.ones((2, 2, 5)))},
+            {'air_temperature': (['time', 'latitude', 'longitude'], np.ones((2, 2, 5)))},
             coords={
                 'time': [0, 1],
                 'latitude': [51.0, 50.0],
@@ -207,7 +207,7 @@ class TestERA5HandlerLongitudeNormalization:
         # Each longitude gets a unique value so we can track reordering
         data = np.array([[[[1, 2, 3]], [[1, 2, 3]]]])  # (1, 2, 1, 3) -> time, lat, lat, lon
         ds = xr.Dataset(
-            {'airtemp': (['time', 'latitude', 'longitude'],
+            {'air_temperature': (['time', 'latitude', 'longitude'],
                          np.array([[[10, 20, 30], [40, 50, 60]]]))},
             coords={
                 'time': [0],
@@ -218,9 +218,9 @@ class TestERA5HandlerLongitudeNormalization:
         result = handler.process_dataset(ds)
         # After conversion: -10, 10, 20 — the 350→-10 column should come first
         assert float(result.longitude[0]) == -10.0
-        assert int(result['airtemp'].sel(time=0, latitude=51.0, longitude=-10.0)) == 10
-        assert int(result['airtemp'].sel(time=0, latitude=51.0, longitude=10.0)) == 20
-        assert int(result['airtemp'].sel(time=0, latitude=51.0, longitude=20.0)) == 30
+        assert int(result['air_temperature'].sel(time=0, latitude=51.0, longitude=-10.0)) == 10
+        assert int(result['air_temperature'].sel(time=0, latitude=51.0, longitude=10.0)) == 20
+        assert int(result['air_temperature'].sel(time=0, latitude=51.0, longitude=20.0)) == 30
 
 
 class TestFullARCOPipeline:

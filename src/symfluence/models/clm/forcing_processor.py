@@ -22,13 +22,13 @@ logger = logging.getLogger(__name__)
 # SYMFLUENCE variable → CLM DATM variable mapping
 # ERA5 basin-averaged data is already in SI units (K, Pa, mm/s, W/m2)
 FORCING_VAR_MAP = {
-    'airtemp': ('TBOT', 'K', None),          # Already K
-    'spechum': ('QBOT', 'kg/kg', None),
-    'windspd': ('WIND', 'm/s', None),
-    'SWRadAtm': ('FSDS', 'W/m2', None),
-    'LWRadAtm': ('FLDS', 'W/m2', None),
-    'airpres': ('PSRF', 'Pa', None),          # Already Pa
-    'pptrate': ('PRECTmms', 'mm/s', None),
+    'air_temperature': ('TBOT', 'K', None),          # Already K
+    'specific_humidity': ('QBOT', 'kg/kg', None),
+    'wind_speed': ('WIND', 'm/s', None),
+    'surface_downwelling_shortwave_flux': ('FSDS', 'W/m2', None),
+    'surface_downwelling_longwave_flux': ('FLDS', 'W/m2', None),
+    'surface_air_pressure': ('PSRF', 'Pa', None),          # Already Pa
+    'precipitation_flux': ('PRECTmms', 'mm/s', None),
 }
 
 
@@ -204,10 +204,10 @@ class CLMForcingProcessor:
         """Derive missing DATM variables from available data."""
         # Derive specific humidity from relative humidity + temperature + pressure
         if 'QBOT' not in data_vars:
-            if all(v in forcing_ds for v in ['relhum', 'airtemp', 'airpres']):
-                T_K = forcing_ds['airtemp'].values  # Already K
-                P_Pa = forcing_ds['airpres'].values  # Already Pa
-                RH = forcing_ds['relhum'].values / 100.0
+            if all(v in forcing_ds for v in ['relative_humidity', 'air_temperature', 'surface_air_pressure']):
+                T_K = forcing_ds['air_temperature'].values  # Already K
+                P_Pa = forcing_ds['surface_air_pressure'].values  # Already Pa
+                RH = forcing_ds['relative_humidity'].values / 100.0
 
                 # Saturation vapor pressure (Buck equation)
                 e_sat = 611.21 * np.exp(
@@ -225,8 +225,8 @@ class CLMForcingProcessor:
                 self.logger.debug("Derived QBOT from relhum/airtemp/airpres")
 
         # Derive longwave from temperature if missing (Stefan-Boltzmann approx)
-        if 'FLDS' not in data_vars and 'airtemp' in forcing_ds:
-            T_K = forcing_ds['airtemp'].values  # Already K
+        if 'FLDS' not in data_vars and 'air_temperature' in forcing_ds:
+            T_K = forcing_ds['air_temperature'].values  # Already K
             sigma = 5.67e-8
             emissivity = 0.85
             FLDS = emissivity * sigma * T_K**4

@@ -158,6 +158,25 @@ CFIF_TO_SUMMA_MAPPING: Dict[str, str] = {
 }
 
 
+def normalize_to_cfif(ds):
+    """
+    Rename any legacy SUMMA-style variable names in a dataset to CFIF names.
+
+    This is a backward-compatibility helper for reading pre-existing forcing
+    files that use the legacy naming convention. Only renames variables that
+    have a known mapping and whose CFIF counterpart is not already present.
+
+    Args:
+        ds: xarray Dataset (may contain SUMMA-style or CFIF variable names)
+
+    Returns:
+        Dataset with CFIF variable names (unchanged if already CFIF-named)
+    """
+    renames = {k: v for k, v in SUMMA_TO_CFIF_MAPPING.items()
+               if k in ds and v not in ds}
+    return ds.rename(renames) if renames else ds
+
+
 def get_cfif_variable(name: str) -> Optional[Dict[str, str]]:
     """
     Get variable definition by CFIF name.

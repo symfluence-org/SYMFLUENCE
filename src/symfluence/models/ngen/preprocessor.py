@@ -530,33 +530,33 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         from symfluence.core.constants import UnitDetectionThresholds
 
         # Temperature: Convert °C to K if needed
-        if 'airtemp' in forcing_data:
-            temp_mean = float(forcing_data['airtemp'].mean())
+        if 'air_temperature' in forcing_data:
+            temp_mean = float(forcing_data['air_temperature'].mean())
             if temp_mean < UnitDetectionThresholds.TEMP_KELVIN_VS_CELSIUS:
                 self.logger.info("Converting temperature from °C to K (+273.15)")
-                forcing_data['airtemp'] = forcing_data['airtemp'] + 273.15
+                forcing_data['air_temperature'] = forcing_data['air_temperature'] + 273.15
             else:
                 self.logger.debug(f"Temperature appears to be in K (mean={temp_mean:.1f})")
 
         # Precipitation rate: Convert mm/day or mm/hour to kg m⁻² s⁻¹ (mm/s)
-        if 'pptrate' in forcing_data:
-            precip_units = forcing_data['pptrate'].attrs.get('units', '').lower()
-            precip_mean = float(forcing_data['pptrate'].mean())
-            precip_max = float(forcing_data['pptrate'].max())
+        if 'precipitation_flux' in forcing_data:
+            precip_units = forcing_data['precipitation_flux'].attrs.get('units', '').lower()
+            precip_mean = float(forcing_data['precipitation_flux'].mean())
+            precip_max = float(forcing_data['precipitation_flux'].max())
 
             if 'mm/day' in precip_units or 'mm day' in precip_units or 'mm d-1' in precip_units:
                 self.logger.info("Converting precipitation from mm/day to kg m⁻² s⁻¹ (÷86400)")
-                forcing_data['pptrate'] = forcing_data['pptrate'] / 86400.0
+                forcing_data['precipitation_flux'] = forcing_data['precipitation_flux'] / 86400.0
             elif 'mm/h' in precip_units or 'mm h-1' in precip_units or ('mm' in precip_units and 'hour' in precip_units):
                 self.logger.info("Converting precipitation from mm/hour to kg m⁻² s⁻¹ (÷3600)")
-                forcing_data['pptrate'] = forcing_data['pptrate'] / 3600.0
+                forcing_data['precipitation_flux'] = forcing_data['precipitation_flux'] / 3600.0
             elif precip_mean > 0.1 or precip_max > 1.0:
                 # Heuristic: if values are large, likely mm/day not mm/s
                 self.logger.warning(
                     f"Precipitation values appear too large for mm/s (mean={precip_mean:.3f}, max={precip_max:.3f}). "
                     f"Assuming mm/day and converting to kg m⁻² s⁻¹ (÷86400)"
                 )
-                forcing_data['pptrate'] = forcing_data['pptrate'] / 86400.0
+                forcing_data['precipitation_flux'] = forcing_data['precipitation_flux'] / 86400.0
             elif 'kg' in precip_units and 's' in precip_units:
                 self.logger.debug("Precipitation already in kg m⁻² s⁻¹")
             elif 'mm' in precip_units and 's' in precip_units:
@@ -565,18 +565,18 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                 self.logger.debug(f"Precipitation units unclear ({precip_units}), assuming already in kg m⁻² s⁻¹")
 
         # Air pressure: Convert hPa/kPa to Pa if needed
-        if 'airpres' in forcing_data:
-            pres_units = forcing_data['airpres'].attrs.get('units', '').lower()
-            pres_mean = float(forcing_data['airpres'].mean())
+        if 'surface_air_pressure' in forcing_data:
+            pres_units = forcing_data['surface_air_pressure'].attrs.get('units', '').lower()
+            pres_mean = float(forcing_data['surface_air_pressure'].mean())
 
             if 'hpa' in pres_units or (pres_mean > 100 and pres_mean < 2000):
                 # Likely hPa (typical range 950-1050 hPa)
                 self.logger.info("Converting pressure from hPa to Pa (×100)")
-                forcing_data['airpres'] = forcing_data['airpres'] * 100.0
+                forcing_data['surface_air_pressure'] = forcing_data['surface_air_pressure'] * 100.0
             elif 'kpa' in pres_units or (pres_mean > 10 and pres_mean < 200):
                 # Likely kPa (typical range 95-105 kPa)
                 self.logger.info("Converting pressure from kPa to Pa (×1000)")
-                forcing_data['airpres'] = forcing_data['airpres'] * 1000.0
+                forcing_data['surface_air_pressure'] = forcing_data['surface_air_pressure'] * 1000.0
             elif pres_mean > 50000 and pres_mean < 110000:
                 self.logger.debug(f"Pressure appears to be in Pa (mean={pres_mean:.0f})")
             else:
@@ -585,12 +585,12 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                     f"Assuming Pa if > 10000, otherwise converting from hPa"
                 )
                 if pres_mean < 10000:
-                    forcing_data['airpres'] = forcing_data['airpres'] * 100.0
+                    forcing_data['surface_air_pressure'] = forcing_data['surface_air_pressure'] * 100.0
 
         # Specific humidity: should be kg/kg (0-0.1 range), sometimes given as g/kg
-        if 'spechum' in forcing_data:
-            hum_units = forcing_data['spechum'].attrs.get('units', '').lower().strip()
-            hum_max = float(forcing_data['spechum'].max())
+        if 'specific_humidity' in forcing_data:
+            hum_units = forcing_data['specific_humidity'].attrs.get('units', '').lower().strip()
+            hum_max = float(forcing_data['specific_humidity'].max())
 
             # Check if units explicitly indicate g/kg (but NOT kg/kg or kg kg-1)
             is_g_per_kg = (
@@ -600,12 +600,12 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
             if is_g_per_kg or hum_max > 1.0:
                 self.logger.info("Converting specific humidity from g/kg to kg/kg (÷1000)")
-                forcing_data['spechum'] = forcing_data['spechum'] / 1000.0
+                forcing_data['specific_humidity'] = forcing_data['specific_humidity'] / 1000.0
             else:
                 self.logger.debug(f"Specific humidity appears to be in kg/kg (units='{hum_units}', max={hum_max:.6f})")
 
         # Radiation (SWRadAtm, LWRadAtm) should be in W/m² - typically already correct
-        for rad_var in ['SWRadAtm', 'LWRadAtm']:
+        for rad_var in ['surface_downwelling_shortwave_flux', 'surface_downwelling_longwave_flux']:
             if rad_var in forcing_data:
                 self.logger.debug(f"{rad_var} assuming W/m² (standard unit)")
 
@@ -663,16 +663,16 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             )
             # Use mass-conserving resampling: sum for fluxes, mean for state variables
             # Convert precipitation rate to depth for resampling, then back to rate
-            if 'pptrate' in forcing_data:
+            if 'precipitation_flux' in forcing_data:
                 # Convert mm/s to mm for the source timestep
-                forcing_data['pptrate_depth'] = forcing_data['pptrate'] * inferred_step_seconds
+                forcing_data['pptrate_depth'] = forcing_data['precipitation_flux'] * inferred_step_seconds
 
             # Define resampling strategy for each variable
             resample_dict = {}
             for var in forcing_data.data_vars:
-                if var in ['pptrate', 'pptrate_depth']:
+                if var in ['precipitation_flux', 'pptrate_depth']:
                     continue  # Handle precipitation separately
-                elif var in ['SWRadAtm', 'LWRadAtm']:
+                elif var in ['surface_downwelling_shortwave_flux', 'surface_downwelling_longwave_flux']:
                     # Radiation: use mean (could also use interpolation, but mean is safer)
                     resample_dict[var] = 'mean'
                 else:
@@ -687,7 +687,7 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                 # Sum the precipitation depth over the resampled period
                 precip_depth_hourly = forcing_data['pptrate_depth'].resample(time='1h').sum()
                 # Convert back to rate (mm/h → mm/s)
-                forcing_data_resampled['pptrate'] = precip_depth_hourly / 3600.0
+                forcing_data_resampled['precipitation_flux'] = precip_depth_hourly / 3600.0
                 # Remove temporary depth variable
                 if 'pptrate_depth' in forcing_data_resampled:
                     forcing_data_resampled = forcing_data_resampled.drop_vars('pptrate_depth')
@@ -756,18 +756,18 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         """
         Decompose scalar wind speed into U and V components when needed.
 
-        If forcing data contains 'windspd' (scalar wind speed) but lacks U and V
+        If forcing data contains 'wind_speed' (scalar wind speed) but lacks U and V
         components, this method creates them by assuming westerly wind direction.
 
         Args:
-            forcing_data: Forcing dataset possibly containing 'windspd'
+            forcing_data: Forcing dataset possibly containing 'wind_speed'
 
         Returns:
             Dataset with 'windspeed_u' and 'windspeed_v' added if needed
         """
         has_u = 'windspeed_u' in forcing_data
         has_v = 'windspeed_v' in forcing_data
-        has_scalar = 'windspd' in forcing_data
+        has_scalar = 'wind_speed' in forcing_data
 
         # If we already have both components, nothing to do
         if has_u and has_v:
@@ -787,13 +787,13 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         )
 
         if not has_u:
-            forcing_data['windspeed_u'] = forcing_data['windspd'].copy()
+            forcing_data['windspeed_u'] = forcing_data['wind_speed'].copy()
             forcing_data['windspeed_u'].attrs['long_name'] = 'U-component of wind (assumed from scalar windspd)'
             forcing_data['windspeed_u'].attrs['units'] = 'm/s'
 
         if not has_v:
             # Create V-component as zeros (westerly wind assumption)
-            forcing_data['windspeed_v'] = xr.zeros_like(forcing_data['windspd'])
+            forcing_data['windspeed_v'] = xr.zeros_like(forcing_data['wind_speed'])
             forcing_data['windspeed_v'].attrs['long_name'] = 'V-component of wind (assumed zero for westerly wind)'
             forcing_data['windspeed_v'].attrs['units'] = 'm/s'
 
@@ -835,12 +835,12 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # Variable mapping from ERA5/internal names to BMI standard names for NGEN
         # Use BMI standard naming that NGEN modules expect
         var_mapping = {
-            'pptrate': 'atmosphere_water__liquid_equivalent_precipitation_rate',
-            'airtemp': 'land_surface_air__temperature',
-            'spechum': 'atmosphere_air_water~vapor__specific_humidity',
-            'airpres': 'land_surface_air__pressure',
-            'SWRadAtm': 'land_surface_radiation~incoming~shortwave__energy_flux',
-            'LWRadAtm': 'land_surface_radiation~incoming~longwave__energy_flux',
+            'precipitation_flux': 'atmosphere_water__liquid_equivalent_precipitation_rate',
+            'air_temperature': 'land_surface_air__temperature',
+            'specific_humidity': 'atmosphere_air_water~vapor__specific_humidity',
+            'surface_air_pressure': 'land_surface_air__pressure',
+            'surface_downwelling_shortwave_flux': 'land_surface_radiation~incoming~shortwave__energy_flux',
+            'surface_downwelling_longwave_flux': 'land_surface_radiation~incoming~longwave__energy_flux',
             'windspeed_u': 'land_surface_wind__x_component_of_velocity',
             'windspeed_v': 'land_surface_wind__y_component_of_velocity',
         }
@@ -899,7 +899,7 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         ngen_ds = xr.Dataset()
         ngen_ds['ids'] = xr.DataArray(np.array(catchment_ids, dtype=object), dims=['catchment-id'])
         ngen_ds['Time'] = xr.DataArray(np.tile(time_ns, (n_cats, 1)).astype(np.float64), dims=['catchment-id', 'time'], attrs={'units': 'ns'})
-        var_mapping = {'pptrate': 'precip_rate', 'airtemp': 'TMP_2maboveground', 'spechum': 'SPFH_2maboveground', 'airpres': 'PRES_surface', 'SWRadAtm': 'DSWRF_surface', 'LWRadAtm': 'DLWRF_surface'}
+        var_mapping = {'precipitation_flux': 'precip_rate', 'air_temperature': 'TMP_2maboveground', 'specific_humidity': 'SPFH_2maboveground', 'surface_air_pressure': 'PRES_surface', 'surface_downwelling_shortwave_flux': 'DSWRF_surface', 'surface_downwelling_longwave_flux': 'DLWRF_surface'}
         for e_v, n_v in var_mapping.items():
             if e_v in forcing_data:
                 data = forcing_data[e_v].values.T

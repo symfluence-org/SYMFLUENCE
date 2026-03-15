@@ -152,7 +152,13 @@ class LSTMPreProcessor(BaseModelPreProcessor):
         combined_ds = xr.concat(datasets, dim='time', data_vars='all')
         forcing_df = combined_ds.to_dataframe().reset_index()
 
-        required_vars = ['hruId', 'time', 'pptrate', 'SWRadAtm', 'LWRadAtm', 'airpres', 'airtemp', 'spechum', 'windspd']
+        # Auto-rename legacy SUMMA-style variable names to CFIF if present
+        from symfluence.data.preprocessing.cfif.variables import SUMMA_TO_CFIF_MAPPING
+        legacy_col_renames = {k: v for k, v in SUMMA_TO_CFIF_MAPPING.items() if k in forcing_df.columns and v not in forcing_df.columns}
+        if legacy_col_renames:
+            forcing_df = forcing_df.rename(columns=legacy_col_renames)
+
+        required_vars = ['hruId', 'time', 'precipitation_flux', 'surface_downwelling_shortwave_flux', 'surface_downwelling_longwave_flux', 'surface_air_pressure', 'air_temperature', 'specific_humidity', 'wind_speed']
         missing_vars = [var for var in required_vars if var not in forcing_df.columns]
         if missing_vars:
             raise ValueError(f"Missing required variables in forcing data: {missing_vars}")

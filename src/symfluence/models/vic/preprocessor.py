@@ -771,13 +771,13 @@ class VICPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
     # VIC variable name → candidate forcing variable names
     VIC_VAR_MAP = {
-        'AIR_TEMP': ['airtemp', 'temperature', 'tas', 'temp', 't2m', 'AIR_TEMP'],
-        'PREC': ['pptrate', 'precipitation', 'pr', 'precip', 'tp', 'PREC'],
-        'SWDOWN': ['SWRadAtm', 'ssrd', 'rsds', 'swdown', 'SWDOWN', 'shortwave'],
-        'LWDOWN': ['LWRadAtm', 'strd', 'rlds', 'lwdown', 'LWDOWN', 'longwave'],
-        'PRESSURE': ['airpres', 'sp', 'ps', 'pres', 'pressure', 'PRESSURE'],
+        'AIR_TEMP': ['air_temperature', 'temperature', 'tas', 'temp', 't2m', 'AIR_TEMP'],
+        'PREC': ['precipitation_flux', 'precipitation', 'pr', 'precip', 'tp', 'PREC'],
+        'SWDOWN': ['surface_downwelling_shortwave_flux', 'ssrd', 'rsds', 'swdown', 'SWDOWN', 'shortwave'],
+        'LWDOWN': ['surface_downwelling_longwave_flux', 'strd', 'rlds', 'lwdown', 'LWDOWN', 'longwave'],
+        'PRESSURE': ['surface_air_pressure', 'sp', 'ps', 'pres', 'pressure', 'PRESSURE'],
         'VP': ['vp', 'vapor_pressure', 'VP'],
-        'WIND': ['windspd', 'wind_speed', 'sfcWind', 'wind', 'WIND'],
+        'WIND': ['wind_speed', 'wind_speed', 'sfcWind', 'wind', 'WIND'],
     }
 
     def _write_forcing_files(
@@ -865,7 +865,7 @@ class VICPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                     logger.info(f"Converted {candidate} from K to °C")
 
             elif vic_var == 'PREC':
-                if 'mm/s' in src_units or candidate == 'pptrate':
+                if 'mm/s' in src_units or candidate == 'precipitation_flux':
                     data = data * dt_seconds
                     logger.info(f"Converted {candidate} from mm/s to mm/timestep (×{dt_seconds})")
                 elif src_units == 'm' or candidate == 'tp':
@@ -905,7 +905,7 @@ class VICPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
         if vic_var == 'VP':
             spechum_var = None
-            for c in ['spechum', 'specific_humidity', 'huss', 'q']:
+            for c in ['specific_humidity', 'specific_humidity', 'huss', 'q']:
                 if c in forcing_ds:
                     spechum_var = c
                     break

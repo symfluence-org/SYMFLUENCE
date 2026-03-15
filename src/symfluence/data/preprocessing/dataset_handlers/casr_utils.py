@@ -72,89 +72,89 @@ class CASRHandler(BaseDatasetHandler):
 
         # Apply unit conversions with clean attributes
         # Use heuristic checks to handle both CaSR v3.1 (non-SI) and v3.2 (SI units)
-        if 'airpres' in ds:
+        if 'surface_air_pressure' in ds:
             # v3.1 uses mb (typically 800-1100), v3.2 uses Pa (typically 80000-110000)
-            if ds['airpres'].max() < 2000:  # Probably mb
-                ds['airpres'] = ds['airpres'] * 100
-            ds['airpres'].attrs = {}
-            ds['airpres'].attrs.update({
+            if ds['surface_air_pressure'].max() < 2000:  # Probably mb
+                ds['surface_air_pressure'] = ds['surface_air_pressure'] * 100
+            ds['surface_air_pressure'].attrs = {}
+            ds['surface_air_pressure'].attrs.update({
                 'units': 'Pa',
                 'long_name': 'air pressure',
                 'standard_name': 'air_pressure'
             })
 
-        if 'airtemp' in ds:
+        if 'air_temperature' in ds:
             # v3.1 uses °C (typically -40 to +50), v3.2 uses K (typically 220-330)
-            if ds['airtemp'].max() < 100:  # Probably Celsius
-                ds['airtemp'] = ds['airtemp'] + PhysicalConstants.KELVIN_OFFSET
-            ds['airtemp'].attrs = {}
-            ds['airtemp'].attrs.update({
+            if ds['air_temperature'].max() < 100:  # Probably Celsius
+                ds['air_temperature'] = ds['air_temperature'] + PhysicalConstants.KELVIN_OFFSET
+            ds['air_temperature'].attrs = {}
+            ds['air_temperature'].attrs.update({
                 'units': 'K',
                 'long_name': 'air temperature',
                 'standard_name': 'air_temperature'
             })
 
-        if 'pptrate' in ds:
+        if 'precipitation_flux' in ds:
             # v3.1 uses m/hr, v3.2 uses kg/m2/s (which is mm/s)
-            if ds['pptrate'].max() > 0.1:  # Probably m/hr or mm/hr, not mm/s
-                ds['pptrate'] = ds['pptrate'] * 1000 / UnitConversion.SECONDS_PER_HOUR
-            ds['pptrate'].attrs = {}
-            ds['pptrate'].attrs.update({
+            if ds['precipitation_flux'].max() > 0.1:  # Probably m/hr or mm/hr, not mm/s
+                ds['precipitation_flux'] = ds['precipitation_flux'] * 1000 / UnitConversion.SECONDS_PER_HOUR
+            ds['precipitation_flux'].attrs = {}
+            ds['precipitation_flux'].attrs.update({
                 'units': 'mm s-1',
                 'long_name': 'precipitation rate',
                 'standard_name': 'precipitation_rate'
             })
 
-        if 'windspd' in ds:
+        if 'wind_speed' in ds:
             # v3.1 uses knots (typically 0-60), v3.2 uses m/s (typically 0-30)
             # Knots to m/s: * 0.514444, so knots values are ~2x larger
-            if ds['windspd'].max() > 50:  # Probably knots
-                ds['windspd'] = ds['windspd'] * 0.514444
-            ds['windspd'].attrs = {}
-            ds['windspd'].attrs.update({
+            if ds['wind_speed'].max() > 50:  # Probably knots
+                ds['wind_speed'] = ds['wind_speed'] * 0.514444
+            ds['wind_speed'].attrs = {}
+            ds['wind_speed'].attrs.update({
                 'units': 'm s-1',
                 'long_name': 'wind speed',
                 'standard_name': 'wind_speed'
             })
 
-        if 'windspd_u' in ds:
-            if ds['windspd_u'].max() > 50:  # Probably knots
-                ds['windspd_u'] = ds['windspd_u'] * 0.514444
-            ds['windspd_u'].attrs = {}
-            ds['windspd_u'].attrs.update({
+        if 'eastward_wind' in ds:
+            if ds['eastward_wind'].max() > 50:  # Probably knots
+                ds['eastward_wind'] = ds['eastward_wind'] * 0.514444
+            ds['eastward_wind'].attrs = {}
+            ds['eastward_wind'].attrs.update({
                 'units': 'm s-1',
                 'long_name': 'eastward wind',
                 'standard_name': 'eastward_wind'
             })
 
-        if 'windspd_v' in ds:
-            if ds['windspd_v'].max() > 50:  # Probably knots
-                ds['windspd_v'] = ds['windspd_v'] * 0.514444
-            ds['windspd_v'].attrs = {}
-            ds['windspd_v'].attrs.update({
+        if 'northward_wind' in ds:
+            if ds['northward_wind'].max() > 50:  # Probably knots
+                ds['northward_wind'] = ds['northward_wind'] * 0.514444
+            ds['northward_wind'].attrs = {}
+            ds['northward_wind'].attrs.update({
                 'units': 'm s-1',
                 'long_name': 'northward wind',
                 'standard_name': 'northward_wind'
             })
 
         # Radiation variables are already in W m**-2, just update attributes
-        if 'LWRadAtm' in ds:
-            ds['LWRadAtm'].attrs = {}
-            ds['LWRadAtm'].attrs.update({
+        if 'surface_downwelling_longwave_flux' in ds:
+            ds['surface_downwelling_longwave_flux'].attrs = {}
+            ds['surface_downwelling_longwave_flux'].attrs.update({
                 'long_name': 'downward longwave radiation at the surface',
                 'standard_name': 'surface_downwelling_longwave_flux_in_air'
             })
 
-        if 'SWRadAtm' in ds:
-            ds['SWRadAtm'].attrs = {}
-            ds['SWRadAtm'].attrs.update({
+        if 'surface_downwelling_shortwave_flux' in ds:
+            ds['surface_downwelling_shortwave_flux'].attrs = {}
+            ds['surface_downwelling_shortwave_flux'].attrs.update({
                 'long_name': 'downward shortwave radiation at the surface',
                 'standard_name': 'surface_downwelling_shortwave_flux_in_air'
             })
 
-        if 'spechum' in ds:
-            ds['spechum'].attrs = {}
-            ds['spechum'].attrs.update({
+        if 'specific_humidity' in ds:
+            ds['specific_humidity'].attrs = {}
+            ds['specific_humidity'].attrs.update({
                 'long_name': 'specific humidity',
                 'standard_name': 'specific_humidity'
             })
@@ -332,23 +332,23 @@ class CASRHandler(BaseDatasetHandler):
                     var.encoding.clear()
 
                     # Set clean attributes based on variable name
-                    if var_name == 'airpres':
+                    if var_name == 'surface_air_pressure':
                         var.attrs = {'units': 'Pa', 'long_name': 'air pressure', 'standard_name': 'air_pressure'}
-                    elif var_name == 'airtemp':
+                    elif var_name == 'air_temperature':
                         var.attrs = {'units': 'K', 'long_name': 'air temperature', 'standard_name': 'air_temperature'}
-                    elif var_name == 'pptrate':
+                    elif var_name == 'precipitation_flux':
                         var.attrs = {'units': 'mm s-1', 'long_name': 'precipitation rate', 'standard_name': 'precipitation_rate'}
-                    elif var_name == 'windspd':
+                    elif var_name == 'wind_speed':
                         var.attrs = {'units': 'm s-1', 'long_name': 'wind speed', 'standard_name': 'wind_speed'}
-                    elif var_name == 'windspd_u':
+                    elif var_name == 'eastward_wind':
                         var.attrs = {'units': 'm s-1', 'long_name': 'eastward wind', 'standard_name': 'eastward_wind'}
-                    elif var_name == 'windspd_v':
+                    elif var_name == 'northward_wind':
                         var.attrs = {'units': 'm s-1', 'long_name': 'northward wind', 'standard_name': 'northward_wind'}
-                    elif var_name == 'LWRadAtm':
+                    elif var_name == 'surface_downwelling_longwave_flux':
                         var.attrs = {'units': 'W m-2', 'long_name': 'downward longwave radiation at the surface', 'standard_name': 'surface_downwelling_longwave_flux_in_air'}
-                    elif var_name == 'SWRadAtm':
+                    elif var_name == 'surface_downwelling_shortwave_flux':
                         var.attrs = {'units': 'W m-2', 'long_name': 'downward shortwave radiation at the surface', 'standard_name': 'surface_downwelling_shortwave_flux_in_air'}
-                    elif var_name == 'spechum':
+                    elif var_name == 'specific_humidity':
                         var.attrs = {'units': 'kg kg-1', 'long_name': 'specific humidity', 'standard_name': 'specific_humidity'}
 
                     # Consistently set missing values in encoding
@@ -419,23 +419,23 @@ class CASRHandler(BaseDatasetHandler):
                     var.attrs.clear()
                     var.encoding.clear()
 
-                    if var_name == 'airpres':
+                    if var_name == 'surface_air_pressure':
                         var.attrs = {'units': 'Pa', 'long_name': 'air pressure', 'standard_name': 'air_pressure'}
-                    elif var_name == 'airtemp':
+                    elif var_name == 'air_temperature':
                         var.attrs = {'units': 'K', 'long_name': 'air temperature', 'standard_name': 'air_temperature'}
-                    elif var_name == 'pptrate':
+                    elif var_name == 'precipitation_flux':
                         var.attrs = {'units': 'mm s-1', 'long_name': 'precipitation rate', 'standard_name': 'precipitation_rate'}
-                    elif var_name == 'windspd':
+                    elif var_name == 'wind_speed':
                         var.attrs = {'units': 'm s-1', 'long_name': 'wind speed', 'standard_name': 'wind_speed'}
-                    elif var_name == 'windspd_u':
+                    elif var_name == 'eastward_wind':
                         var.attrs = {'units': 'm s-1', 'long_name': 'eastward wind', 'standard_name': 'eastward_wind'}
-                    elif var_name == 'windspd_v':
+                    elif var_name == 'northward_wind':
                         var.attrs = {'units': 'm s-1', 'long_name': 'northward wind', 'standard_name': 'northward_wind'}
-                    elif var_name == 'LWRadAtm':
+                    elif var_name == 'surface_downwelling_longwave_flux':
                         var.attrs = {'units': 'W m-2', 'long_name': 'downward longwave radiation at the surface', 'standard_name': 'surface_downwelling_longwave_flux_in_air'}
-                    elif var_name == 'SWRadAtm':
+                    elif var_name == 'surface_downwelling_shortwave_flux':
                         var.attrs = {'units': 'W m-2', 'long_name': 'downward shortwave radiation at the surface', 'standard_name': 'surface_downwelling_shortwave_flux_in_air'}
-                    elif var_name == 'spechum':
+                    elif var_name == 'specific_humidity':
                         var.attrs = {'units': 'kg kg-1', 'long_name': 'specific humidity', 'standard_name': 'specific_humidity'}
 
                     var.encoding['missing_value'] = -999.0

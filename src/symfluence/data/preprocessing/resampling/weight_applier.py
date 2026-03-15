@@ -237,18 +237,30 @@ class RemappingWeightApplier(ConfigMixin):
         return esmr
 
     def _detect_file_variables(self, file: Path, worker_str: str) -> list:
-        """Detect SUMMA forcing variables in the file."""
+        """Detect forcing variables in the file (CFIF or legacy SUMMA names)."""
         try:
             with xr.open_dataset(file, engine="h5netcdf") as ds:
-                all_summa_vars = [
-                    'airpres', 'LWRadAtm', 'SWRadAtm', 'pptrate',
-                    'airtemp', 'spechum', 'windspd', 'relhum'
+                # CFIF standard variable names (primary)
+                all_cfif_vars = [
+                    'surface_air_pressure', 'surface_downwelling_longwave_flux',
+                    'surface_downwelling_shortwave_flux', 'precipitation_flux',
+                    'air_temperature', 'specific_humidity', 'wind_speed',
+                    'relative_humidity', 'eastward_wind', 'northward_wind',
                 ]
-                available_vars = [v for v in all_summa_vars if v in ds]
+                available_vars = [v for v in all_cfif_vars if v in ds]
+
+                if not available_vars:
+                    # Fallback: legacy SUMMA-style variable names
+                    all_legacy_vars = [
+                        'airpres', 'LWRadAtm', 'SWRadAtm', 'pptrate',
+                        'airtemp', 'spechum', 'windspd', 'relhum',
+                    ]
+                    available_vars = [v for v in all_legacy_vars if v in ds]
 
                 if not available_vars:
                     self.logger.error(
-                        f"{worker_str}No SUMMA variables found in {file.name}. "
+                        f"{worker_str}No forcing variables found in {file.name} "
+                        f"(checked CFIF and legacy SUMMA names). "
                         f"Available variables: {list(ds.variables.keys())}"
                     )
                     return []

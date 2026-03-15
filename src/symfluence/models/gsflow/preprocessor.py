@@ -128,8 +128,8 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
         ds = ds.sel(time=slice(str(start_date), str(end_date)))
 
-        airtemp = ds['airtemp'].values.squeeze()   # K
-        pptrate = ds['pptrate'].values.squeeze()    # mm/s
+        airtemp = ds['air_temperature'].values.squeeze()   # K
+        pptrate = ds['precipitation_flux'].values.squeeze()    # mm/s
         times = pd.DatetimeIndex(ds['time'].values)
 
         hourly = pd.DataFrame({

@@ -364,8 +364,8 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         times = forcing_ds['time'].values if 'time' in forcing_ds else pd.date_range(start_date, end_date, freq='D')
 
         # Map ERA5 variables to mHM variables
-        precip_candidates = ['pptrate', 'precipitation', 'pr', 'precip', 'tp', 'PREC']
-        temp_candidates = ['airtemp', 'temperature', 'tas', 'temp', 't2m', 'AIR_TEMP']
+        precip_candidates = ['precipitation_flux', 'precipitation', 'pr', 'precip', 'tp', 'PREC']
+        temp_candidates = ['air_temperature', 'temperature', 'tas', 'temp', 't2m', 'AIR_TEMP']
 
         # Extract precipitation
         precip = None
@@ -374,7 +374,7 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                 precip = forcing_ds[candidate].values
                 src_units = forcing_ds[candidate].attrs.get('units', '')
                 # Convert to mm/day
-                if 'mm/s' in src_units or candidate == 'pptrate':
+                if 'mm/s' in src_units or candidate == 'precipitation_flux':
                     precip = precip * 86400.0
                     logger.info(f"Converted {candidate} from mm/s to mm/day")
                 elif src_units == 'm' or candidate == 'tp':

@@ -11,7 +11,7 @@ from symfluence.data.model_ready.forcings_builder import ForcingsStoreBuilder
 netCDF4 = pytest.importorskip('netCDF4')
 
 
-def _create_dummy_nc(path: Path, var_name: str = 'airtemp') -> None:
+def _create_dummy_nc(path: Path, var_name: str = 'air_temperature') -> None:
     """Create a minimal NetCDF file for testing."""
     import numpy as np
     ds = netCDF4.Dataset(str(path), 'w', format='NETCDF4_CLASSIC')
@@ -85,7 +85,7 @@ class TestForcingsStoreBuilder:
         src = tmp_path / 'forcing' / 'basin_averaged_data'
         src.mkdir(parents=True)
         nc_path = src / 'forcing.nc'
-        _create_dummy_nc(nc_path, var_name='airtemp')
+        _create_dummy_nc(nc_path, var_name='air_temperature')
 
         builder = ForcingsStoreBuilder(
             project_dir=tmp_path,
@@ -99,7 +99,7 @@ class TestForcingsStoreBuilder:
         assert ds.Conventions == 'CF-1.8'
         assert 'test' in ds.domain_name
 
-        v = ds.variables['airtemp']
+        v = ds.variables['air_temperature']
         assert v.standard_name == 'air_temperature'
         assert v.units == 'K'
         assert v.source_source == 'ERA5'
@@ -110,7 +110,7 @@ class TestForcingsStoreBuilder:
         src = tmp_path / 'forcing' / 'basin_averaged_data'
         src.mkdir(parents=True)
         nc_path = src / 'forcing.nc'
-        _create_dummy_nc(nc_path, var_name='airtemp')
+        _create_dummy_nc(nc_path, var_name='air_temperature')
 
         builder = ForcingsStoreBuilder(
             project_dir=tmp_path,

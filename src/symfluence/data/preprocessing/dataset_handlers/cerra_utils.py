@@ -60,16 +60,16 @@ class CERRAHandler(BaseDatasetHandler):
             ds = ds.rename(existing_vars)
 
         # Calculate wind speed from components if not present
-        if 'windspd' not in ds and 'windspd_u' in ds and 'windspd_v' in ds:
-            u = ds['windspd_u']
-            v = ds['windspd_v']
+        if 'wind_speed' not in ds and 'eastward_wind' in ds and 'northward_wind' in ds:
+            u = ds['eastward_wind']
+            v = ds['northward_wind']
             windspd = np.sqrt(u**2 + v**2)
-            windspd.name = 'windspd'
-            ds['windspd'] = windspd
+            windspd.name = 'wind_speed'
+            ds['wind_speed'] = windspd
 
         # Convert total precipitation from accumulated to rate if needed
-        if 'pptrate' in ds:
-            p = ds['pptrate']
+        if 'precipitation_flux' in ds:
+            p = ds['precipitation_flux']
             if 'units' in p.attrs:
                 units = p.attrs['units'].lower()
                 # Check if it's an accumulation (kg m-2 or m) and not already a rate (s-1 or rate)
@@ -78,12 +78,12 @@ class CERRAHandler(BaseDatasetHandler):
                     time_diff = ds.time.diff('time').median()
                     if time_diff:
                         seconds = time_diff.values / np.timedelta64(1, 's')
-                        ds['pptrate'] = p / float(seconds)
+                        ds['precipitation_flux'] = p / float(seconds)
 
         # Apply standard CF-compliant attributes (uses centralized definitions)
         # CERRA precipitation is in kg m-2 s-1 (equiv to mm/s) after conversion
         ds = self.apply_standard_attributes(ds, overrides={
-            'pptrate': {'units': 'kg m-2 s-1', 'standard_name': 'precipitation_rate'}
+            'precipitation_flux': {'units': 'kg m-2 s-1', 'standard_name': 'precipitation_rate'}
         })
 
         # Add metadata via base helpers

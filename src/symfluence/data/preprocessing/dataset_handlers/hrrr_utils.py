@@ -132,7 +132,7 @@ class HRRRHandler(BaseDatasetHandler):
             - For precip, use HRRR forecasts or alternative datasets (AORC, CONUS404)
 
             Handler sets pptrate to NaN with warning:
-                ds['pptrate'] = xr.full_like(ds['airtemp'], np.nan)
+                ds['precipitation_flux'] = xr.full_like(ds['air_temperature'], np.nan)
 
             Workaround options:
                 1. Use HRRR f01 (1-hour forecast) for all variables including precip
@@ -163,9 +163,9 @@ class HRRRHandler(BaseDatasetHandler):
             >>> ds_processed = handler.process_dataset(ds)
             >>> print(ds_processed.data_vars)
             # Variables: airtemp, spechum, airpres, SWRadAtm, LWRadAtm, windspd, pptrate
-            >>> print(ds_processed['windspd'].attrs)
+            >>> print(ds_processed['wind_speed'].attrs)
             # {'units': 'm s-1', 'long_name': 'wind speed', 'standard_name': 'wind_speed'}
-            >>> print(ds_processed['pptrate'].values[0])
+            >>> print(ds_processed['precipitation_flux'].values[0])
             # nan  (HRRR analysis has no valid precip)
 
         Operational vs Forecast Data:
@@ -203,40 +203,40 @@ class HRRRHandler(BaseDatasetHandler):
         ds = standardizer.standardize(ds, 'HRRR')
 
         # Wind speed magnitude
-        if "windspd_u" in ds and "windspd_v" in ds:
-            u = ds["windspd_u"]
-            v = ds["windspd_v"]
+        if "eastward_wind" in ds and "northward_wind" in ds:
+            u = ds["eastward_wind"]
+            v = ds["northward_wind"]
             windspd = np.sqrt(u**2 + v**2)
-            windspd.name = "windspd"
+            windspd.name = "wind_speed"
             windspd.attrs = {
                 "units": "m s-1",
                 "long_name": "wind speed",
                 "standard_name": "wind_speed",
             }
-            ds["windspd"] = windspd
+            ds["wind_speed"] = windspd
 
         # Precipitation rate
         # NOTE: HRRR analysis fields do not contain valid precipitation data
         # Create zero-precipitation fallback if missing
-        if "pptrate" not in ds:
+        if "precipitation_flux" not in ds:
             self.logger.warning(
                 "HRRR analysis fields do not contain precipitation data. "
                 "Creating zero-precipitation fallback. "
                 "Users should supplement with MRMS, Stage IV, or HRRR forecast fields."
             )
             # Create zero precipitation with same dimensions as other variables
-            template_var = ds["airtemp"] if "airtemp" in ds else list(ds.data_vars.values())[0]
+            template_var = ds["air_temperature"] if "air_temperature" in ds else list(ds.data_vars.values())[0]
             pptrate = template_var * 0.0  # Same shape, all zeros
-            pptrate.name = "pptrate"
+            pptrate.name = "precipitation_flux"
             pptrate.attrs = {
                 "units": "m s-1",
                 "long_name": "precipitation rate (zero fallback)",
                 "standard_name": "precipitation_rate",
                 "note": "HRRR analysis does not provide precipitation; this is a zero fallback"
             }
-            ds["pptrate"] = pptrate
-        elif "pptrate" in ds:
-            p = ds["pptrate"]
+            ds["precipitation_flux"] = pptrate
+        elif "precipitation_flux" in ds:
+            p = ds["precipitation_flux"]
             # remove problematic encoding attrs if present
             p.attrs.pop("missing_value", None)
 
@@ -244,16 +244,16 @@ class HRRRHandler(BaseDatasetHandler):
             # Handle common cases; adjust if your HRRR derives rate differently
             if "mm" in units:
                 # mm/s → m/s
-                ds["pptrate"] = p / 1000.0
-                ds["pptrate"].attrs["units"] = "m s-1"
+                ds["precipitation_flux"] = p / 1000.0
+                ds["precipitation_flux"].attrs["units"] = "m s-1"
             elif "kg m-2 s-1" in units or "kg m-2 s^-1" in units:
                 # 1 kg/m²/s ≈ 1 mm/s = 1e-3 m/s
-                ds["pptrate"] = p / 1000.0
-                ds["pptrate"].attrs["units"] = "m s-1"
+                ds["precipitation_flux"] = p / 1000.0
+                ds["precipitation_flux"].attrs["units"] = "m s-1"
             else:
-                ds["pptrate"].attrs.setdefault("units", "m s-1")
+                ds["precipitation_flux"].attrs.setdefault("units", "m s-1")
 
-            ds["pptrate"].attrs.update(
+            ds["precipitation_flux"].attrs.update(
                 {
                     "long_name": "precipitation rate",
                     "standard_name": "precipitation_rate",
@@ -261,8 +261,8 @@ class HRRRHandler(BaseDatasetHandler):
             )
 
         # Temperature
-        if "airtemp" in ds:
-            ds["airtemp"].attrs.update(
+        if "air_temperature" in ds:
+            ds["air_temperature"].attrs.update(
                 {
                     "units": "K",
                     "long_name": "air temperature",
@@ -271,8 +271,8 @@ class HRRRHandler(BaseDatasetHandler):
             )
 
         # Specific humidity
-        if "spechum" in ds:
-            ds["spechum"].attrs.update(
+        if "specific_humidity" in ds:
+            ds["specific_humidity"].attrs.update(
                 {
                     "units": "kg kg-1",
                     "long_name": "specific humidity",
@@ -281,8 +281,8 @@ class HRRRHandler(BaseDatasetHandler):
             )
 
         # Pressure
-        if "airpres" in ds:
-            ds["airpres"].attrs.update(
+        if "surface_air_pressure" in ds:
+            ds["surface_air_pressure"].attrs.update(
                 {
                     "units": "Pa",
                     "long_name": "air pressure",
@@ -291,8 +291,8 @@ class HRRRHandler(BaseDatasetHandler):
             )
 
         # Radiation
-        if "LWRadAtm" in ds:
-            ds["LWRadAtm"].attrs.update(
+        if "surface_downwelling_longwave_flux" in ds:
+            ds["surface_downwelling_longwave_flux"].attrs.update(
                 {
                     "units": "W m-2",
                     "long_name": "downward longwave radiation at the surface",
@@ -300,8 +300,8 @@ class HRRRHandler(BaseDatasetHandler):
                 }
             )
 
-        if "SWRadAtm" in ds:
-            ds["SWRadAtm"].attrs.update(
+        if "surface_downwelling_shortwave_flux" in ds:
+            ds["surface_downwelling_shortwave_flux"].attrs.update(
                 {
                     "units": "W m-2",
                     "long_name": "downward shortwave radiation at the surface",

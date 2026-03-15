@@ -471,9 +471,9 @@ class EMEarthIntegrator(ConfigMixin):
 
             updated_ds = forcing_ds.copy(deep=True)
             variable_mapping = {
-                'prcp': ['pptrate', 'pcp', 'precipitation', 'PRCP', 'prcp'],
-                'prcp_corrected': ['pptrate', 'pcp', 'precipitation', 'PRCP', 'prcp'],
-                'tmean': ['airtemp', 'tmp', 'temperature', 'TEMP', 'tmean', 'tas']
+                'prcp': ['precipitation_flux', 'pcp', 'precipitation', 'PRCP', 'prcp'],
+                'prcp_corrected': ['precipitation_flux', 'pcp', 'precipitation', 'PRCP', 'prcp'],
+                'tmean': ['air_temperature', 'tmp', 'temperature', 'TEMP', 'tmean', 'tas']
             }
 
             for em_var, forcing_vars in variable_mapping.items():

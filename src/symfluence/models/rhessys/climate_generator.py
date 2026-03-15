@@ -91,17 +91,17 @@ class RHESSysClimateGenerator:
         VariableHandler(self.config, self.logger, self.forcing_dataset, 'RHESSys')
 
         # Get variable names from dataset
-        precip_var = self._find_variable(ds, ['pr', 'precipitation', 'PREC', 'precip', 'pptrate'])
-        temp_var = self._find_variable(ds, ['tas', 't2m', 'temp', 'airtemp', 'TEMP', 'temperature'])
+        precip_var = self._find_variable(ds, ['pr', 'precipitation', 'PREC', 'precip', 'precipitation_flux'])
+        temp_var = self._find_variable(ds, ['tas', 't2m', 'temp', 'air_temperature', 'TEMP', 'temperature'])
         tmax_var = self._find_variable(ds, ['tasmax', 'tmax', 'TMAX'])
         tmin_var = self._find_variable(ds, ['tasmin', 'tmin', 'TMIN'])
 
         # Additional variables for ET calculation
-        swrad_var = self._find_variable(ds, ['SWRadAtm', 'rsds', 'swdown', 'ssrd', 'shortwave_radiation', 'Kdown'])
-        lwrad_var = self._find_variable(ds, ['LWRadAtm', 'rlds', 'lwdown', 'strd', 'longwave_radiation', 'Ldown'])
-        wind_var = self._find_variable(ds, ['windspd', 'wind', 'sfcWind', 'wind_speed', 'ws', 'u10', 'v10'])
-        spechum_var = self._find_variable(ds, ['spechum', 'huss', 'specific_humidity', 'q'])
-        airpres_var = self._find_variable(ds, ['airpres', 'ps', 'sp', 'air_pressure', 'pressure'])
+        swrad_var = self._find_variable(ds, ['surface_downwelling_shortwave_flux', 'rsds', 'swdown', 'ssrd', 'shortwave_radiation', 'Kdown'])
+        lwrad_var = self._find_variable(ds, ['surface_downwelling_longwave_flux', 'rlds', 'lwdown', 'strd', 'longwave_radiation', 'Ldown'])
+        wind_var = self._find_variable(ds, ['wind_speed', 'wind', 'sfcWind', 'wind_speed', 'ws', 'u10', 'v10'])
+        spechum_var = self._find_variable(ds, ['specific_humidity', 'huss', 'specific_humidity', 'q'])
+        airpres_var = self._find_variable(ds, ['surface_air_pressure', 'ps', 'sp', 'air_pressure', 'pressure'])
 
         # Extract data
         time_coord = ds['time'].values

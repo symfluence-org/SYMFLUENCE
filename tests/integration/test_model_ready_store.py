@@ -26,7 +26,7 @@ def _setup_fixture_domain(root: Path) -> None:
     ds.createDimension('hru', 1)
     t = ds.createVariable('time', 'f8', ('time',))
     t[:] = [0, 1, 2, 3, 4]
-    v = ds.createVariable('airtemp', 'f4', ('time', 'hru'))
+    v = ds.createVariable('air_temperature', 'f4', ('time', 'hru'))
     v[:] = np.random.rand(5, 1).astype('f4')
     ds.close()
 
@@ -135,7 +135,7 @@ class TestModelReadyStoreIntegration:
         nc_path = tmp_path / 'forcing' / 'basin_averaged_data' / 'forcing.nc'
         ds = netCDF4.Dataset(str(nc_path), 'r')
         assert ds.Conventions == 'CF-1.8'
-        assert ds.variables['airtemp'].standard_name == 'air_temperature'
+        assert ds.variables['air_temperature'].standard_name == 'air_temperature'
         ds.close()
 
     def test_migrate_from_legacy(self, tmp_path):

@@ -173,7 +173,7 @@ class CONUS404Handler(BaseDatasetHandler):
             >>> ds_processed = handler.process_dataset(ds)
             >>> print(ds_processed.data_vars)
             # Variables: airtemp, spechum, airpres, SWRadAtm, LWRadAtm, pptrate, windspd
-            >>> print(ds_processed['SWRadAtm'].attrs)
+            >>> print(ds_processed['surface_downwelling_shortwave_flux'].attrs)
             # {'units': 'W m-2', 'long_name': 'downward shortwave radiation'}
 
         Notes:
@@ -203,9 +203,9 @@ class CONUS404Handler(BaseDatasetHandler):
         # (e.g., airpres ≈ 0 Pa) that are physically impossible.
         # Replace these with time-interpolated values before further processing.
         qc_ranges = {
-            'airpres': (20000.0, 120000.0),   # Pa - wide range to catch only clearly bad values
-            'airtemp': (150.0, 370.0),         # K
-            'spechum': (0.0, 0.2),             # kg/kg
+            'surface_air_pressure': (20000.0, 120000.0),   # Pa - wide range to catch only clearly bad values
+            'air_temperature': (150.0, 370.0),         # K
+            'specific_humidity': (0.0, 0.2),             # kg/kg
         }
         for var, (qc_min, qc_max) in qc_ranges.items():
             if var not in ds:
@@ -229,21 +229,21 @@ class CONUS404Handler(BaseDatasetHandler):
         if "ACSWDNB" in ds:
             # Not yet renamed - convert and assign
             sw_flux = self._convert_accumulated_to_flux(ds["ACSWDNB"])
-            sw_flux.name = "SWRadAtm"
-            ds["SWRadAtm"] = sw_flux
-        elif "SWRadAtm" in ds:
+            sw_flux.name = "surface_downwelling_shortwave_flux"
+            ds["surface_downwelling_shortwave_flux"] = sw_flux
+        elif "surface_downwelling_shortwave_flux" in ds:
             # Already renamed by acquirer - check if it needs conversion
             # Accumulated values are typically very large (>1e6)
-            if float(ds["SWRadAtm"].mean()) > 1e6:
+            if float(ds["surface_downwelling_shortwave_flux"].mean()) > 1e6:
                 self.logger.info("SWRadAtm appears to be accumulated - converting to flux")
-                sw_flux = self._convert_accumulated_to_flux(ds["SWRadAtm"])
-                ds["SWRadAtm"] = sw_flux
+                sw_flux = self._convert_accumulated_to_flux(ds["surface_downwelling_shortwave_flux"])
+                ds["surface_downwelling_shortwave_flux"] = sw_flux
         elif "SWDOWN" in ds:
             # Instantaneous shortwave - just rename
-            ds = ds.rename({"SWDOWN": "SWRadAtm"})
+            ds = ds.rename({"SWDOWN": "surface_downwelling_shortwave_flux"})
 
-        if "SWRadAtm" in ds:
-            ds["SWRadAtm"].attrs.update({
+        if "surface_downwelling_shortwave_flux" in ds:
+            ds["surface_downwelling_shortwave_flux"].attrs.update({
                 "units": "W m-2",
                 "long_name": "downward shortwave radiation at the surface",
             })
@@ -255,24 +255,24 @@ class CONUS404Handler(BaseDatasetHandler):
         if "ACLWDNB" in ds:
             # Not yet renamed - convert and assign
             lw_flux = self._convert_accumulated_to_flux(ds["ACLWDNB"])
-            lw_flux.name = "LWRadAtm"
-            ds["LWRadAtm"] = lw_flux
-        elif "LWRadAtm" in ds:
+            lw_flux.name = "surface_downwelling_longwave_flux"
+            ds["surface_downwelling_longwave_flux"] = lw_flux
+        elif "surface_downwelling_longwave_flux" in ds:
             # Already renamed by acquirer - check if it needs conversion
             # Accumulated values are typically very large (>1e6)
-            if float(ds["LWRadAtm"].mean()) > 1e6:
+            if float(ds["surface_downwelling_longwave_flux"].mean()) > 1e6:
                 self.logger.info("LWRadAtm appears to be accumulated - converting to flux")
-                lw_flux = self._convert_accumulated_to_flux(ds["LWRadAtm"])
-                ds["LWRadAtm"] = lw_flux
+                lw_flux = self._convert_accumulated_to_flux(ds["surface_downwelling_longwave_flux"])
+                ds["surface_downwelling_longwave_flux"] = lw_flux
         elif "LWDOWN" in ds:
             # Instantaneous longwave - just rename
-            ds = ds.rename({"LWDOWN": "LWRadAtm"})
+            ds = ds.rename({"LWDOWN": "surface_downwelling_longwave_flux"})
         elif "GLW" in ds:
             # Alternative longwave name - just rename
-            ds = ds.rename({"GLW": "LWRadAtm"})
+            ds = ds.rename({"GLW": "surface_downwelling_longwave_flux"})
 
-        if "LWRadAtm" in ds:
-            ds["LWRadAtm"].attrs.update({
+        if "surface_downwelling_longwave_flux" in ds:
+            ds["surface_downwelling_longwave_flux"].attrs.update({
                 "units": "W m-2",
                 "long_name": "downward longwave radiation at the surface",
             })
@@ -282,36 +282,36 @@ class CONUS404Handler(BaseDatasetHandler):
         # ============================
         if "ACDRIPR" in ds:
             pr_rate = self._convert_accumulated_to_flux(ds["ACDRIPR"])  # mm/s
-            pr_rate.name = "pptrate"
-            ds["pptrate"] = pr_rate
+            pr_rate.name = "precipitation_flux"
+            ds["precipitation_flux"] = pr_rate
 
         elif "PREC_ACC_NC" in ds:
             # Accumulated total precip in mm
             pr_rate = self._convert_accumulated_to_flux(ds["PREC_ACC_NC"])  # mm/s
-            pr_rate.name = "pptrate"
-            ds["pptrate"] = pr_rate
+            pr_rate.name = "precipitation_flux"
+            ds["precipitation_flux"] = pr_rate
 
         elif "RAINRATE" in ds:
-            ds["pptrate"] = ds["RAINRATE"] # mm/s
+            ds["precipitation_flux"] = ds["RAINRATE"] # mm/s
 
-        elif "pptrate" in ds:
+        elif "precipitation_flux" in ds:
             # Handle case where pptrate is already present but in mm (accumulated per step)
-            attrs = ds["pptrate"].attrs
+            attrs = ds["precipitation_flux"].attrs
             units = attrs.get("units", "")
             desc = attrs.get("description", "").lower()
             long_name = attrs.get("long_name", "").lower()
 
             if units == "mm" and ("accumulated" in desc or "accumulated" in long_name):
-                 self.logger.warning("Found 'pptrate' in mm (interval accumulated). Converting to rate mm/s.")
+                 self.logger.warning("Found 'precipitation_flux' in mm (interval accumulated). Converting to rate mm/s.")
                  # Calculate dt
                  time_coord = "time"
                  dt = (ds[time_coord].diff(time_coord) / np.timedelta64(1, "s")).astype("float32")
                  dt = dt.reindex({time_coord: ds[time_coord]}, method="bfill")
 
                  # Convert mm/step -> mm/s
-                 ds["pptrate"] = ds["pptrate"] / dt
+                 ds["precipitation_flux"] = ds["precipitation_flux"] / dt
 
-        ds["pptrate"].attrs.update({
+        ds["precipitation_flux"].attrs.update({
             "units": "kg m-2 s-1",  # SUMMA standard mass flux unit (equal to mm/s)
             "long_name": "precipitation rate",
             "standard_name": "precipitation_rate"
@@ -321,42 +321,42 @@ class CONUS404Handler(BaseDatasetHandler):
         # ============================
         # Wind speed from components
         # ============================
-        if "windspd_u" in ds and "windspd_v" in ds:
-            u = ds["windspd_u"]
-            v = ds["windspd_v"]
+        if "eastward_wind" in ds and "northward_wind" in ds:
+            u = ds["eastward_wind"]
+            v = ds["northward_wind"]
             windspd = np.sqrt(u**2 + v**2)
-            windspd.name = "windspd"
+            windspd.name = "wind_speed"
             windspd.attrs = {
                 "units": "m s-1",
                 "long_name": "wind speed",
                 "standard_name": "wind_speed",
             }
-            ds["windspd"] = windspd
+            ds["wind_speed"] = windspd
         else:
             self.logger.error("Missing U10 and/or V10 for wind speed in CONUS404 dataset")
-            raise KeyError("windspd")
+            raise KeyError("wind_speed")
 
         # ============================
         # Attributes for other core variables
         # ============================
-        if "airtemp" in ds:
-            ds["airtemp"].attrs.update(
+        if "air_temperature" in ds:
+            ds["air_temperature"].attrs.update(
                 {
                     "units": "K",
                     "long_name": "air temperature",
                     "standard_name": "air_temperature",
                 }
             )
-        if "spechum" in ds:
-            ds["spechum"].attrs.update(
+        if "specific_humidity" in ds:
+            ds["specific_humidity"].attrs.update(
                 {
                     "units": "kg kg-1",
                     "long_name": "specific humidity",
                     "standard_name": "specific_humidity",
                 }
             )
-        if "airpres" in ds:
-            ds["airpres"].attrs.update(
+        if "surface_air_pressure" in ds:
+            ds["surface_air_pressure"].attrs.update(
                 {
                     "units": "Pa",
                     "long_name": "air pressure",

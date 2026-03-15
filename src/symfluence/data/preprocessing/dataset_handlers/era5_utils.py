@@ -70,7 +70,7 @@ class ERA5Handler(BaseDatasetHandler):
         # Apply standard CF-compliant attributes (uses centralized definitions)
         # ERA5 precipitation is typically in mm/s, override the default
         ds = self.apply_standard_attributes(ds, overrides={
-            'pptrate': {'units': 'mm/s', 'standard_name': 'precipitation_rate'}
+            'precipitation_flux': {'units': 'mm/s', 'standard_name': 'precipitation_rate'}
         })
 
         return ds

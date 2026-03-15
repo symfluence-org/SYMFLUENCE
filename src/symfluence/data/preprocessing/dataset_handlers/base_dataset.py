@@ -253,7 +253,7 @@ class BaseDatasetHandler(ABC, ConfigMixin):
         >>> @DatasetRegistry.register('my_dataset')
         >>> class MyDatasetHandler(BaseDatasetHandler):
         ...     def get_variable_mapping(self):
-        ...         return {'t2m': 'airtemp', 'tp': 'pptrate'}
+        ...         return {'t2m': 'air_temperature', 'tp': 'precipitation_flux'}
         ...     def process_dataset(self, ds):
         ...         # Apply conversions
         ...         return ds
