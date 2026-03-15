@@ -65,6 +65,10 @@ class SUMMAConfig(BaseModel):
     init_matric_head: float = Field(default=-1.0, alias='SUMMA_INIT_MATRIC_HEAD')
     init_grid_file: str = Field(default='coldState_glacSurfTopo.nc', alias='SETTINGS_SUMMA_INIT_GRID_FILE')
     attrib_grid_file: str = Field(default='attributes_glacBedTopo.nc', alias='SETTINGS_SUMMA_ATTRIB_GRID_FILE')
+    # Regionalization settings
+    parameter_regionalization: str = Field(default='lumped', alias='PARAMETER_REGIONALIZATION')
+    transfer_function_attributes_path: Optional[str] = Field(default=None, alias='TRANSFER_FUNCTION_ATTRIBUTES')
+    transfer_function_param_config: Optional[Dict[str, Any]] = Field(default=None, alias='TRANSFER_FUNCTION_PARAM_CONFIG')
 
 
 class FUSEConfig(BaseModel):
