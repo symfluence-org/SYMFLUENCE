@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+import types
 import warnings
 from typing import (
     Any,
@@ -112,11 +113,25 @@ class _LazyEntry:
         module_path, class_name = self.import_path.rsplit(".", 1)
         module = importlib.import_module(module_path)
         try:
-            return getattr(module, class_name)
+            attr = getattr(module, class_name)
         except AttributeError:
             # The import path may refer to a module (not a class/attribute).
             # Fall back to importing the full dotted path as a module.
-            return importlib.import_module(self.import_path)
+            attr = importlib.import_module(self.import_path)
+
+        # If the resolved attribute is a sub-module (e.g. build_instructions_module
+        # pointed to "pkg.build_instructions" rather than "pkg.build_instructions.func"),
+        # search inside it for a single callable provider and invoke it.
+        if isinstance(attr, types.ModuleType):
+            for obj in vars(attr).values():
+                if callable(obj) and not isinstance(obj, type):
+                    try:
+                        result = obj()
+                        if isinstance(result, dict):
+                            return result
+                    except Exception:  # noqa: BLE001
+                        continue
+        return attr
 
 
 class Registry(Generic[T]):

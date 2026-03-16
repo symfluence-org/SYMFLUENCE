@@ -1,0 +1,24 @@
+# Experiment 1b: Lumped catchment domain - Bow River at Banff, AB
+# Paper Section 2 - Domain Definition
+# Tests: Lumped watershed domain with single HRU
+
+system:
+  data_dir: ./data/
+  code_dir: ./
+domain:
+  name: Bow_at_Banff_lumped_era5
+  definition_method: lumped
+  pour_point_coords: 51.1722/-115.5717
+  bounding_box_coords: 51.76/-116.55/50.95/-115.5
+  time_start: 2002-01-01 01:00
+  time_end: 2009-12-31 23:00
+  calibration_period: 2004-01-01, 2007-12-31
+  evaluation_period: 2008-01-01, 2009-12-31
+  spinup_period: 2002-01-01, 2003-12-31
+  discretization: GRUs
+  experiment_id: Bow_at_Banff_lumped_era5
+forcing:
+  dataset: ERA5
+model:
+  hydrological_model: SUMMA
+  routing_model: none

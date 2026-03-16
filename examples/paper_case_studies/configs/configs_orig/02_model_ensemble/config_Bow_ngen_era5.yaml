@@ -1,0 +1,269 @@
+### ============================================= SYMFLUENCE configuration file ============================================================
+# Configuration for NextGen (ngen) framework with CFE model for Bow at Banff validation study
+# This configuration uses the Conceptual Functional Equivalent (CFE) model within the NextGen framework
+#
+### ============================================= 1. Global settings: =====================================================================
+
+# Main paths
+SYMFLUENCE_DATA_DIR: "/Users/darrieythorsson/compHydro/code/SYMFLUENCE_data/"
+SYMFLUENCE_CODE_DIR: "/Users/darrieythorsson/compHydro/code/SYMFLUENCE"
+
+# Experiment settings
+DOMAIN_NAME: Bow_at_Banff_lumped_era5                          # Name of experimental domain
+EXPERIMENT_ID: run_1                                           # Name of experiment
+EXPERIMENT_TIME_START: 2002-01-01 01:00                        # Start time of experiment e.g. '2010-01-01 00:00'
+EXPERIMENT_TIME_END: 2009-12-31 23:00                          # End time of experiment e.g. '2010-12-31 23:00'
+CALIBRATION_PERIOD: 2004-01-01, 2007-12-31                     # start_date, end_date in format YYYY-MM-DD
+EVALUATION_PERIOD:  2008-01-01, 2009-12-31                     # start_date, end_date in format YYYY-MM-DD
+SPINUP_PERIOD: 2002-01-01, 2003-12-31
+
+# Computatational settings
+MPI_PROCESSES: 1                                               # Number of parallel processes allowed
+FORCE_RUN_ALL_STEPS: False                                     # Run all steps in the workflow
+
+### ============================================= 2. Geopsatial settings: =================================================================
+# Coordinate settings
+POUR_POINT_COORDS: 51.1722/-115.5717                          # Pour point coordinates lat/lon
+BOUNDING_BOX_COORDS: 51.76/-116.55/50.95/-115.5               # Bounding box of the domain
+
+# Pour point shapefile path
+POUR_POINT_SHP_PATH: default
+POUR_POINT_SHP_NAME: default
+
+# Domain representation settings
+DOMAIN_DEFINITION_METHOD: lumped                               # Lumped watershed for ngen
+ROUTING_DELINEATION: none                                      # No external routing (CFE has internal)
+
+GEOFABRIC_TYPE: TDX
+STREAM_THRESHOLD: 5000
+LUMPED_WATERSHED_METHOD: TauDEM
+CLEANUP_INTERMEDIATE_FILES: True
+DELINEATE_BY_POURPOINT: True
+MOVE_OUTLETS_MAX_DISTANCE: 200
+MIN_GRU_SIZE: 1
+
+# Domain discretization settings
+SUB_GRID_DISCRETIZATION: GRUS
+ELEVATION_BAND_SIZE: 200
+MIN_HRU_SIZE: 4
+RADIATION_CLASS_NUMBER: 5
+ASPECT_CLASS_NUMBER: 8
+ASPECT_PATH: default
+
+# Shapefile settings - Catchment shape
+CATCHMENT_PATH: default
+CATCHMENT_SHP_NAME: default
+CATCHMENT_SHP_LAT: center_lat
+CATCHMENT_SHP_LON: center_lon
+CATCHMENT_SHP_AREA: HRU_area
+CATCHMENT_SHP_HRUID: HRU_ID
+CATCHMENT_SHP_GRUID: GRU_ID
+
+# Shapefile settings - Basins shape
+RIVER_BASINS_PATH: default
+RIVER_BASINS_NAME: default
+RIVER_BASIN_SHP_RM_GRUID: GRU_ID
+RIVER_BASIN_SHP_HRU_TO_SEG: gru_to_seg
+RIVER_BASIN_SHP_AREA: GRU_area
+
+# Shapefile settings - River network shape
+RIVER_NETWORK_SHP_PATH: default
+RIVER_NETWORK_SHP_NAME: default
+RIVER_NETWORK_SHP_LENGTH: Length
+RIVER_NETWORK_SHP_SEGID: LINKNO
+RIVER_NETWORK_SHP_DOWNSEGID: DSLINKNO
+RIVER_NETWORK_SHP_SLOPE: Slope
+
+# Geospatial data paths
+OUTPUT_BASINS_PATH: default
+OUTPUT_RIVERS_PATH: default
+DEM_PATH: default
+DEM_NAME: default
+SOURCE_GEOFABRIC_BASINS_PATH: /Users/darrieythorsson/compHydro/data/CWARHM_data/domain_NorthAmerica/shapefiles/catchment/8020000010-basins.gpkg
+SOURCE_GEOFABRIC_RIVERS_PATH: /Users/darrieythorsson/compHydro/data/CWARHM_data/domain_NorthAmerica/shapefiles/river_network/8020000010-streamnet.gpkg
+TAUDEM_DIR: default
+OUTPUT_DIR: default
+CATCHMENT_PLOT_DIR: default
+SOIL_CLASS_PATH: default
+SOIL_CLASS_NAME: default
+LAND_CLASS_PATH: default
+LAND_CLASS_NAME: default
+RADIATION_PATH: default
+
+# Tool paths
+DATATOOL_PATH: default
+GISTOOL_PATH: default
+EASYMORE_CLIENT: easymore cli
+DATATOOL_DATASET_ROOT: /work/comphyd_lab/data/meteorological-data/
+DATATOOL_CACHE: /home/darri.eythorsson
+TOOL_ACCOUNT: def-mclark
+GISTOOL_DATASET_ROOT: /work/comphyd_lab/data/geospatial-data/
+GISTOOL_LIB_PATH: /work/comphyd_lab/envs/r-env/
+TOOL_CACHE: /home/darri.eythorsson/cache
+EASYMORE_CACHE: /home/darri.eythorsson/easymore/
+EASYMORE_JOB_CONF: "installs/MAF/02_model_agnostic_component/easymore-job.slurm"
+CLUSTER_JSON: /work/comphyd_lab/users/darri/data/SYMFLUENCE_data/installs/datatool/etc/clusters/ucalgary-arc.json
+
+### ============================================= 3. Model Agnostic settings: =============================================================
+
+# Forcing data settings
+FORCING_DATASET: ERA5
+FORCING_VARIABLES: default
+FORCING_MEASUREMENT_HEIGHT: 2
+FORCING_TIME_STEP_SIZE: 3600
+APPLY_LAPSE_RATE: True
+LAPSE_RATE: 0.0065
+FORCING_SHAPE_LAT_NAME: lat
+FORCING_SHAPE_LON_NAME: lon
+FORCING_PATH: default
+
+# EM-Earth forcing supplementation settings
+SUPPLEMENT_FORCING: False
+EM_EARTH_PRCP_DIR: "/anvil/datasets/meteorological/EM-Earth/EM_Earth_v1/deterministic_hourly/prcp/NorthAmerica"
+EM_EARTH_TMEAN_DIR: "/anvil/datasets/meteorological/EM-Earth/EM_Earth_v1/deterministic_hourly/tmean/NorthAmerica"
+
+# Intersection paths
+INTERSECT_SOIL_PATH: default
+INTERSECT_SOIL_NAME: catchment_with_soilclass.shp
+INTERSECT_ROUTING_PATH: default
+INTERSECT_ROUTING_NAME: catchment_with_routing_basins.shp
+INTERSECT_DEM_PATH: default
+INTERSECT_DEM_NAME: catchment_with_dem.shp
+INTERSECT_LAND_PATH: default
+INTERSECT_LAND_NAME: catchment_with_landclass.shp
+
+### ============================================= 4. Model Specific settings: =============================================================
+## Model settings
+HYDROLOGICAL_MODEL: ngen                                       # NextGen framework with CFE
+ROUTING_MODEL: none                                            # No external routing (CFE handles internally)
+
+# NextGen/ngen settings
+NGEN_FORMULATION: CFE                                          # Formulation to use: CFE (Conceptual Functional Equivalent)
+NGEN_TIMESTEP_SECONDS: 3600                                    # Model timestep in seconds (1 hour)
+NGEN_WARMUP_DAYS: 365                                          # Warmup period in days
+NGEN_RUN_TROUTE: False                                         # Lumped domain: routing not needed
+
+# Multi-module calibration settings
+# Snow-capable setup: CFE + NOAH (+ SLOTH for ice fraction)
+NGEN_MODULES_TO_CALIBRATE: CFE,NOAH
+
+# Module enablement (override defaults)
+ENABLE_SLOTH: True
+ENABLE_PET: False
+ENABLE_NOAH: True
+
+# ngen installation paths
+NGEN_INSTALL_PATH: /Users/darrieythorsson/compHydro/code/SYMFLUENCE_data/installs/ngen  # ngen installation path with compiled BMI modules
+NGEN_EXE: ngen                                                 # Name of ngen executable
+
+# ngen configuration paths
+SETTINGS_NGEN_PATH: default                                    # Path to ngen settings, if default self.data_dir / settings / ngen
+SETTINGS_NGEN_REALIZATION: realization_config.json              # Name of ngen realization file
+SETTINGS_NGEN_CATCHMENT_CONFIG: catchment_config.json          # Name of catchment configuration file
+SETTINGS_NGEN_FORCING_CONFIG: forcing_config.json              # Name of forcing configuration file
+
+# CFE model parameters to calibrate (soil/groundwater dynamics)
+NGEN_CFE_PARAMS_TO_CALIBRATE: satdk,bb,slop,max_gw_storage,Cgw,expon,K_nash,K_lf
+
+# NOAH-OWP parameters to calibrate (land surface physics, snow, soil moisture)
+NGEN_NOAH_PARAMS_TO_CALIBRATE: refkdt,smcmax,dksat
+
+# PET parameters to calibrate (disabled in this config)
+NGEN_PET_PARAMS_TO_CALIBRATE: ""
+
+# CFE Parameter bounds (soil/groundwater dynamics)
+# NOTE: max_gw_storage and Cgw bounds expanded for mountain catchment baseflow
+NGEN_CFE_PARAM_BOUNDS:
+  satdk: [1.0e-07, 1.0e-04]                                    # Saturated hydraulic conductivity [m/s]
+  bb: [2.0, 8.0]                                               # Brooks-Corey pore size distribution index [-]
+  slop: [0.01, 0.5]                                            # TOPMODEL slope parameter [-]
+  max_gw_storage: [0.05, 2.0]                                  # Maximum groundwater storage [m] - expanded for baseflow
+  Cgw: [1.0e-06, 0.1]                                          # Groundwater coefficient [m/h] - wider range
+  expon: [1.0, 8.0]                                            # Exponent for groundwater flux [-]
+  K_nash: [0.01, 0.5]                                          # Nash cascade storage coefficient [1/h]
+  K_lf: [0.001, 0.5]                                           # Lateral flow coefficient [1/h]
+
+# NOAH-OWP Parameter bounds (land surface physics)
+NGEN_NOAH_PARAM_BOUNDS:
+  refkdt: [0.5, 5.0]                                           # Reference surface runoff parameter [-]
+  smcmax: [0.35, 0.55]                                         # Maximum soil moisture content [m3/m3]
+  dksat: [1.0e-07, 1.0e-04]                                    # NOAH saturated conductivity [m/s]
+
+# PET Parameter bounds (disabled in this config)
+NGEN_PET_PARAM_BOUNDS: {}
+
+# Evaluation/metrics alignment
+CALIBRATION_NEXUS_ID: nex-1                                    # Lumped outlet nexus
+NGEN_CSV_OUTPUT_IS_FLOW: True                                 # CFE outputs m3/s already
+CALIBRATION_WARMUP_DAYS: 0                                    # Calibration window already post-spinup
+
+# Model results path
+EXPERIMENT_OUTPUT_NGEN: default                                # Path to ngen output. If 'default', uses 'root_path/domain_[name]/simulations/[experiment_id]/ngen'
+
+### ============================================= 5. Evaluation settings: =================================================================
+## Simulation settings
+SIM_REACH_ID: 228                                              # River reach ID used for streamflow evaluation
+SIMULATIONS_PATH: default
+
+# Observation data settings
+OBSERVATIONS_PATH: default
+
+# Observation data paths
+STREAMFLOW_DATA_PROVIDER: WSC
+DOWNLOAD_USGS_DATA: True
+DOWNLOAD_WSC_DATA: True
+STATION_ID: 05BB001
+STREAMFLOW_RAW_PATH: default
+STREAMFLOW_RAW_NAME: default
+STREAMFLOW_PROCESSED_PATH: default
+HYDAT_PATH: /work/comphyd_lab/data/geospatial-data/hydat/Hydat.sqlite3
+
+### ============================================= 6. Optimization settings: ===============================================================
+
+OPTIMIZATION_METHODS: [iteration]                              # Methods to optimize the model performance
+
+# Single Site Emulation settings
+EMULATION_NUM_SAMPLES: 100
+EMULATION_SEED: 22
+EMULATION_SAMPLING_METHOD: lhs
+EMULATION_PARALLEL_ENSEMBLE: false
+EMULATION_MAX_PARALLEL_JOBS: 100
+EMULATION_SKIP_MIZUROUTE: true                                 # Not using mizuRoute with ngen
+EMULATION_USE_ATTRIBUTES: false
+EMULATION_MAX_ITERATIONS': 3
+
+# Iterative optimization settings
+ITERATIVE_OPTIMIZATION_ALGORITHM: DDS                          # DDS works well for CFE calibration
+NUMBER_OF_ITERATIONS: 1000                                      # Number of iterations for calibration
+DDS_R: 0.2                                                     # DDS perturbation parameter
+POPULATION_SIZE: 20
+OPTIMIZATION_METRIC: KGE                                       # Kling-Gupta Efficiency
+TARGET_METRIC: KGE
+
+# GLUE specific settings
+GLUE_THRESHOLD: -3.0
+GLUE_SHAPING_FACTOR: 1.0
+
+# DDS specific settings
+DDS_R: 0.2
+ASYNC_DDS_POOL_SIZE: 10
+ASYNC_DDS_BATCH_SIZE: 10
+MAX_STAGNATION_BATCHES: 5
+
+# SCE-UA specific settings
+NUMBER_OF_COMPLEXES: 2
+POINTS_PER_SUBCOMPLEX: 5
+NUMBER_OF_EVOLUTION_STEPS: 20
+EVOLUTION_STAGNATION: 5
+PERCENT_CHANGE_THRESHOLD: 0.01
+
+# PSO specific settings
+SWRMSIZE: 20
+PSO_COGNITIVE_PARAM: 1.5
+PSO_SOCIAL_PARAM: 1.5
+PSO_INERTIA_WEIGHT: 0.7
+PSO_INERTIA_REDUCTION_RATE: 0.99
+
+# DE specific settings
+DE_SCALING_FACTOR: 0.7
+DE_CROSSOVER_RATE: 0.7

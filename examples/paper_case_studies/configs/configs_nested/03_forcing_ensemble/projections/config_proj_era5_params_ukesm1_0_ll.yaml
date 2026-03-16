@@ -1,0 +1,36 @@
+# Experiment 3 Projection: UKESM1-0-LL forcing with ERA5-calibrated parameters
+# Paper Section 3.2, Figure 6 — SWE projections under SSP2-4.5
+# Uses NEX-GDDP-CMIP6 GCM forcing with parameters from ERA5 calibration
+
+system:
+  data_dir: ./data/
+  code_dir: ./
+domain:
+  name: paradise_snotel_wa_proj_era5_params_ukesm1_0_ll
+  experiment_id: projection_era5_params_ukesm1_0_ll
+  time_start: 2015-01-01 01:00
+  time_end: 2100-12-31 23:00
+  pour_point_coords: 46.78/-121.75
+  bounding_box_coords: 46.781/-121.751/46.779/-121.749
+  definition_method: point
+  delineation:
+    routing: lumped
+  discretization: GRUs
+forcing:
+  dataset: NEX-GDDP
+  nex:
+    models:
+    - UKESM1-0-LL
+    scenarios:
+    - historical
+    - ssp245
+    ensembles:
+    - r1i1p1f1
+model:
+  hydrological_model: SUMMA
+  routing_model: mizuRoute
+  summa:
+    params_to_calibrate: tempCritRain,tempRangeTimestep,frozenPrecipMultip,albedoMax,albedoMinWinter,albedoDecayRate,constSnowDen,mw_exp,k_snow,z0Snow
+    basin_params_to_calibrate: routingGammaScale
+optimization:
+  parameter_strategy: era5_calibrated

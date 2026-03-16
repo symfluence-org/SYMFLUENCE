@@ -53,6 +53,10 @@ class BMIRegistry:
         "XINANJIANG": "symfluence.coupling.adapters.jax_adapters.XAJJAXComponent",
         "SACSMA": "symfluence.coupling.adapters.jax_adapters.SacSmaJAXComponent",
         "SAC-SMA": "symfluence.coupling.adapters.jax_adapters.SacSmaJAXComponent",
+        "HBV": "symfluence.coupling.adapters.jax_adapters.HBVJAXComponent",
+        "HECHMS": "symfluence.coupling.adapters.jax_adapters.HecHmsJAXComponent",
+        "HEC-HMS": "symfluence.coupling.adapters.jax_adapters.HecHmsJAXComponent",
+        "TOPMODEL": "symfluence.coupling.adapters.jax_adapters.TopmodelJAXComponent",
     }
 
     def __init__(self):

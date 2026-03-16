@@ -1049,8 +1049,8 @@ class AcquisitionService(ConfigurableMixin):
 
         if (lat_min_extract, lat_max_extract, lon_min_extract, lon_max_extract) != original_bbox:
             self.logger.info("Computing spatial average over expanded area to represent the small watershed")
-            prcp_subset = prcp_subset.mean(dim=['lat', 'lon'], keep_attrs=True)
-            tmean_subset = tmean_subset.mean(dim=['lat', 'lon'], keep_attrs=True)
+            prcp_subset = prcp_subset.mean(dim=['lat', 'lon'], skipna=True, keep_attrs=True)
+            tmean_subset = tmean_subset.mean(dim=['lat', 'lon'], skipna=True, keep_attrs=True)
 
             prcp_subset = prcp_subset.expand_dims({'lat': [original_bbox[0] + (original_bbox[1] - original_bbox[0])/2]})
             prcp_subset = prcp_subset.expand_dims({'lon': [original_bbox[2] + (original_bbox[3] - original_bbox[2])/2]})
@@ -1071,11 +1071,18 @@ class AcquisitionService(ConfigurableMixin):
 
             for var in tmean_subset.data_vars:
                 if 'tmean' in var or 'temp' in var:
-                    temp_interp = tmean_subset[var].interp(
-                        lat=prcp_subset.lat,
-                        lon=prcp_subset.lon,
-                        method='linear'
-                    )
+                    if tmean_subset.sizes.get('lat', 0) < 2 or tmean_subset.sizes.get('lon', 0) < 2:
+                        temp_interp = tmean_subset[var].interp(
+                            lat=prcp_subset.lat,
+                            lon=prcp_subset.lon,
+                            method='nearest'
+                        )
+                    else:
+                        temp_interp = tmean_subset[var].interp(
+                            lat=prcp_subset.lat,
+                            lon=prcp_subset.lon,
+                            method='linear'
+                        )
                     merged_ds[var] = temp_interp
 
             is_small_watershed = lat_range < min_bbox_size or lon_range < min_bbox_size

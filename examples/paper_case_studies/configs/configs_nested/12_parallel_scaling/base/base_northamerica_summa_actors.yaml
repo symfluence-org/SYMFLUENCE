@@ -1,0 +1,124 @@
+# =============================================================================
+# Base config: SUMMA Actors distributed GRU scaling - North America
+# Section 4.12.3: Distributed GRU parallelism on HPC (10-1000 processors)
+# Compare default SUMMA output to 1400 CAMELS SPST basins
+# =============================================================================
+
+# --- Environment paths (HPC) ---
+
+system:
+  data_dir: default
+  code_dir: default
+  num_processes: 10
+  force_run_all_steps: false
+  log_level: INFO
+  log_to_file: true
+  log_format: detailed
+domain:
+  name: North_America
+  pour_point_coords: 48.0/-110.0
+  bounding_box_coords: 72.0/-170.0/24.0/-50.0
+  definition_method: distributed
+  delineation:
+    routing: distributed
+    geofabric_type: TDX
+    stream_threshold: 5000
+    lumped_watershed_method: TauDEM
+    delineate_by_pourpoint: false
+  min_gru_size: 1
+  time_start: 2000-01-01 01:00
+  time_end: 2014-12-31 23:00
+  calibration_period: 2002-01-01, 2010-12-31
+  evaluation_period: 2011-01-01, 2014-12-31
+  spinup_period: 2000-01-01, 2001-12-31
+  data_access: cloud
+  experiment_id: summa_actors_base
+  discretization: GRUs
+data:
+  streamflow_data_provider: USGS
+  download_usgs_data: true
+  camels:
+    dataset: camels_us
+    data_path: default
+    gauge_file: default
+    num_basins: 1400
+forcing:
+  dataset: ERA5
+  variables: default
+  measurement_height: 2
+  time_step_size: 3600
+  apply_lapse_rate: true
+  lapse_rate: 0.0065
+model:
+  hydrological_model: SUMMA
+  routing_model: mizuRoute
+  summa:
+    exe: summa_sundials.exe
+    install_path: default
+    connect_hrus: true
+    trialparam_n: 0
+    use_parallel: true
+    parallel_path: default
+    parallel_exe: summa_actors.exe
+    cpus_per_task: 32
+    time_limit: 04:00:00
+    mem: 8
+    gru_per_job: 10
+    decision_options:
+      snowIncept:
+      - lightSnow
+      compaction:
+      - anderson
+      snowLayers:
+      - CLM_2010
+      alb_method:
+      - varDecay
+      thCondSnow:
+      - jrdn1991
+      vegeParTbl:
+      - MODIFIED_IGBP_MODIS_NOAH
+      soilStress:
+      - NoahType
+      stomResist:
+      - BallBerry
+      LAI_method:
+      - monTable
+      canopySrad:
+      - BeersLaw
+      soilCatTbl:
+      - ROSETTA
+      f_Richards:
+      - mixdform
+      groundwatr:
+      - bigBuckt
+      bcLowrSoiH:
+      - drainage
+    params_to_calibrate: tempCritRain,k_soil,vGn_n,theta_sat
+    basin_params_to_calibrate: routingGammaScale
+  mizuroute:
+    within_basin: 0
+    routing_dt: 3600
+    routing_units: m/s
+    routing_var: averageRoutedRunoff
+    output_freq: single
+    output_vars: 1
+    needs_remap: false
+    install_path: default
+    exe: mizuRoute.exe
+optimization:
+  metric: KGE
+evaluation:
+  streamflow:
+    station_id: default
+  evaluation_data:
+  - streamflow
+  analyses:
+  - benchmarking
+paths:
+  datatool_path: default
+  gistool_path: default
+  datatool_dataset_root: default
+  gistool_dataset_root: default
+  tool_cache: default
+  cluster_json: default
+  gistool_lib_path: default

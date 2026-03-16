@@ -13,5 +13,6 @@ Briefly describe what this PR does.
 - [ ] Code style follows project guidelines
 - [ ] Tests (if applicable) added or updated
 - [ ] Documentation updated
+- [ ] [CLA](../blob/main/CLA.md) signed (external contributors)
 
 Closes #<issue-number>

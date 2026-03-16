@@ -14,7 +14,7 @@ registry pattern used by all other model parameter managers.
 import logging
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import netCDF4 as nc
 import numpy as np
@@ -100,6 +100,95 @@ class SUMMAParameterManager(BaseParameterManager):
 
         # Get attribute file path
         self.attr_file_path = self.settings_dir / self._get_config_value(lambda: self.config.model.summa.attributes, default='attributes.nc', dict_key='SETTINGS_SUMMA_ATTRIBUTES')
+
+        # Regionalization setup
+        self._regionalization_method = self._get_config_value(
+            lambda: self.config.model.summa.parameter_regionalization,
+            default='lumped', dict_key='PARAMETER_REGIONALIZATION'
+        )
+        self._regionalization = None  # Lazy-initialized in _init_regionalization()
+        self._regionalization_initialized = False
+
+    # ========================================================================
+    # REGIONALIZATION
+    # ========================================================================
+
+    def _init_regionalization(self):
+        """Lazily initialize the regionalization strategy.
+
+        Called on first access to ensure parameter bounds are already loaded.
+        """
+        if self._regionalization_initialized:
+            return
+        self._regionalization_initialized = True
+
+        if self._regionalization_method == 'lumped':
+            return  # No regionalization object needed for lumped mode
+
+        from symfluence.models.summa.calibration.summa_regionalization import (
+            create_summa_regionalization,
+        )
+
+        # Convert bounds from {name: {min, max}} to {name: (min, max)} tuples
+        raw_bounds = self._parse_all_bounds()
+        tuple_bounds: Dict[str, Tuple[float, float]] = {}
+        for p in self.local_params:
+            if p in raw_bounds:
+                tuple_bounds[p] = (raw_bounds[p]['min'], raw_bounds[p]['max'])
+
+        # Get HRU count
+        try:
+            with xr.open_dataset(self.attr_file_path) as ds:
+                n_hrus = ds.sizes.get('hru', 1)
+        except Exception:  # noqa: BLE001
+            n_hrus = 1
+
+        # Optional CSV path for supplementary attributes
+        csv_path = self._get_config_value(
+            lambda: self.config.model.summa.transfer_function_attributes_path,
+            default=None, dict_key='TRANSFER_FUNCTION_ATTRIBUTES'
+        )
+        csv_path = Path(csv_path) if csv_path else None
+
+        # Optional per-parameter config override
+        param_config = self._get_config_value(
+            lambda: self.config.model.summa.transfer_function_param_config,
+            default=None, dict_key='TRANSFER_FUNCTION_PARAM_CONFIG'
+        )
+
+        self._regionalization = create_summa_regionalization(
+            method=self._regionalization_method,
+            param_bounds=tuple_bounds,
+            n_hrus=n_hrus,
+            attributes_nc_path=self.attr_file_path,
+            csv_path=csv_path,
+            param_config=param_config,
+            logger=self.logger,
+        )
+        self.logger.info(
+            f"SUMMA regionalization: {self._regionalization.name} — "
+            f"{len(self._regionalization.get_calibration_parameters())} calibration coefficients "
+            f"for {len(tuple_bounds)} local params across {n_hrus} HRUs"
+        )
+
+    @property
+    def _use_regionalization(self) -> bool:
+        """Whether regionalization is active (non-lumped)."""
+        return self._regionalization_method != 'lumped'
+
+    def expand_coefficients_to_distributed(self, coeff_params: Dict[str, float]) -> Dict[str, np.ndarray]:
+        """Convert regionalization coefficients to per-HRU parameter arrays.
+
+        Args:
+            coeff_params: Coefficient values from the optimizer
+                          (e.g. ``{'k_soil_a': 0.001, 'k_soil_b': -0.0005}``).
+
+        Returns:
+            Dictionary of ``{param_name: np.ndarray[n_hrus]}``.
+        """
+        self._init_regionalization()
+        param_array, param_names = self._regionalization.to_distributed(coeff_params)
+        return {name: param_array[:, i] for i, name in enumerate(param_names)}
 
     # ========================================================================
     # PARAMETER CONSTRAINTS (Override Base Implementation)
@@ -247,16 +336,42 @@ class SUMMAParameterManager(BaseParameterManager):
     # ========================================================================
 
     def _get_parameter_names(self) -> List[str]:
-        """Return all SUMMA parameter names in calibration order."""
+        """Return all SUMMA parameter names in calibration order.
+
+        When regionalization is active, local parameter names are replaced by
+        the coefficient names (e.g. ``k_soil_a``, ``k_soil_b``).
+        """
+        if self._use_regionalization:
+            self._init_regionalization()
+            coeff_names = list(self._regionalization.get_calibration_parameters().keys())
+            return coeff_names + self.basin_params + self.depth_params + self.mizuroute_params
         return self.local_params + self.basin_params + self.depth_params + self.mizuroute_params
 
     def _load_parameter_bounds(self) -> Dict[str, Dict[str, float]]:
-        """Parse SUMMA parameter bounds from localParamInfo.txt, etc."""
+        """Parse SUMMA parameter bounds from localParamInfo.txt, etc.
+
+        When regionalization is active, local parameter bounds are replaced by
+        coefficient bounds from the regionalization strategy.
+        """
+        if self._use_regionalization:
+            self._init_regionalization()
+            # Coefficient bounds from regionalization (tuples → dicts)
+            bounds: Dict[str, Dict[str, float]] = {}
+            for name, (lo, hi) in self._regionalization.get_calibration_parameters().items():
+                bounds[name] = {'min': lo, 'max': hi}
+
+            # Add non-local bounds normally
+            bounds.update(self._parse_non_local_bounds())
+            return bounds
+
         return self._parse_all_bounds()
 
     def update_model_files(self, params: Dict[str, np.ndarray]) -> bool:
         """
         Update SUMMA model files with new parameter values.
+
+        When regionalization is active, coefficient values are first expanded
+        to spatially distributed per-HRU arrays, then written as usual.
 
         Updates:
         - trialParams.nc: Main parameter file
@@ -269,6 +384,9 @@ class SUMMAParameterManager(BaseParameterManager):
         Returns:
             True if all updates successful
         """
+        if self._use_regionalization:
+            params = self._expand_regionalized_params(params)
+
         success = True
         success = success and self._generate_trial_params_file(params)
         if self.depth_params:
@@ -297,11 +415,15 @@ class SUMMAParameterManager(BaseParameterManager):
         Format parameter value for SUMMA.
 
         SUMMA uses arrays for most parameters:
+        - Regionalization coefficients stay as scalars
         - Local parameters are expanded to HRU count
         - Basin parameters use single-element arrays
         - Depth parameters use single-element arrays
         - mizuRoute parameters use scalar values
         """
+        # Regionalization coefficients are scalar — don't expand
+        if self._use_regionalization and (param_name.endswith('_a') or param_name.endswith('_b')):
+            return value
         if param_name in self.depth_params:
             return np.array([value])
         elif param_name in self.mizuroute_params:
@@ -311,6 +433,64 @@ class SUMMAParameterManager(BaseParameterManager):
         else:
             # Local parameters - expand to HRU count
             return self._expand_to_hru_count(value)
+
+    # ========================================================================
+    # REGIONALIZATION HELPERS
+    # ========================================================================
+
+    def _parse_non_local_bounds(self) -> Dict[str, Dict[str, float]]:
+        """Parse bounds for basin, depth, and mizuRoute params (non-local)."""
+        bounds: Dict[str, Dict[str, float]] = {}
+
+        if self.basin_params:
+            basin_param_file = self.settings_dir / 'basinParamInfo.txt'
+            bounds.update(self._parse_param_info_file(basin_param_file, self.basin_params))
+
+        if self.depth_params:
+            depth_bounds = get_depth_bounds()
+            for param in self.depth_params:
+                if param in depth_bounds:
+                    bounds[param] = depth_bounds[param]
+
+        if self.mizuroute_params:
+            mizuroute_bounds = get_mizuroute_bounds()
+            for param in self.mizuroute_params:
+                if param in mizuroute_bounds:
+                    bounds[param] = mizuroute_bounds[param]
+
+        return bounds
+
+    def _expand_regionalized_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Expand regionalization coefficients into per-HRU arrays.
+
+        Separates coefficient params from non-coefficient params, runs the
+        transfer function, applies physical constraints, and merges back.
+        """
+        self._init_regionalization()
+
+        # Split coefficients from non-coefficient params (basin, depth, mizuroute)
+        coeff_params: Dict[str, float] = {}
+        other_params: Dict[str, Any] = {}
+
+        coeff_names = set(self._regionalization.get_calibration_parameters().keys())
+        for name, val in params.items():
+            if name in coeff_names:
+                coeff_params[name] = float(val) if not isinstance(val, (int, float)) else val
+            else:
+                other_params[name] = val
+
+        # Expand coefficients → distributed per-HRU arrays
+        distributed = self.expand_coefficients_to_distributed(coeff_params)
+
+        # Merge: distributed local params + original non-local params
+        merged = {}
+        merged.update(distributed)
+        merged.update(other_params)
+
+        # Apply physical constraints on the expanded parameters
+        merged = self._enforce_parameter_constraints(merged)
+
+        return merged
 
     # ========================================================================
     # BOUNDS PARSING

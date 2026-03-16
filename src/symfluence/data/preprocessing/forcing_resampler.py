@@ -183,12 +183,13 @@ import logging
 import multiprocessing as mp
 import warnings
 from pathlib import Path
-from typing import Tuple
+from typing import List, Tuple
 
 import geopandas as gpd
 
 from symfluence.core.path_resolver import PathResolverMixin
 from symfluence.data.preprocessing.dataset_handlers import DatasetRegistry
+from symfluence.data.preprocessing.dataset_handlers.base_dataset import BaseDatasetHandler
 
 from .resampling import (
     ElevationCalculator,
@@ -418,6 +419,23 @@ class ForcingResampler(PathResolverMixin):
             self._shapefile_processor = ShapefileProcessor(self.config, self.logger)
         return self._shapefile_processor
 
+    def _filter_forcing_files_by_period(self, forcing_files: List[Path]) -> List[Path]:
+        """Filter forcing files to only those overlapping the configured time period."""
+        start_year = int(self._get_config_value(lambda: self.config.domain.time_start).split('-')[0])
+        end_year = int(self._get_config_value(lambda: self.config.domain.time_end).split('-')[0])
+
+        filtered = [
+            f for f in forcing_files
+            if BaseDatasetHandler._file_overlaps_period(f, start_year, end_year)
+        ]
+        skipped = len(forcing_files) - len(filtered)
+        if skipped:
+            self.logger.info(
+                f"Skipped {skipped} forcing file(s) outside configured period "
+                f"{start_year}-{end_year}"
+            )
+        return filtered
+
     def run_resampling(self):
         """Run the complete forcing resampling process."""
         self.logger.debug("Starting forcing data resampling process")
@@ -514,6 +532,7 @@ class ForcingResampler(PathResolverMixin):
     def _process_point_scale_forcing(self):
         """Process forcing files using point-scale extraction."""
         forcing_files = self.file_processor.get_forcing_files(self.merged_forcing_path)
+        forcing_files = self._filter_forcing_files_by_period(forcing_files)
         if not forcing_files:
             self.logger.warning("No forcing files found to process")
             return
@@ -525,7 +544,8 @@ class ForcingResampler(PathResolverMixin):
             forcing_files=forcing_files,
             output_dir=self.forcing_basin_path,
             catchment_file_path=catchment_file_path,
-            output_filename_func=self.file_processor.determine_output_filename
+            output_filename_func=self.file_processor.determine_output_filename,
+            dem_path=self.dem_path
         )
 
     def _create_parallelized_weighted_forcing(self):
@@ -534,8 +554,9 @@ class ForcingResampler(PathResolverMixin):
         intersect_path = self.project_dir / 'shapefiles' / 'catchment_intersection' / 'with_forcing'
         intersect_path.mkdir(parents=True, exist_ok=True)
 
-        # Get forcing files
+        # Get forcing files, filtered by configured time period
         forcing_files = self.file_processor.get_forcing_files(self.merged_forcing_path)
+        forcing_files = self._filter_forcing_files_by_period(forcing_files)
         if not forcing_files:
             self.logger.warning("No forcing files found to process")
             return

@@ -511,6 +511,11 @@ class ModelEvaluator(ConfigurableMixin, ABC):
             # Calculate metrics
             base_metrics = self._calculate_performance_metrics(obs_common, sim_common)
 
+            # Optionally compute log-likelihood if observation uncertainties are available
+            likelihood_metrics = self._calculate_likelihood_metrics(obs_common, sim_common)
+            if likelihood_metrics:
+                base_metrics.update(likelihood_metrics)
+
             # Add prefix if specified
             if prefix:
                 return {f"{prefix}_{k}": v for k, v in base_metrics.items()}
@@ -623,6 +628,92 @@ class ModelEvaluator(ConfigurableMixin, ABC):
             self.logger.error(f"Error resampling to {target_timestep}: {str(e)}")
             self.logger.warning("Returning original data without resampling")
             return data
+
+    def _calculate_likelihood_metrics(
+        self,
+        obs_common: pd.Series,
+        sim_common: pd.Series,
+    ) -> Dict[str, float]:
+        """
+        Optionally compute Gaussian log-likelihood using observation uncertainties.
+
+        This is activated when the config specifies LIKELIHOOD_FUNCTION (e.g., 'gaussian').
+        Observation uncertainties are loaded from the flux data file (_uc columns)
+        and combined with model error to form the total error variance.
+
+        Returns empty dict if likelihood mode is not enabled or uncertainties
+        are unavailable, preserving backward compatibility.
+        """
+        likelihood_function = self._get_config_value(
+            lambda: self.config.optimization.likelihood_function,
+            default='',
+            dict_key='LIKELIHOOD_FUNCTION'
+        )
+        if not likelihood_function:
+            return {}
+
+        try:
+            from symfluence.evaluation.likelihood import gaussian_log_likelihood
+
+            # Load observation uncertainty aligned to the common index
+            obs_uc = self._load_observation_uncertainty(obs_common.index)
+
+            # Get model error configuration
+            model_error_fraction = self._get_config_value(
+                lambda: self.config.optimization.model_error_fraction,
+                default=0.0,
+                dict_key='MODEL_ERROR_FRACTION'
+            )
+            try:
+                model_error_fraction = float(model_error_fraction)
+            except (TypeError, ValueError):
+                model_error_fraction = 0.0
+
+            model_error_base = self._get_config_value(
+                lambda: self.config.optimization.model_error_base,
+                default=0.0,
+                dict_key='MODEL_ERROR_BASE'
+            )
+            try:
+                model_error_base = float(model_error_base)
+            except (TypeError, ValueError):
+                model_error_base = 0.0
+
+            obs_arr = obs_common.values.astype(np.float64)
+            sim_arr = sim_common.values.astype(np.float64)
+
+            # Build model error: sigma_model = base + fraction * |sim|
+            sigma_model = None
+            if model_error_base > 0 or model_error_fraction > 0:
+                sigma_model = model_error_base + model_error_fraction * np.abs(sim_arr)
+
+            # Observation uncertainty array (or None)
+            obs_uc_arr = None
+            if obs_uc is not None and len(obs_uc) == len(obs_arr):
+                obs_uc_arr = obs_uc.values.astype(np.float64)
+
+            log_lik = gaussian_log_likelihood(
+                obs_arr, sim_arr,
+                obs_uncertainty=obs_uc_arr,
+                model_error=sigma_model,
+            )
+
+            return {'log_likelihood': log_lik}
+
+        except Exception as e:  # noqa: BLE001 — optional feature, must not break metrics
+            self.logger.debug(f"Likelihood computation skipped: {e}")
+            return {}
+
+    def _load_observation_uncertainty(
+        self, time_index: pd.DatetimeIndex
+    ) -> Optional[pd.Series]:
+        """
+        Load observation uncertainty data aligned to the given time index.
+
+        Override in subclasses that know how to locate uncertainty data
+        (e.g., FLUXNET _uc columns). Default returns None (no uncertainty).
+        """
+        return None
 
     def _calculate_performance_metrics(self, observed: pd.Series, simulated: pd.Series) -> Dict[str, float]:
         """Calculate performance metrics between observed and simulated data"""

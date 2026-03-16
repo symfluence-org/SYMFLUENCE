@@ -182,8 +182,7 @@ class ParFlowPreProcessor:
             effective_mm_hr: hourly liquid water input (rain + snowmelt), mm/hr
         """
         import pandas as pd
-
-        from symfluence.models.snow17.bmi import Snow17BMI
+        from jsnow17.bmi import Snow17BMI
 
         if lapse_rate is None:
             lapse_rate = self.DEFAULT_LAPSE_RATE
@@ -285,11 +284,11 @@ class ParFlowPreProcessor:
             all_ppt, all_temp, all_times = [], [], []
             for nc_file in nc_files:
                 ds = xr.open_dataset(nc_file)
-                if 'pptrate' not in ds:
+                if 'precipitation_flux' not in ds:
                     ds.close()
                     continue
-                all_ppt.append(ds['pptrate'].values[:, 0])
-                all_temp.append(ds['airtemp'].values[:, 0])
+                all_ppt.append(ds['precipitation_flux'].values[:, 0])
+                all_temp.append(ds['air_temperature'].values[:, 0])
                 all_times.append(ds['time'].values)
                 ds.close()
 

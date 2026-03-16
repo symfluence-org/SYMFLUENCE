@@ -113,6 +113,48 @@ class NgenWorker(BaseWorker):
 
         return True
 
+    def _check_sacsma_parameter_feasibility(self, params: Dict[str, float]) -> bool:
+        """
+        Check if SAC-SMA parameter combinations are physically feasible.
+
+        Args:
+            params: Parameter values (MODULE.param format, e.g., 'SACSMA.UZTWM')
+
+        Returns:
+            True if parameters are feasible, False if infeasible
+        """
+        sac = {}
+        for k, v in params.items():
+            if k.startswith('SACSMA.'):
+                sac[k[7:]] = v
+
+        if not sac:
+            return True
+
+        # Check: UZTWM < LZTWM (upper zone tension water < lower zone)
+        uztwm = sac.get('UZTWM')
+        lztwm = sac.get('LZTWM')
+        if uztwm is not None and lztwm is not None:
+            if uztwm >= lztwm:
+                self.logger.warning(
+                    f"Infeasible SAC-SMA params: UZTWM={uztwm:.1f} >= LZTWM={lztwm:.1f}. "
+                    f"Skipping trial."
+                )
+                return False
+
+        # Check: PCTIM + ADIMP < 1.0 (total impervious fraction)
+        pctim = sac.get('PCTIM')
+        adimp = sac.get('ADIMP')
+        if pctim is not None and adimp is not None:
+            if pctim + adimp >= 1.0:
+                self.logger.warning(
+                    f"Infeasible SAC-SMA params: PCTIM={pctim:.3f} + ADIMP={adimp:.3f} "
+                    f"= {pctim + adimp:.3f} >= 1.0. Skipping trial."
+                )
+                return False
+
+        return True
+
     def apply_parameters(
         self,
         params: Dict[str, float],
@@ -133,9 +175,11 @@ class NgenWorker(BaseWorker):
             True if successful
         """
         try:
-            # Pre-flight feasibility check: reject parameter combinations
-            # known to cause CFE segfaults before writing configs
+            # Pre-flight feasibility checks: reject parameter combinations
+            # known to cause crashes or physical inconsistencies
             if not self._check_cfe_parameter_feasibility(params):
+                return False
+            if not self._check_sacsma_parameter_feasibility(params):
                 return False
             # Import NgenParameterManager
             from .parameter_manager import NgenParameterManager

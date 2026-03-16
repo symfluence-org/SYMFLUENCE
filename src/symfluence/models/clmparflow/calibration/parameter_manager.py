@@ -245,9 +245,9 @@ class CLMParFlowParameterManager(BaseParameterManager):
         Delegates to ParFlow's implementation since the forcing format is identical.
         """
         import pandas as pd
+        from jsnow17.bmi import Snow17BMI
 
         from symfluence.models.clmparflow.preprocessor import CLMParFlowPreProcessor
-        from symfluence.models.snow17.bmi import Snow17BMI
 
         cache_path = self.forcing_input_dir / 'hourly_forcing_cache.npz'
         if not cache_path.exists():

@@ -27,7 +27,7 @@ from symfluence.evaluation.metrics_core import (
 )
 from symfluence.evaluation.metrics_types import MetricInfo
 
-METRIC_REGISTRY: Dict[str, Dict[str, Union[Callable, MetricInfo]]] = {
+METRIC_REGISTRY: Dict[str, Dict[str, Union[Callable, MetricInfo, None]]] = {
     "NSE": {
         "function": nse,
         "info": MetricInfo(
@@ -212,29 +212,69 @@ METRIC_REGISTRY: Dict[str, Dict[str, Union[Callable, MetricInfo]]] = {
     },
 }
 
-METRIC_REGISTRY["kge"] = METRIC_REGISTRY["KGE"]
-METRIC_REGISTRY["nse"] = METRIC_REGISTRY["NSE"]
-METRIC_REGISTRY["kge_prime"] = METRIC_REGISTRY["KGEp"]
-METRIC_REGISTRY["kge_np"] = METRIC_REGISTRY["KGEnp"]
-METRIC_REGISTRY["r_squared"] = METRIC_REGISTRY["R2"]
-METRIC_REGISTRY["log_nse"] = METRIC_REGISTRY["logNSE"]
+METRIC_REGISTRY["log_likelihood"] = {
+    "function": None,  # Computed in evaluator, not a standalone metric function
+    "info": MetricInfo(
+        name="log_likelihood",
+        full_name="Gaussian Log-Likelihood",
+        range=(float("-inf"), 0.0),
+        optimal=0.0,
+        direction="maximize",
+        units="dimensionless",
+        description="Gaussian log-likelihood with observation and model error",
+        reference="Vrugt (2016); Pastorello et al. (2020)",
+    ),
+}
+
+# ---------------------------------------------------------------------------
+# Alias → canonical name mapping (kept separate from the registry so that
+# provenance records and config diffs always use the canonical name).
+# ---------------------------------------------------------------------------
+_METRIC_ALIASES: Dict[str, str] = {
+    "kge": "KGE",
+    "kling_gupta": "KGE",
+    "nse": "NSE",
+    "nash_sutcliffe": "NSE",
+    "kge_prime": "KGEp",
+    "kgep": "KGEp",
+    "kge_np": "KGEnp",
+    "kgenp": "KGEnp",
+    "r_squared": "R2",
+    "r2": "R2",
+    "log_nse": "logNSE",
+    "lognse": "logNSE",
+    "ve": "VE",
+    "rmse": "RMSE",
+    "nrmse": "NRMSE",
+    "mae": "MAE",
+    "mare": "MARE",
+    "pbias": "PBIAS",
+}
+
+
+def canonicalize_metric_name(name: str) -> str:
+    """Resolve a metric name or alias to its canonical registry key.
+
+    Returns the input unchanged if it is already canonical or unrecognised.
+    """
+    if name in METRIC_REGISTRY:
+        return name
+    return _METRIC_ALIASES.get(name.lower(), name)
 
 
 def get_metric_function(name: str) -> Optional[Callable]:
-    """Get a metric function by name."""
-    if name in METRIC_REGISTRY:
-        return cast(Callable, METRIC_REGISTRY[name]["function"])
-    if name.lower() in METRIC_REGISTRY:
-        return cast(Callable, METRIC_REGISTRY[name.lower()]["function"])
+    """Get a metric function by canonical or alias name."""
+    canonical = canonicalize_metric_name(name)
+    if canonical in METRIC_REGISTRY:
+        return cast(Callable, METRIC_REGISTRY[canonical]["function"])
     return None
 
 
 def get_metric_info(name: str) -> Optional[MetricInfo]:
-    """Get metric metadata by name."""
-    if name in METRIC_REGISTRY:
-        return cast(MetricInfo, METRIC_REGISTRY[name]["info"])
-    if name.lower() in METRIC_REGISTRY:
-        return cast(MetricInfo, METRIC_REGISTRY[name.lower()]["info"])
+    """Get metric metadata by canonical or alias name."""
+    canonical = canonicalize_metric_name(name)
+    if canonical in METRIC_REGISTRY:
+        return cast(MetricInfo, METRIC_REGISTRY[canonical]["info"])
     return None
 
 

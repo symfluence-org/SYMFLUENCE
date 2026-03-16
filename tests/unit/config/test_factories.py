@@ -391,6 +391,7 @@ class TestDefaultPathResolution:
         from symfluence.core.config.factories import _resolve_default_data_dir
 
         monkeypatch.delenv('SYMFLUENCE_DATA_DIR', raising=False)
+        monkeypatch.delenv('SYMFLUENCE_DATA', raising=False)
         repo_dir = tmp_path / "repo"
         repo_dir.mkdir()
         monkeypatch.chdir(repo_dir)

@@ -825,8 +825,79 @@ install_python_requirements() {
             return 0
         fi
         print_info "System MPI detected ($(mpicc --version 2>&1 | head -1)) — building mpi4py from source..."
-        python -m pip install --no-binary mpi4py --no-cache-dir mpi4py $pip_flags || \
-            print_warning "mpi4py source build failed (install manually or load system mpi4py module)"
+        if python -m pip install --no-binary mpi4py --no-cache-dir mpi4py $pip_flags; then
+            return 0
+        fi
+        print_warning "mpi4py source build failed — looking for system mpi4py to link into venv..."
+        _link_system_mpi4py
+    }
+
+    # Attempt to symlink a system-installed mpi4py (e.g., from EasyBuild
+    # `module load mpi4py`) into the venv, preserving venv isolation.
+    _link_system_mpi4py() {
+        local venv_sp
+        venv_sp="$(python -c "import site; print(site.getsitepackages()[0])")" || return 1
+
+        local sys_mpi4py_path=""
+        local py_ver
+        py_ver="$(python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")"
+
+        # Strategy 1: EasyBuild sets EBROOTMPI4PY when `module load mpi4py`
+        if [[ -n "${EBROOTMPI4PY:-}" ]]; then
+            local eb_sp="${EBROOTMPI4PY}/lib/python${py_ver}/site-packages"
+            if [[ -d "${eb_sp}/mpi4py" ]]; then
+                sys_mpi4py_path="$eb_sp"
+                print_info "Found mpi4py via EBROOTMPI4PY: $sys_mpi4py_path"
+            fi
+        fi
+
+        # Strategy 2: Search EBPYTHONPREFIXES (ComputeCanada convention)
+        if [[ -z "$sys_mpi4py_path" && -n "${EBPYTHONPREFIXES:-}" ]]; then
+            local IFS=':'
+            local prefix
+            for prefix in $EBPYTHONPREFIXES; do
+                local candidate="${prefix}/lib/python${py_ver}/site-packages"
+                if [[ -d "${candidate}/mpi4py" ]]; then
+                    sys_mpi4py_path="$candidate"
+                    print_info "Found mpi4py via EBPYTHONPREFIXES: $sys_mpi4py_path"
+                    break
+                fi
+            done
+        fi
+
+        # Strategy 3: Ask the base Python (works on non-EasyBuild systems)
+        if [[ -z "$sys_mpi4py_path" ]]; then
+            local base_python
+            base_python="$(python -c "import sys; print(sys.base_prefix)")/bin/python3"
+            if [[ ! -x "$base_python" ]]; then
+                base_python="$(command -v python3 2>/dev/null || true)"
+            fi
+            if [[ -n "$base_python" && -x "$base_python" ]]; then
+                sys_mpi4py_path="$("$base_python" -c "import mpi4py, os; print(os.path.dirname(mpi4py.__path__[0]))" 2>/dev/null)" || true
+            fi
+        fi
+
+        if [[ -z "$sys_mpi4py_path" || ! -d "${sys_mpi4py_path}/mpi4py" ]]; then
+            print_warning "System mpi4py not found (try: module load mpi4py)"
+            return 1
+        fi
+
+        # Symlink the mpi4py package directory and any dist-info/egg-info
+        local item
+        for item in "$sys_mpi4py_path"/mpi4py "$sys_mpi4py_path"/mpi4py-*.dist-info "$sys_mpi4py_path"/mpi4py-*.egg-info; do
+            [[ -e "$item" ]] || continue
+            local target="${venv_sp}/$(basename "$item")"
+            if [[ -e "$target" ]]; then continue; fi
+            ln -s "$item" "$target"
+            print_info "Linked $(basename "$item") → $item"
+        done
+
+        # Verify
+        if python -c "import mpi4py" 2>/dev/null; then
+            print_success "System mpi4py linked into venv successfully"
+        else
+            print_warning "mpi4py still not importable after linking (install manually or load system mpi4py module)"
+        fi
     }
 
     if python -m pip install -r "$tmp" $pip_flags; then
@@ -1133,7 +1204,7 @@ Fix:
   1) Run this from the SYMFLUENCE project dir, or
   2) export SYMFLUENCE_CODE_DIR=/path/to/symfluence
 
-Docs: https://github.com/DarriEy/symfluence
+Docs: https://github.com/symfluence-org/symfluence
 EOF
 }
 

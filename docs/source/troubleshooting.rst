@@ -271,7 +271,7 @@ If you encounter an issue not covered here:
 
 2. **Search GitHub Issues**
 
-   - https://github.com/DarriEy/SYMFLUENCE/issues
+   - https://github.com/symfluence-org/SYMFLUENCE/issues
    - Look for similar problems and solutions
 
 3. **Report a new issue**
@@ -287,7 +287,7 @@ If you encounter an issue not covered here:
 
 4. **Community discussions**
 
-   - https://github.com/DarriEy/SYMFLUENCE/discussions
+   - https://github.com/symfluence-org/SYMFLUENCE/discussions
    - Ask questions and share experiences
 
 ---

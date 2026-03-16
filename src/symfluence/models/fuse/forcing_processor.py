@@ -180,13 +180,13 @@ class FuseForcingProcessor(BaseForcingProcessor):
             # VariableHandler maps to MODEL_REQUIREMENTS names ('precip', 'temp').
             # Legacy code and some downstream consumers expect 'pr' and 'temp'.
             # Also handle pre-VariableHandler names ('pptrate', 'airtemp') as fallback.
-            if 'temp' not in ds and 'airtemp' in ds:
-                ds['temp'] = ds['airtemp']
+            if 'temp' not in ds and 'air_temperature' in ds:
+                ds['temp'] = ds['air_temperature']
             if 'pr' not in ds:
                 if 'precip' in ds:
                     ds['pr'] = ds['precip']
-                elif 'pptrate' in ds:
-                    ds['pr'] = ds['pptrate']
+                elif 'precipitation_flux' in ds:
+                    ds['pr'] = ds['precipitation_flux']
 
             # Calculate PET for the correct spatial configuration
             if spatial_mode == SpatialMode.LUMPED:

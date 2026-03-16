@@ -1,0 +1,209 @@
+### ============================================= SYMFLUENCE configuration file ============================================================
+# SWAT Configuration for Bow at Banff - Section 4.7 Sensitivity Analysis
+# Based on Section 4.2 ensemble config with unique experiment ID for sensitivity outputs
+### ============================================= 1. Global settings: =====================================================================
+
+# Main paths
+SYMFLUENCE_DATA_DIR: "/Users/darrieythorsson/compHydro/code/SYMFLUENCE_data/"
+SYMFLUENCE_CODE_DIR: "/Users/darrieythorsson/compHydro/code/SYMFLUENCE"
+
+# Experiment settings
+DOMAIN_NAME: Bow_at_Banff_lumped_era5                          # Name of experimental domain
+EXPERIMENT_ID: sensitivity_SWAT                                  # Name of experiment
+EXPERIMENT_TIME_START: 2002-01-01 01:00                        # Start time of experiment e.g. '2010-01-01 00:00'
+EXPERIMENT_TIME_END: 2009-12-31 23:00                          # End time of experiment e.g. '2010-12-31 23:00'
+CALIBRATION_PERIOD: 2004-01-01, 2007-12-31                     # start_date, end_date in format YYYY-MM-DD
+EVALUATION_PERIOD:  2008-01-01, 2009-12-31                     # start_date, end_date in format YYYY-MM-DD
+SPINUP_PERIOD: 2002-01-01, 2003-12-31
+
+# Computatational settings
+MPI_PROCESSES: 1                                               # Number of parallel processes allowed, based on your system's capabilities
+FORCE_RUN_ALL_STEPS: False                                      # Run all steps in the workflow and overwrite existing files
+
+### ============================================= 2. Geopsatial settings: =================================================================
+# Coordinate settings
+POUR_POINT_COORDS: 51.1722/-115.5717                          # Pour point coordinates lat/lon, if default use user provided shapefile.
+BOUNDING_BOX_COORDS: 51.76/-116.55/50.95/-115.5               # Bounding box of the domain: lat_max/lon_min/lat_min/lon_max.
+
+# Pour point shapefile path
+POUR_POINT_SHP_PATH: default                                   # If 'default', uses 'root_path/domain_[name]/shapefiles/pour_point'.
+POUR_POINT_SHP_NAME: default                                   # If 'default', uses '[domain_name]_pourPoint.shp'.
+
+# Domain representation settings
+DOMAIN_DEFINITION_METHOD: lumped                               # Define domain representation method, current options: subset_geofabric, delineate_geofabric, lumped_watershed
+ROUTING_DELINEATION: lumped
+#GRID_CELL_SIZE: 1000.0
+
+GEOFABRIC_TYPE: TDX                                            # Source geofabric to subset from, current options: Merit, TDX, NWS
+STREAM_THRESHOLD: 5000                                         # Threshold flow accumulation for stream vectorisation
+LUMPED_WATERSHED_METHOD: TauDEM                                # Use pysheds or TauDEM for lumped delineation
+CLEANUP_INTERMEDIATE_FILES: True                               # Remove temporary files from delieation
+DELINEATE_BY_POURPOINT: True                                   # Delineate watershed from pour point
+MOVE_OUTLETS_MAX_DISTANCE: 200                                 # Maximum distance to move outlets to stream
+MIN_GRU_SIZE: 1                                                # Minimum HRU size in km^2
+
+# Domain discretization settings
+SUB_GRID_DISCRETIZATION: GRUS                               # Sub-grid discretization method
+ELEVATION_BAND_SIZE: 200                                       # Elevation band size in meters
+MIN_HRU_SIZE: 4                                                # Minimum HRU size in km^2
+RADIATION_CLASS_NUMBER: 5                                      # Number of radiation classes for discretisation
+ASPECT_CLASS_NUMBER: 8                                    # Number of aspect classes for discretisation (4, 8, or custom number)
+ASPECT_PATH: default                                      # Path to aspect classification raster. If 'default', uses root_path/domain_[name]/attributes/aspect
+
+# Shapefile settings - Catchment shape (with HRU sub-basins)
+CATCHMENT_PATH: default                                        # Path to domain catchment shapefile. If default, uses self.data_dir / shapefiles / catchment /
+CATCHMENT_SHP_NAME: default                                    # Name of domain catchment shapefile used in data acquisition and modelling
+CATCHMENT_SHP_LAT: center_lat                                  # Name of the latitude column. Should be a value representative for the HRU. Typically the centroid
+CATCHMENT_SHP_LON: center_lon                                  # Name of the longitude column. Should be a value representative for the HRU. Typically the centroid.
+CATCHMENT_SHP_AREA: HRU_area                                   # Name of the catchment area column. Area must be in units [m^2]
+CATCHMENT_SHP_HRUID: HRU_ID                                    # HRU ID column in riverBasin shapefile
+CATCHMENT_SHP_GRUID: GRU_ID                                    # GRU ID column in riverBasin shapefile
+
+# Shapefile settings - Basins shape (GRUs from watershed delineation)
+RIVER_BASINS_PATH: default                                     # Path to delineated river basins shapefile. If default, uses self.data_dir / shapefiles / river_basins
+RIVER_BASINS_NAME: default                                     # Name of river basin shapefile
+RIVER_BASIN_SHP_RM_GRUID: GRU_ID                               # GRU ID column in riverBasin shapefile
+RIVER_BASIN_SHP_HRU_TO_SEG: gru_to_seg                         # Name of the column that shows which river segment each HRU connects to.
+RIVER_BASIN_SHP_AREA: GRU_area                                 # Name of the catchment area column. Area must be in units [m^2]
+
+# Shapefile settings - River network shape
+RIVER_NETWORK_SHP_PATH: default                                # Path to river network shapefile. If default, uses self.data_dir / shapefiles / river_network
+RIVER_NETWORK_SHP_NAME: default                                # Name of domain river network shapefile
+RIVER_NETWORK_SHP_LENGTH: Length                               # Name of the segment length column. Length must be in units [m].
+RIVER_NETWORK_SHP_SEGID: LINKNO                                # Name of the segment ID column.
+RIVER_NETWORK_SHP_DOWNSEGID: DSLINKNO                          # Name of the downstream segment ID column.
+RIVER_NETWORK_SHP_SLOPE: Slope                                 # Name of the slope column. Slope must be in in units [length/length].
+
+# Geospatial data paths
+OUTPUT_BASINS_PATH: default                                    # If 'default', uses 'root_path/domain_[name]/shapefiles/river_basins/[domain_name]_riverBasins.shp'
+OUTPUT_RIVERS_PATH: default                                    # If 'default', uses 'root_path/domain_[name]/shapefiles/river_network/[domain_name]_riverNetwork.shp'
+DEM_PATH: default                                              # If 'default', uses 'root_path/domain_[name]/attributes/elevation/dem/'
+DEM_NAME: default                                                # Name of elevation dem tiff
+SOURCE_GEOFABRIC_BASINS_PATH: /Users/darrieythorsson/compHydro/data/CWARHM_data/domain_NorthAmerica/shapefiles/catchment/8020000010-basins.gpkg                                   # Path to source geofabric basins
+SOURCE_GEOFABRIC_RIVERS_PATH: /Users/darrieythorsson/compHydro/data/CWARHM_data/domain_NorthAmerica/shapefiles/river_network/8020000010-streamnet.gpkg                                  # Path to source geofabric rivers
+TAUDEM_DIR: default                                            # If 'default', uses 'root_path/installs/TauDEM
+OUTPUT_DIR: default                                            # If 'default', uses 'root_path/domain_[name]/shapefiles/r
+CATCHMENT_PLOT_DIR: default                                    # Directory to output plots of domain catchment
+SOIL_CLASS_PATH: default                                       # Path to soil classification raster. If 'default', uses root_path/domain_[name]/attributes/soilclass
+SOIL_CLASS_NAME: default                                        # Name of soil classification raster
+LAND_CLASS_PATH: default                                       # Path to land classification raster. If 'default', uses root_path/domain_[name]/attributes/landclass
+LAND_CLASS_NAME: default                                       # Name of land classification raster
+RADIATION_PATH: default                                        # Path to radiation classification raster. If 'default', uses root_path/domain_[name]/attributes/radiation
+
+# Tool paths
+DATATOOL_PATH: default                                         # Path to datatool executable
+GISTOOL_PATH: default                                          # Path to gistool executable
+EASYMORE_CLIENT: easymore cli                                  # Name of easymore client
+DATATOOL_DATASET_ROOT: /work/comphyd_lab/data/meteorological-data/    # Path to datatool datasets root directory
+DATATOOL_CACHE: /home/darri.eythorsson                             # Cache directory used in datatool
+TOOL_ACCOUNT: def-mclark                                   # HPC account for running datatool
+GISTOOL_DATASET_ROOT: /work/comphyd_lab/data/geospatial-data/         # Path to gistool datasets root directory
+GISTOOL_LIB_PATH: /work/comphyd_lab/envs/r-env/                     # Path to gistool libraries
+TOOL_CACHE: /home/darri.eythorsson/cache                                      # Path to gistool cache directory
+EASYMORE_CACHE: /home/darri.eythorsson/easymore/                          # Path to easymore cache directory
+EASYMORE_JOB_CONF: "installs/MAF/02_model_agnostic_component/easymore-job.slurm" #Path to easymore job config
+CLUSTER_JSON: /work/comphyd_lab/users/darri/data/SYMFLUENCE_data/installs/datatool/etc/clusters/ucalgary-arc.json
+
+### ============================================= 3. Model Agnostic settings: =============================================================
+
+# Forcing data settings
+FORCING_DATASET: ERA5                                          # Forcing dataset to use
+FORCING_VARIABLES: default                                     # Forcing dataset variables to use or acquire
+FORCING_MEASUREMENT_HEIGHT: 2                                  # Reference height for forcing measurements [m].
+FORCING_TIME_STEP_SIZE: 3600                                   # Size of the forcing time step in [s]. Must be constant.
+APPLY_LAPSE_RATE: True                                         # Flag for applying lapse rate options: True or False
+LAPSE_RATE: 0.0065                                             # [K m-1]
+FORCING_SHAPE_LAT_NAME: lat                                    # Name of the latitude field that contains the latitude of forcing.
+FORCING_SHAPE_LON_NAME: lon                                    # Name of the longitude field that contains the latitude of forcing.
+FORCING_PATH: default                                          # If default, uses, self.project_dir / forcing / raw_data
+
+# EM-Earth forcing supplementation settings
+SUPPLEMENT_FORCING: False                                      # Supplement forcing data with precip and temperature from EM-EARTH
+EM_EARTH_PRCP_DIR: "/anvil/datasets/meteorological/EM-Earth/EM_Earth_v1/deterministic_hourly/prcp/NorthAmerica"  # Path to EM-Earth precipitation data
+EM_EARTH_TMEAN_DIR: "/anvil/datasets/meteorological/EM-Earth/EM_Earth_v1/deterministic_hourly/tmean/NorthAmerica" # Path to EM-Earth temperature data
+
+# Intersection paths (for zonal statistics)
+INTERSECT_SOIL_PATH: default                                   # If 'default', uses 'root_path/domain_[name]/shapefiles/catchment_intersection/with_soilgrids'.
+INTERSECT_SOIL_NAME: catchment_with_soilclass.shp              # Name of the shapefile with intersection between catchment and SOILGRIDS-derived USDA soil classes, stored in columns 'USDA_{1,...n}'
+INTERSECT_ROUTING_PATH: default                                # If 'default', uses 'root_path/domain_[name]/shapefiles/catchment_intersection/with_routing'.
+INTERSECT_ROUTING_NAME: catchment_with_routing_basins.shp      # Name of the shapefile with intersection between hydrologic model catchments and routing model catchments.
+INTERSECT_DEM_PATH: default                                    # If 'default', uses 'root_path/domain_[name]/shapefiles/catchment_intersection/with_routing'.
+INTERSECT_DEM_NAME: catchment_with_dem.shp                     # Name of the shapefile with intersection between hydrologic model catchments and routing model catchments.
+INTERSECT_LAND_PATH: default                                   # If 'default', uses 'root_path/domain_[name]/shapefiles/catchment_intersection/with_routing'.
+INTERSECT_LAND_NAME: catchment_with_landclass.shp              # Name of the shapefile with intersection between hydrologic model catchments and routing model catchments.
+
+### ============================================= 4. Model Specific settings: =============================================================
+## SWAT (Soil and Water Assessment Tool)
+HYDROLOGICAL_MODEL: SWAT                                       # Hydrological model: SWAT
+ROUTING_MODEL: none                                            # No external routing (SWAT has internal channel routing)
+
+# SWAT installation and executable
+SWAT_INSTALL_PATH: default                                     # SWAT installation path, if default uses installs/swat/bin
+SWAT_EXE: swat_rel.exe                                         # Name of SWAT executable
+SETTINGS_SWAT_PATH: default                                    # Path to SWAT settings directory
+SWAT_TXTINOUT_DIR: TxtInOut                                    # SWAT text input/output directory name
+
+# SWAT spatial configuration
+SWAT_SPATIAL_MODE: lumped                                      # Spatial mode: lumped or distributed
+EXPERIMENT_OUTPUT_SWAT: default                                # Path to SWAT output, if default uses simulations/run_1/SWAT
+
+# SWAT warmup and calibration
+SWAT_WARMUP_YEARS: 2                                           # Number of warmup years for SWAT simulation
+SWAT_PARAMS_TO_CALIBRATE: CN2,ALPHA_BF,GW_DELAY,GWQMN,GW_REVAP,ESCO,SOL_AWC,SOL_K,SURLAG,SFTMP,SMTMP,SMFMX,SMFMN,TIMP,CH_K2,RCHRG_DP,EPCO
+SWAT_TLAPS: -6.5                                               # Temperature lapse rate [deg C/km] (std atmosphere)
+SWAT_PLAPS: 100.0                                              # Precipitation lapse rate [mm H2O/km] (typical mountain)
+
+# SWAT parameter descriptions (17 params):
+# CN2:       SCS runoff curve number (-25% to +25% relative change)
+# ALPHA_BF:  Baseflow alpha factor (0-1 days)
+# GW_DELAY:  Groundwater delay time (0-500 days)
+# GWQMN:     Threshold depth for return flow (0-5000 mm)
+# GW_REVAP:  Groundwater "revap" coefficient (0.02-0.2)
+# ESCO:      Soil evaporation compensation factor (0-1)
+# SOL_AWC:   Available water capacity (-25% to +25% relative)
+# SOL_K:     Saturated hydraulic conductivity (-25% to +25% relative)
+# SURLAG:    Surface runoff lag coefficient (0.05-24)
+# SFTMP:     Snowfall temperature (deg C) (-5 to 5)
+# SMTMP:     Snowmelt base temperature (deg C) (-5 to 5)
+# SMFMX:     Maximum melt rate for snow during year (mm/deg C/day) (0-10)
+# SMFMN:     Minimum melt rate for snow during year (mm/deg C/day) (0-10)
+# TIMP:      Snow pack temperature lag factor (0.01-1)
+# CH_K2:     Channel hydraulic conductivity (mm/hr) (0-150)
+# RCHRG_DP:  Deep aquifer percolation fraction (0-1)
+# EPCO:      Plant uptake compensation factor (0.01-1)
+
+### ============================================= 5. Evaluation settings: =================================================================
+## Simulation settings
+SIM_REACH_ID: 228                                              # River reach ID used for streamflow evaluation and optimization
+SIMULATIONS_PATH: default                                      # Path to streamflow simulation results, if default, uses self.data_dir / simulations / config['EXPERIMENT_ID'] / mizuRoute /
+
+# Observation data settings
+OBSERVATIONS_PATH: default                                     # Path to observed streamflow data for evaluation. If default, uses self.data_dir / observations / streamflow / preprocessed / config['DOMAIN_NAME']_streamflow_processed.csv
+
+# Observation data paths
+STREAMFLOW_DATA_PROVIDER: WSC                                 # Provider of streamflow data, current options: USGS, WSC, VI
+DOWNLOAD_USGS_DATA: True
+DOWNLOAD_WSC_DATA: True
+STATION_ID: 05BB001
+STREAMFLOW_RAW_PATH: default                                   # Path to streamflow raw data
+STREAMFLOW_RAW_NAME: default                                   # Name of streamflow raw data file
+STREAMFLOW_PROCESSED_PATH: default                             # Path to streamflow processed dataset. If default, uses self.data_dir / observations / streamflow / preprocessed / config['DOMAIN_NAME']_streamflow_processed.csv
+HYDAT_PATH: /work/comphyd_lab/data/geospatial-data/hydat/Hydat.sqlite3 #Path to HYDAT database
+
+
+### ============================================= 6. Optimization settings: ===============================================================
+
+OPTIMIZATION_METHODS: [iteration]                   # Methods to optimize the model performance, options: 'emulation', 'iteration'
+
+# Iterative optimization settings
+ITERATIVE_OPTIMIZATION_ALGORITHM: DDS                           # Options DDS, PSO, ABC or SCE-UA (DDS recommended)
+NUMBER_OF_ITERATIONS: 1000                                       # Number of iterations for calibration
+DDS_R: 0.2                                                      # DDS perturbation parameter (0.1-0.3 typical)
+POPULATION_SIZE: 20                                             # Population size for genetic algorithms (not used for DDS)
+OPTIMIZATION_METRIC: KGE                                       # Kling-Gupta Efficiency
+TARGET_METRIC: KGE                                             # Target metric for optimization
+
+  # -- DDS specific settings
+ASYNC_DDS_POOL_SIZE: 10                                        # Size of shared solution pool
+ASYNC_DDS_BATCH_SIZE: 10                                       # Evaluations per batch
+MAX_STAGNATION_BATCHES: 5                                     # Stop after N batches without improvement

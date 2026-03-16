@@ -8,6 +8,16 @@ from unittest.mock import MagicMock
 
 import pytest
 
+
+# Auto-apply the "unit" marker to every test collected under tests/unit/
+# so that ``pytest -m unit`` picks up the full suite without requiring
+# each test file to declare the marker explicitly.
+def pytest_collection_modifyitems(items):
+    unit_marker = pytest.mark.unit
+    for item in items:
+        if "unit" not in {m.name for m in item.iter_markers()}:
+            item.add_marker(unit_marker)
+
 # ============================================================================
 # Common Mock Fixtures
 # ============================================================================

@@ -1,0 +1,61 @@
+# Large Sample Study - FUSE template (Section 3.7, Figure 11)
+# 59 Icelandic catchments from LamaH-Ice
+# Replace DOMAIN_ID with catchment identifier
+
+system:
+  data_dir: ./data/
+  code_dir: ./
+domain:
+  name: DOMAIN_ID
+  experiment_id: run_3
+  time_start: 2000-01-01 03:00
+  time_end: 2008-12-31 21:00
+  calibration_period: 2001-01-01, 2007-12-31
+  evaluation_period: 2008-01-01, 2008-12-31
+  spinup_period: 2000-01-01, 2000-12-31
+  definition_method: lumped
+  delineation:
+    routing: lumped
+    geofabric_type: TDX
+    stream_threshold: 5000
+  discretization: GRUs
+forcing:
+  dataset: CARRA
+  time_step_size: 3600
+model:
+  hydrological_model: FUSE
+  routing_model: none
+  fuse:
+    spatial_mode: lumped
+    decision_options:
+      RFERR:
+      - additive_e
+      - multiplc_e
+      ARCH1:
+      - tension1_1
+      ARCH2:
+      - tens2pll_2
+      QSURF:
+      - arno_x_vic
+      - prms_varnt
+      QPERC:
+      - perc_f2sat
+      ESOIL:
+      - sequential
+      QINTF:
+      - intflwnone
+      Q_TDH:
+      - rout_gamma
+      SNOWM:
+      - temp_index
+    params_to_calibrate: MAXWATR_1,MAXWATR_2,BASERTE,QB_POWR,TIMEDELAY,PERCRTE,FRACTEN,RTFRAC1,MBASE,MFMAX,MFMIN,PXTEMP,LAPSE
+optimization:
+  methods:
+  - iteration
+  algorithm: DDS
+  iterations: 1000
+  metric: KGE
+  skip_warm_start: true
+evaluation:
+  analyses:
+  - decision_analysis

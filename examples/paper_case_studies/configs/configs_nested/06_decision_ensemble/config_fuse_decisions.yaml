@@ -1,0 +1,63 @@
+# Experiment 6: Model Decision Ensemble (Section 3.5)
+# Uses FUSE to enumerate 64 model structure combinations
+# Produces Figure 9: decision tree performance spread
+
+system:
+  data_dir: ./data/
+  code_dir: ./
+domain:
+  name: Bow_at_Banff_lumped_era5
+  experiment_id: fuse_decision_ensemble
+  time_start: 2002-01-01 01:00
+  time_end: 2009-12-31 23:00
+  calibration_period: 2004-01-01, 2007-12-31
+  evaluation_period: 2008-01-01, 2009-12-31
+  spinup_period: 2002-01-01, 2003-12-31
+  pour_point_coords: 51.1722/-115.5717
+  bounding_box_coords: 51.76/-116.55/50.95/-115.5
+  definition_method: lumped
+  delineation:
+    routing: lumped
+  discretization: GRUs
+data:
+  streamflow_data_provider: WSC
+forcing:
+  dataset: ERA5
+model:
+  hydrological_model: FUSE
+  routing_model: none
+  fuse:
+    spatial_mode: lumped
+    decision_options:
+      RFERR:
+      - additive_e
+      - multiplc_e
+      ARCH1:
+      - tension1_1
+      ARCH2:
+      - tens2pll_2
+      QSURF:
+      - arno_x_vic
+      - prms_varnt
+      QPERC:
+      - perc_f2sat
+      ESOIL:
+      - sequential
+      QINTF:
+      - intflwnone
+      Q_TDH:
+      - rout_gamma
+      SNOWM:
+      - temp_index
+    params_to_calibrate: MAXWATR_1,MAXWATR_2,BASERTE,QB_POWR,TIMEDELAY,PERCRTE,FRACTEN,RTFRAC1,MBASE,MFMAX,MFMIN,PXTEMP,LAPSE
+optimization:
+  methods:
+  - iteration
+  algorithm: DDS
+  iterations: 1000
+  metric: KGE
+evaluation:
+  streamflow:
+    station_id: 05BB001
+  analyses:
+  - decision_analysis

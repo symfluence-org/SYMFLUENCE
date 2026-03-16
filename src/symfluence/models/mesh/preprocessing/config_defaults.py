@@ -102,13 +102,13 @@ class MESHConfigDefaults:
 
     # meshflow expects: standard_name -> actual_file_variable_name
     FORCING_VARS: Dict[str, str] = {
-        "air_pressure": "airpres",
-        "specific_humidity": "spechum",
-        "air_temperature": "airtemp",
-        "wind_speed": "windspd",
-        "precipitation": "pptrate",
-        "shortwave_radiation": "SWRadAtm",
-        "longwave_radiation": "LWRadAtm",
+        "air_pressure": "surface_air_pressure",
+        "specific_humidity": "specific_humidity",
+        "air_temperature": "air_temperature",
+        "wind_speed": "wind_speed",
+        "precipitation": "precipitation_flux",
+        "shortwave_radiation": "surface_downwelling_shortwave_flux",
+        "longwave_radiation": "surface_downwelling_longwave_flux",
     }
 
     # Units from source data

@@ -1,0 +1,159 @@
+### ============================================= SYMFLUENCE configuration file ============================================================
+# GR4J+CemaNeige Configuration for LamaH-Ice Domain 104 - Large Sample Study
+### ============================================= 1. Global settings: =====================================================================
+
+# Main paths
+
+system:
+  data_dir: ./data/
+  code_dir: ./
+  num_processes: 1
+  force_run_all_steps: false
+domain:
+  name: '104'
+  bounding_box_coords: 65.17750991600352/-18.95790606072053/64.5568432400582/-17.77939148964684
+  experiment_id: run_gr_v2
+  time_start: 2000-01-01 03:00
+  time_end: 2008-12-31 21:00
+  calibration_period: 2001-01-01, 2007-12-31
+  evaluation_period: 2008-01-01, 2008-12-31
+  spinup_period: 2000-01-01, 2000-12-31
+  definition_method: lumped
+  delineation:
+    routing: lumped
+    geofabric_type: TDX
+    stream_threshold: 5000
+    lumped_watershed_method: TauDEM
+    cleanup_intermediate_files: true
+    delineate_by_pourpoint: true
+    move_outlets_max_distance: 200
+  min_gru_size: 1
+  discretization: GRUS
+  elevation_band_size: 200
+  min_hru_size: 4
+  radiation_class_number: 5
+  aspect_class_number: 8
+  aspect_path: default
+  land_class_name: default
+  data_access: CLOUD
+data:
+  streamflow_data_provider: LAMAH_ICE
+  lamah_ice:
+    domain_id: 104
+forcing:
+  dataset: CARRA
+  variables: default
+  measurement_height: 2
+  time_step_size: 10800
+  apply_lapse_rate: true
+  lapse_rate: 0.0065
+  shape_lat_name: lat
+  shape_lon_name: lon
+  supplement: false
+  carra_domain: west_domain
+model:
+  hydrological_model: GR
+  routing_model: none
+  gr:
+    spatial_mode: lumped
+    params_to_calibrate: X1,X2,X3,X4,CTG,Kf,Gratio,Albedo_diff
+    gr4j_param_bounds:
+      X1:
+      - 100
+      - 1500
+      X2:
+      - -5.0
+      - 15.0
+      X3:
+      - 20
+      - 500
+      X4:
+      - 0.5
+      - 10.0
+      CTG:
+      - 0.0
+      - 1.0
+      Kf:
+      - 0.5
+      - 20.0
+      Gratio:
+      - 0.01
+      - 200.0
+      Albedo_diff:
+      - 0.001
+      - 1.0
+    model_type: GR4J
+optimization:
+  methods:
+  - iteration
+  algorithm: DDS
+  iterations: 1000
+  dds:
+    r: 0.2
+    async_pool_size: 10
+    async_batch_size: 10
+    max_stagnation_batches: 5
+  metric: KGE
+  skip_warm_start: true
+  target_metric: KGE
+evaluation:
+  sim_reach_id: 1
+  lamah_ice:
+    path: ./data/
+    download: true
+  streamflow:
+    raw_path: default
+    raw_name: default
+    processed_path: default
+paths:
+  catchment_path: default
+  catchment_name: default
+  catchment_lat: center_lat
+  catchment_lon: center_lon
+  catchment_area: HRU_area
+  catchment_hruid: HRU_ID
+  catchment_gruid: GRU_ID
+  river_basins_path: default
+  river_basins_name: default
+  river_basin_rm_gruid: GRU_ID
+  river_basin_hru_to_seg: gru_to_seg
+  river_basin_area: GRU_area
+  river_network_path: default
+  river_network_name: default
+  river_network_length: Length
+  river_network_segid: LINKNO
+  river_network_downsegid: DSLINKNO
+  river_network_slope: Slope
+  output_basins_path: default
+  output_rivers_path: default
+  dem_path: default
+  dem_name: default
+  source_geofabric_basins_path: default
+  source_geofabric_rivers_path: default
+  taudem_dir: default
+  output_dir: default
+  catchment_plot_dir: default
+  soil_class_path: default
+  soil_class_name: default
+  land_class_path: default
+  radiation_path: default
+  datatool_path: default
+  gistool_path: default
+  easymore_client: easymore cli
+  datatool_dataset_root: default
+  gistool_dataset_root: default
+  tool_cache: default
+  easymore_cache: default
+  easymore_job_conf: default
+  gistool_lib_path: default
+  forcing_path: default
+  intersect_soil_path: default
+  intersect_soil_name: default
+  intersect_routing_path: default
+  intersect_routing_name: default
+  intersect_dem_path: default
+  intersect_dem_name: default
+  intersect_land_path: default
+  intersect_land_name: default
+  simulations_path: default
+  observations_path: default

@@ -20,6 +20,7 @@ import rasterstats
 from pyproj import CRS
 from rasterio.mask import mask
 from shapely.geometry import MultiPolygon, Polygon, shape
+from shapely.validation import make_valid
 
 from symfluence.core.exceptions import ShapefileError
 from symfluence.core.path_resolver import PathResolverMixin
@@ -535,10 +536,10 @@ class DomainDiscretizer(PathResolverMixin):
                 final_geometry = MultiPolygon(polygons)
 
             # Step 4: Fix any topology errors (self-intersections, ring crossings).
-            # buffer(0) is a common trick to repair invalid geometries by
-            # rebuilding them through the buffer algorithm.
+            # make_valid() robustly repairs invalid geometries using the
+            # OGC MakeValid algorithm.
             if not final_geometry.is_valid:
-                final_geometry = final_geometry.buffer(0)
+                final_geometry = make_valid(final_geometry)
 
             if final_geometry.is_empty or not final_geometry.is_valid:
                 return None
@@ -638,7 +639,7 @@ class DomainDiscretizer(PathResolverMixin):
                 multipolygon = MultiPolygon(polygons)
 
             # Clean the geometry
-            multipolygon = multipolygon.buffer(0)  # Fix any topology issues
+            multipolygon = make_valid(multipolygon)  # Fix any topology issues
 
             if multipolygon.is_empty or not multipolygon.is_valid:
                 return None

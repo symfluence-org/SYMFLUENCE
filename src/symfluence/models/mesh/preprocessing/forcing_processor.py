@@ -191,12 +191,11 @@ class MESHForcingProcessor:
         try:
             with xr.open_dataset(forcing_nc) as ds:
                 rename_map = {
-                    'airpres': 'PRES', 'spechum': 'QA', 'airtemp': 'TA',
-                    'windspd': 'UV', 'pptrate': 'PRE', 'SWRadAtm': 'FSIN',
-                    'LWRadAtm': 'FLIN', 'air_pressure': 'PRES',
+                    'surface_air_pressure': 'PRES', 'air_pressure': 'PRES',
                     'specific_humidity': 'QA', 'air_temperature': 'TA',
-                    'wind_speed': 'UV', 'precipitation': 'PRE',
-                    'shortwave_radiation': 'FSIN', 'longwave_radiation': 'FLIN',
+                    'wind_speed': 'UV', 'precipitation_flux': 'PRE', 'precipitation': 'PRE',
+                    'surface_downwelling_shortwave_flux': 'FSIN', 'shortwave_radiation': 'FSIN',
+                    'surface_downwelling_longwave_flux': 'FLIN', 'longwave_radiation': 'FLIN',
                 }
 
                 existing_rename = {k: v for k, v in rename_map.items() if k in ds.variables}

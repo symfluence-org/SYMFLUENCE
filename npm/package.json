@@ -1,7 +1,7 @@
 {
   "name": "symfluence",
-  "version": "0.7.11",
-  "description": "Structure for Unifying Multiple Modeling Alternatives - Pre-compiled hydrological modeling tools",
+  "version": "0.8.0",
+  "description": "SYnergistic Modelling Framework for Linking and Unifying Earth-system Nexii for Computational Exploration - Pre-compiled hydrological modeling tools",
   "main": "index.js",
   "bin": {
     "symfluence": "bin/symfluence",
@@ -58,11 +58,11 @@
   "license": "GPL-3.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/DarriEy/SYMFLUENCE.git"
+    "url": "git+https://github.com/symfluence-org/SYMFLUENCE.git"
   },
-  "homepage": "https://github.com/DarriEy/SYMFLUENCE",
+  "homepage": "https://github.com/symfluence-org/SYMFLUENCE",
   "bugs": {
-    "url": "https://github.com/DarriEy/SYMFLUENCE/issues"
+    "url": "https://github.com/symfluence-org/SYMFLUENCE/issues"
   },
   "files": [
     "bin/",

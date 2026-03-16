@@ -1,0 +1,52 @@
+system:
+  data_dir: default
+  code_dir: default
+  num_processes: 1
+  force_run_all_steps: false
+  random_seed: 3042
+domain:
+  name: Bow_at_Banff_lumped_calibration_ensemble
+  pour_point_coords: 51.1722/-115.5717
+  bounding_box_coords: 51.76/-116.55/50.95/-115.5
+  definition_method: lumped
+  discretization: GRUs
+  delineation:
+    routing: lumped
+    geofabric_type: TDX
+    stream_threshold: 10000
+    lumped_watershed_method: TauDEM
+  time_start: 2002-01-01 01:00
+  time_end: 2009-12-31 23:00
+  calibration_period: 2004-01-01, 2007-12-31
+  evaluation_period: 2008-01-01, 2009-12-31
+  spinup_period: 2002-01-01, 2003-12-31
+  experiment_id: cal_ensemble_sacsma_dds_seed3042
+data:
+  streamflow_data_provider: WSC
+forcing:
+  dataset: RDRS
+  variables: default
+  measurement_height: 2
+  time_step_size: 3600
+model:
+  hydrological_model: SACSMA
+  routing_model: none
+  sacsma:
+    backend: jax
+    warmup_days: 730
+    snow_module: snow17
+    initial_params: SCF=1.05,PXTEMP=0.0,MFMAX=1.25,MFMIN=0.325,NMF=0.275,MBASE=0.5,TIPM=0.505,UADJ=0.105,PLWHC=0.155,DAYGM=0.15,UZTWM=75.5,UZFWM=75.5,UZK=0.425,LZTWM=250.5,LZFPM=500.5,LZFSM=500.5,LZPK=0.0255,LZSK=0.13,ZPERC=175.5,REXP=3.0,PFREE=0.4,PCTIM=0.05,ADIMP=0.2,RIVA=0.1,SIDE=0.25,RSERV=0.2
+optimization:
+  methods:
+  - iteration
+  metric: KGE
+  algorithm: DDS
+  iterations: 1000
+  dds:
+    r: 0.2
+  target_metric: KGE
+  skip_warm_start: true
+evaluation:
+  streamflow:
+    station_id: 05BB001
+    download_wsc: true

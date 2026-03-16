@@ -8,6 +8,7 @@ Captures framework version, git state, dependency versions, platform details,
 and per-step timing into a self-documenting run manifest (JSON).
 """
 
+import hashlib
 import json
 import platform
 import subprocess
@@ -69,6 +70,37 @@ def _dependency_versions() -> Dict[str, str]:
     return versions
 
 
+def _executable_info(exe_path: Path) -> Dict[str, Any]:
+    """Return size, SHA-256, mtime, and best-effort version for a binary."""
+    info: Dict[str, Any] = {"path": str(exe_path)}
+    try:
+        stat = exe_path.stat()
+        info["size_bytes"] = stat.st_size
+        info["mtime"] = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat()
+        sha = hashlib.sha256()
+        with open(exe_path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(65536), b""):
+                sha.update(chunk)
+        info["sha256"] = sha.hexdigest()
+    except OSError:
+        pass
+    # Best-effort version string
+    for flag in ("--version", "-v", "-V"):
+        try:
+            out = subprocess.check_output(
+                [str(exe_path), flag],
+                stderr=subprocess.STDOUT,
+                timeout=5,
+            ).decode(errors="replace").strip()
+            if out and len(out) < 500:
+                info["version_string"] = out.splitlines()[0]
+                break
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired,
+                FileNotFoundError, OSError, PermissionError):
+            continue
+    return info
+
+
 def _platform_info() -> Dict[str, str]:
     """Return OS, architecture, hostname, and Python version."""
     return {
@@ -107,6 +139,7 @@ class RunProvenance:
     end_utc: Optional[str] = None
     elapsed_seconds: Optional[float] = None
     steps: List[Dict[str, Any]] = field(default_factory=list)
+    executables: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     status: str = "running"
     errors: List[str] = field(default_factory=list)
 
@@ -125,6 +158,7 @@ class RunProvenance:
             "end_utc": self.end_utc,
             "elapsed_seconds": self.elapsed_seconds,
             "steps": list(self.steps),
+            "executables": dict(self.executables),
             "status": self.status,
             "errors": list(self.errors),
         }
@@ -158,6 +192,22 @@ def capture_provenance(
         dependencies=_dependency_versions(),
         start_utc=datetime.now(timezone.utc).isoformat(),
     )
+
+
+def record_executable(
+    prov: Optional[RunProvenance],
+    name: str,
+    exe_path: Path,
+) -> None:
+    """Capture file hash, size, and best-effort version for *exe_path*.
+
+    No-op when *prov* is ``None`` or the executable does not exist.
+    """
+    if prov is None:
+        return
+    exe_path = Path(exe_path)
+    if exe_path.exists():
+        prov.executables[name] = _executable_info(exe_path)
 
 
 def record_step(

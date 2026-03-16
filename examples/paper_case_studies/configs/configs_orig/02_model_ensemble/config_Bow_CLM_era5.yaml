@@ -1,0 +1,331 @@
+### ============================================= SYMFLUENCE configuration file ============================================================
+# CLM5 (Community Land Model / CTSM 5.x) Configuration for Bow at Banff
+# Multi-model ensemble experiment — most physics-heavy LSM in ensemble
+# 26 calibration parameters across namelist, params.nc, and surfdata files
+#
+### ============================================= 1. Global settings: =====================================================================
+
+# Main paths
+SYMFLUENCE_DATA_DIR: "/Users/darrieythorsson/compHydro/code/SYMFLUENCE_data/"
+SYMFLUENCE_CODE_DIR: "/Users/darrieythorsson/compHydro/code/SYMFLUENCE"
+
+# Experiment settings
+DOMAIN_NAME: Bow_at_Banff_lumped_era5                          # Name of experimental domain
+EXPERIMENT_ID: run_1                                           # Name of experiment
+EXPERIMENT_TIME_START: 2002-01-01 01:00                        # Start time of experiment
+EXPERIMENT_TIME_END: 2009-12-31 23:00                          # End time of experiment
+CALIBRATION_PERIOD: 2004-01-01, 2007-12-31                     # Calibration period
+EVALUATION_PERIOD:  2008-01-01, 2009-12-31                     # Evaluation period
+SPINUP_PERIOD: 2002-01-01, 2003-12-31
+
+# Computational settings
+MPI_PROCESSES: 1
+FORCE_RUN_ALL_STEPS: False
+
+### ============================================= 2. Geospatial settings: =================================================================
+# Coordinate settings
+POUR_POINT_COORDS: 51.1722/-115.5717
+BOUNDING_BOX_COORDS: 51.76/-116.55/50.95/-115.5
+
+# Pour point shapefile path
+POUR_POINT_SHP_PATH: default
+POUR_POINT_SHP_NAME: default
+
+# Domain representation settings
+DOMAIN_DEFINITION_METHOD: lumped
+ROUTING_DELINEATION: lumped
+
+GEOFABRIC_TYPE: TDX
+STREAM_THRESHOLD: 5000
+LUMPED_WATERSHED_METHOD: TauDEM
+CLEANUP_INTERMEDIATE_FILES: True
+DELINEATE_BY_POURPOINT: True
+MOVE_OUTLETS_MAX_DISTANCE: 200
+MIN_GRU_SIZE: 1
+
+# Domain discretization settings
+SUB_GRID_DISCRETIZATION: GRUS
+ELEVATION_BAND_SIZE: 200
+MIN_HRU_SIZE: 4
+RADIATION_CLASS_NUMBER: 5
+ASPECT_CLASS_NUMBER: 8
+ASPECT_PATH: default
+
+# Shapefile settings - Catchment shape
+CATCHMENT_PATH: default
+CATCHMENT_SHP_NAME: default
+CATCHMENT_SHP_LAT: center_lat
+CATCHMENT_SHP_LON: center_lon
+CATCHMENT_SHP_AREA: HRU_area
+CATCHMENT_SHP_HRUID: HRU_ID
+CATCHMENT_SHP_GRUID: GRU_ID
+
+# Shapefile settings - Basins shape
+RIVER_BASINS_PATH: default
+RIVER_BASINS_NAME: default
+RIVER_BASIN_SHP_RM_GRUID: GRU_ID
+RIVER_BASIN_SHP_HRU_TO_SEG: gru_to_seg
+RIVER_BASIN_SHP_AREA: GRU_area
+
+# Shapefile settings - River network shape
+RIVER_NETWORK_SHP_PATH: default
+RIVER_NETWORK_SHP_NAME: default
+RIVER_NETWORK_SHP_LENGTH: Length
+RIVER_NETWORK_SHP_SEGID: LINKNO
+RIVER_NETWORK_SHP_DOWNSEGID: DSLINKNO
+RIVER_NETWORK_SHP_SLOPE: Slope
+
+# Geospatial data paths
+OUTPUT_BASINS_PATH: default
+OUTPUT_RIVERS_PATH: default
+DEM_PATH: default
+DEM_NAME: default
+SOURCE_GEOFABRIC_BASINS_PATH: /Users/darrieythorsson/compHydro/data/CWARHM_data/domain_NorthAmerica/shapefiles/catchment/8020000010-basins.gpkg
+SOURCE_GEOFABRIC_RIVERS_PATH: /Users/darrieythorsson/compHydro/data/CWARHM_data/domain_NorthAmerica/shapefiles/river_network/8020000010-streamnet.gpkg
+TAUDEM_DIR: default
+OUTPUT_DIR: default
+CATCHMENT_PLOT_DIR: default
+SOIL_CLASS_PATH: default
+SOIL_CLASS_NAME: default
+LAND_CLASS_PATH: default
+LAND_CLASS_NAME: default
+RADIATION_PATH: default
+
+# Tool paths
+DATATOOL_PATH: default
+GISTOOL_PATH: default
+EASYMORE_CLIENT: easymore cli
+DATATOOL_DATASET_ROOT: /work/comphyd_lab/data/meteorological-data/
+DATATOOL_CACHE: /home/darri.eythorsson
+TOOL_ACCOUNT: def-mclark
+GISTOOL_DATASET_ROOT: /work/comphyd_lab/data/geospatial-data/
+GISTOOL_LIB_PATH: /work/comphyd_lab/envs/r-env/
+TOOL_CACHE: /home/darri.eythorsson/cache
+EASYMORE_CACHE: /home/darri.eythorsson/easymore/
+EASYMORE_JOB_CONF: "installs/MAF/02_model_agnostic_component/easymore-job.slurm"
+CLUSTER_JSON: /work/comphyd_lab/users/darri/data/SYMFLUENCE_data/installs/datatool/etc/clusters/ucalgary-arc.json
+
+### ============================================= 3. Model Agnostic settings: =============================================================
+
+# Forcing data settings
+FORCING_DATASET: ERA5
+FORCING_VARIABLES: default
+FORCING_MEASUREMENT_HEIGHT: 2
+FORCING_TIME_STEP_SIZE: 3600
+APPLY_LAPSE_RATE: True
+LAPSE_RATE: 0.0065
+FORCING_SHAPE_LAT_NAME: lat
+FORCING_SHAPE_LON_NAME: lon
+FORCING_PATH: default
+
+# EM-Earth forcing supplementation settings
+SUPPLEMENT_FORCING: False
+EM_EARTH_PRCP_DIR: "/anvil/datasets/meteorological/EM-Earth/EM_Earth_v1/deterministic_hourly/prcp/NorthAmerica"
+EM_EARTH_TMEAN_DIR: "/anvil/datasets/meteorological/EM-Earth/EM_Earth_v1/deterministic_hourly/tmean/NorthAmerica"
+
+# Intersection paths
+INTERSECT_SOIL_PATH: default
+INTERSECT_SOIL_NAME: catchment_with_soilclass.shp
+INTERSECT_ROUTING_PATH: default
+INTERSECT_ROUTING_NAME: catchment_with_routing_basins.shp
+INTERSECT_DEM_PATH: default
+INTERSECT_DEM_NAME: catchment_with_dem.shp
+INTERSECT_LAND_PATH: default
+INTERSECT_LAND_NAME: catchment_with_landclass.shp
+
+### ============================================= 4. Model Specific settings: =============================================================
+## Model settings
+HYDROLOGICAL_MODEL: CLM                                        # Community Land Model (CTSM 5.x)
+ROUTING_MODEL: none                                            # CLM uses internal QRUNOFF — no external routing
+
+# ============================================= CLM Settings =============================================================
+# CLM Installation
+CLM_INSTALL_PATH: default                                      # Path to CLM/CTSM installation, if default uses installs/clm/bin
+CLM_EXE: cesm.exe                                              # CLM executable name (compiled via CIME)
+
+# CLM Model Settings
+CLM_SPATIAL_MODE: lumped                                       # Spatial mode: lumped (single-point)
+SETTINGS_CLM_PATH: default                                     # Path to CLM settings directory
+CLM_COMPSET: I1PtClm50SpRs                                    # CESM compset: satellite phenology, present-day
+CLM_PARAMS_FILE: clm5_params.nc                                # CLM parameter file
+CLM_SURFDATA_FILE: surfdata_clm.nc                             # Surface data file
+CLM_DOMAIN_FILE: domain.nc                                     # Domain file
+
+# CLM Output Settings
+CLM_HIST_NHTFRQ: -24                                           # History output frequency (-24 = daily averages)
+CLM_HIST_MFILT: 365                                            # Max time samples per history file
+EXPERIMENT_OUTPUT_CLM: default                                 # Output directory
+
+# CLM Warmup / Spinup
+CLM_WARMUP_DAYS: 365                                            # 1 year (2003) — warm restart from default spinup, 1yr for soil adjustment
+CLM_TIMEOUT: 2400                                              # Model execution timeout (7-20 min sim + 60s finalization grace)
+
+# CLM Calibration Parameters (26 params across params.nc, surfdata, and lnd_in)
+# --- Hydrology: 8 params ---
+#   baseflow_scalar: Baseflow rate scalar [0.001-0.1] (log) — namelist
+#   fff: Decay factor for fractional saturated area [0.02-1.0] — params.nc
+#   wimp: Min soil moisture for transpiration [0.01-0.1] — params.nc
+#   ksatdecay: Ksat decay factor with depth [0.1-10.0] (log) — params.nc (pc)
+#   n_baseflow: Baseflow recession exponent [0.5-5.0] — params.nc
+#   perched_baseflow_scalar: Perched WT baseflow [1e-7-1e-3] (log) — params.nc
+#   interception_fraction: Canopy rain interception [0.2-1.0] — params.nc
+#   max_leaf_wetted_frac: Max leaf wetted fraction [0.01-0.2] — params.nc
+# --- Surfdata: 6 params ---
+#   fmax, bsw_mult, sucsat_mult, watsat_mult, hksat_mult, organic_max
+# --- Snow: 7 params ---
+#   fresh_snw_rds_max, snw_aging_bst, SNO_Z0MV, accum_factor,
+#   SNOW_DENSITY_MAX, SNOW_DENSITY_MIN, n_melt_coef, int_snow_max
+# --- Vegetation/PFT: 5 params ---
+#   medlynslope, slatop, flnr, froot_leaf, stem_leaf
+CLM_PARAMS_TO_CALIBRATE: baseflow_scalar,fff,wimp,ksatdecay,n_baseflow,e_ice,perched_baseflow_scalar,interception_fraction,max_leaf_wetted_frac,fmax,bsw_mult,sucsat_mult,watsat_mult,hksat_mult,organic_max,fresh_snw_rds_max,snw_aging_bst,SNO_Z0MV,accum_factor,SNOW_DENSITY_MAX,SNOW_DENSITY_MIN,n_melt_coef,int_snow_max,medlynslope,slatop,flnr,froot_leaf,stem_leaf,route_k
+
+# ============================================= End CLM Settings =========================================================
+
+# SUMMA settings (not used when HYDROLOGICAL_MODEL=CLM)
+SETTINGS_SUMMA_CONNECT_HRUS: yes
+SETTINGS_SUMMA_TRIALPARAM_N: 0
+SETTINGS_SUMMA_TRIALPARAM_1:
+
+DECISION_OPTIONS:
+  snowIncept:
+    - lightSnow
+    - stickySnow
+  compaction:
+    - consettl
+    - anderson
+  snowLayers:
+    - CLM_2010
+    - jrdn1991
+  alb_method:
+    - conDecay
+    - varDecay
+  thCondSnow:
+    - tyen1965
+    - melr1977
+    - jrdn1991
+    - smnv2000
+
+# SUMMA Paths and filenames
+SETTINGS_SUMMA_PATH: default
+SETTINGS_SUMMA_FILEMANAGER: fileManager.txt
+SETTINGS_SUMMA_FORCING_LIST: forcingFileList.txt
+SETTINGS_SUMMA_COLDSTATE: coldState.nc
+SETTINGS_SUMMA_TRIALPARAMS: trialParams.nc
+SETTINGS_SUMMA_ATTRIBUTES: attributes.nc
+SETTINGS_SUMMA_OUTPUT: outputControl.txt
+SETTINGS_SUMMA_BASIN_PARAMS_FILE: basinParamInfo.txt
+SETTINGS_SUMMA_LOCAL_PARAMS_FILE: localParamInfo.txt
+SUMMA_INSTALL_PATH: default
+SUMMA_EXE: summa_sundials.exe
+
+# Mizuroute settings
+SETTINGS_MIZU_WITHIN_BASIN: 0
+SETTINGS_MIZU_ROUTING_DT: 3600
+SETTINGS_MIZU_ROUTING_UNITS: m/s
+SETTINGS_MIZU_ROUTING_VAR: averageRoutedRunoff
+SETTINGS_MIZU_OUTPUT_FREQ: single
+SETTINGS_MIZU_OUTPUT_VARS: 1
+SETTINGS_MIZU_MAKE_OUTLET: n/a
+SETTINGS_MIZU_NEEDS_REMAP: no
+
+# Mizuroute Paths and filenames
+SETTINGS_MIZU_PATH: default
+INSTALL_PATH_MIZUROUTE: default
+EXE_NAME_MIZUROUTE: mizuroute.exe
+SETTINGS_MIZU_TOPOLOGY: topology.nc
+SETTINGS_MIZU_PARAMETERS: param.nml.default
+SETTINGS_MIZU_CONTROL_FILE: mizuroute.control
+SETTINGS_MIZU_REMAP: routing_remap.nc
+
+# Model results path
+EXPERIMENT_OUTPUT_SUMMA: default
+EXPERIMENT_OUTPUT_MIZUROUTE: default
+EXPERIMENT_LOG_MIZUROUTE: default
+EXPERIMENT_LOG_SUMMA: default
+
+# FUSE settings
+SETTINGS_FUSE_FILEMANAGER: fm_catch.txt
+FUSE_EXE: fuse.exe
+
+# GR settings
+GR_EXE: GR.r
+
+# HYPE settings
+SETTINGS_HYPE_PATH: default
+SETTINGS_HYPE_CONTROL_FILE: info.txt
+HYPE_INSTALL_PATH: default
+HYPE_EXE: hype
+
+### ============================================= 5. Evaluation settings: =================================================================
+## Simulation settings
+SIM_REACH_ID: 228
+SIMULATIONS_PATH: default
+
+# Observation data settings
+OBSERVATIONS_PATH: default
+
+# Observation data paths
+STREAMFLOW_DATA_PROVIDER: WSC
+DOWNLOAD_USGS_DATA: True
+DOWNLOAD_WSC_DATA: True
+STATION_ID: 05BB001
+STREAMFLOW_RAW_PATH: default
+STREAMFLOW_RAW_NAME: default
+STREAMFLOW_PROCESSED_PATH: default
+HYDAT_PATH: /work/comphyd_lab/data/geospatial-data/hydat/Hydat.sqlite3
+
+### ============================================= 6. Optimization settings: ===============================================================
+
+OPTIMIZATION_METHODS: [iteration]
+
+# Iterative optimization settings
+ITERATIVE_OPTIMIZATION_ALGORITHM: DDS
+NUMBER_OF_ITERATIONS: 1000
+DDS_R: 0.2
+POPULATION_SIZE: 20
+OPTIMIZATION_METRIC: KGE
+TARGET_METRIC: KGE
+
+# CLM Parameter Bounds for calibration (29 parameters)
+# 5 log-transformed: baseflow_scalar, ksatdecay, perched_baseflow_scalar, hksat_mult, SNO_Z0MV
+CLM_PARAM_BOUNDS:
+  # Hydrology (namelist + params.nc)
+  baseflow_scalar: [0.001, 0.1]                                # Baseflow rate scalar (log transform)
+  fff: [0.02, 1.0]                                             # Fractional saturated area decay
+  wimp: [0.01, 0.1]                                            # Min soil moisture for transpiration
+  ksatdecay: [0.1, 10.0]                                      # Ksat decay with depth (log transform)
+  n_baseflow: [0.5, 5.0]                                      # Baseflow recession exponent
+  e_ice: [1.0, 6.0]                                            # Frozen soil impedance (default 6 blocks winter drainage)
+  perched_baseflow_scalar: [0.0000001, 0.001]                  # Perched WT baseflow (log transform)
+  interception_fraction: [0.2, 1.0]                            # Canopy rain interception fraction
+  max_leaf_wetted_frac: [0.01, 0.2]                            # Max leaf wetted fraction
+  # Surfdata (soil hydraulic multipliers)
+  fmax: [0.0, 1.0]                                             # Max fractional saturated area
+  bsw_mult: [0.5, 2.0]                                        # Clapp-Hornberger B multiplier
+  sucsat_mult: [0.5, 2.0]                                     # Saturated suction multiplier
+  watsat_mult: [0.8, 1.2]                                     # Porosity multiplier (tight for stability)
+  hksat_mult: [0.1, 10.0]                                     # Saturated hydraulic cond. multiplier (log, tightened from [0.01, 100])
+  organic_max: [0.0, 130.0]                                    # Maximum organic matter
+  # Snow (params.nc + namelist)
+  fresh_snw_rds_max: [50.0, 200.0]                             # Fresh snow grain radius max
+  snw_aging_bst: [0.0, 200.0]                                  # Snow aging bias
+  SNO_Z0MV: [0.0001, 0.01]                                    # Snow surface roughness (log transform)
+  accum_factor: [-0.1, 0.1]                                    # Snow accumulation factor
+  SNOW_DENSITY_MAX: [250.0, 550.0]                             # Maximum snow density (kg/m3)
+  SNOW_DENSITY_MIN: [50.0, 200.0]                              # Minimum snow density (kg/m3)
+  n_melt_coef: [50.0, 500.0]                                  # Snowmelt coefficient
+  int_snow_max: [500.0, 5000.0]                                # Max integrated snowfall (namelist)
+  # Vegetation/PFT (params.nc)
+  medlynslope: [2.0, 12.0]                                    # Medlyn stomatal slope
+  slatop: [0.005, 0.06]                                        # Specific leaf area at canopy top
+  flnr: [0.05, 0.25]                                          # Fraction of leaf N in RuBisCO
+  froot_leaf: [0.5, 3.0]                                      # Fine root:leaf allocation
+  stem_leaf: [0.5, 3.0]                                        # Stem:leaf allocation
+  # Routing (post-processing — CLM produces instantaneous runoff)
+  route_k: [1.0, 40.0]                                        # Linear reservoir storage constant (days)
+
+# DDS specific settings
+DDS_R: 0.2
+ASYNC_DDS_POOL_SIZE: 1
+ASYNC_DDS_BATCH_SIZE: 1
+MAX_STAGNATION_BATCHES: 5

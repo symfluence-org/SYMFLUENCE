@@ -1,0 +1,130 @@
+# 4.12.2a SUMMA Calibration MPI - 8 ranks, 12 iters, ~96 evals
+# Lumped Bow at Banff, Async DDS strong scaling
+
+system:
+  data_dir: ./data/
+  code_dir: ./
+  random_seed: 42
+  num_processes: 8
+  force_run_all_steps: true
+domain:
+  name: Bow_at_Banff_lumped_era5
+  pour_point_coords: 51.1722/-115.5717
+  bounding_box_coords: 51.76/-116.55/50.95/-115.5
+  definition_method: lumped
+  discretization: GRUs
+  delineation:
+    routing: lumped
+    geofabric_type: TDX
+    stream_threshold: 5000
+    lumped_watershed_method: TauDEM
+  time_start: 2002-01-01 01:00
+  time_end: 2009-12-31 23:00
+  calibration_period: 2004-01-01, 2007-12-31
+  evaluation_period: 2008-01-01, 2009-12-31
+  spinup_period: 2002-01-01, 2003-12-31
+  experiment_id: calib_summa_mpi_100evals_np8
+data:
+  streamflow_data_provider: WSC
+forcing:
+  dataset: ERA5
+  variables: default
+  measurement_height: 2
+  time_step_size: 3600
+  apply_lapse_rate: true
+  lapse_rate: 0.0065
+model:
+  hydrological_model: SUMMA
+  routing_model: none
+  summa:
+    exe: summa_sundials.exe
+    install_path: default
+    connect_hrus: true
+    trialparam_n: 0
+    use_parallel: false
+    settings_path: default
+    filemanager: fileManager.txt
+    forcing_list: forcingFileList.txt
+    coldstate: coldState.nc
+    trialparams: trialParams.nc
+    attributes: attributes.nc
+    output: outputControl.txt
+    basin_params_file: basinParamInfo.txt
+    local_params_file: localParamInfo.txt
+    params_to_calibrate: albedoMax,albedoMinWinter,newSnowDenMin,Fcapil,k_soil,theta_sat,critSoilWilting,theta_res,f_impede
+    basin_params_to_calibrate: routingGammaShape,routingGammaScale
+    param_bounds:
+      albedoMax:
+      - 0.7
+      - 0.95
+      albedoMinWinter:
+      - 0.5
+      - 0.8
+      newSnowDenMin:
+      - 50
+      - 150
+      Fcapil:
+      - 0.001
+      - 0.1
+      k_soil:
+      - 1e-8
+      - 1e-4
+      theta_sat:
+      - 0.3
+      - 0.6
+      critSoilWilting:
+      - 0.05
+      - 0.3
+      theta_res:
+      - 0.01
+      - 0.15
+      f_impede:
+      - 0.5
+      - 5.0
+      routingGammaShape:
+      - 1.5
+      - 5.0
+      routingGammaScale:
+      - 100
+      - 10000
+  decision_options:
+    snowIncept:
+    - lightSnow
+    compaction:
+    - anderson
+    snowLayers:
+    - CLM_2010
+    alb_method:
+    - varDecay
+    thCondSnow:
+    - jrdn1991
+optimization:
+  methods:
+  - iteration
+  metric: KGE
+  algorithm: ASYNC-DDS
+  iterations: 12
+  dds:
+    r: 0.2
+    async_pool_size: 16
+    async_batch_size: 8
+    max_stagnation_batches: 20
+  target_metric: KGE
+  skip_warm_start: true
+evaluation:
+  streamflow:
+    station_id: 05BB001
+    download_wsc: true
+  sim_reach_id: 228
+paths:
+  observations_path: default
+  simulations_path: default
+  catchment_path: default
+  catchment_name: default
+  catchment_lat: center_lat
+  catchment_lon: center_lon
+  catchment_area: HRU_area
+  catchment_hruid: HRU_ID
+  catchment_gruid: GRU_ID
+  pour_point_path: default
+  pour_point_name: default

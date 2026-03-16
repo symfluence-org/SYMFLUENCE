@@ -31,9 +31,9 @@ def test_rdrs_v21_processing(rdrs_handler):
 
     processed = rdrs_handler.process_dataset(ds)
 
-    assert processed.airtemp.values[0] == 10.0 + PhysicalConstants.KELVIN_OFFSET
-    assert processed.airpres.values[0] == 1013.0 * 100
-    assert processed.pptrate.values[0] == 1.0 / 3600.0
+    assert processed.air_temperature.values[0] == 10.0 + PhysicalConstants.KELVIN_OFFSET
+    assert processed.surface_air_pressure.values[0] == 1013.0 * 100
+    assert processed.precipitation_flux.values[0] == 1.0 / 3600.0
 
 def test_rdrs_v31_processing(rdrs_handler):
     # Mock RDRS v3.1 dataset (short names, already in standard units)
@@ -49,6 +49,6 @@ def test_rdrs_v31_processing(rdrs_handler):
 
     processed = rdrs_handler.process_dataset(ds)
 
-    assert processed.airtemp.values[0] == 283.15
-    assert processed.airpres.values[0] == 101325.0
-    assert processed.pptrate.values[0] == 0.0001
+    assert processed.air_temperature.values[0] == 283.15
+    assert processed.surface_air_pressure.values[0] == 101325.0
+    assert processed.precipitation_flux.values[0] == 0.0001

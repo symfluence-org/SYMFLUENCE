@@ -231,6 +231,130 @@ configure_fortran() {
 configure_fortran
 
 # ================================================================
+# GLIBC Compatibility Workaround
+# ================================================================
+# On some HPC systems (e.g., ComputeCanada StdEnv/2023), the toolchain's
+# libgcc_s.so.1 was built against a newer GLIBC than is available on
+# compute nodes, causing "_dl_find_object@GLIBC_2.35" link failures.
+# Detect this and add -static-libgcc to avoid the dynamic libgcc_s dependency.
+fix_libgcc_glibc_mismatch() {
+    # Only check on Linux
+    [ "$(uname -s)" = "Linux" ] || return 0
+
+    local _test_fc="${FC:-${FC_EXE:-gfortran}}"
+    if ! command -v "$_test_fc" >/dev/null 2>&1; then
+        _test_fc="$(command -v gfortran 2>/dev/null)" || return 0
+    fi
+
+    # Find the libgcc_s.so.1 that the Fortran compiler would link against.
+    # Strategy 1: ask the compiler directly
+    local _libgcc_path=""
+    _libgcc_path="$("$_test_fc" -print-file-name=libgcc_s.so.1 2>/dev/null)" || true
+
+    # -print-file-name returns just the basename if it can't resolve it
+    if [ -z "$_libgcc_path" ] || [ "$_libgcc_path" = "libgcc_s.so.1" ] || [ ! -f "$_libgcc_path" ]; then
+        _libgcc_path=""
+    fi
+
+    # Strategy 2: search relative to the compiler binary
+    if [ -z "$_libgcc_path" ]; then
+        local _fc_real
+        _fc_real="$(readlink -f "$(command -v "$_test_fc")" 2>/dev/null)" || _fc_real="$(command -v "$_test_fc")"
+        local _fc_dir
+        _fc_dir="$(dirname "$_fc_real")"
+
+        # Try common gcc layouts (unquoted to allow glob expansion)
+        local _candidate
+        for _candidate in \
+            "$_fc_dir"/../lib/libgcc_s.so.1 \
+            "$_fc_dir"/../lib64/libgcc_s.so.1 \
+            "$_fc_dir"/../../../lib/gcc/x86_64-pc-linux-gnu/*/libgcc_s.so.1 \
+            "$_fc_dir"/../../lib/gcc/x86_64-pc-linux-gnu/*/libgcc_s.so.1; do
+            if [ -f "$_candidate" ]; then
+                _libgcc_path="$_candidate"
+                break
+            fi
+        done
+    fi
+
+    # Strategy 3: known Gentoo/ComputeCanada path
+    if [ -z "$_libgcc_path" ]; then
+        local _candidate
+        for _candidate in /cvmfs/soft.computecanada.ca/gentoo/2023/x86-64-v3/usr/lib/gcc/x86_64-pc-linux-gnu/*/libgcc_s.so.1; do
+            if [ -f "$_candidate" ]; then
+                _libgcc_path="$_candidate"
+                break
+            fi
+        done
+    fi
+
+    if [ -z "$_libgcc_path" ] || [ ! -f "$_libgcc_path" ]; then
+        return 0
+    fi
+
+    # Check if libgcc_s.so.1 references GLIBC_2.35+ symbols.
+    # Use strings as a universal fallback since objdump/readelf may not
+    # be available or may produce unexpected output formats.
+    local _needs_235=false
+    if strings "$_libgcc_path" 2>/dev/null | grep -qE "GLIBC_2\.(3[5-9]|[4-9][0-9])"; then
+        _needs_235=true
+    elif command -v readelf >/dev/null 2>&1; then
+        if readelf -V "$_libgcc_path" 2>/dev/null | grep -qE "GLIBC_2\.(3[5-9]|[4-9][0-9])"; then
+            _needs_235=true
+        fi
+    fi
+
+    if [ "$_needs_235" = "false" ]; then
+        return 0
+    fi
+
+    # libgcc_s.so.1 references GLIBC_2.35+.  Check whether LIBRARY_PATH
+    # includes system paths (like /usr/lib64) whose libc is older than the
+    # toolchain's — this is the actual conflict that cmake exposes by
+    # converting LIBRARY_PATH to -L flags.
+    #
+    # On normal Linux desktops, the toolchain and system libc match, so
+    # there's no conflict.  On HPC overlay systems (e.g., ComputeCanada
+    # Gentoo CVMFS), the overlay's compiler links against glibc 2.37+ but
+    # LIBRARY_PATH includes /usr/lib64 with the host's older glibc.
+    #
+    # We check /usr/lib64/libc.so.6 (the HOST libc, not the overlay's)
+    # to see if the system actually has GLIBC_2.35.  We can't use
+    # `ldd --version` because on overlay systems it reports the overlay's
+    # glibc version, not the host's.
+    local _host_libc=""
+    for _candidate in /usr/lib64/libc.so.6 /lib/x86_64-linux-gnu/libc.so.6 /lib64/libc.so.6; do
+        if [ -f "$_candidate" ]; then
+            _host_libc="$_candidate"
+            break
+        fi
+    done
+    if [ -n "$_host_libc" ]; then
+        # Check if host libc provides GLIBC_2.35
+        if strings "$_host_libc" 2>/dev/null | grep -qE "^GLIBC_2\.(3[5-9]|[4-9][0-9])$"; then
+            # Host libc is new enough — no mismatch
+            return 0
+        fi
+    fi
+
+    # Also add -static-libstdc++ because the overlay's libstdc++.so may
+    # reference newer GLIBC symbols (e.g. arc4random@GLIBC_2.36) that the
+    # host's libc doesn't provide.
+    local _static_flags="-static-libgcc -static-libstdc++"
+    echo "Detected GLIBC mismatch: toolchain needs GLIBC_2.35+ but host libc is older"
+    echo "  libgcc_s: $_libgcc_path"
+    echo "  host libc: ${_host_libc:-(not found)}"
+    echo "  Adding: $_static_flags"
+    export LDFLAGS="$_static_flags ${LDFLAGS:-}"
+    export FFLAGS="$_static_flags ${FFLAGS:-}"
+    export FCFLAGS="$_static_flags ${FCFLAGS:-}"
+    export CXXFLAGS="$_static_flags ${CXXFLAGS:-}"
+    export CMAKE_EXE_LINKER_FLAGS="$_static_flags ${CMAKE_EXE_LINKER_FLAGS:-}"
+    export CMAKE_SHARED_LINKER_FLAGS="$_static_flags ${CMAKE_SHARED_LINKER_FLAGS:-}"
+}
+fix_libgcc_glibc_mismatch
+
+# ================================================================
 # Library Discovery
 # ================================================================
 # On Windows conda, executables and libraries live under
@@ -788,7 +912,7 @@ detect_or_build_udunits2() {
 
     # Try common system locations (including multiarch lib dirs on Debian/Ubuntu)
     if [ "$UDUNITS2_FOUND" = false ]; then
-        for try_path in /usr /usr/local /opt/udunits2 $HOME/.local; do
+        for try_path in /usr /usr/local /opt/homebrew /opt/udunits2 $HOME/.local; do
             if [ ! -f "$try_path/include/udunits2.h" ]; then
                 continue
             fi
@@ -864,7 +988,7 @@ detect_or_build_udunits2() {
 
             # Check for expat in common locations
             if [ "$EXPAT_FOUND" = false ]; then
-                for expat_path in "$CONDA_PREFIX" /usr /usr/local; do
+                for expat_path in "$CONDA_PREFIX" /usr /usr/local /opt/homebrew; do
                     if [ -n "$expat_path" ] && [ -f "$expat_path/include/expat.h" ]; then
                         echo "Found EXPAT at: $expat_path"
                         EXPAT_FLAGS="CPPFLAGS=-I$expat_path/include LDFLAGS=-L$expat_path/lib"

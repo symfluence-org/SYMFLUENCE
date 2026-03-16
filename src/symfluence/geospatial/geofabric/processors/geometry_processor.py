@@ -14,6 +14,7 @@ from typing import Any, Optional
 
 from shapely.errors import GEOSException
 from shapely.geometry import MultiPolygon, Polygon
+from shapely.validation import make_valid
 
 
 class GeometryProcessor:
@@ -28,7 +29,7 @@ class GeometryProcessor:
         """
         Clean and validate geometry.
 
-        Uses buffer(0) to fix invalid geometries (self-intersections, etc.).
+        Uses make_valid() to fix invalid geometries (self-intersections, etc.).
 
         Args:
             geometry: Shapely geometry object
@@ -39,7 +40,7 @@ class GeometryProcessor:
         if geometry is None or not geometry.is_valid:
             return None
         try:
-            return geometry.buffer(0)
+            return make_valid(geometry)
         except (ValueError, AttributeError, GEOSException):
             # Shapely geometry operations can raise various errors
             return None

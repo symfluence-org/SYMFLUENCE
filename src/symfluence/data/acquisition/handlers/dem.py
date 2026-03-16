@@ -150,6 +150,11 @@ class _TileDownloadMixin:
                 "transform": out_trans,
                 "compress": compress,
             })
+            # Use BigTIFF when output exceeds ~4 GB (classic TIFF limit)
+            est_bytes = mosaic.dtype.itemsize * mosaic.shape[0] * mosaic.shape[1] * mosaic.shape[2]
+            if est_bytes > 3_500_000_000:
+                out_meta["driver"] = "GTiff"
+                out_meta["BIGTIFF"] = "YES"
             with rasterio.open(out_path, "w", **out_meta) as dest:
                 dest.write(mosaic)
             for src in src_files:

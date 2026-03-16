@@ -1,0 +1,386 @@
+# =============================================================================
+# CalLMIP Phase 1a — DK-Sor Test Site Configuration
+# =============================================================================
+#
+# Calibrated Land Model Intercomparison Project (CalLMIP)
+# Protocol v1.0 — MacBean & Deepak (2025)
+#
+# Model: SUMMA (Structure for Unifying Multiple Modeling Alternatives)
+# Site:  DK-Sor (Sorø, Denmark) — Deciduous Broadleaf Forest (DBF)
+#        55.4859°N, 11.6446°E — 18 years of flux tower data
+#
+# CalLMIP Experiment 1 (Required): NEE + LE (Qle) + H (Qh)
+#
+# This config uses DREAM (MCMC) for Bayesian calibration with:
+#   - Gaussian log-likelihood incorporating FLUXNET measurement uncertainties
+#   - Posterior parameter distributions for uncertainty quantification
+#   - Multi-variable calibration (NEE + Qle + Qh via composite likelihood)
+#
+# References:
+#   - CalLMIP Protocol: https://callmip-org.github.io
+#   - PLUMBER2: Abramowitz et al. (2024), Biogeosciences
+#   - FLUXNET: Pastorello et al. (2020), Scientific Data
+#   - DREAM: Vrugt et al. (2009), Int. J. Nonlinear Sci. Numer. Simul.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Experiment Metadata
+# ---------------------------------------------------------------------------
+EXPERIMENT_ID: callmip_phase1a
+DOMAIN_NAME: DK-Sor
+HYDROLOGICAL_MODEL: SUMMA
+
+# ---------------------------------------------------------------------------
+# Site Location (DK-Sor flux tower)
+# ---------------------------------------------------------------------------
+# Sorø, Denmark — Beech forest (Fagus sylvatica), managed since 1921
+# IGBP class: Deciduous Broadleaf Forest (DBF)
+# Elevation: ~40 m
+POUR_POINT_COORDS: 55.4859/11.6446
+DOMAIN_DEFINITION_METHOD: point
+ROUTING_DELINEATION: lumped
+SUB_GRID_DISCRETIZATION: GRUs
+
+# ---------------------------------------------------------------------------
+# Time Periods (CalLMIP Protocol Sections 5 & 9)
+# ---------------------------------------------------------------------------
+# DK-Sor has 18 years in PLUMBER2. CalLMIP requires:
+#   - Full time series for calibration
+#   - Last year reserved for temporal validation
+#   - Spin-up: cycle forcing to equilibrium at 1850 CO2 (285 ppm)
+#
+# NOTE: Adjust these dates to match the actual PLUMBER2 forcing file
+# for DK-Sor once downloaded from modelevaluation.org
+EXPERIMENT_TIME_START: '1997-01-01 00:00'
+EXPERIMENT_TIME_END:   '2014-12-31 23:00'
+CALIBRATION_PERIOD:    '1998-01-01, 2013-12-31'
+EVALUATION_PERIOD:     '2014-01-01, 2014-12-31'
+
+# Spin-up: first year used for model equilibration
+SPINUP_PERIOD: '1997-01-01, 1997-12-31'
+
+# Daily timestep for calibration (CalLMIP requires daily flux data)
+CALIBRATION_TIMESTEP: daily
+
+# ---------------------------------------------------------------------------
+# Forcing Data (CalLMIP Protocol Section 4)
+# ---------------------------------------------------------------------------
+# CalLMIP provides standardized PLUMBER2 forcing files in NetCDF format.
+# Variables: LWdown, SWdown, Tair, Qair, Rainf, Wind, PSurf
+#
+# NOTE: Set these paths to the actual PLUMBER2 forcing files
+# Downloaded from modelevaluation.org CalLMIP workspace
+# or https://github.com/callmip-org/Phase1/tree/main/Data
+DATA_ACCESS: local
+FORCING_DATASET: PLUMBER2
+FORCING_MEASUREMENT_HEIGHT: 2
+FORCING_TIME_STEP_SIZE: 1800
+
+# Path to PLUMBER2 forcing file (update after download)
+# FORCING_PATH: /path/to/callmip/data/DK-Sor_forcing.nc
+
+# ---------------------------------------------------------------------------
+# Observation / Flux Data (CalLMIP Protocol Section 5)
+# ---------------------------------------------------------------------------
+# CalLMIP provides daily flux observations with measurement uncertainties:
+#   - NEE (Net Ecosystem Exchange) + NEE_uc
+#   - Qle (Latent Heat Flux)       + Qle_uc
+#   - Qh  (Sensible Heat Flux)     + Qh_uc
+#
+# _uc columns = daily standard deviations from FLUXNET processing
+# (Pastorello et al., 2020)
+#
+# Flux data: https://github.com/callmip-org/Phase1/tree/main/Data/Phase1a-test
+#
+# NOTE: Update this path to the downloaded CalLMIP flux observation file
+# CALLMIP_FLUX_OBS_PATH: /path/to/callmip/data/DK-Sor_flux_obs.nc
+
+# FluxNet observation settings
+DOWNLOAD_FLUXNET: false
+FLUXNET_STATION: DK-Sor
+ET_OBS_SOURCE: fluxnet
+
+# Evaluation targets — all three fluxes for CalLMIP Experiment 1
+EVALUATION_DATA:
+  - et
+
+# ---------------------------------------------------------------------------
+# SUMMA Model Configuration
+# ---------------------------------------------------------------------------
+SUMMA_EXE: summa_sundials.exe
+SUMMA_INSTALL_PATH: default
+SETTINGS_SUMMA_GRU_COUNT: 1
+SETTINGS_SUMMA_USE_PARALLEL_SUMMA: false
+ROUTING_MODEL: none
+
+# SUMMA file manager settings
+SETTINGS_SUMMA_PATH: default
+SETTINGS_SUMMA_FILEMANAGER: fileManager.txt
+SETTINGS_SUMMA_FORCING_LIST: forcingFileList.txt
+SETTINGS_SUMMA_COLDSTATE: coldState.nc
+SETTINGS_SUMMA_TRIALPARAMS: trialParams.nc
+SETTINGS_SUMMA_ATTRIBUTES: attributes.nc
+SETTINGS_SUMMA_OUTPUT: outputControl.txt
+
+# SUMMA physics decisions for a temperate deciduous forest site
+# These should be reviewed for DK-Sor; starting with reasonable defaults
+SUMMA_DECISION_OPTIONS:
+  # Vegetation / canopy
+  stomResist:
+    - BallBerry            # Ball-Berry stomatal conductance
+  LAI_method:
+    - monTable             # Monthly LAI table (prescribed from MODIS/Copernicus)
+  vegeParTbl:
+    - MODIFIED_IGBP_MODIS_NOAH
+  veg_traits:
+    - Raupach_BLM1994
+  canopyEmis:
+    - difTrans
+  windPrfile:
+    - logBelowCanopy
+  canopySrad:
+    - BeersLaw
+
+  # Snow
+  snowIncept:
+    - lightSnow
+  compaction:
+    - anderson
+  snowLayers:
+    - CLM_2010
+  alb_method:
+    - conDecay
+  thCondSnow:
+    - smnv2000
+
+  # Soil
+  soilStress:
+    - NoahType
+  soilCatTbl:
+    - ROSETTA
+  f_Richards:
+    - mixdform
+  groundwatr:
+    - bigBuckt
+  hc_profile:
+    - constant
+  bcLowrSoiH:
+    - drainage
+  thCondSoil:
+    - funcSoilWet
+  spatial_gw:
+    - localColumn
+  bcUpprSoiH:
+    - liq_flux
+
+  # Numerics
+  subRouting:
+    - timeDlay
+  num_method:
+    - itertive
+  fDerivMeth:
+    - analytic
+  bcUpprTdyn:
+    - nrg_flux
+  bcLowrTdyn:
+    - zeroFlux
+  astability:
+    - louisinv
+
+# ---------------------------------------------------------------------------
+# Parameters to Calibrate
+# ---------------------------------------------------------------------------
+# CalLMIP Protocol Section 1.2: "Each group will decide which and how many
+# parameters they want to optimize."
+#
+# For SUMMA at a forest flux tower site, key parameters controlling
+# energy balance partitioning (NEE/Qle/Qh):
+#
+# Vegetation / Photosynthesis (controls NEE, transpiration → Qle):
+#   - vcmax25_canopyTop: Max carboxylation rate at 25°C (NEE sensitivity)
+#   - jmax25_scale: Electron transport scaling (NEE sensitivity)
+#   - minStomatalResistance: Minimum stomatal resistance (Qle sensitivity)
+#   - cond2photo_slope: Ball-Berry slope parameter (Qle/NEE coupling)
+#
+# Canopy structure (controls radiation partitioning → Qle/Qh):
+#   - summerLAI: Peak leaf area index
+#   - z0Canopy: Canopy roughness length (Qh sensitivity)
+#   - windReductionParam: Wind reduction in canopy (Qh sensitivity)
+#
+# Soil / root zone (controls soil evaporation, stress → Qle):
+#   - rootingDepth: Root zone depth
+#   - soilStressParam: Soil moisture stress parameter
+#
+# NOTE: Consider adding these for carbon cycle (NEE):
+#   - Kc25, Ko25: Michaelis-Menten constants
+#   - leafResistance: Leaf boundary layer resistance
+#   - critSoilWilting, critSoilTranspire: Soil moisture thresholds
+
+PARAMS_TO_CALIBRATE: >-
+  vcmax25_canopyTop,
+  jmax25_scale,
+  minStomatalResistance,
+  cond2photo_slope,
+  summerLAI,
+  z0Canopy,
+  windReductionParam,
+  rootingDepth,
+  soilStressParam
+
+# No basin/routing parameters needed for point simulation
+BASIN_PARAMS_TO_CALIBRATE: ''
+
+# ---------------------------------------------------------------------------
+# Optimization: DREAM (MCMC) for Bayesian Calibration
+# ---------------------------------------------------------------------------
+# CalLMIP Protocol Section 6: "All groups must provide posterior uncertainties
+# (or ensemble simulations) on variables optimised within the model output file."
+#
+# DREAM provides:
+#   1. Posterior parameter distributions (credible intervals)
+#   2. Ensemble of parameter sets for posterior prediction uncertainty
+#   3. Convergence diagnostics (Gelman-Rubin R-hat)
+#
+# The Gaussian log-likelihood uses FLUXNET measurement uncertainties (_uc)
+# combined with estimated model structural error.
+
+OPTIMIZATION_METHODS:
+  - iteration
+
+ITERATIVE_OPTIMIZATION_ALGORITHM: DREAM
+OPTIMIZATION_TARGET: et
+
+# ---------------------------------------------------------------------------
+# Likelihood-based calibration (new feature for CalLMIP)
+# ---------------------------------------------------------------------------
+# Instead of a standard metric (KGE, NSE), use Gaussian log-likelihood
+# that properly accounts for observation uncertainty.
+#
+# Total error variance per timestep:
+#   sigma_total² = sigma_obs² + sigma_model²
+#
+# where:
+#   sigma_obs  = FLUXNET _uc measurement uncertainty (provided per variable)
+#   sigma_model = MODEL_ERROR_BASE + MODEL_ERROR_FRACTION * |simulated|
+#
+# Log-likelihood:
+#   log L = -0.5 * sum[ (obs-sim)²/sigma_total² + log(2*pi*sigma_total²) ]
+
+OPTIMIZATION_METRIC: log_likelihood
+LIKELIHOOD_FUNCTION: gaussian
+
+# Model structural error estimation
+# These can be calibrated as additional parameters in a future iteration
+# Starting values based on typical land surface model errors:
+#   - Base error: ~5 W/m² for energy fluxes (instrument + representation)
+#   - Fractional: ~10% of simulated magnitude (model structural)
+MODEL_ERROR_BASE: 5.0
+MODEL_ERROR_FRACTION: 0.10
+
+# ---------------------------------------------------------------------------
+# DREAM Algorithm Settings
+# ---------------------------------------------------------------------------
+# Number of MCMC iterations — each iteration evaluates n_chains proposals
+# Total model evaluations ≈ NUMBER_OF_ITERATIONS × n_chains
+# For 9 parameters: n_chains = max(POPULATION_SIZE, 2*9+1) = 19
+# 2000 iterations × 19 chains = ~38,000 model evaluations
+# Adjust based on computational budget
+NUMBER_OF_ITERATIONS: 2000
+POPULATION_SIZE: 19
+
+# DREAM hyperparameters (Vrugt et al., 2009 defaults)
+DREAM_PAIRS: 3              # DE chain pairs for proposals
+DREAM_CR: 0.9               # Crossover probability
+DREAM_EPS: 1e-3             # Ergodicity noise
+DREAM_TEMPERATURE: 1.0      # T=1 for proper MCMC (not tempering)
+DREAM_OUTLIER_THRESHOLD: 2.0
+
+# ---------------------------------------------------------------------------
+# Parallel Processing
+# ---------------------------------------------------------------------------
+# DREAM chains are evaluated in parallel
+NUM_PROCESSES: 4
+
+# ---------------------------------------------------------------------------
+# Required SUMMA Output Variables (CalLMIP Protocol Section 6)
+# ---------------------------------------------------------------------------
+# All groups must output these variables at daily frequency:
+#   ○ NEE         — Net Ecosystem Exchange
+#   ○ Qle         — Latent Heat Flux
+#   ○ Qh          — Sensible Heat Flux
+#   ○ GPP         — Gross Primary Production
+#   ○ Reco        — Total Ecosystem Respiration
+#   ○ Transpiration
+#   ○ Bare Soil Evaporation
+#   ○ Ground Heat Flux
+#   ○ Land Surface Temperature
+#   ○ Total Column Soil Moisture
+#   ○ LAI
+#   ○ Total Aboveground Biomass
+#   ○ Total Soil Carbon
+#
+# Configure SUMMA outputControl.txt to include:
+#   scalarLatHeatTotal    | 1  (Qle, W/m²)
+#   scalarSenHeatTotal    | 1  (Qh, W/m²)
+#   scalarNEE             | 1  (NEE, if SUMMA carbon module enabled)
+#   scalarGPP             | 1  (GPP)
+#   scalarTotalET         | 1  (Total ET, kg/m²/s)
+#   scalarCanopyTranspiration | 1
+#   scalarGroundEvaporation   | 1
+#   scalarGroundHeatFlux  | 1
+#   scalarSurfaceTemp     | 1
+#   scalarTotalSoilWat    | 1  (column soil moisture, kg/m²)
+#   scalarLAI             | 1  (if prognostic)
+#
+# NOTE: SUMMA does not have a carbon cycle module. For NEE, GPP, Reco,
+# aboveground biomass, and soil carbon, an external carbon model or
+# simplified scheme would be needed. Discuss with CalLMIP steering
+# committee about SUMMA's scope for carbon variables.
+
+# ---------------------------------------------------------------------------
+# Output File Naming (CalLMIP Protocol Section 7)
+# ---------------------------------------------------------------------------
+# Required format:
+#   <model_name>.<model_version>_Expt<CalLMIP_expt_no.>_<SiteName>_<Cal/Val>_<Prior/Posterior>.nc
+#
+# Examples for this config:
+#   SUMMA.v3.0_Expt1_DK-Sor_Cal_Prior.nc
+#   SUMMA.v3.0_Expt1_DK-Sor_Cal_Posterior.nc
+#   SUMMA.v3.0_Expt1_DK-Sor_Val_Posterior.nc
+#
+# These will be uploaded to modelevaluation.org after calibration
+
+# ---------------------------------------------------------------------------
+# Paths (adjust to your environment)
+# ---------------------------------------------------------------------------
+SYMFLUENCE_DATA_DIR: default
+SYMFLUENCE_CODE_DIR: default
+OUTPUT_DIR: default
+
+# ---------------------------------------------------------------------------
+# System
+# ---------------------------------------------------------------------------
+LOG_LEVEL: INFO
+LOG_TO_FILE: true
+LOG_FORMAT: detailed
+FORCE_RUN_ALL_STEPS: false
+RANDOM_SEED: 42
+
+# ---------------------------------------------------------------------------
+# Post-processing: Posterior Ensemble
+# ---------------------------------------------------------------------------
+# After DREAM converges, the posterior parameter samples can be used to:
+# 1. Run SUMMA with N parameter sets drawn from the posterior
+# 2. Compute ensemble statistics (mean, std, percentiles) for each output variable
+# 3. Report as posterior uncertainty in the CalLMIP output file
+#
+# This is handled by the DREAM algorithm's output:
+#   - posterior_mean, posterior_std: Parameter-level statistics
+#   - credible_interval_95: 95% credible intervals per parameter
+#   - final_chains: Full chain states for ensemble generation
+#
+# To generate posterior ensemble simulations:
+#   python -m symfluence.tools.posterior_ensemble \
+#     --results-path <optimization_results.json> \
+#     --config config_callmip_DK-Sor.yaml \
+#     --n-samples 100

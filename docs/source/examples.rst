@@ -64,6 +64,6 @@ Best Practices
 
 References
 ----------
-- Example notebooks: `examples/ <https://github.com/DarriEy/SYMFLUENCE/tree/main/examples>`_
-- Configuration templates: `config_templates/ <https://github.com/DarriEy/SYMFLUENCE/tree/main/src/symfluence/resources/config_templates>`_
+- Example notebooks: `examples/ <https://github.com/symfluence-org/SYMFLUENCE/tree/main/examples>`_
+- Configuration templates: `config_templates/ <https://github.com/symfluence-org/SYMFLUENCE/tree/main/src/symfluence/resources/config_templates>`_
 - :doc:`configuration` — Configuration reference

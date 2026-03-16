@@ -10,7 +10,7 @@ grid structure, and shapefile creation.
 """
 
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 import geopandas as gpd
 import pandas as pd
@@ -32,13 +32,17 @@ class CASRHandler(BaseDatasetHandler):
         """
         CASR variable name mapping to standard names.
 
-        Uses centralized VariableStandardizer for consistency across the codebase.
+        Combines v3.1 and v3.2 rename maps so this handler can process
+        either version. Unit differences are handled by heuristic checks
+        in process_dataset().
 
         Returns:
             Dictionary mapping CASR variable names to standard names
         """
         standardizer = VariableStandardizer(self.logger)
-        return standardizer.get_rename_map('CASR')
+        combined = standardizer.get_rename_map('CASR_v3.1')
+        combined.update(standardizer.get_rename_map('CASR_v3.2'))
+        return combined
 
     def process_dataset(self, ds: xr.Dataset) -> xr.Dataset:
         """
@@ -56,84 +60,101 @@ class CASRHandler(BaseDatasetHandler):
         Returns:
             Processed dataset with standardized variables and units
         """
-        # Rename variables
+        # Rename variables, handling cases where multiple source vars map to the same target
         variable_mapping = self.get_variable_mapping()
-        existing_vars = {old: new for old, new in variable_mapping.items() if old in ds.variables}
-        ds = ds.rename(existing_vars)
+        rename_dict = {}
+        targets_seen = set(ds.variables)
+        for old, new in variable_mapping.items():
+            if old in ds.variables and new not in targets_seen:
+                rename_dict[old] = new
+                targets_seen.add(new)
+        ds = ds.rename(rename_dict)
 
         # Apply unit conversions with clean attributes
-        if 'airpres' in ds:
-            ds['airpres'] = ds['airpres'] * 100
-            ds['airpres'].attrs = {}
-            ds['airpres'].attrs.update({
+        # Use heuristic checks to handle both CaSR v3.1 (non-SI) and v3.2 (SI units)
+        if 'surface_air_pressure' in ds:
+            # v3.1 uses mb (typically 800-1100), v3.2 uses Pa (typically 80000-110000)
+            if ds['surface_air_pressure'].max() < 2000:  # Probably mb
+                ds['surface_air_pressure'] = ds['surface_air_pressure'] * 100
+            ds['surface_air_pressure'].attrs = {}
+            ds['surface_air_pressure'].attrs.update({
                 'units': 'Pa',
                 'long_name': 'air pressure',
                 'standard_name': 'air_pressure'
             })
 
-        if 'airtemp' in ds:
-            ds['airtemp'] = ds['airtemp'] + PhysicalConstants.KELVIN_OFFSET
-            ds['airtemp'].attrs = {}
-            ds['airtemp'].attrs.update({
+        if 'air_temperature' in ds:
+            # v3.1 uses °C (typically -40 to +50), v3.2 uses K (typically 220-330)
+            if ds['air_temperature'].max() < 100:  # Probably Celsius
+                ds['air_temperature'] = ds['air_temperature'] + PhysicalConstants.KELVIN_OFFSET
+            ds['air_temperature'].attrs = {}
+            ds['air_temperature'].attrs.update({
                 'units': 'K',
                 'long_name': 'air temperature',
                 'standard_name': 'air_temperature'
             })
 
-        if 'pptrate' in ds:
-            ds['pptrate'] = ds['pptrate'] * 1000 / UnitConversion.SECONDS_PER_HOUR
-            ds['pptrate'].attrs = {}
-            ds['pptrate'].attrs.update({
+        if 'precipitation_flux' in ds:
+            # v3.1 uses m/hr, v3.2 uses kg/m2/s (which is mm/s)
+            if ds['precipitation_flux'].max() > 0.1:  # Probably m/hr or mm/hr, not mm/s
+                ds['precipitation_flux'] = ds['precipitation_flux'] * 1000 / UnitConversion.SECONDS_PER_HOUR
+            ds['precipitation_flux'].attrs = {}
+            ds['precipitation_flux'].attrs.update({
                 'units': 'mm s-1',
                 'long_name': 'precipitation rate',
                 'standard_name': 'precipitation_rate'
             })
 
-        if 'windspd' in ds:
-            ds['windspd'] = ds['windspd'] * 0.514444
-            ds['windspd'].attrs = {}
-            ds['windspd'].attrs.update({
+        if 'wind_speed' in ds:
+            # v3.1 uses knots (typically 0-60), v3.2 uses m/s (typically 0-30)
+            # Knots to m/s: * 0.514444, so knots values are ~2x larger
+            if ds['wind_speed'].max() > 50:  # Probably knots
+                ds['wind_speed'] = ds['wind_speed'] * 0.514444
+            ds['wind_speed'].attrs = {}
+            ds['wind_speed'].attrs.update({
                 'units': 'm s-1',
                 'long_name': 'wind speed',
                 'standard_name': 'wind_speed'
             })
 
-        if 'windspd_u' in ds:
-            ds['windspd_u'] = ds['windspd_u'] * 0.514444
-            ds['windspd_u'].attrs = {}
-            ds['windspd_u'].attrs.update({
+        if 'eastward_wind' in ds:
+            if ds['eastward_wind'].max() > 50:  # Probably knots
+                ds['eastward_wind'] = ds['eastward_wind'] * 0.514444
+            ds['eastward_wind'].attrs = {}
+            ds['eastward_wind'].attrs.update({
                 'units': 'm s-1',
                 'long_name': 'eastward wind',
                 'standard_name': 'eastward_wind'
             })
 
-        if 'windspd_v' in ds:
-            ds['windspd_v'] = ds['windspd_v'] * 0.514444
-            ds['windspd_v'].attrs = {}
-            ds['windspd_v'].attrs.update({
+        if 'northward_wind' in ds:
+            if ds['northward_wind'].max() > 50:  # Probably knots
+                ds['northward_wind'] = ds['northward_wind'] * 0.514444
+            ds['northward_wind'].attrs = {}
+            ds['northward_wind'].attrs.update({
                 'units': 'm s-1',
                 'long_name': 'northward wind',
                 'standard_name': 'northward_wind'
             })
 
         # Radiation variables are already in W m**-2, just update attributes
-        if 'LWRadAtm' in ds:
-            ds['LWRadAtm'].attrs = {}
-            ds['LWRadAtm'].attrs.update({
+        if 'surface_downwelling_longwave_flux' in ds:
+            ds['surface_downwelling_longwave_flux'].attrs = {}
+            ds['surface_downwelling_longwave_flux'].attrs.update({
                 'long_name': 'downward longwave radiation at the surface',
                 'standard_name': 'surface_downwelling_longwave_flux_in_air'
             })
 
-        if 'SWRadAtm' in ds:
-            ds['SWRadAtm'].attrs = {}
-            ds['SWRadAtm'].attrs.update({
+        if 'surface_downwelling_shortwave_flux' in ds:
+            ds['surface_downwelling_shortwave_flux'].attrs = {}
+            ds['surface_downwelling_shortwave_flux'].attrs.update({
                 'long_name': 'downward shortwave radiation at the surface',
                 'standard_name': 'surface_downwelling_shortwave_flux_in_air'
             })
 
-        if 'spechum' in ds:
-            ds['spechum'].attrs = {}
-            ds['spechum'].attrs.update({
+        if 'specific_humidity' in ds:
+            ds['specific_humidity'].attrs = {}
+            ds['specific_humidity'].attrs.update({
                 'long_name': 'specific humidity',
                 'standard_name': 'specific_humidity'
             })
@@ -153,23 +174,68 @@ class CASRHandler(BaseDatasetHandler):
         """CASR requires merging of daily files into monthly files."""
         return True
 
+    def _detect_consolidated_file(self, raw_forcing_path: Path) -> Optional[Path]:
+        """
+        Check if raw forcing data is a single consolidated file (from OPeNDAP download).
+
+        The RDRSAcquirer (which also handles CaSR v3.2) saves data as
+        ``domain_{domain_name}_RDRS_{start}_{end}.nc``.
+
+        Returns:
+            Path to consolidated file if found, None otherwise
+        """
+        patterns = [
+            f"domain_{self.domain_name}_RDRS_*.nc",
+            f"{self.domain_name}_RDRS_*.nc",
+            f"domain_{self.domain_name}_CASR_*.nc",
+            f"{self.domain_name}_CASR_*.nc",
+            "*RDRS*.nc",
+            "*CASR*.nc",
+        ]
+        for pattern in patterns:
+            matches = sorted(raw_forcing_path.glob(pattern))
+            if len(matches) == 1:
+                return matches[0]
+        return None
+
+    def _has_daily_files(self, raw_forcing_path: Path, start_year: int, end_year: int) -> bool:
+        """Check if raw forcing data has daily files matching the expected pattern."""
+        file_name_pattern = f"domain_{self.domain_name}_*.nc"
+        all_files = list(raw_forcing_path.glob(file_name_pattern))
+        # Check if any files match the daily date pattern (YYYYMMDD in name)
+        for f in all_files:
+            name = f.name
+            for year in range(start_year - 1, end_year + 1):
+                if f"_{year}" in name and any(f"_{year}{m:02d}" in name for m in range(1, 13)):
+                    return True
+        return False
+
     def merge_forcings(self, raw_forcing_path: Path, merged_forcing_path: Path,
                       start_year: int, end_year: int) -> None:
         """
         Merge CASR forcing data files into monthly files.
 
-        Note: CASR files are all in the same directory, not organized by year.
+        Handles two acquisition formats:
+        - Cloud download (OPeNDAP): single consolidated NetCDF split into monthly files
+        - Traditional download: daily files in one directory merged into monthly files
 
         Args:
-            raw_forcing_path: Path to raw CASR data (all files in one directory)
+            raw_forcing_path: Path to raw CASR data
             merged_forcing_path: Path where merged monthly files will be saved
             start_year: Start year for processing
             end_year: End year for processing
         """
         self.logger.info("Starting to merge CASR forcing data")
 
-        years = range(start_year - 1, end_year + 1)
         merged_forcing_path.mkdir(parents=True, exist_ok=True)
+
+        # Check for consolidated file from OPeNDAP/cloud download first
+        consolidated_file = self._detect_consolidated_file(raw_forcing_path)
+        if consolidated_file and not self._has_daily_files(raw_forcing_path, start_year, end_year):
+            self._merge_from_consolidated(consolidated_file, merged_forcing_path, start_year, end_year)
+            return
+
+        years = range(start_year - 1, end_year + 1)
 
         # Get all CASR files in the raw_data directory
         file_name_pattern = f"domain_{self.domain_name}_*.nc"
@@ -266,23 +332,23 @@ class CASRHandler(BaseDatasetHandler):
                     var.encoding.clear()
 
                     # Set clean attributes based on variable name
-                    if var_name == 'airpres':
+                    if var_name == 'surface_air_pressure':
                         var.attrs = {'units': 'Pa', 'long_name': 'air pressure', 'standard_name': 'air_pressure'}
-                    elif var_name == 'airtemp':
+                    elif var_name == 'air_temperature':
                         var.attrs = {'units': 'K', 'long_name': 'air temperature', 'standard_name': 'air_temperature'}
-                    elif var_name == 'pptrate':
+                    elif var_name == 'precipitation_flux':
                         var.attrs = {'units': 'mm s-1', 'long_name': 'precipitation rate', 'standard_name': 'precipitation_rate'}
-                    elif var_name == 'windspd':
+                    elif var_name == 'wind_speed':
                         var.attrs = {'units': 'm s-1', 'long_name': 'wind speed', 'standard_name': 'wind_speed'}
-                    elif var_name == 'windspd_u':
+                    elif var_name == 'eastward_wind':
                         var.attrs = {'units': 'm s-1', 'long_name': 'eastward wind', 'standard_name': 'eastward_wind'}
-                    elif var_name == 'windspd_v':
+                    elif var_name == 'northward_wind':
                         var.attrs = {'units': 'm s-1', 'long_name': 'northward wind', 'standard_name': 'northward_wind'}
-                    elif var_name == 'LWRadAtm':
+                    elif var_name == 'surface_downwelling_longwave_flux':
                         var.attrs = {'units': 'W m-2', 'long_name': 'downward longwave radiation at the surface', 'standard_name': 'surface_downwelling_longwave_flux_in_air'}
-                    elif var_name == 'SWRadAtm':
+                    elif var_name == 'surface_downwelling_shortwave_flux':
                         var.attrs = {'units': 'W m-2', 'long_name': 'downward shortwave radiation at the surface', 'standard_name': 'surface_downwelling_shortwave_flux_in_air'}
-                    elif var_name == 'spechum':
+                    elif var_name == 'specific_humidity':
                         var.attrs = {'units': 'kg kg-1', 'long_name': 'specific humidity', 'standard_name': 'specific_humidity'}
 
                     # Consistently set missing values in encoding
@@ -299,6 +365,88 @@ class CASRHandler(BaseDatasetHandler):
                     ds.close()
 
         self.logger.info("CASR forcing data merging completed")
+
+    def _merge_from_consolidated(self, consolidated_file: Path, merged_forcing_path: Path,
+                                  start_year: int, end_year: int) -> None:
+        """
+        Split a single consolidated CASR file (from OPeNDAP download) into monthly files.
+
+        The RDRSAcquirer downloads CaSR v3.2 as a single file. This method splits it
+        into monthly files with variable renaming and unit conversions applied.
+
+        Args:
+            consolidated_file: Path to the consolidated NetCDF file
+            merged_forcing_path: Path where monthly files will be saved
+            start_year: Start year for processing
+            end_year: End year for processing
+        """
+        self.logger.info(f"Processing consolidated cloud file: {consolidated_file.name}")
+
+        ds = self.open_dataset(consolidated_file)
+        ds = self.process_dataset(ds)
+
+        years = range(start_year - 1, end_year + 1)
+
+        for year in years:
+            for month in range(1, 13):
+                start_time = pd.Timestamp(year, month, 1)
+                if month == 12:
+                    end_time = pd.Timestamp(year + 1, 1, 1) - pd.Timedelta(hours=1)
+                else:
+                    end_time = pd.Timestamp(year, month + 1, 1) - pd.Timedelta(hours=1)
+
+                monthly_data = ds.sel(time=slice(str(start_time), str(end_time)))
+
+                if monthly_data.sizes['time'] == 0:
+                    self.logger.debug(f"No data for {year}-{month:02d}, skipping")
+                    continue
+
+                # Ensure complete hourly time series and fill gaps (CASR is 3-hourly)
+                expected_times = pd.date_range(start=start_time, end=end_time, freq='h')
+                monthly_data = monthly_data.reindex(time=expected_times)
+                monthly_data = monthly_data.interpolate_na(dim='time', method='linear')
+                monthly_data = monthly_data.ffill(dim='time').bfill(dim='time')
+
+                monthly_data = self.setup_time_encoding(monthly_data)
+                monthly_data = self.add_metadata(
+                    monthly_data,
+                    'CASR data split from consolidated file into monthly files and variables standardized'
+                )
+
+                # Clean variable attributes
+                for var_name in monthly_data.data_vars:
+                    var = monthly_data[var_name]
+                    var.attrs.clear()
+                    var.encoding.clear()
+
+                    if var_name == 'surface_air_pressure':
+                        var.attrs = {'units': 'Pa', 'long_name': 'air pressure', 'standard_name': 'air_pressure'}
+                    elif var_name == 'air_temperature':
+                        var.attrs = {'units': 'K', 'long_name': 'air temperature', 'standard_name': 'air_temperature'}
+                    elif var_name == 'precipitation_flux':
+                        var.attrs = {'units': 'mm s-1', 'long_name': 'precipitation rate', 'standard_name': 'precipitation_rate'}
+                    elif var_name == 'wind_speed':
+                        var.attrs = {'units': 'm s-1', 'long_name': 'wind speed', 'standard_name': 'wind_speed'}
+                    elif var_name == 'eastward_wind':
+                        var.attrs = {'units': 'm s-1', 'long_name': 'eastward wind', 'standard_name': 'eastward_wind'}
+                    elif var_name == 'northward_wind':
+                        var.attrs = {'units': 'm s-1', 'long_name': 'northward wind', 'standard_name': 'northward_wind'}
+                    elif var_name == 'surface_downwelling_longwave_flux':
+                        var.attrs = {'units': 'W m-2', 'long_name': 'downward longwave radiation at the surface', 'standard_name': 'surface_downwelling_longwave_flux_in_air'}
+                    elif var_name == 'surface_downwelling_shortwave_flux':
+                        var.attrs = {'units': 'W m-2', 'long_name': 'downward shortwave radiation at the surface', 'standard_name': 'surface_downwelling_shortwave_flux_in_air'}
+                    elif var_name == 'specific_humidity':
+                        var.attrs = {'units': 'kg kg-1', 'long_name': 'specific humidity', 'standard_name': 'specific_humidity'}
+
+                    var.encoding['missing_value'] = -999.0
+                    var.encoding['_FillValue'] = -999.0
+
+                output_file = merged_forcing_path / f"CASR_monthly_{year}{month:02d}.nc"
+                monthly_data.to_netcdf(output_file)
+                self.logger.debug(f"Saved CASR monthly file: {output_file}")
+
+        ds.close()
+        self.logger.info("CASR forcing data merging from consolidated file completed")
 
     def create_shapefile(self, shapefile_path: Path, merged_forcing_path: Path,
                         dem_path: Path, elevation_calculator) -> Path:

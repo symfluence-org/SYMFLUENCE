@@ -1,0 +1,249 @@
+### ============================================= SYMFLUENCE configuration file ============================================================
+# jFUSE Model Configuration for Bow at Banff - Multi-model ensemble experiment
+# This configuration uses jFUSE (JAX-based FUSE) with gradient-based calibration
+### ============================================= 1. Global settings: =====================================================================
+
+# Main paths
+SYMFLUENCE_DATA_DIR: "/Users/darrieythorsson/compHydro/code/SYMFLUENCE_data/"
+SYMFLUENCE_CODE_DIR: "/Users/darrieythorsson/compHydro/code/SYMFLUENCE"
+
+# Experiment settings
+DOMAIN_NAME: Bow_at_Banff_lumped_era5
+EXPERIMENT_ID: run_1
+EXPERIMENT_TIME_START: 2002-01-01 01:00
+EXPERIMENT_TIME_END: 2009-12-31 23:00
+CALIBRATION_PERIOD: 2004-01-01, 2007-12-31
+EVALUATION_PERIOD:  2008-01-01, 2009-12-31
+SPINUP_PERIOD: 2002-01-01, 2003-12-31
+
+# Computational settings
+MPI_PROCESSES: 1
+FORCE_RUN_ALL_STEPS: False
+
+### ============================================= 2. Geospatial settings: =================================================================
+# Coordinate settings
+POUR_POINT_COORDS: 51.1722/-115.5717
+BOUNDING_BOX_COORDS: 51.76/-116.55/50.95/-115.5
+
+# Pour point shapefile path
+POUR_POINT_SHP_PATH: default
+POUR_POINT_SHP_NAME: default
+
+# Domain representation settings
+DOMAIN_DEFINITION_METHOD: lumped
+ROUTING_DELINEATION: lumped
+
+GEOFABRIC_TYPE: TDX
+STREAM_THRESHOLD: 5000
+LUMPED_WATERSHED_METHOD: TauDEM
+CLEANUP_INTERMEDIATE_FILES: True
+DELINEATE_BY_POURPOINT: True
+MOVE_OUTLETS_MAX_DISTANCE: 200
+MIN_GRU_SIZE: 1
+
+# Domain discretization settings
+SUB_GRID_DISCRETIZATION: GRUS
+ELEVATION_BAND_SIZE: 200
+MIN_HRU_SIZE: 4
+RADIATION_CLASS_NUMBER: 5
+ASPECT_CLASS_NUMBER: 8
+ASPECT_PATH: default
+
+# Shapefile settings - Catchment shape
+CATCHMENT_PATH: default
+CATCHMENT_SHP_NAME: default
+CATCHMENT_SHP_LAT: center_lat
+CATCHMENT_SHP_LON: center_lon
+CATCHMENT_SHP_AREA: HRU_area
+CATCHMENT_SHP_HRUID: HRU_ID
+CATCHMENT_SHP_GRUID: GRU_ID
+
+# Shapefile settings - Basins shape
+RIVER_BASINS_PATH: default
+RIVER_BASINS_NAME: default
+RIVER_BASIN_SHP_RM_GRUID: GRU_ID
+RIVER_BASIN_SHP_HRU_TO_SEG: gru_to_seg
+RIVER_BASIN_SHP_AREA: GRU_area
+
+# Shapefile settings - River network shape
+RIVER_NETWORK_SHP_PATH: default
+RIVER_NETWORK_SHP_NAME: default
+RIVER_NETWORK_SHP_LENGTH: Length
+RIVER_NETWORK_SHP_SEGID: LINKNO
+RIVER_NETWORK_SHP_DOWNSEGID: DSLINKNO
+RIVER_NETWORK_SHP_SLOPE: Slope
+
+# Geospatial data paths
+OUTPUT_BASINS_PATH: default
+OUTPUT_RIVERS_PATH: default
+DEM_PATH: default
+DEM_NAME: default
+SOURCE_GEOFABRIC_BASINS_PATH: /Users/darrieythorsson/compHydro/data/CWARHM_data/domain_NorthAmerica/shapefiles/catchment/8020000010-basins.gpkg
+SOURCE_GEOFABRIC_RIVERS_PATH: /Users/darrieythorsson/compHydro/data/CWARHM_data/domain_NorthAmerica/shapefiles/river_network/8020000010-streamnet.gpkg
+TAUDEM_DIR: default
+OUTPUT_DIR: default
+CATCHMENT_PLOT_DIR: default
+SOIL_CLASS_PATH: default
+SOIL_CLASS_NAME: default
+LAND_CLASS_PATH: default
+LAND_CLASS_NAME: default
+RADIATION_PATH: default
+
+# Tool paths
+DATATOOL_PATH: default
+GISTOOL_PATH: default
+EASYMORE_CLIENT: easymore cli
+DATATOOL_DATASET_ROOT: /work/comphyd_lab/data/meteorological-data/
+DATATOOL_CACHE: /home/darri.eythorsson
+TOOL_ACCOUNT: def-mclark
+GISTOOL_DATASET_ROOT: /work/comphyd_lab/data/geospatial-data/
+GISTOOL_LIB_PATH: /work/comphyd_lab/envs/r-env/
+TOOL_CACHE: /home/darri.eythorsson/cache
+EASYMORE_CACHE: /home/darri.eythorsson/easymore/
+EASYMORE_JOB_CONF: "installs/MAF/02_model_agnostic_component/easymore-job.slurm"
+CLUSTER_JSON: /work/comphyd_lab/users/darri/data/SYMFLUENCE_data/installs/datatool/etc/clusters/ucalgary-arc.json
+
+### ============================================= 3. Model Agnostic settings: =============================================================
+
+# Forcing data settings
+FORCING_DATASET: ERA5
+FORCING_VARIABLES: default
+FORCING_MEASUREMENT_HEIGHT: 2
+FORCING_TIME_STEP_SIZE: 3600
+APPLY_LAPSE_RATE: True
+LAPSE_RATE: 0.0065
+FORCING_SHAPE_LAT_NAME: lat
+FORCING_SHAPE_LON_NAME: lon
+FORCING_PATH: default
+
+# EM-Earth forcing supplementation settings
+SUPPLEMENT_FORCING: False
+EM_EARTH_PRCP_DIR: "/anvil/datasets/meteorological/EM-Earth/EM_Earth_v1/deterministic_hourly/prcp/NorthAmerica"
+EM_EARTH_TMEAN_DIR: "/anvil/datasets/meteorological/EM-Earth/EM_Earth_v1/deterministic_hourly/tmean/NorthAmerica"
+
+# Intersection paths
+INTERSECT_SOIL_PATH: default
+INTERSECT_SOIL_NAME: catchment_with_soilclass.shp
+INTERSECT_ROUTING_PATH: default
+INTERSECT_ROUTING_NAME: catchment_with_routing_basins.shp
+INTERSECT_DEM_PATH: default
+INTERSECT_DEM_NAME: catchment_with_dem.shp
+INTERSECT_LAND_PATH: default
+INTERSECT_LAND_NAME: catchment_with_landclass.shp
+
+### ============================================= 4. Model Specific settings: =============================================================
+
+# Model settings
+HYDROLOGICAL_MODEL: JFUSE
+ROUTING_MODEL: none
+
+# jFUSE Model settings
+JFUSE_MODEL_CONFIG_NAME: prms_gradient                         # Model structure optimized for gradients
+JFUSE_ENABLE_SNOW: True                                        # Enable snow processes
+JFUSE_SPATIAL_MODE: lumped                                     # Spatial mode: lumped, distributed, auto
+JFUSE_WARMUP_DAYS: 365                                         # Warmup period in days
+JFUSE_TIMESTEP_DAYS: 1.0                                       # Daily timestep
+JFUSE_JIT_COMPILE: True                                        # JAX JIT compilation
+JFUSE_USE_GPU: False                                           # GPU acceleration (if available)
+
+# jFUSE Calibration settings
+JFUSE_USE_GRADIENT_CALIBRATION: True                           # Use gradient-based optimization (ADAM/L-BFGS)
+JFUSE_CALIBRATION_METRIC: KGE                                  # KGE or NSE
+JFUSE_PARAMS_TO_CALIBRATE: S1_max,S2_max,ku,ki,ks,n,Ac_max,b,f_rchr,T_rain,T_melt,MFMAX,MFMIN,smooth_frac
+
+# jFUSE Parameter descriptions (prms_gradient config):
+# S1_max: Upper storage capacity [mm]
+# S2_max: Lower storage capacity [mm]
+# ku: Upper layer drainage coefficient [1/day]
+# ki: Interflow drainage coefficient [1/day]
+# ks: Baseflow drainage coefficient [1/day]
+# n: Baseflow exponent [-]
+# Ac_max: Maximum saturated area fraction [-]
+# b: Surface runoff shape parameter [-]
+# f_rchr: Recharge fraction [-]
+# T_rain: Rain/snow temperature threshold [C]
+# T_melt: Snowmelt temperature threshold [C]
+# MFMAX: Maximum melt factor [mm/C/day]
+# MFMIN: Minimum melt factor [mm/C/day]
+# smooth_frac: Overflow smoothing fraction [-]
+
+# jFUSE Initial states
+JFUSE_INITIAL_S1: 0.0                                          # Initial upper storage [mm]
+JFUSE_INITIAL_S2: 50.0                                         # Initial lower storage [mm]
+JFUSE_INITIAL_SNOW: 0.0                                        # Initial snow storage [mm SWE]
+
+# jFUSE Output settings
+JFUSE_SAVE_STATES: True                                        # Save internal states
+JFUSE_OUTPUT_FREQUENCY: daily                                  # Output frequency
+
+### ============================================= 5. Evaluation settings: =================================================================
+
+# Simulation settings
+SIM_REACH_ID: 228
+SIMULATIONS_PATH: default
+
+# Observation data settings
+OBSERVATIONS_PATH: default
+
+# Observation data paths
+STREAMFLOW_DATA_PROVIDER: WSC
+DOWNLOAD_USGS_DATA: True
+DOWNLOAD_WSC_DATA: True
+STATION_ID: 05BB001
+STREAMFLOW_RAW_PATH: default
+STREAMFLOW_RAW_NAME: default
+STREAMFLOW_PROCESSED_PATH: default
+HYDAT_PATH: /work/comphyd_lab/data/geospatial-data/hydat/Hydat.sqlite3
+
+### ============================================= 6. Optimization settings: ===============================================================
+
+OPTIMIZATION_METHODS: [iteration]
+
+# Single Site Emulation settings
+EMULATION_NUM_SAMPLES: 100
+EMULATION_SEED: 22
+EMULATION_SAMPLING_METHOD: lhs
+EMULATION_PARALLEL_ENSEMBLE: false
+EMULATION_MAX_PARALLEL_JOBS: 100
+EMULATION_SKIP_MIZUROUTE: false
+EMULATION_USE_ATTRIBUTES: false
+EMULATION_MAX_ITERATIONS': 3
+
+# Iterative optimization settings - Using gradient-based for jFUSE
+ITERATIVE_OPTIMIZATION_ALGORITHM: ADAM                         # ADAM for gradient-based (DDS fallback if gradients fail)
+NUMBER_OF_ITERATIONS: 500                                      # Fewer iterations needed with gradients
+OPTIMIZATION_METRIC: KGE
+TARGET_METRIC: KGE
+
+# GLUE specific settings
+GLUE_THRESHOLD: -3.0
+GLUE_SHAPING_FACTOR: 1.0
+
+# jFUSE parameter bounds
+JFUSE_PARAM_BOUNDS:
+  S1_max: [10, 500]                                            # Upper zone storage capacity [mm]
+  S2_max: [50, 2000]                                           # Lower zone storage capacity [mm]
+  ku: [0.01, 1.0]                                              # Upper zone drainage rate [1/day]
+  ki: [0.001, 0.5]                                             # Interflow drainage rate [1/day]
+  ks: [0.0001, 0.1]                                            # Baseflow drainage rate [1/day]
+  n: [1.0, 5.0]                                                # Brooks-Corey exponent [-]
+  b: [0.5, 3.0]                                                # Tension storage shape parameter [-]
+  Ac_max: [0.1, 1.0]                                           # Maximum saturated area fraction [-]
+  f_rchr: [0.0, 1.0]                                           # Recharge fraction [-]
+  T_rain: [-2.0, 4.0]                                          # Rain temperature threshold [C]
+  T_melt: [-2.0, 4.0]                                          # Melt temperature threshold [C]
+  MFMAX: [1.0, 8.0]                                            # Maximum melt factor [mm/C/day]
+  MFMIN: [0.5, 4.0]                                            # Minimum melt factor [mm/C/day]
+  smooth_frac: [0.0, 1.0]                                      # Smoothing fraction [-]
+
+# Gradient-based optimization settings
+ADAM_LEARNING_RATE: 0.01                                       # Initial learning rate
+ADAM_BETA1: 0.9                                                # First moment decay
+ADAM_BETA2: 0.999                                              # Second moment decay
+GRADIENT_CLIP_VALUE: 1.0                                       # Gradient clipping threshold
+
+# DDS fallback settings (if gradients unavailable)
+DDS_R: 0.2
+ASYNC_DDS_POOL_SIZE: 10
+ASYNC_DDS_BATCH_SIZE: 10
+MAX_STAGNATION_BATCHES: 5

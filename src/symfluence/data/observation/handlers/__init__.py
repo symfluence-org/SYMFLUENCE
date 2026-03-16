@@ -9,6 +9,14 @@ from multiple sources including satellite products, in-situ networks, and
 reanalysis datasets.
 """
 
+from .camels import (
+    CAMELSAUSStreamflowHandler,
+    CAMELSBRStreamflowHandler,
+    CAMELSCLStreamflowHandler,
+    CAMELSGBStreamflowHandler,
+    CAMELSUSStreamflowHandler,
+    load_camels_attributes,
+)
 from .canopy_height import (
     CanopyHeightHandler,
     GEDICanopyHeightHandler,
@@ -67,6 +75,13 @@ from .viirs_snow import VIIRSSnowHandler
 from .wsc import WSCStreamflowHandler
 
 __all__ = [
+    # CAMELS
+    "CAMELSUSStreamflowHandler",
+    "CAMELSBRStreamflowHandler",
+    "CAMELSCLStreamflowHandler",
+    "CAMELSAUSStreamflowHandler",
+    "CAMELSGBStreamflowHandler",
+    "load_camels_attributes",
     # CHIRPS
     "CHIRPSHandler",
     # Daymet

@@ -56,7 +56,7 @@ npm install symfluence
   brew install netcdf netcdf-fortran hdf5 gdal
   ```
 
-For detailed requirements, see [SYSTEM_REQUIREMENTS.md](https://github.com/DarriEy/SYMFLUENCE/blob/main/docs/SYSTEM_REQUIREMENTS.md).
+For detailed requirements, see [SYSTEM_REQUIREMENTS.md](https://github.com/symfluence-org/SYMFLUENCE/blob/main/docs/SYSTEM_REQUIREMENTS.md).
 
 ## Usage
 
@@ -136,7 +136,7 @@ symfluence help       # Show help
 2. **Check internet connection**: Downloads from GitHub Releases
 
 3. **Verify release exists**:
-   https://github.com/DarriEy/SYMFLUENCE/releases
+   https://github.com/symfluence-org/SYMFLUENCE/releases
 
 4. **Try manual installation**: See repository README
 
@@ -181,10 +181,10 @@ npm publish
 
 ## Documentation
 
-- **Repository**: https://github.com/DarriEy/SYMFLUENCE
-- **System Requirements**: [docs/SYSTEM_REQUIREMENTS.md](https://github.com/DarriEy/SYMFLUENCE/blob/main/docs/SYSTEM_REQUIREMENTS.md)
-- **Dynamic Linking Strategy**: [docs/DYNAMIC_LINKING_STRATEGY.md](https://github.com/DarriEy/SYMFLUENCE/blob/main/docs/DYNAMIC_LINKING_STRATEGY.md)
-- **Issues**: https://github.com/DarriEy/SYMFLUENCE/issues
+- **Repository**: https://github.com/symfluence-org/SYMFLUENCE
+- **System Requirements**: [docs/SYSTEM_REQUIREMENTS.md](https://github.com/symfluence-org/SYMFLUENCE/blob/main/docs/SYSTEM_REQUIREMENTS.md)
+- **Dynamic Linking Strategy**: [docs/DYNAMIC_LINKING_STRATEGY.md](https://github.com/symfluence-org/SYMFLUENCE/blob/main/docs/DYNAMIC_LINKING_STRATEGY.md)
+- **Issues**: https://github.com/symfluence-org/SYMFLUENCE/issues
 
 ## License
 

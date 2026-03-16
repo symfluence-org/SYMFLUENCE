@@ -272,11 +272,11 @@ class BenchmarkPreprocessor(ProjectContextMixin):
 
         # Convert precipitation from kg m⁻² s⁻¹ (mm/s) to mm per timestep-hour.
         # Forcing data is hourly; _process_to_daily() sums 24 values to get mm/day.
-        precip_data = averaged_ds['pptrate'] * 3600  # mm/s -> mm/hr
+        precip_data = averaged_ds['precipitation_flux'] * 3600  # mm/s -> mm/hr
 
         # Create DataFrame directly using to_series for better integration
         forcing_df = pd.DataFrame({
-            'temperature': averaged_ds['airtemp'].to_series(),
+            'temperature': averaged_ds['air_temperature'].to_series(),
             'precipitation': precip_data.to_series()
         })
         forcing_df.sort_index(inplace=True)

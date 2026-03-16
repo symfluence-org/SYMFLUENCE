@@ -446,6 +446,10 @@ class SummaForcingProcessor(BaseForcingProcessor):
             # Create a copy to avoid modifying the original
             dat = dat.copy()
 
+            # 0. NORMALIZE LEGACY VARIABLE NAMES TO CFIF
+            from symfluence.data.preprocessing.cfif.variables import normalize_to_cfif
+            dat = normalize_to_cfif(dat)
+
             # 1. FIX TIME COORDINATE FIRST
             dat = self._fix_time_coordinate_comprehensive(dat, file)
 
@@ -486,14 +490,14 @@ class SummaForcingProcessor(BaseForcingProcessor):
             })
 
             # Update precipitation units if present
-            if 'pptrate' in dat:
+            if 'precipitation_flux' in dat:
                 # Handle cases where intermediate remapping (e.g. EASYMORE)
                 # might have converted to m/s but SUMMA expects kg m-2 s-1 (mm/s)
-                if dat.pptrate.attrs.get('units') == 'm s-1' and float(dat.pptrate.mean()) < 1e-6:
+                if dat.precipitation_flux.attrs.get('units') == 'm s-1' and float(dat.precipitation_flux.mean()) < 1e-6:
                     self.logger.info(f"File {file}: Converting pptrate from m s-1 to kg m-2 s-1 (x1000)")
-                    dat['pptrate'] = dat['pptrate'] * 1000.0
+                    dat['precipitation_flux'] = dat['precipitation_flux'] * 1000.0
 
-                dat.pptrate.attrs.update({
+                dat.precipitation_flux.attrs.update({
                     'units': 'kg m-2 s-1',
                     'long_name': 'Mean total precipitation rate'
                 })
@@ -505,21 +509,21 @@ class SummaForcingProcessor(BaseForcingProcessor):
                 hru_lapse_values = lapse_values.loc[dat['hruId'].values, 'lapse_values'].values
 
                 # Create correction array more efficiently, handling both (time, hru) and (hru, time)
-                if dat['airtemp'].dims == ('time', 'hru'):
-                    lapse_correction = np.broadcast_to(hru_lapse_values[np.newaxis, :], dat['airtemp'].shape)
-                elif dat['airtemp'].dims == ('hru', 'time'):
-                    lapse_correction = np.broadcast_to(hru_lapse_values[:, np.newaxis], dat['airtemp'].shape)
+                if dat['air_temperature'].dims == ('time', 'hru'):
+                    lapse_correction = np.broadcast_to(hru_lapse_values[np.newaxis, :], dat['air_temperature'].shape)
+                elif dat['air_temperature'].dims == ('hru', 'time'):
+                    lapse_correction = np.broadcast_to(hru_lapse_values[:, np.newaxis], dat['air_temperature'].shape)
                 else:
-                    self.logger.warning(f"Unexpected airtemp dimensions {dat['airtemp'].dims}, skipping lapse correction")
+                    self.logger.warning(f"Unexpected airtemp dimensions {dat['air_temperature'].dims}, skipping lapse correction")
                     lapse_correction = 0
 
                 # Store original attributes
-                tmp_units = dat['airtemp'].attrs.get('units', 'K')
+                tmp_units = dat['air_temperature'].attrs.get('units', 'K')
 
                 # Apply correction (in-place operation)
                 if not isinstance(lapse_correction, int):
-                    dat['airtemp'].values += lapse_correction
-                dat.airtemp.attrs['units'] = tmp_units
+                    dat['air_temperature'].values += lapse_correction
+                dat.air_temperature.attrs['units'] = tmp_units
 
                 # Clean up temporary arrays
                 del hru_lapse_values, lapse_correction
@@ -547,6 +551,16 @@ class SummaForcingProcessor(BaseForcingProcessor):
                 'complevel': 1,
                 '_FillValue': None
             }
+
+            # Rename CFIF variables to SUMMA-native names for the Fortran executable
+            from symfluence.data.preprocessing.cfif.variables import CFIF_TO_SUMMA_MAPPING
+            summa_renames = {k: v for k, v in CFIF_TO_SUMMA_MAPPING.items() if k in dat}
+            if summa_renames:
+                dat = dat.rename(summa_renames)
+                # Update encoding keys to match new variable names
+                encoding = {
+                    summa_renames.get(k, k): v for k, v in encoding.items()
+                }
 
             dat.to_netcdf(output_path, encoding=encoding)
 
@@ -910,7 +924,7 @@ class SummaForcingProcessor(BaseForcingProcessor):
         Returns:
             Dataset with NaN values filled
         """
-        forcing_vars = ['airtemp', 'airpres', 'spechum', 'windspd', 'pptrate', 'LWRadAtm', 'SWRadAtm']
+        forcing_vars = ['air_temperature', 'surface_air_pressure', 'specific_humidity', 'wind_speed', 'precipitation_flux', 'surface_downwelling_longwave_flux', 'surface_downwelling_shortwave_flux']
 
         for var in forcing_vars:
             if var not in dataset:
@@ -926,19 +940,19 @@ class SummaForcingProcessor(BaseForcingProcessor):
                 nan_percentage = (nan_count / total_count) * 100
 
                 # Apply interpolation strategy based on variable type
-                if var == 'pptrate':
+                if var == 'precipitation_flux':
                     # For precipitation, fill NaN with 0 (no precipitation)
                     filled_data = var_data.fillna(0.0)
                     self.logger.debug(f"File {filename}: Filled {var} NaN values with 0")
 
-                elif var in ['SWRadAtm']:
+                elif var in ['surface_downwelling_shortwave_flux']:
                     # For solar radiation, interpolate during day, zero at night
                     filled_data = var_data.interpolate_na(dim='time', method='linear')
                     filled_data = filled_data.ffill(dim='time').bfill(dim='time')
                     filled_data = filled_data.fillna(0.0)
                     self.logger.debug(f"File {filename}: Interpolated {var} NaN values")
 
-                elif var == 'airtemp' and nan_percentage > 50:
+                elif var == 'air_temperature' and nan_percentage > 50:
                     # Special handling for CASR temperature pattern (high NaN percentage)
 
                     # Use scipy cubic interpolation for better results with sparse temperature data
@@ -1010,15 +1024,15 @@ class SummaForcingProcessor(BaseForcingProcessor):
 
                     # If still NaN, use reasonable defaults
                     if np.any(np.isnan(filled_data.values)):
-                        if var == 'airtemp':
+                        if var == 'air_temperature':
                             default_val = PhysicalConstants.KELVIN_OFFSET  # 0°C in Kelvin
-                        elif var == 'airpres':
+                        elif var == 'surface_air_pressure':
                             default_val = 101325.0  # Standard pressure in Pa
-                        elif var == 'spechum':
+                        elif var == 'specific_humidity':
                             default_val = 0.005  # Reasonable specific humidity
-                        elif var == 'windspd':
+                        elif var == 'wind_speed':
                             default_val = 2.0  # Light wind in m/s
-                        elif var == 'LWRadAtm':
+                        elif var == 'surface_downwelling_longwave_flux':
                             default_val = 300.0  # Reasonable longwave radiation
                         else:
                             default_val = 0.0
@@ -1056,26 +1070,26 @@ class SummaForcingProcessor(BaseForcingProcessor):
         # Common variable name aliases that need mapping
         name_mappings = {
             # Pressure variations
-            'pressure': 'airpres',
-            'press': 'airpres',
-            'sp': 'airpres',
-            'surface_pressure': 'airpres',
+            'pressure': 'surface_air_pressure',
+            'press': 'surface_air_pressure',
+            'sp': 'surface_air_pressure',
+            'surface_pressure': 'surface_air_pressure',
             # Humidity variations
-            'r2': 'relhum',
-            'rh': 'relhum',
-            'relative_humidity': 'relhum',
-            'rh2m': 'relhum',
-            '2m_relative_humidity': 'relhum',
+            'r2': 'relative_humidity',
+            'rh': 'relative_humidity',
+            'relative_humidity': 'relative_humidity',
+            'rh2m': 'relative_humidity',
+            '2m_relative_humidity': 'relative_humidity',
             # Temperature variations
-            't2m': 'airtemp',
-            'temp': 'airtemp',
-            'temperature': 'airtemp',
-            '2m_temperature': 'airtemp',
+            't2m': 'air_temperature',
+            'temp': 'air_temperature',
+            'temperature': 'air_temperature',
+            '2m_temperature': 'air_temperature',
             # Wind components
-            'u10': 'windspd_u',
-            'v10': 'windspd_v',
-            'u_component_of_wind': 'windspd_u',
-            'v_component_of_wind': 'windspd_v',
+            'u10': 'eastward_wind',
+            'v10': 'northward_wind',
+            'u_component_of_wind': 'eastward_wind',
+            'v_component_of_wind': 'northward_wind',
         }
 
         # Apply mappings for variables that exist
@@ -1201,24 +1215,28 @@ class SummaForcingProcessor(BaseForcingProcessor):
         SUMMA expects a full set of forcing variables, so add missing variables
         with reasonable defaults and log a warning.
         """
-        required_vars = ['airtemp', 'airpres', 'spechum', 'windspd', 'pptrate', 'LWRadAtm', 'SWRadAtm']
+        # Auto-rename legacy SUMMA-style variable names to CFIF if present
+        from symfluence.data.preprocessing.cfif.variables import normalize_to_cfif
+        dataset = normalize_to_cfif(dataset)
+
+        required_vars = ['air_temperature', 'surface_air_pressure', 'specific_humidity', 'wind_speed', 'precipitation_flux', 'surface_downwelling_longwave_flux', 'surface_downwelling_shortwave_flux']
         defaults = {
-            'airtemp': PhysicalConstants.KELVIN_OFFSET,   # 0°C in Kelvin
-            'airpres': 101325.0, # Standard pressure in Pa
-            'spechum': 0.005,    # Reasonable specific humidity
-            'windspd': 2.0,      # Light wind in m/s
-            'pptrate': 0.0,      # No precipitation
-            'LWRadAtm': 300.0,   # Reasonable longwave radiation W/m^2
-            'SWRadAtm': 0.0      # Default shortwave radiation W/m^2
+            'air_temperature': PhysicalConstants.KELVIN_OFFSET,   # 0°C in Kelvin
+            'surface_air_pressure': 101325.0, # Standard pressure in Pa
+            'specific_humidity': 0.005,    # Reasonable specific humidity
+            'wind_speed': 2.0,      # Light wind in m/s
+            'precipitation_flux': 0.0,      # No precipitation
+            'surface_downwelling_longwave_flux': 300.0,   # Reasonable longwave radiation W/m^2
+            'surface_downwelling_shortwave_flux': 0.0      # Default shortwave radiation W/m^2
         }
         units = {
-            'airtemp': 'K',
-            'airpres': 'Pa',
-            'spechum': 'kg/kg',
-            'windspd': 'm/s',
-            'pptrate': 'mm/s',
-            'LWRadAtm': 'W/m2',
-            'SWRadAtm': 'W/m2'
+            'air_temperature': 'K',
+            'surface_air_pressure': 'Pa',
+            'specific_humidity': 'kg/kg',
+            'wind_speed': 'm/s',
+            'precipitation_flux': 'mm/s',
+            'surface_downwelling_longwave_flux': 'W/m2',
+            'surface_downwelling_shortwave_flux': 'W/m2'
         }
 
         # Check for missing required variables and try to compute them
@@ -1229,34 +1247,34 @@ class SummaForcingProcessor(BaseForcingProcessor):
             computed_vars = []
 
             for var in missing_vars[:]:  # Use slice to allow modification during iteration
-                if var == 'spechum' and 'relhum' in dataset and 'airtemp' in dataset and 'airpres' in dataset:
+                if var == 'specific_humidity' and 'relative_humidity' in dataset and 'air_temperature' in dataset and 'surface_air_pressure' in dataset:
                     # Compute specific humidity from relative humidity
                     self.logger.info(f"File {filename}: Computing spechum from relhum, airtemp, airpres")
-                    dataset['spechum'] = self._compute_specific_humidity(
-                        dataset['airtemp'],
-                        dataset['relhum'],
-                        dataset['airpres']
+                    dataset['specific_humidity'] = self._compute_specific_humidity(
+                        dataset['air_temperature'],
+                        dataset['relative_humidity'],
+                        dataset['surface_air_pressure']
                     )
                     missing_vars.remove(var)
                     computed_vars.append(var)
 
-                elif var == 'windspd' and 'windspd_u' in dataset and 'windspd_v' in dataset:
+                elif var == 'wind_speed' and 'eastward_wind' in dataset and 'northward_wind' in dataset:
                     # Compute wind speed from components
                     self.logger.info(f"File {filename}: Computing windspd from windspd_u and windspd_v")
-                    dataset['windspd'] = self._compute_wind_speed(
-                        dataset['windspd_u'],
-                        dataset['windspd_v']
+                    dataset['wind_speed'] = self._compute_wind_speed(
+                        dataset['eastward_wind'],
+                        dataset['northward_wind']
                     )
                     missing_vars.remove(var)
                     computed_vars.append(var)
 
-                elif var == 'LWRadAtm' and 'airtemp' in dataset:
+                elif var == 'surface_downwelling_longwave_flux' and 'air_temperature' in dataset:
                     # Estimate longwave radiation from temperature
                     self.logger.warning(
                         f"File {filename}: LWRadAtm missing - estimating from airtemp. "
                         "This is a rough approximation and may affect model accuracy."
                     )
-                    dataset['LWRadAtm'] = self._estimate_longwave_radiation(dataset['airtemp'])
+                    dataset['surface_downwelling_longwave_flux'] = self._estimate_longwave_radiation(dataset['air_temperature'])
                     missing_vars.remove(var)
                     computed_vars.append(var)
 
@@ -1303,26 +1321,26 @@ class SummaForcingProcessor(BaseForcingProcessor):
         """
         # Define reasonable ranges for variables
         valid_ranges = {
-            'airtemp': (200.0, 350.0),      # -73°C to 77°C
-            'airpres': (50000.0, 110000.0), # 50-110 kPa
-            'spechum': (0.0, 0.1),          # 0-100 g/kg
-            'windspd': (0.0, 100.0),        # 0-100 m/s
-            'pptrate': (0.0, 0.1),          # 0-360 mm/hr in mm/s
-            'LWRadAtm': (50.0, 600.0),      # Longwave radiation W/m²
-            'SWRadAtm': (0.0, 1500.0)       # Shortwave radiation W/m²
+            'air_temperature': (200.0, 350.0),      # -73°C to 77°C
+            'surface_air_pressure': (50000.0, 110000.0), # 50-110 kPa
+            'specific_humidity': (0.0, 0.1),          # 0-100 g/kg
+            'wind_speed': (0.0, 100.0),        # 0-100 m/s
+            'precipitation_flux': (0.0, 0.1),          # 0-360 mm/hr in mm/s
+            'surface_downwelling_longwave_flux': (50.0, 600.0),      # Longwave radiation W/m²
+            'surface_downwelling_shortwave_flux': (0.0, 1500.0)       # Shortwave radiation W/m²
         }
 
         # Tolerances for clipping trivially out-of-range values (e.g., interpolation artifacts)
         # Values within this absolute tolerance of the boundary are clipped with a warning
         # Values beyond this tolerance trigger an error
         clip_tolerances = {
-            'airtemp': 1.0,        # 1 K
-            'airpres': 500.0,      # 500 Pa
-            'spechum': 0.001,      # 0.001 kg/kg
-            'windspd': 0.5,        # 0.5 m/s
-            'pptrate': 0.001,      # 0.001 mm/s
-            'LWRadAtm': 10.0,      # 10 W/m²
-            'SWRadAtm': 10.0,      # 10 W/m²
+            'air_temperature': 1.0,        # 1 K
+            'surface_air_pressure': 500.0,      # 500 Pa
+            'specific_humidity': 0.001,      # 0.001 kg/kg
+            'wind_speed': 0.5,        # 0.5 m/s
+            'precipitation_flux': 0.001,      # 0.001 mm/s
+            'surface_downwelling_longwave_flux': 10.0,      # 10 W/m²
+            'surface_downwelling_shortwave_flux': 10.0,      # 10 W/m²
         }
 
         out_of_range_errors = []
@@ -1362,18 +1380,18 @@ class SummaForcingProcessor(BaseForcingProcessor):
                 )
 
                 # Provide specific guidance based on variable
-                if var == 'airtemp':
+                if var == 'air_temperature':
                     if var_mean < 100:
                         error_details += "    → Temperature appears to be in °C, expected Kelvin. Add 273.15\n"
                     elif var_max > 350:
                         error_details += "    → Temperature values unrealistically high. Check source data.\n"
-                elif var == 'airpres':
+                elif var == 'surface_air_pressure':
                     if var_mean < 1000:
                         error_details += "    → Pressure appears to be in hPa or kPa, expected Pa. Multiply by 100 or 1000\n"
-                elif var == 'pptrate':
+                elif var == 'precipitation_flux':
                     if var_max > 0.1:
                         error_details += "    → Precipitation rate too high. Expected mm/s, got mm/day or mm/hour?\n"
-                elif var == 'spechum':
+                elif var == 'specific_humidity':
                     if var_max > 0.1:
                         error_details += "    → Specific humidity too high. Expected kg/kg, got g/kg? Divide by 1000\n"
 
@@ -1412,7 +1430,7 @@ class SummaForcingProcessor(BaseForcingProcessor):
             raise ValueError(f"File {filename}: Time coordinate missing proper units")
 
         # Check for any remaining NaN values in critical variables
-        critical_vars = ['airtemp', 'airpres', 'spechum', 'windspd']
+        critical_vars = ['air_temperature', 'surface_air_pressure', 'specific_humidity', 'wind_speed']
         for var in critical_vars:
             if var in dataset:
                 nan_count = np.isnan(dataset[var].values).sum()

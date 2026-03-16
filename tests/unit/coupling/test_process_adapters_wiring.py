@@ -40,16 +40,39 @@ class TestParFlowReadOutputs:
             'PARFLOW_OUTPUT_DIR': str(tmp_path),
         })
 
-        mock_extractor = MagicMock()
-        mock_extractor.extract_variable.return_value = pd.Series(
+        mock_extractor_instance = MagicMock()
+        mock_extractor_instance.extract_variable.return_value = pd.Series(
             [1.0, 2.0, 3.0], dtype=np.float32
         )
 
-        with patch(
-            'symfluence.models.parflow.extractor.ParFlowResultExtractor',
-            return_value=mock_extractor
+        # Create a fake extractor module with a mock class that returns our
+        # mock instance.  We inject it into sys.modules so the `from … import`
+        # inside read_outputs() picks it up regardless of whether the real
+        # parflow package is installed.
+        import sys
+        import types
+        fake_mod = types.ModuleType('symfluence.models.parflow.extractor')
+        fake_mod.ParFlowResultExtractor = MagicMock(
+            return_value=mock_extractor_instance
+        )
+        # Also ensure parent packages exist in sys.modules
+        for mod_name in (
+            'symfluence.models.parflow',
+            'symfluence.models.parflow.extractor',
         ):
+            if mod_name not in sys.modules:
+                sys.modules[mod_name] = types.ModuleType(mod_name)
+        sys.modules['symfluence.models.parflow.extractor'] = fake_mod
+
+        try:
             result = comp.read_outputs(tmp_path)
+        finally:
+            # Clean up injected modules
+            for mod_name in (
+                'symfluence.models.parflow.extractor',
+                'symfluence.models.parflow',
+            ):
+                sys.modules.pop(mod_name, None)
 
         assert "baseflow" in result
         assert result["baseflow"].dtype == torch.float32

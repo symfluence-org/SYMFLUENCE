@@ -1,0 +1,31 @@
+# Experiment 1: Iceland + coastal - semi-distributed + elevation bands
+# Paper Section 2.3, Table 2
+# 7618 GRUs, 21474 HRUs (~2.8 per GRU), 6606 segments
+# Maximum Iceland configuration: coastal watersheds with elevation-band HRUs
+
+system:
+  data_dir: ./data/
+  code_dir: ./
+domain:
+  name: Iceland_coastal_elev
+  definition_method: semidistributed
+  bounding_box_coords: 66.6/-24.6/63.2/-13.2
+  delineation:
+    routing: distributed
+    delineate_coastal_watersheds: true
+    geofabric_type: TDX
+    stream_threshold: 5000
+  discretization: elevation_bands
+  elevation_band_size: 200
+  time_start: 2000-01-01 03:00
+  time_end: 2008-12-31 21:00
+  experiment_id: Iceland_coastal_elev
+forcing:
+  dataset: CARRA
+  apply_lapse_rate: true
+  lapse_rate: 0.0065
+model:
+  hydrological_model: FUSE
+  routing_model: mizuRoute
+  fuse:
+    spatial_mode: distributed

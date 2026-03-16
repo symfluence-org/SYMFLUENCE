@@ -1,8 +1,7 @@
 """Tests for jFUSE model configuration."""
 
 import pytest
-
-from symfluence.models.jfuse.config import JFUSEConfig, JFUSEConfigAdapter
+from jfuse.sfconfig import JFUSEConfig, JFUSEConfigAdapter
 
 # =============================================================================
 # JFUSEConfig Pydantic model

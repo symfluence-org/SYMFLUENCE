@@ -302,6 +302,16 @@ CEOF
         ;;
 esac
 
+# If LDFLAGS contains -static-libgcc (set by fix_libgcc_glibc_mismatch),
+# pass it to CMake so Fortran link tests succeed.
+_SUMMA_LINKER_FLAGS=""
+_SUMMA_STATIC_LIBGCC=""
+if echo "${LDFLAGS:-}" | grep -q static-libgcc; then
+    _STATIC_FLAGS="-static-libgcc -static-libstdc++"
+    _SUMMA_LINKER_FLAGS="-DCMAKE_EXE_LINKER_FLAGS=$_STATIC_FLAGS -DCMAKE_SHARED_LINKER_FLAGS=$_STATIC_FLAGS"
+    _SUMMA_STATIC_LIBGCC="$_STATIC_FLAGS"
+fi
+
 cmake -S build -B cmake_build \
   -DUSE_SUNDIALS=ON \
   -DCMAKE_BUILD_TYPE=Release \
@@ -313,7 +323,8 @@ cmake -S build -B cmake_build \
   -DNETCDF_FORTRAN_PATH="${NETCDF_FORTRAN:-/usr}" \
   -DNetCDF_ROOT="${NETCDF:-/usr}" \
   -DCMAKE_Fortran_COMPILER="$FC" \
-  -DCMAKE_Fortran_FLAGS="-ffree-form -ffree-line-length-none" \
+  -DCMAKE_Fortran_FLAGS="-ffree-form -ffree-line-length-none $_SUMMA_STATIC_LIBGCC" \
+  $_SUMMA_LINKER_FLAGS \
   $SUMMA_EXTRA_CMAKE
 
 # Build all targets (repo scripts use 'all', not just 'summa_sundials')

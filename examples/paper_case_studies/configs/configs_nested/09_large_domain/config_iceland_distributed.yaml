@@ -1,0 +1,65 @@
+# Experiment 9: Large Domain Distributed Modeling (Section 3.8, Figure 12)
+# Iceland-wide distributed FUSE model with network routing
+# Tests SYMFLUENCE's ability to handle regional-scale distributed modeling
+
+system:
+  data_dir: ./data/
+  code_dir: ./
+domain:
+  name: Iceland_large_domain
+  experiment_id: iceland_distributed
+  time_start: 2000-01-01 03:00
+  time_end: 2008-12-31 21:00
+  calibration_period: 2001-01-01, 2007-12-31
+  evaluation_period: 2008-01-01, 2008-12-31
+  spinup_period: 2000-01-01, 2000-12-31
+  definition_method: semidistributed
+  delineation:
+    routing: distributed
+    geofabric_type: TDX
+    stream_threshold: 5000
+  discretization: GRUs
+  bounding_box_coords: 66.6/-24.6/63.2/-13.2
+  pour_point_coords: 63.93/-21.03
+data:
+  streamflow_data_provider: IMO
+forcing:
+  dataset: CARRA
+  time_step_size: 3600
+model:
+  hydrological_model: FUSE
+  routing_model: mizuRoute
+  fuse:
+    spatial_mode: distributed
+    params_to_calibrate: MAXWATR_1,MAXWATR_2,BASERTE,QB_POWR,TIMEDELAY,PERCRTE,FRACTEN,RTFRAC1,MBASE,MFMAX,MFMIN,PXTEMP,LAPSE
+    decision_options:
+      RFERR:
+      - additive_e
+      ARCH1:
+      - tension1_1
+      ARCH2:
+      - tens2pll_2
+      QSURF:
+      - arno_x_vic
+      QPERC:
+      - perc_f2sat
+      ESOIL:
+      - sequential
+      QINTF:
+      - intflwnone
+      Q_TDH:
+      - rout_gamma
+      SNOWM:
+      - temp_index
+optimization:
+  methods:
+  - iteration
+  algorithm: DDS
+  iterations: 1000
+  metric: KGE
+  skip_warm_start: true
+evaluation:
+  streamflow:
+    station_id: VHM01
+  analyses:
+  - spatial_evaluation

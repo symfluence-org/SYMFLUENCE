@@ -196,7 +196,7 @@ class TestSummaElevationCorrectionSkip:
         basin_dir = fp.forcing_basin_path
         basin_dir.mkdir(parents=True, exist_ok=True)
         ds = xr.Dataset({
-            'airtemp': (['time', 'hru'], np.full((2, 1), 280.0)),
+            'air_temperature': (['time', 'hru'], np.full((2, 1), 280.0)),
             'hruId': (['hru'], np.array([1001], dtype=np.int32)),
         }, coords={'time': [0.0, 1.0], 'hru': [0]})
         ds.attrs['elevation_corrected'] = 1
@@ -218,7 +218,7 @@ class TestSummaElevationCorrectionSkip:
         basin_dir = fp.forcing_basin_path
         basin_dir.mkdir(parents=True, exist_ok=True)
         ds = xr.Dataset({
-            'airtemp': (['time', 'hru'], np.full((2, 1), 280.0)),
+            'air_temperature': (['time', 'hru'], np.full((2, 1), 280.0)),
             'hruId': (['hru'], np.array([1001], dtype=np.int32)),
         }, coords={'time': [0.0, 1.0], 'hru': [0]})
         nc_path = basin_dir / f'{preprocessor.domain_name}_ERA5_2020-01-01.nc'

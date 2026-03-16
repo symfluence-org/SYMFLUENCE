@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2024-2026 SYMFLUENCE Team <dev@symfluence.org>
+
 """
 Unit tests for jFUSE model integration.
 
@@ -15,13 +18,14 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from symfluence.models.jfuse import HAS_JAX as _HAS_JAX
+try:
+    from jfuse.runner import HAS_JAX as _HAS_JAX
+    from jfuse.runner import HAS_JFUSE as _HAS_JFUSE
+    HAS_JFUSE = _HAS_JFUSE and _HAS_JAX
+except ImportError:
+    HAS_JFUSE = False
 
-# Check for jFUSE availability using symfluence's detection
-from symfluence.models.jfuse import HAS_JFUSE as _HAS_JFUSE
 from symfluence.models.spatial_modes import SpatialMode
-
-HAS_JFUSE = _HAS_JFUSE and _HAS_JAX
 
 if HAS_JFUSE:
     import jax
@@ -31,39 +35,31 @@ if HAS_JFUSE:
 
     def kge_loss(sim, obs):
         """Compute KGE loss (1 - KGE) for use in optimization."""
-        # Correlation
         sim_mean = jnp.mean(sim)
         obs_mean = jnp.mean(obs)
         sim_std = jnp.std(sim)
         obs_std = jnp.std(obs)
         cov = jnp.mean((sim - sim_mean) * (obs - obs_mean))
         r = cov / (sim_std * obs_std + 1e-10)
-        # Bias ratio
         beta = sim_mean / (obs_mean + 1e-10)
-        # Variability ratio
         gamma = sim_std / (obs_std + 1e-10)
-        # KGE
         kge = 1 - jnp.sqrt((r - 1)**2 + (beta - 1)**2 + (gamma - 1)**2)
-        return 1 - kge  # Return loss (lower is better)
+        return 1 - kge
 else:
     jax = None
     jnp = None
 
-# Import symfluence components
-from symfluence.models.jfuse import (
-    JFUSEConfig,
-    JFUSEConfigAdapter,
-    JFUSEParameterManager,
-    JFUSEWorker,
-    check_jfuse_installation,
-)
-from symfluence.models.jfuse.calibration.parameter_manager import (
+# Import jfuse calibration components (these don't require JAX)
+from jfuse.calibration.parameter_manager import (
     DEFAULT_PARAMS,
     FALLBACK_PARAM_BOUNDS,
+    JFUSEParameterManager,
 )
-from symfluence.models.jfuse.calibration.parameter_manager import (
+from jfuse.calibration.parameter_manager import (
     PARAM_BOUNDS as SYMFLUENCE_PARAM_BOUNDS,
 )
+from jfuse.calibration.worker import JFUSEWorker
+from jfuse.sfconfig import JFUSEConfig, JFUSEConfigAdapter
 
 # =============================================================================
 # Test Fixtures
@@ -108,37 +104,10 @@ def sample_observations(sample_forcing):
     """Create sample observations (synthetic streamflow)."""
     n_days = len(sample_forcing['precip'])
     np.random.seed(42)
-    # Simple synthetic: baseflow + event response
     base = 10.0
     precip = sample_forcing['precip']
-    # Simple convolution for event response
     response = np.convolve(precip, np.exp(-np.arange(10)/3), mode='same')
     return (base + response * 2 + np.random.normal(0, 1, n_days)).astype(np.float32)
-
-
-# =============================================================================
-# Test: Installation Check
-# =============================================================================
-
-class TestInstallation:
-    """Test jFUSE installation detection."""
-
-    def test_check_installation_returns_dict(self):
-        """Check that installation status returns expected keys."""
-        status = check_jfuse_installation()
-
-        assert isinstance(status, dict)
-        assert 'jfuse_installed' in status
-        assert 'jax_installed' in status
-        assert 'native_gradients_available' in status
-
-    @pytest.mark.skipif(not HAS_JFUSE, reason="jFUSE not installed")
-    def test_jfuse_available(self):
-        """Verify jFUSE is available when expected."""
-        status = check_jfuse_installation()
-        assert status['jfuse_installed'] is True
-        assert status['jax_installed'] is True
-        assert status['native_gradients_available'] is True
 
 
 # =============================================================================
@@ -152,9 +121,9 @@ class TestConfig:
         """Test JFUSEConfig has sensible defaults."""
         config = JFUSEConfig()
 
-        assert config.model_config_name == 'prms_gradient'  # Default is prms_gradient for gradient-based calibration
+        assert config.model_config_name == 'prms_gradient'
         assert config.enable_snow is True
-        assert config.spatial_mode == 'auto'  # Default is 'auto' for auto-detection
+        assert config.spatial_mode == 'auto'
         assert config.warmup_days == 365
         assert config.n_hrus == 1
 
@@ -191,7 +160,6 @@ class TestParameterManager:
         """Test that parameter bounds are loaded correctly."""
         assert len(SYMFLUENCE_PARAM_BOUNDS) > 0
 
-        # Check key parameters exist
         assert 'S1_max' in SYMFLUENCE_PARAM_BOUNDS
         assert 'S2_max' in SYMFLUENCE_PARAM_BOUNDS
         assert 'ku' in SYMFLUENCE_PARAM_BOUNDS
@@ -243,17 +211,13 @@ class TestParameterManager:
             jfuse_settings_dir=Path('/tmp/test')
         )
 
-        # Get default params
         params = pm.get_initial_parameters()
 
-        # Normalize
         normalized = pm.normalize(params)
         assert all(0 <= n <= 1 for n in normalized), "Normalized values should be in [0, 1]"
 
-        # Denormalize
         denormalized = pm.denormalize(normalized)
 
-        # Should recover original values (within tolerance)
         for name in pm.calibration_params:
             assert abs(params[name] - denormalized[name]) < 1e-6, \
                 f"Round-trip failed for {name}"
@@ -266,15 +230,13 @@ class TestParameterManager:
             jfuse_settings_dir=Path('/tmp/test')
         )
 
-        # Valid params
         valid_params = pm.get_initial_parameters()
         is_valid, violations = pm.validate(valid_params)
         assert is_valid
         assert len(violations) == 0
 
-        # Invalid params
         invalid_params = valid_params.copy()
-        invalid_params['S1_max'] = -100  # Below minimum
+        invalid_params['S1_max'] = -100
         is_valid, violations = pm.validate(invalid_params)
         assert not is_valid
         assert len(violations) > 0
@@ -284,7 +246,7 @@ class TestParameterManager:
 # Test: Worker - Lumped Mode
 # =============================================================================
 
-@pytest.mark.skipif(not HAS_JFUSE, reason="jFUSE not installed")
+@pytest.mark.skipif(not HAS_JFUSE, reason="jFUSE/JAX not installed")
 class TestWorkerLumped:
     """Test jFUSE worker in lumped mode."""
 
@@ -306,7 +268,6 @@ class TestWorkerLumped:
         """Test parameter dict to Parameters object conversion."""
         worker = JFUSEWorker(config=sample_config, logger=logger)
 
-        # Manually initialize
         worker._model = create_fuse_model('prms', n_hrus=1)
         worker._default_params = Parameters.default(n_hrus=1)
         worker._forcing = {k: jnp.array(v) for k, v in sample_forcing.items()}
@@ -317,7 +278,6 @@ class TestWorkerLumped:
         )
         worker._initialized = True
 
-        # Convert params
         param_dict = {'S1_max': 150.0, 'S2_max': 600.0}
         params_obj = worker._dict_to_params(param_dict)
 
@@ -328,7 +288,6 @@ class TestWorkerLumped:
         """Test lumped mode simulation."""
         worker = JFUSEWorker(config=sample_config, logger=logger)
 
-        # Manually set up worker
         worker._model = create_fuse_model('prms', n_hrus=1)
         worker._default_params = Parameters.default(n_hrus=1)
         worker._forcing = {k: jnp.array(v) for k, v in sample_forcing.items()}
@@ -338,21 +297,19 @@ class TestWorkerLumped:
             worker._forcing['temp']
         )
         worker._initialized = True
-        worker.warmup_days = 30  # Shorter warmup for test
+        worker.warmup_days = 30
 
-        # Run simulation
         params_obj = worker._default_params
         runoff, _ = worker._model.simulate(worker._forcing_tuple, params_obj)
 
         assert runoff.shape[0] == len(sample_forcing['precip'])
         assert not np.any(np.isnan(runoff))
-        assert np.all(runoff >= 0)  # Runoff should be non-negative
+        assert np.all(runoff >= 0)
 
     def test_gradient_computation(self, sample_config, logger, sample_forcing, sample_observations):
         """Test gradient computation via JAX autodiff."""
         worker = JFUSEWorker(config=sample_config, logger=logger)
 
-        # Set up worker
         worker._model = create_fuse_model('prms', n_hrus=1)
         worker._default_params = Parameters.default(n_hrus=1)
         worker._forcing = {k: jnp.array(v) for k, v in sample_forcing.items()}
@@ -361,11 +318,10 @@ class TestWorkerLumped:
             worker._forcing['pet'],
             worker._forcing['temp']
         )
-        worker._observations = jnp.array(sample_observations[30:])  # Skip warmup
+        worker._observations = jnp.array(sample_observations[30:])
         worker._initialized = True
         worker.warmup_days = 30
 
-        # Test gradient computation
         params = {'S1_max': 200.0, 'S2_max': 800.0, 'ku': 0.1}
         gradients = worker.compute_gradient(params, metric='kge')
 
@@ -378,7 +334,6 @@ class TestWorkerLumped:
         """Test combined loss and gradient computation."""
         worker = JFUSEWorker(config=sample_config, logger=logger)
 
-        # Set up worker
         worker._model = create_fuse_model('prms', n_hrus=1)
         worker._default_params = Parameters.default(n_hrus=1)
         worker._forcing = {k: jnp.array(v) for k, v in sample_forcing.items()}
@@ -395,7 +350,7 @@ class TestWorkerLumped:
         loss, gradients = worker.evaluate_with_gradient(params, metric='kge')
 
         assert isinstance(loss, float)
-        assert 0 <= loss <= 2  # kge_loss = 1 - KGE, KGE in [-1, 1]
+        assert 0 <= loss <= 2
         assert gradients is not None
         assert len(gradients) == len(params)
 
@@ -404,7 +359,7 @@ class TestWorkerLumped:
 # Test: Worker - Distributed Mode
 # =============================================================================
 
-@pytest.mark.skipif(not HAS_JFUSE, reason="jFUSE not installed")
+@pytest.mark.skipif(not HAS_JFUSE, reason="jFUSE/JAX not installed")
 class TestWorkerDistributed:
     """Test jFUSE worker in distributed mode."""
 
@@ -423,7 +378,6 @@ class TestWorkerDistributed:
         n_hrus = 5
         params = Parameters.default(n_hrus=n_hrus)
 
-        # Check array shapes
         assert params.S1_max.shape == (n_hrus,)
         assert params.S2_max.shape == (n_hrus,)
         assert params.ku.shape == (n_hrus,)
@@ -433,11 +387,9 @@ class TestWorkerDistributed:
         n_hrus = 3
         n_days = 100
 
-        # Create model and params
         model = create_fuse_model('prms', n_hrus=n_hrus)
         params = Parameters.default(n_hrus=n_hrus)
 
-        # Create forcing for multiple HRUs
         np.random.seed(42)
         precip = np.random.exponential(2.0, (n_days, n_hrus)).astype(np.float32)
         pet = np.ones((n_days, n_hrus), dtype=np.float32) * 2.0
@@ -445,7 +397,6 @@ class TestWorkerDistributed:
 
         forcing_tuple = (jnp.array(precip), jnp.array(pet), jnp.array(temp))
 
-        # Run simulation
         runoff, _ = model.simulate(forcing_tuple, params)
 
         assert runoff.shape == (n_days, n_hrus)
@@ -455,12 +406,11 @@ class TestWorkerDistributed:
         """Test CoupledModel can be created."""
         from jfuse import CoupledModel, create_network_from_topology
 
-        # Create a simple 3-reach network
         reach_ids = [1, 2, 3]
-        downstream_ids = [3, 3, -1]  # 1->3, 2->3, 3->outlet
+        downstream_ids = [3, 3, -1]
         lengths = [1000.0, 1500.0, 2000.0]
         slopes = [0.01, 0.01, 0.005]
-        areas = [1e6, 1.5e6, 0.5e6]  # m²
+        areas = [1e6, 1.5e6, 0.5e6]
 
         network = create_network_from_topology(
             reach_ids=reach_ids,
@@ -470,7 +420,6 @@ class TestWorkerDistributed:
             areas=areas
         )
 
-        # Create coupled model
         coupled = CoupledModel(
             network=network.to_arrays(),
             hru_areas=jnp.array(areas),
@@ -486,7 +435,6 @@ class TestWorkerDistributed:
         n_hrus = 3
         n_days = 100
 
-        # Create network
         reach_ids = [1, 2, 3]
         downstream_ids = [3, 3, -1]
         lengths = [1000.0, 1500.0, 2000.0]
@@ -507,7 +455,6 @@ class TestWorkerDistributed:
             n_hrus=n_hrus
         )
 
-        # Create forcing
         np.random.seed(42)
         precip = np.random.exponential(2.0, (n_days, n_hrus)).astype(np.float32)
         pet = np.ones((n_days, n_hrus), dtype=np.float32) * 2.0
@@ -515,16 +462,12 @@ class TestWorkerDistributed:
 
         forcing_tuple = (jnp.array(precip), jnp.array(pet), jnp.array(temp))
 
-        # Get default params and simulate
         params = coupled.default_params()
         outlet_Q, runoff = coupled.simulate(forcing_tuple, params)
 
-        # outlet_Q should be 1D (timesteps only - aggregated at outlet)
         assert outlet_Q.shape == (n_days,)
-        # runoff should be 2D (timesteps x hrus)
         assert runoff.shape == (n_days, n_hrus)
 
-        # Check values are reasonable
         assert np.all(outlet_Q >= 0)
         assert np.all(runoff >= 0)
 
@@ -533,7 +476,7 @@ class TestWorkerDistributed:
 # Test: Gradient Correctness
 # =============================================================================
 
-@pytest.mark.skipif(not HAS_JFUSE, reason="jFUSE not installed")
+@pytest.mark.skipif(not HAS_JFUSE, reason="jFUSE/JAX not installed")
 class TestGradientCorrectness:
     """Test that gradients are computed correctly."""
 
@@ -544,21 +487,17 @@ class TestGradientCorrectness:
         n_days = 200
         warmup = 30
 
-        # Create model
         model = create_fuse_model('prms', n_hrus=1)
         default_params = Parameters.default(n_hrus=1)
 
-        # Create forcing
         np.random.seed(42)
         precip = jnp.array(np.random.exponential(2.0, n_days).astype(np.float32))
         pet = jnp.array(np.ones(n_days, dtype=np.float32) * 2.0)
         temp = jnp.array(np.ones(n_days, dtype=np.float32) * 10.0)
         forcing = (precip, pet, temp)
 
-        # Create synthetic obs
         obs = jnp.array(np.random.uniform(5, 20, n_days - warmup).astype(np.float32))
 
-        # Parameter to test
         param_names = ['S1_max', 'S2_max']
         param_values = jnp.array([200.0, 800.0])
 
@@ -572,10 +511,8 @@ class TestGradientCorrectness:
             sim = runoff[warmup:]
             return kge_loss(sim[:len(obs)], obs)
 
-        # Compute JAX gradient
         jax_grad = jax.grad(loss_fn)(param_values)
 
-        # Compute finite difference gradient
         eps = 1e-4
         fd_grad = []
         base_loss = float(loss_fn(param_values))
@@ -585,7 +522,6 @@ class TestGradientCorrectness:
             fd_grad.append((perturbed_loss - base_loss) / eps)
         fd_grad = np.array(fd_grad)
 
-        # Check gradients are close (relative tolerance)
         for i, name in enumerate(param_names):
             jax_g = float(jax_grad[i])
             fd_g = fd_grad[i]
@@ -599,7 +535,7 @@ class TestGradientCorrectness:
 # Test: Integration
 # =============================================================================
 
-@pytest.mark.skipif(not HAS_JFUSE, reason="jFUSE not installed")
+@pytest.mark.skipif(not HAS_JFUSE, reason="jFUSE/JAX not installed")
 class TestIntegration:
     """Integration tests for complete workflows."""
 
@@ -611,7 +547,6 @@ class TestIntegration:
         n_days = len(sample_forcing['precip'])
         warmup = 30
 
-        # Setup
         model = create_fuse_model('prms', n_hrus=1)
         default_params = Parameters.default(n_hrus=1)
 
@@ -623,7 +558,6 @@ class TestIntegration:
 
         param_names = ['S1_max', 'S2_max', 'ku']
 
-        # Initial params (mid-range)
         param_array = jnp.array([500.0, 2000.0, 0.3])
 
         def loss_fn(arr):
@@ -633,24 +567,20 @@ class TestIntegration:
             runoff, _ = model.simulate(forcing, params)
             return kge_loss(runoff[warmup:warmup+len(obs)], obs)
 
-        # Initial loss
         initial_loss = float(loss_fn(param_array))
 
-        # Run a few Adam steps
         loss_and_grad = jax.jit(jax.value_and_grad(loss_fn))
         lr = 0.5
 
         for _ in range(20):
             loss, grad = loss_and_grad(param_array)
             param_array = param_array - lr * grad
-            # Clip to bounds
             param_array = jnp.clip(param_array,
                                    jnp.array([50.0, 100.0, 0.001]),
                                    jnp.array([5000.0, 20000.0, 1.0]))
 
         final_loss = float(loss_fn(param_array))
 
-        # KGE should improve (loss should decrease)
         assert final_loss < initial_loss, \
             f"Calibration did not improve: initial={initial_loss:.4f}, final={final_loss:.4f}"
 

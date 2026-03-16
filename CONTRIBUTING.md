@@ -10,7 +10,7 @@ We welcome all contributions — from bug fixes and documentation improvements t
    ```bash
    git clone https://github.com/YOUR-USERNAME/SYMFLUENCE.git
    cd SYMFLUENCE
-   git remote add upstream https://github.com/DarriEy/SYMFLUENCE.git
+   git remote add upstream https://github.com/symfluence-org/SYMFLUENCE.git
    ```
 
 2. **Set up your environment**

@@ -549,7 +549,8 @@ class TestAugmentCondaLibraryPaths:
         with patch('symfluence.models.execution.model_executor.sys') as mock_sys:
             mock_sys.platform = 'linux'
             augment_conda_library_paths(env)
-        assert env['LD_LIBRARY_PATH'].startswith('/opt/conda/lib')
+        conda_lib = os.path.join('/opt/conda', 'lib')
+        assert env['LD_LIBRARY_PATH'].startswith(conda_lib)
         assert '/usr/lib' in env['LD_LIBRARY_PATH']
 
     def test_macos_dyld_library_path(self):
@@ -558,7 +559,8 @@ class TestAugmentCondaLibraryPaths:
         with patch('symfluence.models.execution.model_executor.sys') as mock_sys:
             mock_sys.platform = 'darwin'
             augment_conda_library_paths(env)
-        assert env['DYLD_LIBRARY_PATH'].startswith('/opt/conda/lib')
+        conda_lib = os.path.join('/opt/conda', 'lib')
+        assert env['DYLD_LIBRARY_PATH'].startswith(conda_lib)
         assert '/usr/lib' in env['DYLD_LIBRARY_PATH']
 
     def test_windows_path(self):
@@ -601,7 +603,7 @@ class TestAugmentCondaLibraryPaths:
         with patch('symfluence.models.execution.model_executor.sys') as mock_sys:
             mock_sys.platform = 'linux'
             augment_conda_library_paths(env)
-        assert env['LD_LIBRARY_PATH'] == '/opt/conda/lib'
+        assert env['LD_LIBRARY_PATH'] == os.path.join('/opt/conda', 'lib')
 
     def test_execute_model_subprocess_augments_env(self, runner, temp_dir):
         """Test that execute_model_subprocess passes conda-augmented env to subprocess."""

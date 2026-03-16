@@ -303,15 +303,15 @@ class IGNACIOPreProcessor(BaseModelPreProcessor):
             times = pd.to_datetime(ds.time.values)
 
             # Temperature: Convert K to C
-            if 'airtemp' in ds:
-                temp_c = ds['airtemp'].values - 273.15
+            if 'air_temperature' in ds:
+                temp_c = ds['air_temperature'].values - 273.15
             else:
                 temp_c = np.full(len(times), 20.0)  # Default
 
             # Relative Humidity: Calculate from specific humidity and pressure
-            if 'spechum' in ds and 'airpres' in ds:
-                spechum = ds['spechum'].values
-                airpres = ds['airpres'].values
+            if 'specific_humidity' in ds and 'surface_air_pressure' in ds:
+                spechum = ds['specific_humidity'].values
+                airpres = ds['surface_air_pressure'].values
                 # Convert specific humidity to relative humidity
                 # e = q * P / (0.622 + 0.378 * q)
                 # es = 611.2 * exp(17.67 * T / (T + 243.5))
@@ -324,8 +324,8 @@ class IGNACIOPreProcessor(BaseModelPreProcessor):
                 rh = np.full(len(times), 50.0)  # Default
 
             # Wind speed: m/s to km/h
-            if 'windspd' in ds:
-                ws_kmh = ds['windspd'].values * 3.6
+            if 'wind_speed' in ds:
+                ws_kmh = ds['wind_speed'].values * 3.6
             else:
                 ws_kmh = np.full(len(times), 10.0)  # Default
 
@@ -334,8 +334,8 @@ class IGNACIOPreProcessor(BaseModelPreProcessor):
             wd = np.random.uniform(0, 360, len(times))
 
             # Precipitation: mm/s to mm (hourly accumulation)
-            if 'pptrate' in ds:
-                precip_mm = ds['pptrate'].values * 3600  # mm/s to mm/hour
+            if 'precipitation_flux' in ds:
+                precip_mm = ds['precipitation_flux'].values * 3600  # mm/s to mm/hour
             else:
                 precip_mm = np.zeros(len(times))
 

@@ -152,26 +152,6 @@ MODEL_SPATIAL_CAPABILITIES: Dict[str, ModelSpatialCapability] = {
         warning_message=None
     ),
 
-    'HBV': ModelSpatialCapability(
-        supported_modes={SpatialMode.LUMPED, SpatialMode.DISTRIBUTED},
-        default_mode=SpatialMode.LUMPED,
-        requires_routing={
-            SpatialMode.DISTRIBUTED: True,  # Uses mizuRoute for distributed routing
-            SpatialMode.LUMPED: False
-        },
-        warning_message=(
-            "HBV-96 works best in lumped mode. For distributed mode, "
-            "mizuRoute is used for streamflow routing between HRUs."
-        )
-    ),
-
-    'SACSMA': ModelSpatialCapability(
-        supported_modes={SpatialMode.LUMPED},
-        default_mode=SpatialMode.LUMPED,
-        requires_routing={SpatialMode.LUMPED: False},
-        warning_message=None
-    ),
-
     'MESH': ModelSpatialCapability(
         supported_modes={SpatialMode.LUMPED, SpatialMode.SEMI_DISTRIBUTED, SpatialMode.DISTRIBUTED},
         default_mode=SpatialMode.DISTRIBUTED,
@@ -222,13 +202,6 @@ MODEL_SPATIAL_CAPABILITIES: Dict[str, ModelSpatialCapability] = {
             "VIC is designed for distributed grid-based modeling. "
             "For lumped mode, a single-cell domain will be created."
         )
-    ),
-
-    'XINANJIANG': ModelSpatialCapability(
-        supported_modes={SpatialMode.LUMPED},
-        default_mode=SpatialMode.LUMPED,
-        requires_routing={SpatialMode.LUMPED: False},
-        warning_message=None
     ),
 
     'SWAT': ModelSpatialCapability(

@@ -341,7 +341,7 @@ class TestHBVGradientSupport:
     def test_hbv_worker_supports_native_gradients(self):
         """HBVWorker should report gradient support when JAX available."""
         try:
-            from symfluence.models.hbv.calibration.worker import HAS_JAX, HBVWorker
+            from jhbv.calibration.worker import HAS_JAX, HBVWorker
 
             worker = HBVWorker({}, logging.getLogger('test'))
             assert worker.supports_native_gradients() == HAS_JAX

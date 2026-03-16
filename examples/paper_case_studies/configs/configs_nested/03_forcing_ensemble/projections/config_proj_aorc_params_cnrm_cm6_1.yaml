@@ -1,0 +1,36 @@
+# Experiment 3 Projection: CNRM-CM6-1 forcing with AORC-calibrated parameters
+# Paper Section 3.2, Figure 6 — SWE projections under SSP2-4.5
+# Uses NEX-GDDP-CMIP6 GCM forcing with parameters from AORC calibration
+
+system:
+  data_dir: ./data/
+  code_dir: ./
+domain:
+  name: paradise_snotel_wa_proj_aorc_params_cnrm_cm6_1
+  experiment_id: projection_aorc_params_cnrm_cm6_1
+  time_start: 2015-01-01 01:00
+  time_end: 2100-12-31 23:00
+  pour_point_coords: 46.78/-121.75
+  bounding_box_coords: 46.781/-121.751/46.779/-121.749
+  definition_method: point
+  delineation:
+    routing: lumped
+  discretization: GRUs
+forcing:
+  dataset: NEX-GDDP
+  nex:
+    models:
+    - CNRM-CM6-1
+    scenarios:
+    - historical
+    - ssp245
+    ensembles:
+    - r1i1p1f1
+model:
+  hydrological_model: SUMMA
+  routing_model: mizuRoute
+  summa:
+    params_to_calibrate: tempCritRain,tempRangeTimestep,frozenPrecipMultip,albedoMax,albedoMinWinter,albedoDecayRate,constSnowDen,mw_exp,k_snow,z0Snow
+    basin_params_to_calibrate: routingGammaScale
+optimization:
+  parameter_strategy: aorc_calibrated

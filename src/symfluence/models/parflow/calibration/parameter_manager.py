@@ -279,9 +279,9 @@ class ParFlowParameterManager(BaseParameterManager):
         parameters, and updates the z_upper BC values in the .pfidb entries dict.
         """
         import pandas as pd
+        from jsnow17.bmi import Snow17BMI
 
         from symfluence.models.parflow.preprocessor import ParFlowPreProcessor
-        from symfluence.models.snow17.bmi import Snow17BMI
 
         cache_path = self.settings_dir / 'hourly_forcing_cache.npz'
         if not cache_path.exists():

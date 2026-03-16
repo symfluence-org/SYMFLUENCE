@@ -8,7 +8,7 @@ class TestDRoutePostProcessorImport:
     """Tests for dRoute postprocessor import and registration."""
 
     def test_postprocessor_can_be_imported(self):
-        from symfluence.models.droute.postprocessor import DRoutePostProcessor
+        from droute.postprocessor import DRoutePostProcessor
         assert DRoutePostProcessor is not None
 
     def test_postprocessor_registered_with_registry(self):
@@ -16,21 +16,22 @@ class TestDRoutePostProcessorImport:
         assert 'DROUTE' in ModelRegistry._postprocessors
 
     def test_postprocessor_is_correct_class(self):
-        from symfluence.models.droute.postprocessor import DRoutePostProcessor
+        from droute.postprocessor import DRoutePostProcessor
+
         from symfluence.models.registry import ModelRegistry
         assert ModelRegistry._postprocessors.get('DROUTE') == DRoutePostProcessor
 
     def test_model_name(self):
-        from symfluence.models.droute.postprocessor import DRoutePostProcessor
+        from droute.postprocessor import DRoutePostProcessor
         assert DRoutePostProcessor.model_name == "DROUTE"
 
     def test_streamflow_unit_is_cms(self):
         """dRoute outputs are already in m³/s."""
-        from symfluence.models.droute.postprocessor import DRoutePostProcessor
+        from droute.postprocessor import DRoutePostProcessor
         assert DRoutePostProcessor.streamflow_unit == "cms"
 
     def test_streamflow_variable(self):
-        from symfluence.models.droute.postprocessor import DRoutePostProcessor
+        from droute.postprocessor import DRoutePostProcessor
         assert DRoutePostProcessor.streamflow_variable == "outletStreamflow"
 
 

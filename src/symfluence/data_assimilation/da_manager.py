@@ -202,10 +202,10 @@ class DataAssimilationManager(BaseManager):
 
     def _create_hbv_ensemble(self, enkf_config: EnKFConfig):
         """Create HBV-specific ensemble manager."""
-        from symfluence.models.hbv.model import PARAM_BOUNDS
+        from jhbv.model import PARAM_BOUNDS
 
         # Load forcing
-        from symfluence.models.hbv.runner import HBVRunner
+        from jhbv.runner import HBVRunner
         runner = HBVRunner(self.config, self.logger)
         forcing, _ = runner._load_forcing()
 
@@ -221,7 +221,7 @@ class DataAssimilationManager(BaseManager):
         )
 
         # Routing buffer size
-        from symfluence.models.hbv.model import get_routing_buffer_length
+        from jhbv.model import get_routing_buffer_length
         routing_len = get_routing_buffer_length(10, runner.timestep_hours)
 
         # State variable specs

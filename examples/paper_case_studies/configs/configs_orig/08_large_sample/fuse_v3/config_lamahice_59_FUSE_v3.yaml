@@ -1,0 +1,223 @@
+### ============================================= SYMFLUENCE configuration file ============================================================
+# FUSE Model Configuration for LamaH-Ice Domain 59 - Large Sample Study
+### ============================================= 1. Global settings: =====================================================================
+
+# Main paths
+SYMFLUENCE_DATA_DIR: "/Users/darrieythorsson/compHydro/code/SYMFLUENCE_data/lamahice"
+SYMFLUENCE_CODE_DIR: "/Users/darrieythorsson/compHydro/code/SYMFLUENCE"
+
+# Experiment settings
+DOMAIN_NAME: "59"
+BOUNDING_BOX_COORDS: 65.15096785233864/-17.019733125068775/64.38522080579529/-15.90306301583186
+EXPERIMENT_ID: run_3
+EXPERIMENT_TIME_START: 2000-01-01 03:00
+EXPERIMENT_TIME_END: 2008-12-31 21:00
+CALIBRATION_PERIOD: 2001-01-01, 2007-12-31
+EVALUATION_PERIOD: 2008-01-01, 2008-12-31
+SPINUP_PERIOD: 2000-01-01, 2000-12-31
+
+# Computational settings
+MPI_PROCESSES: 1
+FORCE_RUN_ALL_STEPS: False
+SKIP_WARM_START: True
+
+### ============================================= 2. Geospatial settings: =================================================================
+
+# Domain representation settings
+DOMAIN_DEFINITION_METHOD: lumped
+ROUTING_DELINEATION: lumped
+
+GEOFABRIC_TYPE: TDX
+STREAM_THRESHOLD: 5000
+LUMPED_WATERSHED_METHOD: TauDEM
+CLEANUP_INTERMEDIATE_FILES: True
+DELINEATE_BY_POURPOINT: True
+MOVE_OUTLETS_MAX_DISTANCE: 200
+MIN_GRU_SIZE: 1
+
+# Domain discretization settings
+SUB_GRID_DISCRETIZATION: GRUS
+ELEVATION_BAND_SIZE: 200
+MIN_HRU_SIZE: 4
+RADIATION_CLASS_NUMBER: 5
+ASPECT_CLASS_NUMBER: 8
+ASPECT_PATH: default
+
+# Shapefile settings - Catchment shape
+CATCHMENT_PATH: default
+CATCHMENT_SHP_NAME: default
+CATCHMENT_SHP_LAT: center_lat
+CATCHMENT_SHP_LON: center_lon
+CATCHMENT_SHP_AREA: HRU_area
+CATCHMENT_SHP_HRUID: HRU_ID
+CATCHMENT_SHP_GRUID: GRU_ID
+
+# Shapefile settings - Basins shape
+RIVER_BASINS_PATH: default
+RIVER_BASINS_NAME: default
+RIVER_BASIN_SHP_RM_GRUID: GRU_ID
+RIVER_BASIN_SHP_HRU_TO_SEG: gru_to_seg
+RIVER_BASIN_SHP_AREA: GRU_area
+
+# Shapefile settings - River network shape
+RIVER_NETWORK_SHP_PATH: default
+RIVER_NETWORK_SHP_NAME: default
+RIVER_NETWORK_SHP_LENGTH: Length
+RIVER_NETWORK_SHP_SEGID: LINKNO
+RIVER_NETWORK_SHP_DOWNSEGID: DSLINKNO
+RIVER_NETWORK_SHP_SLOPE: Slope
+
+# Geospatial data paths
+OUTPUT_BASINS_PATH: default
+OUTPUT_RIVERS_PATH: default
+DEM_PATH: default
+DEM_NAME: default
+SOURCE_GEOFABRIC_BASINS_PATH: default
+SOURCE_GEOFABRIC_RIVERS_PATH: default
+TAUDEM_DIR: default
+OUTPUT_DIR: default
+CATCHMENT_PLOT_DIR: default
+SOIL_CLASS_PATH: default
+SOIL_CLASS_NAME: default
+LAND_CLASS_PATH: default
+LAND_CLASS_NAME: default
+RADIATION_PATH: default
+
+# Tool paths
+DATATOOL_PATH: default
+GISTOOL_PATH: default
+EASYMORE_CLIENT: easymore cli
+DATATOOL_DATASET_ROOT: default
+GISTOOL_DATASET_ROOT: default
+TOOL_CACHE: default
+EASYMORE_CACHE: default
+EASYMORE_JOB_CONF: default
+GISTOOL_LIB_PATH: default
+
+### ============================================= 3. Model Agnostic settings: =============================================================
+
+# Forcing data settings
+FORCING_DATASET: CARRA
+DATA_ACCESS: CLOUD
+CARRA_DOMAIN: west_domain
+FORCING_VARIABLES: default
+FORCING_MEASUREMENT_HEIGHT: 2
+FORCING_TIME_STEP_SIZE: 10800
+APPLY_LAPSE_RATE: True
+LAPSE_RATE: 0.0065
+FORCING_SHAPE_LAT_NAME: lat
+FORCING_SHAPE_LON_NAME: lon
+FORCING_PATH: default
+
+# EM-Earth forcing supplementation settings
+SUPPLEMENT_FORCING: False
+
+# Intersection paths
+INTERSECT_SOIL_PATH: default
+INTERSECT_SOIL_NAME: default
+INTERSECT_ROUTING_PATH: default
+INTERSECT_ROUTING_NAME: default
+INTERSECT_DEM_PATH: default
+INTERSECT_DEM_NAME: default
+INTERSECT_LAND_PATH: default
+INTERSECT_LAND_NAME: default
+
+### ============================================= 4. Model Specific settings: =============================================================
+
+# Model settings
+HYDROLOGICAL_MODEL: FUSE
+ROUTING_MODEL: none
+
+# FUSE Model settings
+FUSE_SPATIAL_MODE: lumped
+FUSE_EXE: fuse.exe
+FUSE_INSTALL_PATH: /Users/darrieythorsson/compHydro/code/FUSE/bin
+SETTINGS_FUSE_PATH: default
+SETTINGS_FUSE_FILEMANAGER: fm_catch.txt
+FUSE_RUN_INTERNAL_CALIBRATION: False
+
+# FUSE Parameters to calibrate
+SETTINGS_FUSE_PARAMS_TO_CALIBRATE: MAXWATR_1,MAXWATR_2,BASERTE,QB_POWR,TIMEDELAY,PERCRTE,FRACTEN,RTFRAC1,MBASE,MFMAX,MFMIN,PXTEMP,LAPSE,RFERR_MLT
+
+# mizuRoute settings
+SETTINGS_MIZU_WITHIN_BASIN: 0
+SETTINGS_MIZU_ROUTING_DT: 3600
+SETTINGS_MIZU_ROUTING_UNITS: m/s
+SETTINGS_MIZU_ROUTING_VAR: averageRoutedRunoff
+SETTINGS_MIZU_OUTPUT_FREQ: single
+SETTINGS_MIZU_OUTPUT_VARS: 1
+SETTINGS_MIZU_MAKE_OUTLET: n/a
+SETTINGS_MIZU_NEEDS_REMAP: false
+MIZU_FROM_MODEL: default
+SETTINGS_MIZU_PATH: default
+MIZUROUTE_INSTALL_PATH: default
+MIZUROUTE_EXE: mizuRoute.exe
+SETTINGS_MIZU_TOPOLOGY: topology.nc
+SETTINGS_MIZU_PARAMETERS: param.nml.default
+SETTINGS_MIZU_CONTROL_FILE: mizuroute.control
+SETTINGS_MIZU_REMAP: routing_remap.nc
+
+### ============================================= 5. Evaluation settings: =================================================================
+
+# Simulation settings
+SIM_REACH_ID: 1
+SIMULATIONS_PATH: default
+
+# Observation data settings
+OBSERVATIONS_PATH: default
+
+# LamaH-Ice observation data
+STREAMFLOW_DATA_PROVIDER: LAMAH_ICE
+LAMAH_ICE_DOMAIN_ID: 59
+LAMAH_ICE_PATH: /Users/darrieythorsson/compHydro/code/SYMFLUENCE_data/lamahice
+DOWNLOAD_LAMAH_ICE_DATA: true
+STREAMFLOW_RAW_PATH: default
+STREAMFLOW_RAW_NAME: default
+STREAMFLOW_PROCESSED_PATH: default
+
+### ============================================= 6. Optimization settings: ===============================================================
+
+OPTIMIZATION_METHODS: [iteration]
+
+# Iterative optimization settings
+ITERATIVE_OPTIMIZATION_ALGORITHM: DDS
+NUMBER_OF_ITERATIONS: 5000
+DDS_R: 0.2
+OPTIMIZATION_METRIC: KGE
+TARGET_METRIC: KGE
+
+# FUSE parameter bounds
+FUSE_PARAM_BOUNDS:
+  MAXWATR_1: [50, 500]
+  MAXWATR_2: [50, 1000]
+  BASERTE: [0.001, 0.5]
+  QB_POWR: [1.0, 5.0]
+  TIMEDELAY: [0.5, 5.0]
+  PERCRTE: [0.01, 10.0]
+  FRACTEN: [0.1, 0.7]
+  RTFRAC1: [0.1, 0.9]
+  MBASE: [-2.0, 2.0]
+  MFMAX: [1.0, 8.0]
+  MFMIN: [0.5, 4.0]
+  PXTEMP: [-2.0, 4.0]
+  LAPSE: [-10.0, -3.0]
+  RFERR_MLT: [0.8, 5.0]
+
+
+# FUSE decision options — restricted to key decisions from Section 4.6
+# Only QPERC and QINTF varied (2x2 = 4 combinations); all others fixed.
+FUSE_DECISION_OPTIONS:
+  RFERR: [multiplc_e]
+  ARCH1: [tension2_1]
+  ARCH2: [unlimfrc_2]
+  QSURF: [prms_varnt]
+  QPERC: [perc_f2sat]
+  ESOIL: [sequential]
+  QINTF: [intflwnone]
+  Q_TDH: [rout_gamma]
+  SNOWM: [temp_index]
+
+# DDS specific settings
+ASYNC_DDS_POOL_SIZE: 10
+ASYNC_DDS_BATCH_SIZE: 10
+MAX_STAGNATION_BATCHES: 5

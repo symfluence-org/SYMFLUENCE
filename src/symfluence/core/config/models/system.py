@@ -34,6 +34,7 @@ class SystemConfig(BaseModel):
     use_local_scratch: bool = Field(default=False, alias='USE_LOCAL_SCRATCH')
     random_seed: Optional[int] = Field(default=None, alias='RANDOM_SEED')
     stop_on_error: bool = Field(default=True, alias='STOP_ON_ERROR')
+    record_provenance: bool = Field(default=True, alias='RECORD_PROVENANCE')
 
     @field_validator('data_dir', 'code_dir')
     @classmethod

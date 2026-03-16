@@ -1,0 +1,146 @@
+# =============================================================================
+# Base config: TauDEM delineation scaling - North America
+# Section 4.12.1b: Delineation parallelism on HPC (10-100 processors)
+# Varies: NUM_PROCESSES (10-100), DEM resolution (90m, 30m, 10m)
+# =============================================================================
+
+# --- Environment paths (HPC) ---
+SYMFLUENCE_DATA_DIR: /anvil/projects/x-ees250064/users/darri/SYMFLUENCE_data/
+SYMFLUENCE_CODE_DIR: /anvil/projects/x-ees250064/users/darri/SYMFLUENCE
+
+# --- Domain definition ---
+DOMAIN_NAME: North_America
+POUR_POINT_COORDS: default
+BOUNDING_BOX_COORDS: 72.0/-170.0/24.0/-50.0
+DOMAIN_DEFINITION_METHOD: delineate
+ROUTING_DELINEATION: distributed
+GEOFABRIC_TYPE: na
+DELINEATION_METHOD: stream_threshold
+STREAM_THRESHOLD: 5000
+MULTI_SCALE_THRESHOLDS: 50000,25000,10000,5000,2500
+LUMPED_WATERSHED_METHOD: TauDEM
+CLEANUP_INTERMEDIATE_FILES: false
+DELINEATE_COASTAL_WATERSHEDS: true
+DELINEATE_BY_POURPOINT: false
+MOVE_OUTLETS_MAX_DISTANCE: 500
+MIN_GRU_SIZE: 10
+DOMAIN_DISCRETIZATION: GRUs
+TAUDEM_DIR: default
+
+# --- DEM settings ---
+DEM_SOURCE: fabdem
+DEM_RESOLUTION: 90m
+
+# --- Data access ---
+DATA_ACCESS: cloud
+DATATOOL_PATH: default
+GISTOOL_PATH: default
+DATATOOL_DATASET_ROOT: /anvil/projects/x-ees250064/data/meteorological-data/
+GISTOOL_DATASET_ROOT: /anvil/projects/x-ees250064/data/geospatial-data/
+TOOL_CACHE: /home/x-deythorsson/cache
+CLUSTER_JSON: /anvil/projects/x-ees250064/users/darri/SYMFLUENCE_data/installs/datatool/etc/clusters/anvil.json
+
+# --- Forcing (required by validator) ---
+FORCING_DATASET: ERA5
+FORCING_VARIABLES: default
+FORCING_MEASUREMENT_HEIGHT: 2
+FORCING_TIME_STEP_SIZE: 3600
+APPLY_LAPSE_RATE: true
+LAPSE_RATE: 0.0065
+
+# --- Model (required by validator) ---
+HYDROLOGICAL_MODEL: SUMMA
+ROUTING_MODEL: none
+SUMMA_EXE: summa_sundials.exe
+SUMMA_INSTALL_PATH: default
+SETTINGS_SUMMA_CONNECT_HRUS: true
+SETTINGS_SUMMA_TRIALPARAM_N: 0
+SETTINGS_SUMMA_USE_PARALLEL_SUMMA: false
+SETTINGS_SUMMA_PATH: default
+SETTINGS_SUMMA_FILEMANAGER: fileManager.txt
+SETTINGS_SUMMA_FORCING_LIST: forcingFileList.txt
+SETTINGS_SUMMA_COLDSTATE: coldState.nc
+SETTINGS_SUMMA_TRIALPARAMS: trialParams.nc
+SETTINGS_SUMMA_ATTRIBUTES: attributes.nc
+SETTINGS_SUMMA_OUTPUT: outputControl.txt
+SETTINGS_SUMMA_BASIN_PARAMS_FILE: basinParamInfo.txt
+SETTINGS_SUMMA_LOCAL_PARAMS_FILE: localParamInfo.txt
+PARAMS_TO_CALIBRATE: tempCritRain,k_soil
+BASIN_PARAMS_TO_CALIBRATE: routingGammaScale
+
+# --- Shapefile settings ---
+CATCHMENT_PATH: default
+CATCHMENT_SHP_NAME: default
+CATCHMENT_SHP_LAT: center_lat
+CATCHMENT_SHP_LON: center_lon
+CATCHMENT_SHP_AREA: HRU_area
+CATCHMENT_SHP_HRUID: HRU_ID
+CATCHMENT_SHP_GRUID: GRU_ID
+RIVER_BASINS_PATH: default
+RIVER_BASINS_NAME: default
+RIVER_BASIN_SHP_RM_GRUID: GRU_ID
+RIVER_BASIN_SHP_HRU_TO_SEG: gru_to_seg
+RIVER_BASIN_SHP_AREA: GRU_area
+RIVER_NETWORK_SHP_PATH: default
+RIVER_NETWORK_SHP_NAME: default
+RIVER_NETWORK_SHP_LENGTH: Length
+RIVER_NETWORK_SHP_SEGID: LINKNO
+RIVER_NETWORK_SHP_DOWNSEGID: DSLINKNO
+RIVER_NETWORK_SHP_SLOPE: Slope
+POUR_POINT_SHP_PATH: default
+POUR_POINT_SHP_NAME: default
+FORCING_PATH: default
+OBSERVATIONS_PATH: default
+STREAMFLOW_RAW_PATH: default
+STREAMFLOW_RAW_NAME: default
+STREAMFLOW_PROCESSED_PATH: default
+SIMULATIONS_PATH: default
+OUTPUT_BASINS_PATH: default
+OUTPUT_RIVERS_PATH: default
+DEM_PATH: default
+DEM_NAME: default
+OUTPUT_DIR: default
+CATCHMENT_PLOT_DIR: default
+SOIL_CLASS_PATH: default
+SOIL_CLASS_NAME: default
+LAND_CLASS_PATH: default
+LAND_CLASS_NAME: default
+RADIATION_PATH: default
+SUB_GRID_DISCRETIZATION: GRUs
+ELEVATION_BAND_SIZE: 200
+MIN_HRU_SIZE: 4
+ASPECT_PATH: default
+
+# --- Observations ---
+STREAMFLOW_DATA_PROVIDER: USGS
+STATION_ID: default
+DOWNLOAD_USGS_DATA: true
+
+# --- Optimization (required by validator) ---
+OPTIMIZATION_METHODS:
+- iteration
+OPTIMIZATION_METRIC: KGE
+TARGET_METRIC: KGE
+ITERATIVE_OPTIMIZATION_ALGORITHM: DDS
+NUMBER_OF_ITERATIONS: 10
+DDS_R: 0.2
+
+# --- Parallelism (overridden per experiment) ---
+NUM_PROCESSES: 10
+MPI_PROCESSES: 10
+
+# --- Experiment ---
+EXPERIMENT_ID: taudem_northamerica_base
+FORCE_RUN_ALL_STEPS: true
+
+# --- Time ---
+EXPERIMENT_TIME_START: 2010-01-01 01:00
+EXPERIMENT_TIME_END: 2010-12-31 23:00
+CALIBRATION_PERIOD: 2010-01-01 01:00, 2010-06-30 23:00
+EVALUATION_PERIOD: 2010-07-01 01:00, 2010-12-31 23:00
+SPINUP_PERIOD: 2004-01-01, 2004-01-04
+
+# --- Logging ---
+LOG_LEVEL: INFO
+LOG_TO_FILE: true
+LOG_FORMAT: detailed

@@ -1,5 +1,5 @@
-0      ! Solution technique (0=explicit Euler; 1=explicit Heun; 2=implicit Euler; 3=implicit Heun, 4=semi-implicit)
-0      ! Temporal error control (0=fixed time steps; 1=adaptive time steps)
+1      ! Solution technique (0=explicit Euler; 1=explicit Heun; 2=implicit Euler; 3=implicit Heun, 4=semi-implicit)
+1      ! Temporal error control (0=fixed time steps; 1=adaptive time steps)
 0      ! Initial conditions used in Newton (0=old state; 1=explicit half-step; 2=explicit full-step)
 0      ! Jacobian re-evaluation strategy (0=fully variable; 1=constant sub-step; 2=constant full step, 3=periodic freeze)
 1      ! Method used to trap/fix errors in Newton (0=none; 1=line search)

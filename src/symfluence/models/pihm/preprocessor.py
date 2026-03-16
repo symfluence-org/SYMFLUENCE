@@ -217,13 +217,13 @@ class PIHMPreProcessor:
             return None
 
         times = pd.DatetimeIndex(combined.time.values)
-        prcp = _get_var(combined, 'pptrate')        # mm/s -> need kg/m2/s (same numerically)
-        temp = _get_var(combined, 'airtemp')         # K
-        spechum = _get_var(combined, 'spechum')      # kg/kg
-        wind = _get_var(combined, 'windspd')          # m/s
-        solar = _get_var(combined, 'SWRadAtm')        # W/m2
-        longwave = _get_var(combined, 'LWRadAtm')     # W/m2
-        pres = _get_var(combined, 'airpres')          # Pa
+        prcp = _get_var(combined, 'precipitation_flux')        # mm/s -> need kg/m2/s (same numerically)
+        temp = _get_var(combined, 'air_temperature')         # K
+        spechum = _get_var(combined, 'specific_humidity')      # kg/kg
+        wind = _get_var(combined, 'wind_speed')          # m/s
+        solar = _get_var(combined, 'surface_downwelling_shortwave_flux')        # W/m2
+        longwave = _get_var(combined, 'surface_downwelling_longwave_flux')     # W/m2
+        pres = _get_var(combined, 'surface_air_pressure')          # Pa
 
         # Convert specific humidity to relative humidity (%)
         # Using Tetens formula for saturation vapor pressure

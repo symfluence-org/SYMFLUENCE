@@ -688,7 +688,7 @@ class SpatialOrchestrator(ABC):
         Run dRoute for the model output.
         """
         try:
-            from symfluence.models.droute import DRouteRunner
+            from droute.runner import DRouteRunner
 
             runner = DRouteRunner(
                 self.config,

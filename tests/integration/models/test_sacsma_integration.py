@@ -1,7 +1,12 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2024-2026 SYMFLUENCE Team <dev@symfluence.org>
+
 """Integration tests for SAC-SMA + Snow-17 model in SYMFLUENCE framework."""
 
 import numpy as np
 import pytest
+
+jsacsma = pytest.importorskip("jsacsma", reason="jsacsma package not installed")
 
 
 class TestModelRegistration:
@@ -31,29 +36,6 @@ class TestModelRegistration:
         assert extractor is not None
         assert type(extractor).__name__ == 'SacSmaResultExtractor'
 
-    def test_spatial_mode_capabilities(self):
-        from symfluence.models.spatial_modes import (
-            MODEL_SPATIAL_CAPABILITIES,
-            SpatialMode,
-            validate_spatial_mode,
-        )
-        assert 'SACSMA' in MODEL_SPATIAL_CAPABILITIES
-        cap = MODEL_SPATIAL_CAPABILITIES['SACSMA']
-        assert cap.default_mode == SpatialMode.LUMPED
-        assert SpatialMode.LUMPED in cap.supported_modes
-        # Only lumped supported
-        assert len(cap.supported_modes) == 1
-
-    def test_spatial_mode_validation(self):
-        from symfluence.models.spatial_modes import SpatialMode, validate_spatial_mode
-        valid, msg = validate_spatial_mode('SACSMA', SpatialMode.LUMPED)
-        assert valid is True
-
-    def test_spatial_mode_distributed_invalid(self):
-        from symfluence.models.spatial_modes import SpatialMode, validate_spatial_mode
-        valid, msg = validate_spatial_mode('SACSMA', SpatialMode.DISTRIBUTED)
-        assert valid is False
-
 
 class TestCalibrationRegistration:
     """Test calibration infrastructure registration."""
@@ -61,9 +43,9 @@ class TestCalibrationRegistration:
     @pytest.fixture(autouse=True)
     def _import_calibration(self):
         """Ensure calibration modules are imported to trigger registration."""
-        import symfluence.models.sacsma.calibration.optimizer  # noqa: F401
-        import symfluence.models.sacsma.calibration.parameter_manager  # noqa: F401
-        import symfluence.models.sacsma.calibration.worker  # noqa: F401
+        import jsacsma.calibration.optimizer  # noqa: F401
+        import jsacsma.calibration.parameter_manager  # noqa: F401
+        import jsacsma.calibration.worker  # noqa: F401
 
     def test_optimizer_registered(self):
         from symfluence.optimization.registry import OptimizerRegistry
@@ -116,8 +98,8 @@ class TestParameterManagerRoundTrip:
     def test_normalize_denormalize_round_trip(self):
         import logging
 
-        from symfluence.models.sacsma.calibration.parameter_manager import SacSmaParameterManager
-        from symfluence.models.sacsma.parameters import DEFAULT_PARAMS
+        from jsacsma.calibration.parameter_manager import SacSmaParameterManager
+        from jsacsma.parameters import DEFAULT_PARAMS
 
         config = {
             'DOMAIN_NAME': 'test',
@@ -141,8 +123,8 @@ class TestParameterManagerRoundTrip:
     def test_log_transform_geometric_mean_initial(self):
         import logging
 
-        from symfluence.models.sacsma.calibration.parameter_manager import SacSmaParameterManager
-        from symfluence.models.sacsma.parameters import LOG_TRANSFORM_PARAMS, PARAM_BOUNDS
+        from jsacsma.calibration.parameter_manager import SacSmaParameterManager
+        from jsacsma.parameters import LOG_TRANSFORM_PARAMS, PARAM_BOUNDS
 
         config = {'DOMAIN_NAME': 'test', 'EXPERIMENT_ID': 'exp1'}
         pm = SacSmaParameterManager(config, logging.getLogger('test'), '/tmp')
@@ -158,8 +140,8 @@ class TestWorkerSimulation:
     """Test worker-based simulation."""
 
     def test_run_simulation(self):
-        from symfluence.models.sacsma.calibration.worker import SacSmaWorker
-        from symfluence.models.sacsma.parameters import DEFAULT_PARAMS
+        from jsacsma.calibration.worker import SacSmaWorker
+        from jsacsma.parameters import DEFAULT_PARAMS
 
         config = {
             'DOMAIN_NAME': 'test',
@@ -188,8 +170,8 @@ class TestEndToEndSmoke:
     """Smoke test: run full simulation and verify basic sanity."""
 
     def test_one_year_simulation(self):
-        from symfluence.models.sacsma.model import simulate
-        from symfluence.models.sacsma.parameters import DEFAULT_PARAMS
+        from jsacsma.model import simulate
+        from jsacsma.parameters import DEFAULT_PARAMS
 
         n = 365
         # Synthetic annual forcing

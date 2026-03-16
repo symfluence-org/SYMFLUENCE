@@ -1,0 +1,91 @@
+# =============================================================================
+# SYMFLUENCE Data Processing Pipeline - Iceland (Regional Scale)
+# =============================================================================
+# Adapted from the Bow pipeline configuration for the Iceland regional domain.
+# Demonstrates pipeline operation at regional scale (21,474 HRUs / 6,600 GRUs, 103,000 km²).
+# Used in Sections 4.8 (large domain) and 4.9 (large sample).
+# =============================================================================
+
+# --- Section 1: Global settings ---
+SYMFLUENCE_DATA_DIR: "/Users/darrieythorsson/compHydro/code/SYMFLUENCE_data/"
+SYMFLUENCE_CODE_DIR: "/Users/darrieythorsson/compHydro/code/SYMFLUENCE"
+DOMAIN_NAME: Iceland
+EXPERIMENT_ID: pipeline_iceland
+EXPERIMENT_TIME_START: 2002-01-01 01:00
+EXPERIMENT_TIME_END: 2009-12-31 23:00
+CALIBRATION_PERIOD: 2004-01-01, 2007-12-31
+EVALUATION_PERIOD: 2008-01-01, 2009-12-31
+SPINUP_PERIOD: 2002-01-01, 2003-12-31
+MPI_PROCESSES: 4
+FORCE_RUN_ALL_STEPS: False
+
+# --- Section 2: Geospatial settings ---
+POUR_POINT_SHP_PATH: default
+POUR_POINT_COORDS: default
+DOMAIN_DEFINITION_METHOD: geofabric
+GEOFABRIC_TYPE: TDX
+BOUNDING_BOX_BUFFER: 0.2
+
+# Regional discretization (6,600 GRUs -> 21,474 HRUs with elevation bands)
+DOMAIN_DISCRETIZATION: semi_distributed
+CATCHMENT_SHP_PATH: default
+RIVER_NETWORK_SHP_PATH: default
+ELEVATION_BAND_SIZE: 200  # metres
+MIN_HRU_SIZE: 10.0        # km² (larger minimum for regional domain)
+
+# DEM and geospatial attributes
+DEM_SOURCE: MERIT
+DEM_PATH: default
+SOIL_CLASS_PATH: default
+LAND_CLASS_PATH: default
+
+# --- Section 3: Model-agnostic data settings ---
+FORCING_DATASET: ERA5
+FORCING_VARIABLES:
+  - air_temperature
+  - precipitation_flux
+  - surface_downwelling_shortwave_flux
+  - surface_downwelling_longwave_flux
+  - specific_humidity
+  - wind_speed
+  - surface_air_pressure
+
+# Spatial remapping
+FORCING_SPATIAL_REMAPPING: EASYMORE
+TEMPERATURE_LAPSE_RATE: default  # 6.5 K/km
+PRECIPITATION_LAPSE_RATE: none
+
+INTERSECTION_DEM_PATH: default
+
+# --- Section 4: Model-specific settings ---
+HYDROLOGICAL_MODEL: SUMMA
+MODEL_EXE: default
+ROUTING_MODEL: mizuRoute
+ROUTING_EXE: default
+
+# --- Section 5: Evaluation settings ---
+# Streamflow from Icelandic Meteorological Office
+STREAMFLOW_RAW_PATH: default
+STREAMFLOW_PROVIDER: IMO
+STREAMFLOW_STATION_ID: multiple
+
+# Snow observations (remote sensing only at regional scale)
+SNOW_OBS_SOURCE: MODIS
+SNOW_MODIS_PRODUCT: MOD10A1
+
+# ET observations
+ET_OBS_SOURCE: MODIS
+ET_MODIS_PRODUCT: MOD16A2
+
+# GRACE total water storage
+GRACE_OBS_SOURCE: GRACE
+GRACE_PROCESSING: mascon
+
+# Soil moisture
+SOIL_MOISTURE_SOURCE: ERA5_LAND
+
+# --- Section 6: Pipeline profiling settings ---
+PIPELINE_PROFILING: True
+PROFILE_OUTPUT_DIR: default
+LOG_DATA_VOLUMES: True
+BENCHMARK_REMAPPING: True

@@ -1,0 +1,47 @@
+# DDS calibration of HBV - Section 3.3
+# Inherits from: ../../_base_bow_calibration.yaml
+# Representative config; repeat with 5 seeds and 17 algorithms
+
+system:
+  data_dir: ./data/
+  code_dir: ./
+  random_seed: 42
+domain:
+  name: Bow_at_Banff_lumped_calibration_ensemble
+  pour_point_coords: 51.1722/-115.5717
+  bounding_box_coords: 51.76/-116.55/50.95/-115.5
+  definition_method: lumped
+  delineation:
+    routing: lumped
+    geofabric_type: TDX
+    stream_threshold: 10000
+  time_start: 2002-01-01 01:00
+  time_end: 2009-12-31 23:00
+  calibration_period: 2004-01-01, 2007-12-31
+  evaluation_period: 2008-01-01, 2009-12-31
+  spinup_period: 2002-01-01, 2003-12-31
+  discretization: GRUs
+  experiment_id: cal_ensemble_hbv_dds
+data:
+  streamflow_data_provider: WSC
+forcing:
+  dataset: RDRS
+model:
+  hydrological_model: HBV
+  routing_model: none
+  hbv:
+    backend: jax
+    timestep_hours: 24
+    warmup_days: 730
+optimization:
+  methods:
+  - iteration
+  metric: KGE
+  iterations: 1000
+  skip_warm_start: true
+  algorithm: DDS
+  dds:
+    r: 0.2
+evaluation:
+  streamflow:
+    station_id: 05BB001

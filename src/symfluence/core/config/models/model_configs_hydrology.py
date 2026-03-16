@@ -65,6 +65,10 @@ class SUMMAConfig(BaseModel):
     init_matric_head: float = Field(default=-1.0, alias='SUMMA_INIT_MATRIC_HEAD')
     init_grid_file: str = Field(default='coldState_glacSurfTopo.nc', alias='SETTINGS_SUMMA_INIT_GRID_FILE')
     attrib_grid_file: str = Field(default='attributes_glacBedTopo.nc', alias='SETTINGS_SUMMA_ATTRIB_GRID_FILE')
+    # Regionalization settings
+    parameter_regionalization: str = Field(default='lumped', alias='PARAMETER_REGIONALIZATION')
+    transfer_function_attributes_path: Optional[str] = Field(default=None, alias='TRANSFER_FUNCTION_ATTRIBUTES')
+    transfer_function_param_config: Optional[Dict[str, Any]] = Field(default=None, alias='TRANSFER_FUNCTION_PARAM_CONFIG')
 
 
 class FUSEConfig(BaseModel):
@@ -134,119 +138,6 @@ class GRConfig(BaseModel):
     gr4j_param_bounds: Optional[Dict[str, Any]] = Field(default=None, alias='GR4J_PARAM_BOUNDS')
     initial_params: str = Field(default='default', alias='GR_INITIAL_PARAMS')
     default_params: Optional[List[float]] = Field(default=None, alias='GR_DEFAULT_PARAMS')
-
-
-class HBVConfig(BaseModel):
-    """HBV-96 hydrological model configuration"""
-    model_config = FROZEN_CONFIG
-
-    spatial_mode: SpatialModeType = Field(default='auto', alias='HBV_SPATIAL_MODE')
-    routing_integration: str = Field(default='none', alias='HBV_ROUTING_INTEGRATION')
-    backend: Literal['jax', 'numpy'] = Field(default='jax', alias='HBV_BACKEND')
-    use_gpu: bool = Field(default=False, alias='HBV_USE_GPU')
-    jit_compile: bool = Field(default=True, alias='HBV_JIT_COMPILE')
-    warmup_days: int = Field(default=365, alias='HBV_WARMUP_DAYS', ge=0)
-    timestep_hours: int = Field(default=24, alias='HBV_TIMESTEP_HOURS', ge=1, le=24)
-    params_to_calibrate: str = Field(
-        default='default',  # 'default' triggers use of all available HBV parameters
-        alias='HBV_PARAMS_TO_CALIBRATE',
-        description="Parameters to calibrate. Use 'default' for all parameters, or specify comma-separated list."
-    )
-    use_gradient_calibration: bool = Field(default=True, alias='HBV_USE_GRADIENT_CALIBRATION')
-    calibration_metric: Literal['KGE', 'NSE'] = Field(default='KGE', alias='HBV_CALIBRATION_METRIC')
-    # Initial state values
-    initial_snow: float = Field(default=0.0, alias='HBV_INITIAL_SNOW', ge=0.0)
-    initial_sm: float = Field(default=150.0, alias='HBV_INITIAL_SM', ge=0.0)
-    initial_suz: float = Field(default=10.0, alias='HBV_INITIAL_SUZ', ge=0.0)
-    initial_slz: float = Field(default=10.0, alias='HBV_INITIAL_SLZ', ge=0.0)
-    # PET configuration
-    pet_method: Literal['input', 'hamon', 'thornthwaite'] = Field(default='input', alias='HBV_PET_METHOD')
-    latitude: Optional[float] = Field(default=None, alias='HBV_LATITUDE', ge=-90.0, le=90.0)
-    allow_unit_heuristics: bool = Field(
-        default=False,
-        alias='HBV_ALLOW_UNIT_HEURISTICS',
-        description='Allow magnitude-based unit detection for precip/PET when units are missing or ambiguous'
-    )
-    # Output configuration
-    save_states: bool = Field(default=False, alias='HBV_SAVE_STATES')
-    output_frequency: Literal['daily', 'timestep'] = Field(default='daily', alias='HBV_OUTPUT_FREQUENCY')
-    # Default parameter values
-    default_tt: float = Field(default=0.0, alias='HBV_DEFAULT_TT')
-    default_cfmax: float = Field(default=3.5, alias='HBV_DEFAULT_CFMAX')
-    default_sfcf: float = Field(default=0.9, alias='HBV_DEFAULT_SFCF')
-    default_cfr: float = Field(default=0.05, alias='HBV_DEFAULT_CFR')
-    default_cwh: float = Field(default=0.1, alias='HBV_DEFAULT_CWH')
-    default_fc: float = Field(default=250.0, alias='HBV_DEFAULT_FC')
-    default_lp: float = Field(default=0.7, alias='HBV_DEFAULT_LP')
-    default_beta: float = Field(default=2.5, alias='HBV_DEFAULT_BETA')
-    default_k0: float = Field(default=0.3, alias='HBV_DEFAULT_K0')
-    default_k1: float = Field(default=0.1, alias='HBV_DEFAULT_K1')
-    default_k2: float = Field(default=0.01, alias='HBV_DEFAULT_K2')
-    default_uzl: float = Field(default=30.0, alias='HBV_DEFAULT_UZL')
-    default_perc: float = Field(default=2.5, alias='HBV_DEFAULT_PERC')
-    default_maxbas: float = Field(default=2.5, alias='HBV_DEFAULT_MAXBAS')
-
-
-class HECHMSConfig(BaseModel):
-    """HEC-HMS hydrological model configuration (native Python/JAX)"""
-    model_config = FROZEN_CONFIG
-
-    backend: Literal['jax', 'numpy'] = Field(default='jax', alias='HECHMS_BACKEND')
-    warmup_days: int = Field(default=365, alias='HECHMS_WARMUP_DAYS', ge=0)
-    params_to_calibrate: str = Field(
-        default='default',
-        alias='HECHMS_PARAMS_TO_CALIBRATE',
-        description="Parameters to calibrate. 'default' for all, or comma-separated list."
-    )
-    calibration_metric: Literal['KGE', 'NSE'] = Field(default='KGE', alias='HECHMS_CALIBRATION_METRIC')
-    pet_method: Literal['input', 'oudin', 'hamon'] = Field(default='input', alias='HECHMS_PET_METHOD')
-    latitude: Optional[float] = Field(default=None, alias='HECHMS_LATITUDE', ge=-90.0, le=90.0)
-    # Initial state
-    initial_snow_swe: float = Field(default=0.0, alias='HECHMS_INITIAL_SNOW_SWE', ge=0.0)
-    initial_gw_storage: float = Field(default=10.0, alias='HECHMS_INITIAL_GW_STORAGE', ge=0.0)
-    # Default parameter values (14 params)
-    default_px_temp: float = Field(default=1.0, alias='HECHMS_DEFAULT_PX_TEMP')
-    default_base_temp: float = Field(default=0.0, alias='HECHMS_DEFAULT_BASE_TEMP')
-    default_ati_meltrate_coeff: float = Field(default=0.98, alias='HECHMS_DEFAULT_ATI_MELTRATE_COEFF')
-    default_meltrate_max: float = Field(default=5.0, alias='HECHMS_DEFAULT_MELTRATE_MAX')
-    default_meltrate_min: float = Field(default=1.0, alias='HECHMS_DEFAULT_MELTRATE_MIN')
-    default_cold_limit: float = Field(default=10.0, alias='HECHMS_DEFAULT_COLD_LIMIT')
-    default_ati_cold_rate_coeff: float = Field(default=0.1, alias='HECHMS_DEFAULT_ATI_COLD_RATE_COEFF')
-    default_water_capacity: float = Field(default=0.05, alias='HECHMS_DEFAULT_WATER_CAPACITY')
-    default_cn: float = Field(default=65.0, alias='HECHMS_DEFAULT_CN')
-    default_initial_abstraction_ratio: float = Field(default=0.2, alias='HECHMS_DEFAULT_INITIAL_ABSTRACTION_RATIO')
-    default_tc: float = Field(default=3.0, alias='HECHMS_DEFAULT_TC')
-    default_r_coeff: float = Field(default=5.0, alias='HECHMS_DEFAULT_R_COEFF')
-    default_gw_storage_coeff: float = Field(default=30.0, alias='HECHMS_DEFAULT_GW_STORAGE_COEFF')
-    default_deep_perc_fraction: float = Field(default=0.1, alias='HECHMS_DEFAULT_DEEP_PERC_FRACTION')
-
-
-class TOPMODELConfig(BaseModel):
-    """TOPMODEL (Beven & Kirkby 1979) hydrological model configuration (native Python/JAX)"""
-    model_config = FROZEN_CONFIG
-
-    backend: Literal['jax', 'numpy'] = Field(default='jax', alias='TOPMODEL_BACKEND')
-    warmup_days: int = Field(default=365, alias='TOPMODEL_WARMUP_DAYS', ge=0)
-    params_to_calibrate: str = Field(
-        default='default',
-        alias='TOPMODEL_PARAMS_TO_CALIBRATE',
-        description="Parameters to calibrate. 'default' for all, or comma-separated list."
-    )
-    calibration_metric: Literal['KGE', 'NSE'] = Field(default='KGE', alias='TOPMODEL_CALIBRATION_METRIC')
-    pet_method: Literal['input', 'oudin', 'hamon'] = Field(default='input', alias='TOPMODEL_PET_METHOD')
-    latitude: Optional[float] = Field(default=None, alias='TOPMODEL_LATITUDE', ge=-90.0, le=90.0)
-    # Default parameter values (11 params)
-    default_m: float = Field(default=0.05, alias='TOPMODEL_DEFAULT_M')
-    default_lnTe: float = Field(default=1.0, alias='TOPMODEL_DEFAULT_LNTE')
-    default_Srmax: float = Field(default=0.05, alias='TOPMODEL_DEFAULT_SRMAX')
-    default_Sr0: float = Field(default=0.01, alias='TOPMODEL_DEFAULT_SR0')
-    default_td: float = Field(default=5.0, alias='TOPMODEL_DEFAULT_TD')
-    default_k_route: float = Field(default=48.0, alias='TOPMODEL_DEFAULT_K_ROUTE')
-    default_DDF: float = Field(default=3.5, alias='TOPMODEL_DEFAULT_DDF')
-    default_T_melt: float = Field(default=0.0, alias='TOPMODEL_DEFAULT_T_MELT')
-    default_T_snow: float = Field(default=1.0, alias='TOPMODEL_DEFAULT_T_SNOW')
-    default_ti_std: float = Field(default=4.0, alias='TOPMODEL_DEFAULT_TI_STD')
-    default_S0: float = Field(default=0.5, alias='TOPMODEL_DEFAULT_S0')
 
 
 class HYPEConfig(BaseModel):
@@ -776,9 +667,6 @@ __all__ = [
     'SUMMAConfig',
     'FUSEConfig',
     'GRConfig',
-    'HBVConfig',
-    'HECHMSConfig',
-    'TOPMODELConfig',
     'HYPEConfig',
     'NGENConfig',
     'MESHConfig',

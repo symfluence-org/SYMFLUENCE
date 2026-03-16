@@ -194,7 +194,7 @@ class WflowPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         lon = np.array([props['lon'] - dx, props['lon'], props['lon'] + dx])
 
         precip = self._extract_forcing_var(
-            ds_forcing, ['pptrate', 'mtpr', 'tp', 'precipitation', 'PREC', 'precip'],
+            ds_forcing, ['precipitation_flux', 'mtpr', 'tp', 'precipitation', 'PREC', 'precip'],
             props['lat'], props['lon']
         )
         if precip.max() < 0.1:
@@ -202,7 +202,7 @@ class WflowPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         precip = np.maximum(precip, 0.0)
 
         temp = self._extract_forcing_var(
-            ds_forcing, ['t2m', 'temperature', 'TEMP', 'airtemp', 'tas'],
+            ds_forcing, ['t2m', 'temperature', 'TEMP', 'air_temperature', 'tas'],
             props['lat'], props['lon']
         )
         if temp.mean() > 100:

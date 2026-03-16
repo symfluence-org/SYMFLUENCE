@@ -1,0 +1,407 @@
+### ============================================= SYMFLUENCE configuration file ============================================================
+# Iceland Large Domain Experiment - Section 4.9
+# Using CARRA reanalysis forcing (3-hourly, 2.5km resolution)
+# Full Iceland domain with distributed FUSE + mizuRoute routing
+### ============================================= 1. Global settings: =====================================================================
+
+# Main paths
+SYMFLUENCE_DATA_DIR: "/Users/darrieythorsson/compHydro/code/SYMFLUENCE_data/"
+SYMFLUENCE_CODE_DIR: "/Users/darrieythorsson/compHydro/code/SYMFLUENCE"
+
+# Experiment settings
+DOMAIN_NAME: Iceland_multivar
+EXPERIMENT_ID: iceland_large_domain_carra
+EXPERIMENT_TIME_START: 2000-01-01 03:00
+EXPERIMENT_TIME_END: 2008-12-31 21:00
+CALIBRATION_PERIOD: 2001-01-01, 2006-12-31
+EVALUATION_PERIOD:  2007-01-01, 2008-12-31
+SPINUP_PERIOD: 2000-01-01, 2000-12-31
+
+# Data access settings
+DATA_ACCESS: "cloud"
+DEM_SOURCE: "copernicus"
+DOWNLOAD_DEM: true
+LAND_CLASS_SOURCE: "modis"
+DOWNLOAD_LAND_COVER: true
+DOWNLOAD_SOIL: true
+
+# Computational settings
+MPI_PROCESSES: 1
+FORCE_RUN_ALL_STEPS: False
+
+### ============================================= 2. Geospatial settings: =================================================================
+# Coordinate settings (Iceland bounding box)
+POUR_POINT_COORDS: 64.9631/-19.0208
+BOUNDING_BOX_COORDS: 66.6/-24.6/63.3/-13.4
+
+# Pour point shapefile path
+POUR_POINT_SHP_PATH: default
+POUR_POINT_SHP_NAME: default
+
+# Domain representation settings
+DOMAIN_DEFINITION_METHOD: delineate
+ROUTING_DELINEATION: distributed
+
+GEOFABRIC_TYPE: TDX
+STREAM_THRESHOLD: 15000
+LUMPED_WATERSHED_METHOD: TauDEM
+CLEANUP_INTERMEDIATE_FILES: True
+DELINEATE_BY_POURPOINT: False
+MOVE_OUTLETS_MAX_DISTANCE: 200
+MIN_GRU_SIZE: 1
+
+# Coastal basin delineation settings
+DELINEATE_COASTAL_WATERSHEDS: True
+
+# Domain discretization settings
+SUB_GRID_DISCRETIZATION: GRUS
+ELEVATION_BAND_SIZE: 200
+MIN_HRU_SIZE: 4
+RADIATION_CLASS_NUMBER: 5
+ASPECT_CLASS_NUMBER: 8
+ASPECT_PATH: default
+
+# Shapefile settings - Catchment shape
+CATCHMENT_PATH: default
+CATCHMENT_SHP_NAME: default
+CATCHMENT_SHP_LAT: center_lat
+CATCHMENT_SHP_LON: center_lon
+CATCHMENT_SHP_AREA: HRU_area
+CATCHMENT_SHP_HRUID: HRU_ID
+CATCHMENT_SHP_GRUID: GRU_ID
+
+# Shapefile settings - Basins shape
+RIVER_BASINS_PATH: default
+RIVER_BASINS_NAME: default
+RIVER_BASIN_SHP_RM_GRUID: GRU_ID
+RIVER_BASIN_SHP_HRU_TO_SEG: gru_to_seg
+RIVER_BASIN_SHP_AREA: GRU_area
+
+# Shapefile settings - River network shape
+RIVER_NETWORK_SHP_PATH: default
+RIVER_NETWORK_SHP_NAME: default
+RIVER_NETWORK_SHP_LENGTH: Length
+RIVER_NETWORK_SHP_SEGID: LINKNO
+RIVER_NETWORK_SHP_DOWNSEGID: DSLINKNO
+RIVER_NETWORK_SHP_SLOPE: Slope
+
+# Geospatial data paths
+OUTPUT_BASINS_PATH: default
+OUTPUT_RIVERS_PATH: default
+DEM_PATH: default
+DEM_NAME: default
+TAUDEM_DIR: default
+OUTPUT_DIR: default
+CATCHMENT_PLOT_DIR: default
+SOIL_CLASS_PATH: default
+SOIL_CLASS_NAME: default
+LAND_CLASS_PATH: default
+LAND_CLASS_NAME: default
+RADIATION_PATH: default
+
+# Tool paths
+DATATOOL_PATH: default
+GISTOOL_PATH: default
+EASYMORE_CLIENT: easymore cli
+DATATOOL_DATASET_ROOT: /work/comphyd_lab/data/meteorological-data/
+DATATOOL_CACHE: /home/darri.eythorsson
+TOOL_ACCOUNT: def-mclark
+GISTOOL_DATASET_ROOT: /work/comphyd_lab/data/geospatial-data/
+GISTOOL_LIB_PATH: /work/comphyd_lab/envs/r-env/
+TOOL_CACHE: /home/darri.eythorsson/cache
+EASYMORE_CACHE: /home/darri.eythorsson/easymore/
+EASYMORE_JOB_CONF: "installs/MAF/02_model_agnostic_component/easymore-job.slurm"
+CLUSTER_JSON: /work/comphyd_lab/users/darri/data/SYMFLUENCE_data/installs/datatool/etc/clusters/ucalgary-arc.json
+
+### ============================================= 3. Model Agnostic settings: =============================================================
+
+# Forcing data settings - CARRA is 3-hourly
+FORCING_DATASET: CARRA
+FORCING_VARIABLES: airtemp,pptrate,airpres,spechum,windspd,SWRadAtm,LWRadAtm
+FORCING_MEASUREMENT_HEIGHT: 2
+FORCING_TIME_STEP_SIZE: 10800
+APPLY_LAPSE_RATE: True
+LAPSE_RATE: 0.0065
+FORCING_SHAPE_LAT_NAME: latitude
+FORCING_SHAPE_LON_NAME: longitude
+FORCING_PATH: default
+
+# Raw CARRA forcing data (grid-level, before HRU remapping)
+FORCING_RAW_PATH: "/Users/darrieythorsson/compHydro/code/SYMFLUENCE_data/domain_Iceland_multivar/forcing/raw_data"
+
+# EM-Earth forcing supplementation settings
+SUPPLEMENT_FORCING: False
+EM_EARTH_PRCP_DIR: "/anvil/datasets/meteorological/EM-Earth/EM_Earth_v1/deterministic_hourly/prcp/NorthAmerica"
+EM_EARTH_TMEAN_DIR: "/anvil/datasets/meteorological/EM-Earth/EM_Earth_v1/deterministic_hourly/tmean/NorthAmerica"
+
+# Intersection paths
+INTERSECT_SOIL_PATH: default
+INTERSECT_SOIL_NAME: catchment_with_soilclass.shp
+INTERSECT_ROUTING_PATH: default
+INTERSECT_ROUTING_NAME: catchment_with_routing_basins.shp
+INTERSECT_DEM_PATH: default
+INTERSECT_DEM_NAME: catchment_with_dem.shp
+INTERSECT_LAND_PATH: default
+INTERSECT_LAND_NAME: catchment_with_landclass.shp
+
+### ============================================= 4. Model Specific settings: =============================================================
+
+# Model settings
+HYDROLOGICAL_MODEL: FUSE
+ROUTING_MODEL: mizuRoute
+
+# FUSE settings
+FUSE_INSTALL_PATH: default
+FUSE_EXE: fuse.exe
+SETTINGS_FUSE_PATH: default
+FUSE_SPATIAL_MODE: distributed
+FUSE_OUTPUT_TIMESTEP_SECONDS: 86400
+FUSE_ROUTING_INTEGRATION: mizuRoute
+FUSE_RUN_INTERNAL_CALIBRATION: True
+# CRITICAL: run_pre reads parameters from para_def.nc without regenerating
+# run_def regenerates para_def.nc from constraints (destroys distributed params!)
+FUSE_RUN_MODE: run_pre
+FUSE_DECISION_OPTIONS:
+  RFERR:
+  - multiplc_e
+  ARCH1:
+  - tension1_1
+  ARCH2:
+  - unlimfrc_2
+  QSURF:
+  - prms_varnt
+  QPERC:
+  - perc_f2sat
+  ESOIL:
+  - sequential
+  QINTF:
+  - intflwnone
+  Q_TDH:
+  - rout_gamma
+  SNOWM:
+  - temp_index
+
+# FUSE Parameters to calibrate (including snow params)
+SETTINGS_FUSE_PARAMS_TO_CALIBRATE: MAXWATR_1,MAXWATR_2,BASERTE,QB_POWR,TIMEDELAY,PERCRTE,FRACTEN,RTFRAC1,MBASE,MFMAX,MFMIN,PXTEMP,LAPSE
+
+# mizuRoute settings
+SETTINGS_MIZU_WITHIN_BASIN: 0
+SETTINGS_MIZU_ROUTING_DT: 3600
+SETTINGS_MIZU_ROUTING_UNITS: m/s
+SETTINGS_MIZU_ROUTING_VAR: q_routed
+SETTINGS_MIZU_OUTPUT_FREQ: single
+SETTINGS_MIZU_OUTPUT_VARS: 1
+SETTINGS_MIZU_MAKE_OUTLET: n/a
+SETTINGS_MIZU_NEEDS_REMAP: false
+MIZU_FROM_MODEL: default
+SETTINGS_MIZU_PATH: default
+MIZUROUTE_INSTALL_PATH: default
+MIZUROUTE_EXE: mizuRoute.exe
+SETTINGS_MIZU_TOPOLOGY: topology.nc
+SETTINGS_MIZU_PARAMETERS: param.nml.default
+SETTINGS_MIZU_CONTROL_FILE: mizuroute.control
+SETTINGS_MIZU_REMAP: routing_remap.nc
+
+# Model results path
+EXPERIMENT_OUTPUT_FUSE: default
+EXPERIMENT_LOG_FUSE: default
+
+### ============================================= 5. Evaluation settings: =================================================================
+
+# Simulation settings
+SIMULATIONS_PATH: default
+
+# Observation data settings
+OBSERVATIONS_PATH: default
+DOWNLOAD_MODIS_SNOW: true
+ADDITIONAL_OBSERVATIONS: MODIS_SNOW
+
+### ============================================= 6. Multivariate evaluation - SCF Trend settings: ========================================
+
+# Multivariate comparison settings
+MULTIVAR_EVALUATION: True
+MULTIVAR_TARGETS:
+  - variable: SCF
+    source: MODIS
+    product: MOD10A2
+    metric: trend_correlation
+    weight: 1.0
+
+# MODIS Snow Cover Fraction settings for trend study
+MODIS_SCF_PRODUCT: MOD10A2
+MODIS_SCF_PATH: default
+MODIS_SCF_VARIABLE: Maximum_Snow_Extent
+MODIS_SCF_TEMPORAL_RESOLUTION: 8day
+MODIS_CLOUD_FILTER: True
+MODIS_CLOUD_MAX_FRACTION: 0.3
+
+# Trend analysis settings
+SCF_TREND_ANALYSIS: True
+SCF_TREND_METHOD: Mann-Kendall
+SCF_TREND_SIGNIFICANCE: 0.05
+SCF_TREND_PERIOD: 2000-03-01, 2008-12-31
+SCF_SEASONAL_DECOMPOSITION: True
+SCF_SEASONS:
+  accumulation: [10, 11, 12, 1, 2, 3]
+  ablation: [4, 5, 6]
+  snow_free: [7, 8, 9]
+
+# Regional aggregation settings
+SCF_REGIONAL_AGGREGATION: True
+SCF_ELEVATION_BANDS: [0, 200, 400, 600, 800, 1000, 1200, 1500, 2000]
+SCF_SPATIAL_RESOLUTION: 500
+
+### ============================================= 7. Optimization settings: ===============================================================
+
+OPTIMIZATION_METHODS: [iteration]
+
+# Multi-gauge calibration settings
+MULTI_GAUGE_CALIBRATION: True
+GAUGE_SEGMENT_MAPPING: /Users/darrieythorsson/compHydro/code/SYMFLUENCE_data/domain_Iceland_Multivar/settings/mizuRoute/gauge_segment_mapping.csv
+MULTI_GAUGE_OBS_DIR: /Users/darrieythorsson/compHydro/data/lamah_ice/D_gauges/2_timeseries/daily
+MULTI_GAUGE_AGGREGATION: median
+MULTI_GAUGE_MIN_GAUGES: 5
+# Exclude gauges where FUSE structural assumptions break down:
+#   glacier >20%: temp_index snow model cannot represent glacier dynamics/storage
+#   largely regulated (deg=l): flow regime ≠ natural rainfall-runoff
+#   area <25 km²: below effective model grid resolution
+# Excluded gauges become diagnostic outputs (see sidenote_anomalous_gauges.md)
+MULTI_GAUGE_EXCLUDE_IDS:
+  # --- Original exclusions (data quality / spatial mismatch) ---
+  - 13   # Heyvað — regulated (s;A)
+  - 39   # Gunnarshólmi — unregulated but poor spatial match
+  - 62   # Lagarfossvirkjun — hydropower station
+  - 76   # Kirkjubæjarklaustur — distance 0.34° to segment
+  - 78   # Smyrlabjargaárvirkjun — regulated (s;A), tiny (19.5 km²)
+  - 82   # Hófleðurshóll — basaltic spring, Q=24×(P-ET)
+  - 97   # Eystri-Ásar — data error (152 m³/s from 45 km²)
+  - 104  # Þjórsárlón Reservoir Outflow — reservoir
+  # --- Glacier-dominated (>20%, FUSE cannot represent ice dynamics) ---
+  - 4    # Austurbugur — 41% glacier
+  - 11   # neðan Djúpárdals — 33% glacier
+  - 38   # Hólmsárfoss — 22% glacier
+  - 40   # Þauli — 24% glacier
+  - 42   # Hjarðarhagi — 37% glacier
+  - 43   # Hálslón Reservoir — 72% glacier
+  - 44   # Kálfseyrarvað — 61% glacier
+  - 45   # Grímsstaðir — 29% glacier
+  - 46   # Upptyppingar II — 56% glacier
+  - 47   # Hóll — 22% glacier
+  - 48   # Eyjabakkafoss — 41% glacier
+  - 49   # Sauðafell — 35% glacier
+  - 51   # Hágöngulón Reservoir — 53% glacier
+  - 52   # Þveralda — 42% glacier
+  - 53   # Við Brúarfoss — 31% glacier
+  - 59   # Lónshnjúkur — 36% glacier
+  - 60   # Ofan Kringilsárfoss — 93% glacier
+  - 71   # ofan Sultarkrika — 43% glacier
+  - 74   # Sveinstindur — 66% glacier (Skaftá)
+  - 75   # Skaftárdal — 31% glacier (Skaftá, jökulhlaup)
+  - 89   # Faxi — 33% glacier
+  - 99   # Norðlingaalda 1970-1980 — 21% glacier
+  - 990  # Norðlingaalda 1985-1996 — 26% glacier
+  - 1010 # Dynkur post 1997 — 20% glacier
+  # --- Largely regulated (deg=l, flow regime altered) ---
+  - 8    # Dynjandi — regulated (l;D)
+  - 12   # Sjóarfoss — regulated (l;D)
+  - 14   # Tungufoss — regulated (l;C)
+  - 16   # Neðri-Stafur — regulated (l;D)
+  - 19   # Þjórsárdal — regulated (l;B)
+  - 20   # Hjálp — regulated (l;B)
+  - 26   # Reyðarvatnsós — regulated (l;D)
+  - 27   # Efri-Sauðhylur — regulated (l;D)
+  - 30   # útfall Haukadalsvatns — regulated (l;D)
+  - 36   # Fremstaver — regulated (l;D)
+  - 58   # Keldnaholt — regulated (l;D)
+  - 64   # Hvítá í Borgarfirði — regulated (l;D)
+  - 68   # Rauðá — regulated (l;B)
+  - 83   # Ölfusá — regulated (l;C)
+  - 92   # Eiði — regulated (l;D)
+  - 98   # Selfoss — regulated (l;C)
+  - 107  # Þórisós — regulated (l;D)
+  # --- Below model resolution (<25 km²) ---
+  - 25   # ofan Landbrotsár — 17.3 km² (lava field aquifer)
+  - 90   # Efstalækjarbrú — 14.6 km²
+  - 96   # Álftafitjakvísl — 19.3 km², regulated (l;B)
+MULTI_GAUGE_MAX_DISTANCE: 0.1
+MULTI_GAUGE_MIN_OBS_CV: 0.10
+MULTI_GAUGE_MIN_SPECIFIC_Q: 150
+MULTI_GAUGE_MIN_OVERLAP_DAYS: 180
+# KGE floor still useful for remaining edge cases (springs, karst)
+MULTI_GAUGE_KGE_FLOOR: -0.41
+
+# Iterative optimization settings
+SKIP_WARM_START: false
+ITERATIVE_OPTIMIZATION_ALGORITHM: DDS
+NUMBER_OF_ITERATIONS: 100
+DDS_R: 0.4
+DDS_STAGNATION_THRESHOLD: 50
+FUSE_TIMEOUT: 900
+OPTIMIZATION_METRIC: KGE
+TARGET_METRIC: KGE
+
+# FUSE parameter bounds
+FUSE_PARAM_BOUNDS:
+  MAXWATR_1: [50, 500]
+  MAXWATR_2: [50, 1000]
+  BASERTE: [0.001, 0.5]
+  QB_POWR: [1.0, 5.0]
+  TIMEDELAY: [0.1, 5.0]
+  PERCRTE: [0.01, 20.0]
+  FRACTEN: [0.05, 0.8]
+  RTFRAC1: [0.1, 0.95]
+  MBASE: [-2.0, 2.0]
+  MFMAX: [1.0, 8.0]
+  MFMIN: [0.5, 4.0]
+  PXTEMP: [-2.0, 4.0]
+  LAPSE: [-8.0, -4.0]
+
+# Parameter regionalization - MPR-style transfer functions
+# Linear form: param = a + b * attr_norm
+# where attr_norm is log-transformed (for precip, aridity) and normalized to [0,1]
+PARAMETER_REGIONALIZATION: transfer_function
+
+# Subcatchment attributes for transfer functions
+TRANSFER_FUNCTION_ATTRIBUTES: /Users/darrieythorsson/compHydro/code/SYMFLUENCE_data/domain_Iceland_multivar/settings/FUSE/subcatchment_attributes.csv
+
+# Transfer function type: 'linear' (default, recommended) or 'power'
+TRANSFER_FUNCTION_TYPE: linear
+
+# Transfer function coefficient bounds
+# Linear form: param = a + b * attr_norm
+#   a = base value (intercept, value when attr_norm=0)
+#   b = slope (change in param from attr_norm=0 to attr_norm=1)
+# Params with _b: spatially varying (slope calibrated)
+# Params with only _a: spatially uniform (b=0)
+TRANSFER_FUNCTION_COEFF_BOUNDS:
+  # Storage parameters - vary with log(precipitation)
+  MAXWATR_1_a: [50, 500]
+  MAXWATR_1_b: [-300, 300]
+  MAXWATR_2_a: [50, 1000]
+  MAXWATR_2_b: [-600, 600]
+  # Soil/flow parameters
+  FRACTEN_a: [0.05, 0.8]
+  BASERTE_a: [0.001, 0.5]
+  BASERTE_b: [-0.3, 0.3]
+  QB_POWR_a: [1.0, 5.0]
+  QB_POWR_b: [-2.0, 2.0]
+  PERCRTE_a: [0.01, 20.0]
+  PERCRTE_b: [-8.0, 8.0]
+  TIMEDELAY_a: [0.1, 5.0]
+  RTFRAC1_a: [0.1, 0.95]
+  # Snow parameters - vary with elevation/temperature
+  MBASE_a: [-2.0, 2.0]
+  MBASE_b: [-3.0, 3.0]
+  MFMAX_a: [1.0, 8.0]
+  MFMAX_b: [-4.0, 4.0]
+  MFMIN_a: [0.5, 4.0]
+  MFMIN_b: [-2.0, 2.0]
+  PXTEMP_a: [-2.0, 4.0]
+  PXTEMP_b: [-3.0, 3.0]
+  LAPSE_a: [-8.0, -4.0]
+  LAPSE_b: [-2.0, 2.0]
+
+# DDS specific settings
+ASYNC_DDS_POOL_SIZE: 10
+ASYNC_DDS_BATCH_SIZE: 10
+MAX_STAGNATION_BATCHES: 5

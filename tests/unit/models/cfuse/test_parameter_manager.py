@@ -36,7 +36,8 @@ class TestCFUSEParameterManagerRegistration:
         assert 'CFUSE' in OptimizerRegistry._parameter_managers
 
     def test_parameter_manager_is_correct_class(self):
-        from symfluence.models.cfuse.calibration.parameter_manager import CFUSEParameterManager
+        from cfuse.calibration.parameter_manager import CFUSEParameterManager
+
         from symfluence.optimization.registry import OptimizerRegistry
         assert OptimizerRegistry._parameter_managers.get('CFUSE') == CFUSEParameterManager
 
@@ -45,12 +46,12 @@ class TestCFUSEParameterManagerInstance:
     """Tests for cFUSE parameter manager instances."""
 
     def test_can_instantiate(self, cfuse_config, logger, temp_dir):
-        from symfluence.models.cfuse.calibration.parameter_manager import CFUSEParameterManager
+        from cfuse.calibration.parameter_manager import CFUSEParameterManager
         manager = CFUSEParameterManager(cfuse_config, logger, temp_dir)
         assert manager is not None
 
     def test_parameter_names(self, cfuse_config, logger, temp_dir):
-        from symfluence.models.cfuse.calibration.parameter_manager import CFUSEParameterManager
+        from cfuse.calibration.parameter_manager import CFUSEParameterManager
         manager = CFUSEParameterManager(cfuse_config, logger, temp_dir)
         names = manager._get_parameter_names()
         assert 'S1_max' in names
@@ -58,7 +59,7 @@ class TestCFUSEParameterManagerInstance:
         assert len(names) == 5
 
     def test_load_bounds(self, cfuse_config, logger, temp_dir):
-        from symfluence.models.cfuse.calibration.parameter_manager import CFUSEParameterManager
+        from cfuse.calibration.parameter_manager import CFUSEParameterManager
         manager = CFUSEParameterManager(cfuse_config, logger, temp_dir)
         bounds = manager._load_parameter_bounds()
         assert len(bounds) > 0
@@ -66,7 +67,7 @@ class TestCFUSEParameterManagerInstance:
             assert param in bounds
 
     def test_normalize_denormalize_roundtrip(self, cfuse_config, logger, temp_dir):
-        from symfluence.models.cfuse.calibration.parameter_manager import CFUSEParameterManager
+        from cfuse.calibration.parameter_manager import CFUSEParameterManager
         manager = CFUSEParameterManager(cfuse_config, logger, temp_dir)
 
         bounds = manager._load_parameter_bounds()
@@ -87,7 +88,7 @@ class TestCFUSECalibrationBoundsFunction:
     """Tests for the convenience bounds function."""
 
     def test_get_cfuse_calibration_bounds(self):
-        from symfluence.models.cfuse.calibration.parameter_manager import get_cfuse_calibration_bounds
+        from cfuse.calibration.parameter_manager import get_cfuse_calibration_bounds
         bounds = get_cfuse_calibration_bounds()
         assert isinstance(bounds, dict)
         assert len(bounds) > 0

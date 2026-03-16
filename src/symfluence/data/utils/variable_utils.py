@@ -62,16 +62,16 @@ class VariableStandardizer:
     duplicated across acquisition handlers into a single source of truth.
 
     Standard variable names (target):
-        - airtemp: Air temperature
-        - airpres: Surface air pressure
-        - spechum: Specific humidity
-        - relhum: Relative humidity
-        - windspd: Wind speed (magnitude)
-        - windspd_u: Eastward wind component
-        - windspd_v: Northward wind component
-        - SWRadAtm: Downwelling shortwave radiation
-        - LWRadAtm: Downwelling longwave radiation
-        - pptrate: Precipitation rate
+        - air_temperature: Air temperature
+        - surface_air_pressure: Surface air pressure
+        - specific_humidity: Specific humidity
+        - relative_humidity: Relative humidity
+        - wind_speed: Wind speed (magnitude)
+        - eastward_wind: Eastward wind component
+        - northward_wind: Northward wind component
+        - surface_downwelling_shortwave_flux: Downwelling shortwave radiation
+        - surface_downwelling_longwave_flux: Downwelling longwave radiation
+        - precipitation_flux: Precipitation rate
 
     Usage:
         standardizer = VariableStandardizer()
@@ -92,179 +92,190 @@ class VariableStandardizer:
     # Organized by dataset for easy lookup
     RENAME_MAPS: Dict[str, Dict[str, str]] = {
         'ERA5': {
-            't2m': 'airtemp',
-            'tp': 'pptrate',
-            'sp': 'airpres',
-            'q': 'spechum',
-            'u10': 'windspd_u',
-            'v10': 'windspd_v',
-            'ws10': 'windspd',
-            'ssrd': 'SWRadAtm',
-            'strd': 'LWRadAtm',
+            't2m': 'air_temperature',
+            'tp': 'precipitation_flux',
+            'sp': 'surface_air_pressure',
+            'q': 'specific_humidity',
+            'u10': 'eastward_wind',
+            'v10': 'northward_wind',
+            'ws10': 'wind_speed',
+            'ssrd': 'surface_downwelling_shortwave_flux',
+            'strd': 'surface_downwelling_longwave_flux',
         },
         'CARRA': {
-            't2m': 'airtemp',
-            'r2': 'relhum',
-            'tp': 'pptrate',
-            'sp': 'airpres',
-            'q': 'spechum',
-            'u10': 'windspd_u',
-            'v10': 'windspd_v',
-            'ws10': 'windspd',
-            'ssrd': 'SWRadAtm',
-            'strd': 'LWRadAtm',
+            't2m': 'air_temperature',
+            'r2': 'relative_humidity',
+            'tp': 'precipitation_flux',
+            'sp': 'surface_air_pressure',
+            'q': 'specific_humidity',
+            'u10': 'eastward_wind',
+            'v10': 'northward_wind',
+            'ws10': 'wind_speed',
+            'ssrd': 'surface_downwelling_shortwave_flux',
+            'strd': 'surface_downwelling_longwave_flux',
             # Long-form variable names from CDS API
-            '2m_temperature': 'airtemp',
-            '2m_relative_humidity': 'relhum',
-            'total_precipitation': 'pptrate',
-            'surface_pressure': 'airpres',
-            '10m_u_component_of_wind': 'windspd_u',
-            '10m_v_component_of_wind': 'windspd_v',
-            'thermal_surface_radiation_downwards': 'LWRadAtm',
-            'surface_thermal_radiation_downwards': 'LWRadAtm',  # Backwards compatibility
-            'surface_solar_radiation_downwards': 'SWRadAtm',
+            '2m_temperature': 'air_temperature',
+            '2m_relative_humidity': 'relative_humidity',
+            'total_precipitation': 'precipitation_flux',
+            'surface_pressure': 'surface_air_pressure',
+            '10m_u_component_of_wind': 'eastward_wind',
+            '10m_v_component_of_wind': 'northward_wind',
+            'thermal_surface_radiation_downwards': 'surface_downwelling_longwave_flux',
+            'surface_thermal_radiation_downwards': 'surface_downwelling_longwave_flux',  # Backwards compatibility
+            'surface_solar_radiation_downwards': 'surface_downwelling_shortwave_flux',
         },
         'CERRA': {
-            't2m': 'airtemp',
-            'r2': 'relhum',
-            'tp': 'pptrate',
-            'sp': 'airpres',
-            'q': 'spechum',
-            'u10': 'windspd_u',
-            'v10': 'windspd_v',
-            'ws10': 'windspd',
-            'si10': 'windspd',  # CERRA provides 10m wind speed directly
-            '10m_wind_speed': 'windspd',
-            'ssrd': 'SWRadAtm',
-            'strd': 'LWRadAtm',
-            '2m_temperature': 'airtemp',
-            '2m_relative_humidity': 'relhum',
-            'total_precipitation': 'pptrate',
-            'surface_pressure': 'airpres',
-            '10m_u_component_of_wind': 'windspd_u',
-            '10m_v_component_of_wind': 'windspd_v',
-            'surface_solar_radiation_downwards': 'SWRadAtm',
-            'surface_thermal_radiation_downwards': 'LWRadAtm',
-            'thermal_surface_radiation_downwards': 'LWRadAtm',
+            't2m': 'air_temperature',
+            'r2': 'relative_humidity',
+            'tp': 'precipitation_flux',
+            'sp': 'surface_air_pressure',
+            'q': 'specific_humidity',
+            'u10': 'eastward_wind',
+            'v10': 'northward_wind',
+            'ws10': 'wind_speed',
+            'si10': 'wind_speed',  # CERRA provides 10m wind speed directly
+            '10m_wind_speed': 'wind_speed',
+            'ssrd': 'surface_downwelling_shortwave_flux',
+            'strd': 'surface_downwelling_longwave_flux',
+            '2m_temperature': 'air_temperature',
+            '2m_relative_humidity': 'relative_humidity',
+            'total_precipitation': 'precipitation_flux',
+            'surface_pressure': 'surface_air_pressure',
+            '10m_u_component_of_wind': 'eastward_wind',
+            '10m_v_component_of_wind': 'northward_wind',
+            'surface_solar_radiation_downwards': 'surface_downwelling_shortwave_flux',
+            'surface_thermal_radiation_downwards': 'surface_downwelling_longwave_flux',
+            'thermal_surface_radiation_downwards': 'surface_downwelling_longwave_flux',
         },
         'CONUS404': {
-            'T2': 'airtemp',
-            'Q2': 'spechum',
-            'PSFC': 'airpres',
-            'U10': 'windspd_u',
-            'V10': 'windspd_v',
-            'GLW': 'LWRadAtm',
-            'SWDOWN': 'SWRadAtm',
-            'ACSWDNB': 'SWRadAtm',
-            'ACLWDNB': 'LWRadAtm',
-            'LWDOWN': 'LWRadAtm',
-            'RAINRATE': 'pptrate',
-            'PREC_ACC_NC': 'pptrate',
-            'ACDRIPR': 'pptrate',
-            'PRATE': 'pptrate',
+            'T2': 'air_temperature',
+            'Q2': 'specific_humidity',
+            'PSFC': 'surface_air_pressure',
+            'U10': 'eastward_wind',
+            'V10': 'northward_wind',
+            'GLW': 'surface_downwelling_longwave_flux',
+            'SWDOWN': 'surface_downwelling_shortwave_flux',
+            'ACSWDNB': 'surface_downwelling_shortwave_flux',
+            'ACLWDNB': 'surface_downwelling_longwave_flux',
+            'LWDOWN': 'surface_downwelling_longwave_flux',
+            'RAINRATE': 'precipitation_flux',
+            'PREC_ACC_NC': 'precipitation_flux',
+            'ACDRIPR': 'precipitation_flux',
+            'PRATE': 'precipitation_flux',
         },
         'HRRR': {
-            'TMP': 'airtemp',
-            'SPFH': 'spechum',
-            'PRES': 'airpres',
-            'DLWRF': 'LWRadAtm',
-            'DSWRF': 'SWRadAtm',
-            'UGRD': 'windspd_u',
-            'VGRD': 'windspd_v',
-            'APCP': 'pptrate',
+            'TMP': 'air_temperature',
+            'SPFH': 'specific_humidity',
+            'PRES': 'surface_air_pressure',
+            'DLWRF': 'surface_downwelling_longwave_flux',
+            'DSWRF': 'surface_downwelling_shortwave_flux',
+            'UGRD': 'eastward_wind',
+            'VGRD': 'northward_wind',
+            'APCP': 'precipitation_flux',
         },
         'AORC': {
-            'APCP_surface': 'pptrate',
-            'TMP_2maboveground': 'airtemp',
-            'SPFH_2maboveground': 'spechum',
-            'PRES_surface': 'airpres',
-            'DLWRF_surface': 'LWRadAtm',
-            'DSWRF_surface': 'SWRadAtm',
-            'UGRD_10maboveground': 'windspd_u',
-            'VGRD_10maboveground': 'windspd_v',
+            'APCP_surface': 'precipitation_flux',
+            'TMP_2maboveground': 'air_temperature',
+            'SPFH_2maboveground': 'specific_humidity',
+            'PRES_surface': 'surface_air_pressure',
+            'DLWRF_surface': 'surface_downwelling_longwave_flux',
+            'DSWRF_surface': 'surface_downwelling_shortwave_flux',
+            'UGRD_10maboveground': 'eastward_wind',
+            'VGRD_10maboveground': 'northward_wind',
         },
         'NEX-GDDP': {
-            'pr': 'pptrate',
-            'tas': 'airtemp',
-            'tasmax': 'airtemp_max',
-            'tasmin': 'airtemp_min',
-            'hurs': 'relhum',
-            'huss': 'spechum',
-            'rlds': 'LWRadAtm',
-            'rsds': 'SWRadAtm',
-            'sfcWind': 'windspd',
-            'ps': 'airpres',
+            'pr': 'precipitation_flux',
+            'tas': 'air_temperature',
+            'tasmax': 'air_temperature_max',
+            'tasmin': 'air_temperature_min',
+            'hurs': 'relative_humidity',
+            'huss': 'specific_humidity',
+            'rlds': 'surface_downwelling_longwave_flux',
+            'rsds': 'surface_downwelling_shortwave_flux',
+            'sfcWind': 'wind_speed',
+            'ps': 'surface_air_pressure',
         },
         'NEX-GDDP-CMIP6': {
-            'pr': 'pptrate',
-            'tas': 'airtemp',
-            'huss': 'spechum',
-            'ps': 'airpres',
-            'rlds': 'LWRadAtm',
-            'rsds': 'SWRadAtm',
-            'sfcWind': 'windspd',
+            'pr': 'precipitation_flux',
+            'tas': 'air_temperature',
+            'huss': 'specific_humidity',
+            'ps': 'surface_air_pressure',
+            'rlds': 'surface_downwelling_longwave_flux',
+            'rsds': 'surface_downwelling_shortwave_flux',
+            'sfcWind': 'wind_speed',
         },
-        'GWF': {  # GWF-I and GWF-II share same mapping
-            'PSFC': 'airpres',
-            'Q2': 'spechum',
-            'T2': 'airtemp',
-            'U10': 'windspd_u',
-            'V10': 'windspd_v',
-            'PREC_ACC_NC': 'pptrate',
-            'SWDOWN': 'SWRadAtm',
-            'GLW': 'LWRadAtm',
+        'GWF': {
+            'PSFC': 'surface_air_pressure',
+            'Q2': 'specific_humidity',
+            'T2': 'air_temperature',
+            'U10': 'eastward_wind',
+            'V10': 'northward_wind',
+            'PREC_ACC_NC': 'precipitation_flux',
+            'SWDOWN': 'surface_downwelling_shortwave_flux',
+            'GLW': 'surface_downwelling_longwave_flux',
         },
         'RDRS': {
-            'RDRS_v2.1_P_TT_1.5m': 'airtemp',
-            'RDRS_v2.1_P_P0_SFC': 'airpres',
-            'RDRS_v2.1_P_HU_1.5m': 'spechum',
-            'RDRS_v2.1_P_UVC_10m': 'windspd',
-            'RDRS_v2.1_P_UUC_10m': 'windspd_u',
-            'RDRS_v2.1_P_VVC_10m': 'windspd_v',
-            'RDRS_v2.1_P_FI_SFC': 'LWRadAtm',
-            'RDRS_v2.1_P_FB_SFC': 'SWRadAtm',
-            'RDRS_v2.1_A_PR0_SFC': 'pptrate',
-            # v3.1 short names
-            'TT': 'airtemp',
-            'P0': 'airpres',
-            'HU': 'spechum',
-            'UVC': 'windspd',
-            'UUC': 'windspd_u',
-            'VVC': 'windspd_v',
-            'FI': 'LWRadAtm',
-            'FB': 'SWRadAtm',
-            'PR0': 'pptrate',
-            # CaSR v3.2 CF-standard names (from PAVICS OPeNDAP)
-            'tas': 'airtemp',
-            'ta': 'airtemp',
-            'ps': 'airpres',
-            'huss': 'spechum',
-            'hus': 'spechum',
-            'sfcWind': 'windspd',
-            'uas': 'windspd_u',
-            'vas': 'windspd_v',
-            'rlds': 'LWRadAtm',
-            'rsds': 'SWRadAtm',
-            'pr': 'pptrate',
+            'RDRS_v2.1_P_TT_1.5m': 'air_temperature',
+            'RDRS_v2.1_P_P0_SFC': 'surface_air_pressure',
+            'RDRS_v2.1_P_HU_1.5m': 'specific_humidity',
+            'RDRS_v2.1_P_UVC_10m': 'wind_speed',
+            'RDRS_v2.1_P_UUC_10m': 'eastward_wind',
+            'RDRS_v2.1_P_VVC_10m': 'northward_wind',
+            'RDRS_v2.1_P_FI_SFC': 'surface_downwelling_longwave_flux',
+            'RDRS_v2.1_P_FB_SFC': 'surface_downwelling_shortwave_flux',
+            'RDRS_v2.1_A_PR0_SFC': 'precipitation_flux',
         },
-        'CASR': {
-            'CaSR_v3.1_A_TT_1.5m': 'airtemp',
-            'CaSR_v3.1_P_TT_1.5m': 'airtemp',
-            'CaSR_v3.1_A_PR0_SFC': 'pptrate',
-            'CaSR_v3.1_P_PR0_SFC': 'pptrate',
-            'CaSR_v3.1_P_P0_SFC': 'airpres',
-            'CaSR_v3.1_P_HU_1.5m': 'spechum',
-            'CaSR_v3.1_P_UVC_10m': 'windspd',
-            'CaSR_v3.1_P_UUC_10m': 'windspd_u',
-            'CaSR_v3.1_P_VVC_10m': 'windspd_v',
-            'CaSR_v3.1_P_FB_SFC': 'SWRadAtm',
-            'CaSR_v3.1_P_FI_SFC': 'LWRadAtm',
+        'RDRS_v3.1': {
+            'TT': 'air_temperature',
+            'P0': 'surface_air_pressure',
+            'HU': 'specific_humidity',
+            'UVC': 'wind_speed',
+            'UUC': 'eastward_wind',
+            'VVC': 'northward_wind',
+            'FI': 'surface_downwelling_longwave_flux',
+            'FB': 'surface_downwelling_shortwave_flux',
+            'PR0': 'precipitation_flux',
+        },
+        'CASR_v3.1': {
+            'CaSR_v3.1_A_TT_1.5m': 'air_temperature',
+            'CaSR_v3.1_P_TT_1.5m': 'air_temperature',
+            'CaSR_v3.1_A_PR0_SFC': 'precipitation_flux',
+            'CaSR_v3.1_P_PR0_SFC': 'precipitation_flux',
+            'CaSR_v3.1_P_P0_SFC': 'surface_air_pressure',
+            'CaSR_v3.1_P_HU_1.5m': 'specific_humidity',
+            'CaSR_v3.1_P_UVC_10m': 'wind_speed',
+            'CaSR_v3.1_P_UUC_10m': 'eastward_wind',
+            'CaSR_v3.1_P_VVC_10m': 'northward_wind',
+            'CaSR_v3.1_P_FB_SFC': 'surface_downwelling_shortwave_flux',
+            'CaSR_v3.1_P_FI_SFC': 'surface_downwelling_longwave_flux',
+            'TT': 'air_temperature',
+            'P0': 'surface_air_pressure',
+            'HU': 'specific_humidity',
+            'UVC': 'wind_speed',
+            'UUC': 'eastward_wind',
+            'VVC': 'northward_wind',
+            'FI': 'surface_downwelling_longwave_flux',
+            'FB': 'surface_downwelling_shortwave_flux',
+            'PR0': 'precipitation_flux',
+        },
+        'CASR_v3.2': {
+            'tas': 'air_temperature',
+            'ta': 'air_temperature',
+            'ps': 'surface_air_pressure',
+            'huss': 'specific_humidity',
+            'hus': 'specific_humidity',
+            'sfcWind': 'wind_speed',
+            'uas': 'eastward_wind',
+            'vas': 'northward_wind',
+            'rlds': 'surface_downwelling_longwave_flux',
+            'rsds': 'surface_downwelling_shortwave_flux',
+            'pr': 'precipitation_flux',
         },
         'DayMet': {
-            'prcp': 'pptrate',
-            'srad': 'SWRadAtm',
-            'tmax': 'airtemp_max',
-            'tmin': 'airtemp_min',
+            'prcp': 'precipitation_flux',
+            'srad': 'surface_downwelling_shortwave_flux',
+            'tmax': 'air_temperature_max',
+            'tmin': 'air_temperature_min',
             'vp': 'water_vapor_pressure',
             'dayl': 'day_length',
             'swe': 'snow_water_equivalent',
@@ -276,7 +287,7 @@ class VariableStandardizer:
         'airtemp', 'airtemp_max', 'airtemp_min',
         'airpres',
         'spechum', 'relhum',
-        'windspd', 'windspd_u', 'windspd_v',
+        'wind_speed', 'eastward_wind', 'northward_wind',
         'SWRadAtm', 'LWRadAtm',
         'pptrate',
         'day_length', 'snow_water_equivalent', 'water_vapor_pressure',
@@ -312,7 +323,7 @@ class VariableStandardizer:
         Get the variable rename map for a dataset.
 
         Args:
-            dataset: Dataset name (e.g., 'ERA5', 'CONUS404', 'HRRR')
+            dataset: Dataset name (e.g., 'ERA5', 'CONUS404', 'CASR')
 
         Returns:
             Dictionary mapping source variable names to standard names
@@ -320,10 +331,10 @@ class VariableStandardizer:
         Raises:
             ValueError: If dataset is not supported
         """
-        # Handle aliases
-        dataset_key = self._normalize_dataset_name(dataset)
+        # Case-insensitive lookup against RENAME_MAPS keys
+        dataset_key = self._find_dataset_key(dataset)
 
-        if dataset_key not in self.RENAME_MAPS:
+        if dataset_key is None:
             available = ', '.join(sorted(self.RENAME_MAPS.keys()))
             raise ValueError(
                 f"Unknown dataset '{dataset}'. Available: {available}"
@@ -331,31 +342,17 @@ class VariableStandardizer:
 
         return self.RENAME_MAPS[dataset_key].copy()
 
-    def _normalize_dataset_name(self, dataset: str) -> str:
-        """Normalize dataset name to match RENAME_MAPS keys."""
-        # Handle common aliases and case variations
-        dataset_upper = dataset.upper()
-
-        aliases = {
-            'ERA5-LAND': 'ERA5',
-            'ERA5_LAND': 'ERA5',
-            'GWF-I': 'GWF',
-            'GWF-II': 'GWF',
-            'GWF_I': 'GWF',
-            'GWF_II': 'GWF',
-            'RDRS_V2.1': 'RDRS',
-            'RDRS_V3.1': 'RDRS',
-            'RDRS_V3.2': 'RDRS',
-            'CASR_V3.1': 'CASR',
-            'CASR_V3.2': 'RDRS',
-            'CASR': 'RDRS',
-            'DAYMET': 'DayMet',
-            'NEX_GDDP': 'NEX-GDDP',
-            'NEX_GDDP_CMIP6': 'NEX-GDDP-CMIP6',
-        }
-
-        return aliases.get(dataset_upper, dataset_upper if dataset_upper in self.RENAME_MAPS
-                          else dataset)
+    def _find_dataset_key(self, dataset: str) -> Optional[str]:
+        """Find the RENAME_MAPS key matching the dataset name (case-insensitive)."""
+        # Exact match first
+        if dataset in self.RENAME_MAPS:
+            return dataset
+        # Case-insensitive match
+        dataset_lower = dataset.lower()
+        for key in self.RENAME_MAPS:
+            if key.lower() == dataset_lower:
+                return key
+        return None
 
     def standardize(
         self,
@@ -449,18 +446,21 @@ class VariableStandardizer:
         # Get CFIF mappings (lazy loaded)
         summa_to_cfif, _, _ = _get_cfif_mappings()
 
-        # Convert SUMMA-style targets to CFIF names
+        # Convert targets to CFIF names (idempotent -- already-CFIF names pass through)
         cfif_map = {}
-        for source, summa_name in standard_map.items():
-            cfif_name = summa_to_cfif.get(summa_name)
-            if cfif_name:
-                cfif_map[source] = cfif_name
+        for source, name in standard_map.items():
+            if name in summa_to_cfif.values():
+                # Already a CFIF name (e.g., after RENAME_MAPS migration)
+                cfif_map[source] = name
             else:
-                # Keep original if no CFIF mapping exists
-                cfif_map[source] = summa_name
-                self.logger.debug(
-                    f"No CFIF mapping for '{summa_name}', keeping as-is"
-                )
+                cfif_name = summa_to_cfif.get(name)
+                if cfif_name:
+                    cfif_map[source] = cfif_name
+                else:
+                    cfif_map[source] = name
+                    self.logger.debug(
+                        f"No CFIF mapping for '{name}', keeping as-is"
+                    )
 
         return cfif_map
 
@@ -577,7 +577,7 @@ class VariableHandler:
             'FB': {'standard_name': 'surface_downwelling_shortwave_flux', 'units': 'W/m^2'},
             'PR0': {'standard_name': 'precipitation_flux', 'units': 'mm/s'}
         },
-        'CASR': {
+        'CASR_v3.1': {
             'CaSR_v3.1_A_TT_1.5m': {'standard_name': 'air_temperature', 'units': 'K'},
             'CaSR_v3.1_P_P0_SFC': {'standard_name': 'surface_air_pressure', 'units': 'Pa'},
             'CaSR_v3.1_P_HU_1.5m': {'standard_name': 'specific_humidity', 'units': '1'},
@@ -585,6 +585,17 @@ class VariableHandler:
             'CaSR_v3.1_P_FI_SFC': {'standard_name': 'surface_downwelling_longwave_flux', 'units': 'W/m^2'},
             'CaSR_v3.1_P_FB_SFC': {'standard_name': 'surface_downwelling_shortwave_flux', 'units': 'W/m^2'},
             'CaSR_v3.1_P_PR0_SFC': {'standard_name': 'precipitation_flux', 'units': 'm'}
+        },
+        'CASR_v3.2': {
+            'tas': {'standard_name': 'air_temperature', 'units': 'K'},
+            'ps': {'standard_name': 'surface_air_pressure', 'units': 'Pa'},
+            'huss': {'standard_name': 'specific_humidity', 'units': '1'},
+            'sfcWind': {'standard_name': 'wind_speed', 'units': 'm/s'},
+            'uas': {'standard_name': 'eastward_wind', 'units': 'm/s'},
+            'vas': {'standard_name': 'northward_wind', 'units': 'm/s'},
+            'rlds': {'standard_name': 'surface_downwelling_longwave_flux', 'units': 'W/m^2'},
+            'rsds': {'standard_name': 'surface_downwelling_shortwave_flux', 'units': 'W/m^2'},
+            'pr': {'standard_name': 'precipitation_flux', 'units': 'kg/m^2/s'}
         },
         'DayMet': {
             'pr': {'standard_name': 'precipitation_flux', 'units': 'mm/s'},

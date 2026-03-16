@@ -31,5 +31,28 @@ __all__ = [
     "SoilMoistureEvaluator",
     "SnowEvaluator",
     "GroundwaterEvaluator",
-    "TWSEvaluator"
+    "TWSEvaluator",
 ]
+
+# ---------------------------------------------------------------------------
+# Evaluator aliases — kept separate from canonical registrations so that
+# provenance records and config diffs always use the canonical name.
+# ---------------------------------------------------------------------------
+from symfluence.core.registries import R  # noqa: E402
+
+# ET aliases (canonical: ET)
+R.evaluators.alias('MODIS_ET', 'ET')
+R.evaluators.alias('MOD16', 'ET')
+R.evaluators.alias('FLUXNET', 'ET')
+R.evaluators.alias('FLUXNET_ET', 'ET')
+
+# Snow aliases (canonical: SNOW)
+R.evaluators.alias('SCA', 'SNOW')
+R.evaluators.alias('SWE', 'SNOW')
+
+# Soil moisture aliases (canonical: SOIL_MOISTURE)
+R.evaluators.alias('SM', 'SOIL_MOISTURE')
+R.evaluators.alias('SM_POINT', 'SOIL_MOISTURE')
+R.evaluators.alias('SM_SMAP', 'SOIL_MOISTURE')
+R.evaluators.alias('SM_ISMN', 'SOIL_MOISTURE')
+R.evaluators.alias('SM_ESA', 'SOIL_MOISTURE')

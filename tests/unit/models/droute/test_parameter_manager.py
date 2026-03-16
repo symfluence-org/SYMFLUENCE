@@ -36,7 +36,8 @@ class TestDRouteParameterManagerRegistration:
         assert 'DROUTE' in OptimizerRegistry._parameter_managers
 
     def test_parameter_manager_is_correct_class(self):
-        from symfluence.models.droute.calibration.parameter_manager import DRouteParameterManager
+        from droute.calibration.parameter_manager import DRouteParameterManager
+
         from symfluence.optimization.registry import OptimizerRegistry
         assert OptimizerRegistry._parameter_managers.get('DROUTE') == DRouteParameterManager
 
@@ -82,18 +83,18 @@ class TestDRouteParameterManagerInstance:
     """Tests for dRoute parameter manager instances."""
 
     def test_can_instantiate(self, droute_config, logger, temp_dir):
-        from symfluence.models.droute.calibration.parameter_manager import DRouteParameterManager
+        from droute.calibration.parameter_manager import DRouteParameterManager
         manager = DRouteParameterManager(droute_config, logger, temp_dir)
         assert manager is not None
 
     def test_parameter_names(self, droute_config, logger, temp_dir):
-        from symfluence.models.droute.calibration.parameter_manager import DRouteParameterManager
+        from droute.calibration.parameter_manager import DRouteParameterManager
         manager = DRouteParameterManager(droute_config, logger, temp_dir)
         names = manager._get_parameter_names()
         assert names == ['velocity', 'diffusivity', 'manning_n']
 
     def test_load_bounds(self, droute_config, logger, temp_dir):
-        from symfluence.models.droute.calibration.parameter_manager import DRouteParameterManager
+        from droute.calibration.parameter_manager import DRouteParameterManager
         manager = DRouteParameterManager(droute_config, logger, temp_dir)
         bounds = manager._load_parameter_bounds()
         assert 'velocity' in bounds
@@ -101,7 +102,7 @@ class TestDRouteParameterManagerInstance:
         assert 'manning_n' in bounds
 
     def test_normalize_denormalize_roundtrip(self, droute_config, logger, temp_dir):
-        from symfluence.models.droute.calibration.parameter_manager import DRouteParameterManager
+        from droute.calibration.parameter_manager import DRouteParameterManager
         manager = DRouteParameterManager(droute_config, logger, temp_dir)
 
         params = {'velocity': 2.5, 'diffusivity': 2500.0, 'manning_n': 0.05}
@@ -113,7 +114,7 @@ class TestDRouteParameterManagerInstance:
                 f"Roundtrip failed for {key}: {params[key]} -> {denormalized[key]}"
 
     def test_get_initial_parameters(self, droute_config, logger, temp_dir):
-        from symfluence.models.droute.calibration.parameter_manager import DRouteParameterManager
+        from droute.calibration.parameter_manager import DRouteParameterManager
         manager = DRouteParameterManager(droute_config, logger, temp_dir)
         initial = manager.get_initial_parameters()
         assert initial is not None
@@ -122,7 +123,7 @@ class TestDRouteParameterManagerInstance:
 
     def test_update_model_files_no_config(self, droute_config, logger, temp_dir):
         """Without a config file, update should succeed silently."""
-        from symfluence.models.droute.calibration.parameter_manager import DRouteParameterManager
+        from droute.calibration.parameter_manager import DRouteParameterManager
         manager = DRouteParameterManager(droute_config, logger, temp_dir)
         result = manager.update_model_files({'velocity': 1.0, 'diffusivity': 500.0})
         assert result is True
@@ -130,8 +131,7 @@ class TestDRouteParameterManagerInstance:
     def test_update_model_files_with_yaml(self, droute_config, logger, temp_dir):
         """With a YAML config file, parameters should be written."""
         import yaml
-
-        from symfluence.models.droute.calibration.parameter_manager import DRouteParameterManager
+        from droute.calibration.parameter_manager import DRouteParameterManager
 
         config_path = temp_dir / 'droute_config.yaml'
         config_path.write_text(yaml.dump({'routing': {'method': 'muskingum_cunge'}}))

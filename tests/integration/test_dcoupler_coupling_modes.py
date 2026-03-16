@@ -226,8 +226,8 @@ class TestDifferentiableJAXCoupling:
     @pytest.fixture(autouse=True)
     def check_models(self):
         try:
-            from symfluence.models.snow17.model import snow17_step  # noqa: F401
-            from symfluence.models.xinanjiang.model import step_jax  # noqa: F401
+            from jsnow17.model import snow17_step  # noqa: F401
+            from jxaj.model import step_jax  # noqa: F401
         except ImportError:
             pytest.skip("Snow-17 or XAJ model not available")
 
@@ -381,8 +381,8 @@ class TestDifferentiableSacSmaCoupling:
     @pytest.fixture(autouse=True)
     def check_models(self):
         try:
-            from symfluence.models.sacsma.sacsma import sacsma_step  # noqa: F401
-            from symfluence.models.snow17.model import snow17_step  # noqa: F401
+            from jsacsma.sacsma import sacsma_step  # noqa: F401
+            from jsnow17.model import snow17_step  # noqa: F401
         except ImportError:
             pytest.skip("Snow-17 or SAC-SMA model not available")
 

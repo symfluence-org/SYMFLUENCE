@@ -17,6 +17,7 @@ import numpy as np
 import rasterio
 from rasterio.mask import mask
 from shapely.geometry import MultiPolygon, shape
+from shapely.validation import make_valid
 
 from symfluence.geospatial.raster_utils import (
     calculate_annual_radiation,
@@ -563,7 +564,7 @@ def _create_hru_from_combination_mask(
 
         # Clean the geometry
         if not final_geometry.is_valid:
-            final_geometry = final_geometry.buffer(0)
+            final_geometry = make_valid(final_geometry)
 
         if final_geometry.is_empty or not final_geometry.is_valid:
             return None

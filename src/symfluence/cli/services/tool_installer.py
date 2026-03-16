@@ -413,6 +413,12 @@ class ToolInstaller(BaseService):
                 if "/usr/bin" not in current_path.split(sep):
                     env["PATH"] = current_path + sep + "/usr/bin"
 
+        # Ensure build scripts install Python packages into the same
+        # interpreter that is running symfluence.  Without this, Docker/2i2c
+        # images where multiple conda envs exist can end up with troute (or
+        # other pip-installed tools) landing in the wrong environment.
+        env.setdefault("SYMFLUENCE_PYTHON", sys.executable)
+
         # Set SYMFLUENCE_PATCHED if patched mode is enabled
         if getattr(self, '_patched', False):
             env["SYMFLUENCE_PATCHED"] = "1"

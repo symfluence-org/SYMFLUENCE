@@ -43,8 +43,8 @@ class ForcingAdapter(ConfigMixin, ABC):
         >>> class SUMMAForcingAdapter(ForcingAdapter):
         ...     def get_variable_mapping(self):
         ...         return {
-        ...             'air_temperature': 'airtemp',
-        ...             'precipitation_flux': 'pptrate',
+        ...             'air_temperature': 'air_temperature',
+        ...             'precipitation_flux': 'precipitation_flux',
         ...             # ...
         ...         }
         ...
@@ -76,13 +76,13 @@ class ForcingAdapter(ConfigMixin, ABC):
         Returns:
             Dict mapping CFIF names to model-specific names.
             Keys are CFIF names (e.g., 'air_temperature'),
-            values are model names (e.g., 'airtemp' for SUMMA).
+            values are model names (e.g., 'air_temperature' for SUMMA).
 
         Example:
             >>> return {
-            ...     'air_temperature': 'airtemp',
-            ...     'precipitation_flux': 'pptrate',
-            ...     'surface_downwelling_shortwave_flux': 'SWRadAtm',
+            ...     'air_temperature': 'air_temperature',
+            ...     'precipitation_flux': 'precipitation_flux',
+            ...     'surface_downwelling_shortwave_flux': 'surface_downwelling_shortwave_flux',
             ... }
         """
         pass

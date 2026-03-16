@@ -1,0 +1,60 @@
+# Experiment 10a: Streamflow-only calibration (Section 3.9, Figure 13)
+# Baseline: calibrate SUMMA using only streamflow KGE
+
+system:
+  data_dir: ./data/
+  code_dir: ./
+domain:
+  name: Bow_at_Banff_multivar
+  experiment_id: bow_exp1_streamflow_only
+  time_start: 2002-04-01 01:00
+  time_end: 2017-12-31 23:00
+  calibration_period: 2004-01-01, 2010-12-31
+  evaluation_period: 2011-01-01, 2017-12-31
+  spinup_period: 2002-04-01, 2003-12-31
+  pour_point_coords: 51.1722/-115.5717
+  bounding_box_coords: 51.76/-116.55/50.95/-115.5
+  definition_method: lumped
+  delineation:
+    routing: lumped
+  discretization: GRUs
+data:
+  streamflow_data_provider: WSC
+forcing:
+  dataset: RDRS
+model:
+  hydrological_model: SUMMA
+  routing_model: none
+  summa:
+    params_to_calibrate: albedoMax,albedoMinWinter,newSnowDenMin,Fcapil,k_soil,theta_sat,critSoilWilting,critSoilTranspire,theta_res,f_impede,aquiferBaseflowExp,aquiferBaseflowRate,aquiferScaleFactor,specificStorage,specificYield
+    basin_params_to_calibrate: routingGammaShape,routingGammaScale
+optimization:
+  methods:
+  - iteration
+  algorithm: DDS
+  iterations: 2000
+  metric: KGE
+  multi_objective: false
+  skip_warm_start: true
+evaluation:
+  streamflow:
+    station_id: 05BB001
+  grace:
+    download: true
+    product: GRACE_JPL_RL06_mascon
+    tws_variable: lwe_thickness
+    anomaly_baseline: 2004-01-01, 2009-12-31
+  multivar_evaluation: true
+  calibration_targets:
+  - variable: streamflow
+    source: WSC
+    station_id: 05BB001
+    metric: KGE
+    weight: 1.0
+  evaluation_targets:
+  - variable: TWS
+    source: GRACE
+    metric: correlation
+  - variable: streamflow
+    source: WSC
+    metric: KGE
