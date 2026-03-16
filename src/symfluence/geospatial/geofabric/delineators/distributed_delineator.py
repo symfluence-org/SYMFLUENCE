@@ -242,7 +242,16 @@ class GeofabricDelineator(BaseGeofabricDelineator):
                 )
 
                 # Build river network graph
-                river_graph = self.graph.build_river_graph(rivers, self._get_fabric_config())
+                fabric_config = self._get_fabric_config()
+
+                if 'WSNO' in rivers.columns:
+                    fabric_config['river_id_col'] = 'WSNO'
+                elif 'LINKNO' in rivers.columns:
+                    fabric_config['river_id_col'] = 'LINKNO'
+                else:
+                    raise KeyError("No suitable river ID column found ('WSNO' or 'LINKNO')")
+
+                river_graph = self.graph.build_river_graph(rivers, fabric_config)
 
                 # Find upstream basins
                 upstream_basin_ids = self.graph.find_upstream_basins(
@@ -303,7 +312,12 @@ class GeofabricDelineator(BaseGeofabricDelineator):
             else:
                 raise KeyError("No suitable ID column found in basins shapefile ('DN', 'value', 'ID')")
 
-        rivers['GRU_ID'] = rivers['LINKNO']
+        if 'WSNO' in rivers.columns:
+            rivers['GRU_ID'] = rivers['WSNO']
+        elif 'LINKNO' in rivers.columns:
+            rivers['GRU_ID'] = rivers['LINKNO']
+        else:
+            raise KeyError("No suitable river ID column found ('WSNO' or 'LINKNO')")
 
         # Calculate areas in UTM
         utm_crs = basins.estimate_utm_crs()
