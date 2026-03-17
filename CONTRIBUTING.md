@@ -32,7 +32,68 @@ We welcome all contributions — from bug fixes and documentation improvements t
 
 ---
 
-## 2. Branching Strategy
+## 2. Licensing & CLA
+
+### Open Source License
+
+SYMFLUENCE is licensed under **GPL-3.0-or-later**. By contributing, you agree
+that your contributions will be licensed under the same terms. This is a
+copyleft license — any derivative work that is distributed must also be released
+under GPL-3.0-or-later.
+
+When creating new source files, include the standard SPDX header:
+
+```python
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright 2024-2026 SYMFLUENCE Team <dev@symfluence.org>
+```
+
+### Contributor License Agreement (CLA)
+
+All external contributors must sign the [Contributor License Agreement](CLA.md)
+before a pull request can be merged. The CLA is checked automatically by CI —
+unsigned PRs will fail the CLA check.
+
+**Why a CLA?** The CLA grants the SYMFLUENCE Team the rights needed to
+maintain the project under GPL-3.0-or-later while preserving the option to offer
+the software under additional license terms (e.g., commercial licenses) in the
+future. This dual-licensing flexibility is described in
+[CLA.md Section 5](CLA.md#5-dual-licensing). Your contributions always remain
+available under the open source license.
+
+**How to sign:**
+
+1. Read the [CLA](CLA.md)
+2. Add your name and details to the `CLA_SIGNATURES` file via a pull request
+3. Once merged, the CLA check will pass on all your future PRs
+
+Repository owners and bots are exempt.
+
+---
+
+## 3. Plugin-First Contributions
+
+If you want to add a **new model integration, data handler, optimization
+algorithm, or evaluation metric**, the default path is to publish an independent
+Python package that registers with SYMFLUENCE via the `symfluence.plugins`
+entry-point system — not a pull request to the core repository.
+
+This is a deliberate governance choice that keeps the core maintainable and
+prevents any single institution from reshaping it by volume of contribution.
+See [GOVERNANCE.md Section 3](GOVERNANCE.md#3-contribution-model-plugins-first)
+for the full rationale.
+
+**What belongs in core:** bug fixes, performance improvements, documentation,
+infrastructure that benefits all plugins, and changes to registry interface
+definitions (subject to the [interface change process](GOVERNANCE.md#4-interface-stewardship)).
+
+Pull requests that add new models or algorithms directly to the core will be
+redirected to the plugin path unless there is a compelling reason for core
+inclusion.
+
+---
+
+## 4. Branching Strategy
 
 SYMFLUENCE uses a simple branching model for organized development:
 
@@ -92,7 +153,7 @@ git push origin develop
 
 ---
 
-## 3. Making Changes
+## 5. Making Changes
 
 ### Code Style
 - Follow **PEP 8** and use clear, descriptive variable names.
@@ -171,7 +232,7 @@ Use concise, descriptive messages:
 
 ---
 
-## 4. Submitting Your Work
+## 6. Submitting Your Work
 
 1. **Create a feature branch**
    ```bash
@@ -210,14 +271,14 @@ Closes #117
 
 ---
 
-## 5. Code Review
+## 7. Code Review
 All submissions are reviewed by maintainers. Expect constructive feedback — discussions help keep the codebase consistent and maintainable.
 
 Please be responsive and open to suggestions.
 
 ---
 
-## 6. Reporting Issues
+## 8. Reporting Issues
 When reporting, include:
 - **Description:** what went wrong
 - **Steps to reproduce**
@@ -247,7 +308,7 @@ Branch: main
 
 ---
 
-## 7. Feature Requests
+## 9. Feature Requests
 We value ideas for improvement. When proposing features:
 - Describe the functionality and motivation.
 - Suggest how it might fit into existing workflows.
@@ -255,7 +316,7 @@ We value ideas for improvement. When proposing features:
 
 ---
 
-## 8. Contribution Types
+## 10. Contribution Types
 We welcome:
 - Bug fixes
 - Documentation updates
@@ -266,7 +327,7 @@ We welcome:
 
 ---
 
-## 9. API Stability and Versioning
+## 11. API Stability and Versioning
 
 SYMFLUENCE follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (SemVer):
 
@@ -319,7 +380,7 @@ When making changes:
 
 ---
 
-## 10. Questions
+## 12. Questions
 If you're unsure where to start:
 - Open a GitHub discussion or issue
 - Review existing docs at [symfluence.readthedocs.io](https://symfluence.readthedocs.io)
