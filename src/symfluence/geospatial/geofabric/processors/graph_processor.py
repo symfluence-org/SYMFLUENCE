@@ -65,6 +65,7 @@ class RiverGraphProcessor:
 
         for _, row in rivers.iterrows():
             current_basin = row[fabric_config['river_id_col']]
+            G.add_node(current_basin)
 
             for up_col in fabric_config['upstream_cols']:
                 linked_basin = row[up_col]
