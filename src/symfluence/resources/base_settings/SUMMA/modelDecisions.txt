@@ -8,8 +8,8 @@
 ! (3) the simulation start/end times must be within single quotes
 ! ***********************************************************************************************************************
 ! ***********************************************************************************************************************
-soilCatTbl                      STAS         ! (03) soil-category dataset
-vegeParTbl                      USGS ! (04) vegetation category dataset
+soilCatTbl                      ROSETTA         ! (03) soil-category dataset
+vegeParTbl                      USGS            ! (04) vegetation category dataset
 soilStress                      NoahType        ! (05) choice of function for the soil moisture control on stomatal resistance
 stomResist                      BallBerry       ! (06) choice of function for stomatal resistance
 ! ***********************************************************************************************************************
@@ -23,22 +23,22 @@ bcUpprTdyn                      nrg_flux        ! (13) type of upper boundary co
 bcLowrTdyn                      zeroFlux        ! (14) type of lower boundary condition for thermodynamics
 bcUpprSoiH                      liq_flux        ! (15) type of upper boundary condition for soil hydrology
 bcLowrSoiH                      drainage        ! (16) type of lower boundary condition for soil hydrology
-veg_traits                      vegTypeTable    ! (17) choice of parameterization for vegetation roughness length and displacement height
+veg_traits                      Raupach_BLM1994 ! (17) choice of parameterization for vegetation roughness length and displacement height
 canopyEmis                      difTrans        ! (18) choice of parameterization for canopy emissivity
 snowIncept                      lightSnow       ! (19) choice of parameterization for snow interception
 windPrfile                      logBelowCanopy  ! (20) choice of wind profile through the canopy
 astability                      louisinv        ! (21) choice of stability function
-canopySrad                      noah_mp         ! (22) choice of canopy shortwave radiation method
-alb_method                      varDecay        ! (23) choice of albedo representation
+canopySrad                      BeersLaw        ! (22) choice of canopy shortwave radiation method
+alb_method                      conDecay        ! (23) choice of albedo representation
 compaction                      anderson        ! (24) choice of compaction routine
-snowLayers                      jrdn1991        ! (25) choice of method to combine and sub-divide snow layers
+snowLayers                      CLM_2010        ! (25) choice of method to combine and sub-divide snow layers
 thCondSnow                      jrdn1991        ! (26) choice of thermal conductivity representation for snow
 thCondSoil                      funcSoilWet     ! (27) choice of thermal conductivity representation for soil
 spatial_gw                      localColumn     ! (28) choice of method for the spatial representation of groundwater
 subRouting                      timeDlay        ! (29) choice of method for sub-grid routing
 nrgConserv                      enthalpyForm    ! (30) choice of variable in energy equations (BE residual or IDA state variable)
 infRateMax                      GreenAmpt       ! (31) choice of infiltration rate method
-surfRun_SE                      homegrown_SE    ! (33) saturation excess surface runoff parameterization
+surfRun_SE                      homegrown_SE    ! (32) saturation excess surface runoff parameterization
 read_force                      readPerStep     ! (33) method used to read forcing data
 write_buff                      writePerStep    ! (34) method used to write model output
 ! ***********************************************************************************************
