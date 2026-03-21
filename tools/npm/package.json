@@ -1,6 +1,6 @@
 {
   "name": "symfluence",
-  "version": "0.7.11",
+  "version": "0.8.1",
   "description": "Structure for Unifying Multiple Modeling Alternatives - Pre-compiled hydrological modeling tools",
   "main": "index.js",
   "bin": {
