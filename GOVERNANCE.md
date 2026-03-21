@@ -302,13 +302,14 @@ argument of the papers.
 
 ## 7. Code of Conduct
 
-Contributors are expected to engage respectfully and constructively. The
-project does not currently adopt a formal code of conduct but reserves the
-right to do so as the community grows. In the interim:
+SYMFLUENCE follows the [Contributor Covenant v2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct.html),
+as described in [CODE_OF_CONDUCT.md](.github/CODE_OF_CONDUCT.md). In summary:
 
+- Be respectful and inclusive.
 - Critique code, not people.
 - Assume good faith.
-- If a discussion becomes unproductive, step away and return later.
+- Report unacceptable behavior by opening a confidential issue or contacting
+  the maintainers at darri@symfluence.org.
 
 ---
 

@@ -242,7 +242,7 @@ class GeofabricDelineator(BaseGeofabricDelineator):
                 )
 
                 # Build river network graph
-                river_graph = self.graph.build_river_graph(rivers, self._get_fabric_config())
+                river_graph = self.graph.build_river_graph(rivers, self._get_fabric_config(rivers))
 
                 # Find upstream basins
                 upstream_basin_ids = self.graph.find_upstream_basins(
@@ -303,7 +303,8 @@ class GeofabricDelineator(BaseGeofabricDelineator):
             else:
                 raise KeyError("No suitable ID column found in basins shapefile ('DN', 'value', 'ID')")
 
-        rivers['GRU_ID'] = rivers['LINKNO']
+        river_id_col = self._get_fabric_config(rivers)['river_id_col']
+        rivers['GRU_ID'] = rivers[river_id_col]
 
         # Calculate areas in UTM
         utm_crs = basins.estimate_utm_crs()
@@ -388,16 +389,29 @@ class GeofabricDelineator(BaseGeofabricDelineator):
         self.logger.info(f"Subset basins shapefile saved to: {basins_path}")
         self.logger.info(f"Subset rivers shapefile saved to: {rivers_path}")
 
-    def _get_fabric_config(self) -> Dict[str, Any]:
+    def _get_fabric_config(self, rivers: gpd.GeoDataFrame) -> Dict[str, Any]:
         """
         Get hydrofabric configuration for graph processing.
+
+        Detects the river ID column from the available columns,
+        preferring WSNO (watershed number) over LINKNO (link number)
+        for TauDEM-derived geofabrics.
+
+        Args:
+            rivers: River network GeoDataFrame
 
         Returns:
             Dictionary with column name mappings
         """
-        # TauDEM output standard column names
+        if 'WSNO' in rivers.columns:
+            river_id_col = 'WSNO'
+        elif 'LINKNO' in rivers.columns:
+            river_id_col = 'LINKNO'
+        else:
+            raise KeyError("No suitable river ID column found ('WSNO' or 'LINKNO')")
+
         return {
-            'river_id_col': 'LINKNO',
+            'river_id_col': river_id_col,
             'upstream_cols': ['DSLINKNO'],
             'upstream_default': -1,
             'direction': 'downstream'
