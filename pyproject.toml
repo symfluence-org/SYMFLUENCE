@@ -6,7 +6,6 @@ build-backend = "hatchling.build"
 allow-direct-references = true
 
 [tool.hatch.build]
-sources = ["src"]
 
 [project]
 name = "symfluence"
@@ -194,7 +193,7 @@ include = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["symfluence"]
+packages = ["src/symfluence"]
 
 # NOTE: pytest configuration is in pytest.ini (authoritative source)
 # This avoids duplication and ensures consistent test configuration
