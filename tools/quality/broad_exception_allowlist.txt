@@ -1134,8 +1134,9 @@ src/symfluence/models/wrfhydro/postprocessor.py:117:except Exception:  # noqa: B
 src/symfluence/models/wrfhydro/postprocessor.py:138:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/wrfhydro/postprocessor.py:183:except Exception:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/wrfhydro/preprocessor.py:110:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/optimization/mixins/parallel_execution.py:647:except Exception as e:  # noqa: BLE001 — must-not-raise contract
-src/symfluence/optimization/mixins/parallel_execution.py:654:except Exception as e2:  # noqa: BLE001 — must-not-raise contract
+src/symfluence/optimization/mixins/parallel_execution.py:687:except Exception as e:  # noqa: BLE001 — must-not-raise contract
+src/symfluence/optimization/mixins/parallel_execution.py:698:except Exception as e:  # noqa: BLE001 — must-not-raise contract
+src/symfluence/optimization/mixins/parallel_execution.py:706:except Exception as e2:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/optimization/optimization_manager.py:527:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/optimization/optimizers/base_model_optimizer.py:1010:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/project/project_manager.py:168:except Exception as e:  # noqa: BLE001 — configuration resilience
