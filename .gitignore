@@ -26,6 +26,8 @@ wheels/
 examples/*/data/
 .confluence_env
 mpi_*
+# Allow the permanent persistent MPI strategy module
+!**/mpi_persistent.py
 
 
 # Pixi

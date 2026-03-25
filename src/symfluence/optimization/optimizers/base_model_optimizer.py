@@ -1392,5 +1392,6 @@ class BaseModelOptimizer(
 
     def cleanup(self) -> None:
         """Cleanup parallel processing directories and temporary files."""
+        self._shutdown_mpi_strategy()
         if self.parallel_dirs:
             self.cleanup_parallel_processing(self.parallel_dirs)

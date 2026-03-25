@@ -190,6 +190,7 @@ from .parallel import (
     ConfigurationUpdater,
     DirectoryManager,
     MPIExecutionStrategy,
+    PersistentMPIExecutionStrategy,
     ProcessPoolExecutionStrategy,
     SequentialExecutionStrategy,
     TaskDistributor,
@@ -617,6 +618,38 @@ class ParallelExecutionMixin(ConfigMixin):
     # Batch execution (uses execution strategies)
     # =========================================================================
 
+    # =========================================================================
+    # Persistent MPI strategy lifecycle
+    # =========================================================================
+
+    def _get_or_create_persistent_mpi_strategy(
+        self, worker_func: Callable, max_workers: int
+    ) -> PersistentMPIExecutionStrategy:
+        """Return the persistent MPI strategy, starting it on first call."""
+        if not hasattr(self, '_ParallelExecutionMixin__persistent_mpi'):
+            self.__persistent_mpi = None
+
+        if self.__persistent_mpi is not None and self.__persistent_mpi.is_alive:
+            return self.__persistent_mpi
+
+        # Previous strategy died or doesn't exist — (re)create
+        if self.__persistent_mpi is not None:
+            self.logger.warning("Persistent MPI workers died — restarting")
+            self.__persistent_mpi.shutdown()
+
+        strategy = PersistentMPIExecutionStrategy(
+            self.project_dir, self.num_processes, self.logger,
+        )
+        strategy.startup(worker_func=worker_func, max_workers=max_workers)
+        self.__persistent_mpi = strategy
+        return strategy
+
+    def _shutdown_mpi_strategy(self) -> None:
+        """Shut down the persistent MPI strategy if it is running."""
+        if hasattr(self, '_ParallelExecutionMixin__persistent_mpi') and self.__persistent_mpi is not None:
+            self.__persistent_mpi.shutdown()
+            self.__persistent_mpi = None
+
     def execute_batch(
         self,
         tasks: List[Dict[str, Any]],
@@ -625,6 +658,13 @@ class ParallelExecutionMixin(ConfigMixin):
     ) -> List[Dict[str, Any]]:
         """
         Execute a batch of tasks using MPI if parallel, otherwise sequentially.
+
+        When running under MPI with multiple processes, uses a persistent
+        worker pool that stays alive across batches to avoid repeated Python
+        import storms on shared filesystems (Lustre IOPS mitigation).
+
+        Falls back through: PersistentMPI -> spawn-per-batch MPI ->
+        ProcessPool -> error results.
 
         Args:
             tasks: List of task dictionaries
@@ -638,32 +678,44 @@ class ParallelExecutionMixin(ConfigMixin):
             max_workers = self.max_workers
 
         if self.use_parallel and len(tasks) > 1:
-            # Parallel execution via MPI, with ProcessPool fallback
+            # --- Try persistent MPI first (no repeated Python imports) ---
             try:
+                strategy = self._get_or_create_persistent_mpi_strategy(
+                    worker_func, max_workers,
+                )
+                return strategy.execute(tasks, worker_func, max_workers)
+            except Exception as e:  # noqa: BLE001 — must-not-raise contract
+                self.logger.warning(f"Persistent MPI execution failed: {e}")
+                self._shutdown_mpi_strategy()
+
+            # --- Fallback: spawn-per-batch MPI ---
+            try:
+                self.logger.info("Falling back to spawn-per-batch MPI...")
                 strategy = MPIExecutionStrategy(
                     self.project_dir, self.num_processes, self.logger
                 )
                 return strategy.execute(tasks, worker_func, max_workers)
             except Exception as e:  # noqa: BLE001 — must-not-raise contract
                 self.logger.warning(f"MPI batch execution failed: {e}")
+
+            # --- Fallback: ProcessPool ---
+            try:
                 self.logger.info("Falling back to ProcessPool execution...")
-                try:
-                    # Fall back to ProcessPool which is more robust
-                    strategy = ProcessPoolExecutionStrategy(self.logger)
-                    return strategy.execute(tasks, worker_func, max_workers)
-                except Exception as e2:  # noqa: BLE001 — must-not-raise contract
-                    self.logger.error(f"ProcessPool fallback also failed: {e2}")
-                    import traceback
-                    self.logger.error(f"Traceback: {traceback.format_exc()}")
-                    # Return empty results with errors for all tasks
-                    return [
-                        {
-                            'individual_id': task.get('individual_id', i),
-                            'score': None,
-                            'error': str(e2)
-                        }
-                        for i, task in enumerate(tasks)
-                    ]
+                strategy = ProcessPoolExecutionStrategy(self.logger)
+                return strategy.execute(tasks, worker_func, max_workers)
+            except Exception as e2:  # noqa: BLE001 — must-not-raise contract
+                self.logger.error(f"ProcessPool fallback also failed: {e2}")
+                import traceback
+                self.logger.error(f"Traceback: {traceback.format_exc()}")
+                # Return empty results with errors for all tasks
+                return [
+                    {
+                        'individual_id': task.get('individual_id', i),
+                        'score': None,
+                        'error': str(e2)
+                    }
+                    for i, task in enumerate(tasks)
+                ]
         else:
             # Sequential execution for a single process or single task
             strategy = SequentialExecutionStrategy(self.logger)
