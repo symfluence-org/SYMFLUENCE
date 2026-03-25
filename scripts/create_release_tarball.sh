@@ -54,6 +54,9 @@ if [ ! -d "$STAGED_DIR" ]; then
     exit 1
 fi
 
+# Sanitize VERSION for use in filenames (e.g., PR refs like "22/merge")
+VERSION="${VERSION//\//-}"
+
 # Ensure output directory exists
 mkdir -p "$OUTPUT_DIR"
 

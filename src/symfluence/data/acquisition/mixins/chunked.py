@@ -258,10 +258,13 @@ class ChunkedDownloadMixin:
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
         # Open and merge
+        # chunks=None disables dask to avoid scheduler deadlocks when
+        # called inside forked processes (e.g., pytest-xdist, MPI workers).
         with xr.open_mfdataset(
             chunk_files,
             combine=combine,
             concat_dim=concat_dim if combine == 'nested' else None,
+            chunks=None,
             parallel=False,
             data_vars='minimal',
             coords='minimal',
