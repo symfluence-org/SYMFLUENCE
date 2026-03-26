@@ -5,19 +5,22 @@
 Persistent MPI Execution Strategy
 
 Launches MPI worker processes once and keeps them alive across multiple
-execute() calls, communicating via length-prefixed pickle over stdin/stdout
-pipes.  This eliminates the repeated Python-import metadata storms that
-cause Lustre IOPS spikes when fresh processes are spawned every batch.
+execute() calls, communicating via pickle files in a local temp directory
+with file-based signaling.  This eliminates the repeated Python-import
+metadata storms that cause Lustre IOPS spikes when fresh processes are
+spawned every batch, while avoiding the fragility of piping data through
+mpirun's stdin/stdout relay.
 """
 
 import logging
 import os
 import pickle  # nosec B403 - Used for trusted internal MPI task serialization
 import shutil
-import struct
 import subprocess
 import sys
+import tempfile
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -25,46 +28,23 @@ from typing import Any, Callable, Dict, List, Optional
 from ..worker_environment import WorkerEnvironmentConfig
 from .base import ExecutionStrategy
 
-# ---------------------------------------------------------------------------
-# Framing helpers (shared between coordinator and worker script)
-# ---------------------------------------------------------------------------
-
-def _write_frame(stream, data: bytes) -> None:
-    """Write a length-prefixed frame to a binary stream."""
-    stream.write(struct.pack('>Q', len(data)))
-    stream.write(data)
-    stream.flush()
-
-
-def _read_frame(stream) -> bytes:
-    """Read a length-prefixed frame from a binary stream."""
-    header = _read_exact(stream, 8)
-    if not header:
-        raise EOFError("Connection closed while reading frame header")
-    length = struct.unpack('>Q', header)[0]
-    return _read_exact(stream, length)
-
-
-def _read_exact(stream, n: int) -> bytes:
-    """Read exactly *n* bytes from *stream*."""
-    buf = bytearray()
-    while len(buf) < n:
-        chunk = stream.read(n - len(buf))
-        if not chunk:
-            if not buf:
-                return b''
-            raise EOFError(f"Expected {n} bytes, got {len(buf)}")
-        buf.extend(chunk)
-    return bytes(buf)
-
 
 class PersistentMPIExecutionStrategy(ExecutionStrategy):
     """Persistent MPI execution strategy.
 
     Workers are launched once during ``startup()`` and kept alive for all
-    subsequent ``execute()`` calls.  Communication happens over pipes,
-    not the shared filesystem, so only the initial Python import touches
-    Lustre — and that happens exactly once.
+    subsequent ``execute()`` calls.  Communication between the coordinator
+    and the MPI broker (rank 0) uses pickle files in a local temp directory
+    with atomic file-based signaling:
+
+    1. Coordinator writes ``tasks.pkl`` then creates ``tasks.ready``
+    2. Broker polls for ``tasks.ready``, reads ``tasks.pkl``, distributes
+       tasks to worker ranks via MPI, gathers results
+    3. Broker writes ``results.pkl`` then creates ``results.ready``
+    4. Coordinator polls for ``results.ready``, reads ``results.pkl``
+
+    The temp directory uses ``$SLURM_TMPDIR`` (node-local ``/tmp``) when
+    available, so no Lustre traffic is generated for task/result exchange.
     """
 
     def __init__(
@@ -81,6 +61,7 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
         # Populated by startup()
         self._process: Optional[subprocess.Popen] = None
         self._worker_script: Optional[Path] = None
+        self._comm_dir: Optional[Path] = None
         self._stderr_thread: Optional[threading.Thread] = None
 
     # ------------------------------------------------------------------
@@ -100,12 +81,7 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
         worker_func: Callable = None,
         max_workers: int = None,
     ) -> None:
-        """Launch the persistent MPI worker pool.
-
-        Args:
-            worker_func: The worker callable (used to resolve module/function).
-            max_workers: Number of MPI ranks to launch.
-        """
+        """Launch the persistent MPI worker pool."""
         if self._process is not None:
             self.logger.warning("startup() called but workers are already running")
             return
@@ -116,6 +92,11 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
         num_procs = max_workers or self.num_processes
         worker_module, worker_function = self._get_worker_info(worker_func)
 
+        # Create communication directory on local storage
+        self._comm_dir = self._create_comm_dir()
+        self.logger.info(f"Persistent MPI comm dir: {self._comm_dir}")
+
+        # Create worker script
         work_dir = self.project_dir / "temp_mpi"
         work_dir.mkdir(exist_ok=True)
 
@@ -123,6 +104,7 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
         self._worker_script = work_dir / f"mpi_persistent_worker_{uid}.py"
         self._create_persistent_worker_script(
             self._worker_script, worker_module, worker_function,
+            str(self._comm_dir),
         )
         if os.name != 'nt':
             self._worker_script.chmod(0o755)
@@ -145,12 +127,12 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
             try:
                 self._process = subprocess.Popen(
                     cmd,
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
                     stderr=subprocess.PIPE,
                     env=mpi_env,
                 )
-                # Drain stderr in a background thread to prevent deadlocks
+                # Drain stderr in a background thread
                 self._stderr_thread = threading.Thread(
                     target=self._drain_stderr, daemon=True,
                 )
@@ -159,7 +141,6 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
                 # Verify the process started by waiting briefly
                 try:
                     rc = self._process.wait(timeout=2)
-                    # If it exited within 2 s, startup failed
                     stderr_snippet = ""
                     if self._process.stderr:
                         try:
@@ -176,8 +157,7 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
                     self._process = None
                     continue
                 except subprocess.TimeoutExpired:
-                    # Good — still running after 2 s
-                    pass
+                    pass  # Good — still running
 
                 self.logger.info("Persistent MPI workers started successfully")
                 return
@@ -205,24 +185,53 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
                 "Call startup() first or the process has died."
             )
 
-        # Serialize tasks and send via stdin pipe
-        payload = pickle.dumps(tasks, protocol=pickle.HIGHEST_PROTOCOL)
-        try:
-            _write_frame(self._process.stdin, payload)
-        except (BrokenPipeError, OSError) as exc:
-            self._handle_dead_process()
-            raise RuntimeError(f"Failed to send tasks to MPI workers: {exc}") from exc
+        comm_dir = self._comm_dir
 
-        # Read results from stdout pipe
-        try:
-            result_bytes = _read_frame(self._process.stdout)
-        except (EOFError, OSError) as exc:
-            self._handle_dead_process()
-            raise RuntimeError(
-                f"Failed to read results from MPI workers: {exc}"
-            ) from exc
+        # Clean any stale signal files
+        for f in ('tasks.ready', 'results.ready', 'results.pkl'):
+            p = comm_dir / f
+            if p.exists():
+                p.unlink()
 
-        results = pickle.loads(result_bytes)  # nosec B301 - Trusted internal data
+        # Write tasks to local temp directory
+        tasks_file = comm_dir / 'tasks.pkl'
+        with open(tasks_file, 'wb') as f:
+            pickle.dump(tasks, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+        # Signal the broker that tasks are ready
+        (comm_dir / 'tasks.ready').write_text(str(len(tasks)))
+        self.logger.debug(f"Sent {len(tasks)} tasks to persistent workers")
+
+        # Wait for results (poll for results.ready)
+        results_signal = comm_dir / 'results.ready'
+        results_file = comm_dir / 'results.pkl'
+        poll_interval = 0.5  # seconds
+        # Generous timeout: allow each task up to SUMMA_TIMEOUT
+        timeout = max(7200, len(tasks) * 300)
+        start = time.monotonic()
+
+        while not results_signal.exists():
+            if time.monotonic() - start > timeout:
+                self._handle_dead_process()
+                raise RuntimeError(
+                    f"Timed out waiting for MPI worker results "
+                    f"after {timeout}s"
+                )
+            if self._process.poll() is not None:
+                self._handle_dead_process()
+                raise RuntimeError("Persistent MPI workers died during execution")
+            time.sleep(poll_interval)
+
+        # Read results
+        with open(results_file, 'rb') as f:
+            results = pickle.load(f)  # nosec B301 - Trusted internal data
+
+        # Clean up for next batch
+        for f in ('tasks.pkl', 'tasks.ready', 'results.pkl', 'results.ready'):
+            p = comm_dir / f
+            if p.exists():
+                p.unlink()
+
         self.logger.debug(
             f"Persistent MPI batch complete: {len(results)} results "
             f"for {len(tasks)} tasks"
@@ -237,16 +246,9 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
         self.logger.info("Shutting down persistent MPI workers...")
 
         try:
-            if self._process.poll() is None:
-                # Send shutdown sentinel (empty payload)
-                shutdown_payload = pickle.dumps(
-                    None, protocol=pickle.HIGHEST_PROTOCOL,
-                )
-                try:
-                    _write_frame(self._process.stdin, shutdown_payload)
-                except (BrokenPipeError, OSError):
-                    pass  # Process may have already exited
-
+            if self._process.poll() is None and self._comm_dir:
+                # Signal shutdown via poison file
+                (self._comm_dir / 'shutdown').write_text('stop')
                 try:
                     self._process.wait(timeout=30)
                     self.logger.info("MPI workers shut down gracefully")
@@ -265,7 +267,7 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
         finally:
             self._process = None
 
-        # Clean up the worker script
+        # Clean up temp files
         if self._worker_script and self._worker_script.exists():
             try:
                 self._worker_script.unlink()
@@ -273,40 +275,45 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
                 pass
             self._worker_script = None
 
+        if self._comm_dir and self._comm_dir.exists():
+            try:
+                shutil.rmtree(self._comm_dir, ignore_errors=True)
+            except OSError:
+                pass
+            self._comm_dir = None
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
     @property
     def is_alive(self) -> bool:
-        """Check if the persistent MPI process is still running."""
         return self._process is not None and self._process.poll() is None
 
     def _handle_dead_process(self) -> None:
-        """Log and clean up after a dead MPI process."""
         rc = self._process.poll() if self._process else None
-        self.logger.error(
-            f"Persistent MPI process died (returncode={rc})"
-        )
+        self.logger.error(f"Persistent MPI process died (returncode={rc})")
         self._process = None
 
     def _drain_stderr(self) -> None:
-        """Read stderr in background to prevent pipe deadlock."""
         try:
             for line in self._process.stderr:
                 if isinstance(line, bytes):
                     line = line.decode(errors='replace')
                 line = line.rstrip('\n')
                 if line:
-                    # Log at INFO so worker output is visible in run logs
                     self.logger.info(f"[MPI worker] {line}")
         except (ValueError, OSError):
-            pass  # Stream closed
+            pass
 
-    # ------------------------------------------------------------------
-    # Reused from MPIExecutionStrategy (kept DRY via delegation where
-    # possible, duplicated where signatures diverge)
-    # ------------------------------------------------------------------
+    @staticmethod
+    def _create_comm_dir() -> Path:
+        """Create the communication directory on node-local storage."""
+        # Prefer SLURM_TMPDIR (node-local /tmp), fall back to system temp
+        base = os.environ.get('SLURM_TMPDIR') or tempfile.gettempdir()
+        comm_dir = Path(base) / f"symfluence_mpi_comm_{uuid.uuid4().hex[:8]}"
+        comm_dir.mkdir(parents=True, exist_ok=True)
+        return comm_dir
 
     @staticmethod
     def _get_worker_info(worker_func: Callable) -> tuple:
@@ -390,17 +397,16 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
         script_path: Path,
         worker_module: str,
         worker_function: str,
+        comm_dir: str,
     ) -> None:
         """Generate the long-lived MPI worker script.
 
         The generated script:
         - Imports all modules once at startup.
-        - Rank 0 acts as a broker: reads task batches from stdin, fans out
-          to worker ranks via MPI, gathers results, writes them to stdout.
+        - Rank 0 acts as a broker: polls for task files, fans out
+          to worker ranks via MPI, gathers results, writes result files.
         - Ranks 1..N-1 loop waiting for tasks from rank 0.
-        - A ``None`` payload signals graceful shutdown.
-        - All logging goes to stderr; stdout is reserved for the binary
-          framing protocol.
+        - A ``shutdown`` file signals graceful exit.
         """
         src_path = Path(__file__).parent.parent.parent.parent.parent
 
@@ -410,17 +416,10 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
 
 import os
 import pickle
-import struct
 import sys
+import time
 import logging
-
-# ------------------------------------------------------------------
-# Protect stdout: redirect Python-level stdout to stderr so that
-# library code (e.g., Fortran wrappers) cannot corrupt the binary
-# framing protocol on fd 1.
-# ------------------------------------------------------------------
-_protocol_stdout = os.fdopen(os.dup(sys.stdout.fileno()), "wb", buffering=0)
-sys.stdout = sys.stderr  # all print() now goes to stderr
+from pathlib import Path
 
 # ------------------------------------------------------------------
 # Logging (stderr only)
@@ -438,7 +437,6 @@ for noisy in (
 ):
     logging.getLogger(noisy).setLevel(logging.WARNING)
 
-# Rank is injected into messages after MPI init (see main())
 _rank = "?"
 
 # ------------------------------------------------------------------
@@ -455,82 +453,67 @@ except ImportError as exc:
     logger.error("sys.path = %s", sys.path)
     MPI.COMM_WORLD.Abort(1)
 
-
-# ------------------------------------------------------------------
-# Framing helpers (mirror coordinator side)
-# ------------------------------------------------------------------
-
-def _read_exact(stream, n):
-    buf = bytearray()
-    while len(buf) < n:
-        chunk = stream.read(n - len(buf))
-        if not chunk:
-            if not buf:
-                return b""
-            raise EOFError(f"Expected {{n}} bytes, got {{len(buf)}}")
-        buf.extend(chunk)
-    return bytes(buf)
-
-
-def _read_frame(stream):
-    header = _read_exact(stream, 8)
-    if not header:
-        raise EOFError("stdin closed")
-    length = struct.unpack(">Q", header)[0]
-    return _read_exact(stream, length)
-
-
-def _write_frame(stream, data):
-    stream.write(struct.pack(">Q", len(data)))
-    stream.write(data)
-    stream.flush()
+COMM_DIR = Path(r"{comm_dir}")
 
 
 # ------------------------------------------------------------------
-# Main loop
+# Main loops
 # ------------------------------------------------------------------
+
+def _log(msg, *args, level=logging.INFO):
+    """Log with rank prefix."""
+    logger.log(level, f"[Rank {{_rank}}] {{msg}}", *args)
+
 
 def broker_loop(comm, rank, size):
-    """Rank-0 broker: relay between coordinator pipes and MPI workers."""
-    stdin_buf = os.fdopen(sys.stdin.fileno(), "rb", buffering=0)
+    """Rank-0 broker: poll for task files, distribute via MPI, write results."""
+    tasks_signal = COMM_DIR / "tasks.ready"
+    shutdown_signal = COMM_DIR / "shutdown"
+    tasks_file = COMM_DIR / "tasks.pkl"
+    results_file = COMM_DIR / "results.pkl"
+    results_signal = COMM_DIR / "results.ready"
+
+    _log("Broker ready, polling %s", COMM_DIR)
 
     while True:
-        # 1. Read a task batch from the coordinator via stdin
-        try:
-            raw = _read_frame(stdin_buf)
-        except EOFError:
-            _log("stdin closed — shutting down")
-            _broadcast_shutdown(comm, size)
-            return
+        # Poll for tasks or shutdown
+        while not tasks_signal.exists():
+            if shutdown_signal.exists():
+                _log("Shutdown signal received")
+                _broadcast_shutdown(comm, size)
+                return
+            time.sleep(0.1)
 
-        tasks = pickle.loads(raw)
-
-        # None is the shutdown sentinel
-        if tasks is None:
-            _log("Received shutdown sentinel")
-            _broadcast_shutdown(comm, size)
-            return
+        # Read tasks
+        with open(tasks_file, "rb") as f:
+            tasks = pickle.load(f)
 
         _log("Received batch of %d tasks", len(tasks))
 
-        # 2. Distribute tasks across ranks (including self)
+        # Distribute tasks across ranks (including self)
         tasks_per_rank = _distribute_tasks(tasks, size)
 
         for dest in range(1, size):
             comm.send(tasks_per_rank[dest], dest=dest, tag=1)
 
-        # 3. Process rank-0's own share
+        # Process rank-0's own share
         my_results = _run_tasks(tasks_per_rank[0], rank)
 
-        # 4. Gather results from workers
+        # Gather results from workers
         all_results = list(my_results)
         for src in range(1, size):
             worker_results = comm.recv(source=src, tag=2)
             all_results.extend(worker_results)
 
-        # 5. Send results back to coordinator via stdout
-        result_bytes = pickle.dumps(all_results, protocol=pickle.HIGHEST_PROTOCOL)
-        _write_frame(_protocol_stdout, result_bytes)
+        # Write results and signal
+        with open(results_file, "wb") as f:
+            pickle.dump(all_results, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+        # Remove tasks signal before creating results signal
+        if tasks_signal.exists():
+            tasks_signal.unlink()
+
+        results_signal.write_text(str(len(all_results)))
 
         _log("Sent %d results back to coordinator", len(all_results))
 
@@ -540,7 +523,6 @@ def worker_loop(comm, rank):
     while True:
         tasks = comm.recv(source=0, tag=1)
 
-        # None is the shutdown sentinel
         if tasks is None:
             _log("Received shutdown sentinel")
             return
@@ -589,11 +571,6 @@ def _broadcast_shutdown(comm, size):
 # ------------------------------------------------------------------
 # Entry point
 # ------------------------------------------------------------------
-
-def _log(msg, *args, level=logging.INFO):
-    """Log with rank prefix."""
-    logger.log(level, f"[Rank {{_rank}}] {{msg}}", *args)
-
 
 def main():
     global _rank
