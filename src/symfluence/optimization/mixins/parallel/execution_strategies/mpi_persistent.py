@@ -361,6 +361,8 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
         num_processes: int,
         worker_script: Path,
     ) -> list:
+        # +1 rank for the dedicated broker (rank 0 does no task work)
+        total_ranks = num_processes + 1
         cmd = [launcher]
         if launcher == "mpirun":
             cmd.extend([
@@ -369,7 +371,7 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
                 '-x', 'MKL_NUM_THREADS',
             ])
         cmd.extend([
-            '-n', str(num_processes),
+            '-n', str(total_ranks),
             python_exe,
             str(worker_script),
         ])
@@ -466,14 +468,21 @@ def _log(msg, *args, level=logging.INFO):
 
 
 def broker_loop(comm, rank, size):
-    """Rank-0 broker: poll for task files, distribute via MPI, write results."""
+    """Rank-0 broker: poll for task files, distribute via MPI, write results.
+
+    Rank 0 is a **dedicated** broker — it does not execute tasks itself.
+    This avoids a deadlock where worker ranks block on comm.send while
+    rank 0 is still busy running its own task and hasn't posted the
+    matching comm.recv yet.
+    """
     tasks_signal = COMM_DIR / "tasks.ready"
     shutdown_signal = COMM_DIR / "shutdown"
     tasks_file = COMM_DIR / "tasks.pkl"
     results_file = COMM_DIR / "results.pkl"
     results_signal = COMM_DIR / "results.ready"
+    num_workers = size - 1  # ranks 1..N-1
 
-    _log("Broker ready, polling %s", COMM_DIR)
+    _log("Broker ready (dedicated, %d workers), polling %s", num_workers, COMM_DIR)
 
     while True:
         # Poll for tasks or shutdown
@@ -490,17 +499,16 @@ def broker_loop(comm, rank, size):
 
         _log("Received batch of %d tasks", len(tasks))
 
-        # Distribute tasks across ranks (including self)
-        tasks_per_rank = _distribute_tasks(tasks, size)
+        # Distribute tasks to worker ranks only (1..N-1)
+        tasks_per_rank = _distribute_tasks(tasks, num_workers)
 
-        for dest in range(1, size):
-            comm.send(tasks_per_rank[dest], dest=dest, tag=1)
+        for i, dest in enumerate(range(1, size)):
+            comm.send(tasks_per_rank[i], dest=dest, tag=1)
 
-        # Process rank-0's own share
-        my_results = _run_tasks(tasks_per_rank[0], rank)
+        _log("Tasks distributed, waiting for results...")
 
-        # Gather results from workers
-        all_results = list(my_results)
+        # Gather results from all workers (no own tasks to block on)
+        all_results = []
         for src in range(1, size):
             worker_results = comm.recv(source=src, tag=2)
             all_results.extend(worker_results)
@@ -535,11 +543,11 @@ def worker_loop(comm, rank):
 # Helpers
 # ------------------------------------------------------------------
 
-def _distribute_tasks(tasks, size):
-    """Round-robin tasks to ranks, respecting proc_id when present."""
-    buckets = [[] for _ in range(size)]
+def _distribute_tasks(tasks, num_workers):
+    """Round-robin tasks to worker ranks, respecting proc_id when present."""
+    buckets = [[] for _ in range(num_workers)]
     for task in tasks:
-        dest = task.get("proc_id", 0) % size
+        dest = task.get("proc_id", 0) % num_workers
         buckets[dest].append(task)
     return buckets
 
@@ -548,8 +556,15 @@ def _run_tasks(tasks, rank):
     """Execute a list of tasks and return results (never raises)."""
     results = []
     for i, task in enumerate(tasks):
+        ind_id = task.get("individual_id", "?")
+        proc_id = task.get("proc_id", "?")
+        summa_dir = task.get("summa_dir", "?")
+        _log("Starting task %d (ind=%s, proc=%s, summa_dir=%s)",
+             i, ind_id, proc_id, summa_dir)
         try:
             result = _worker_func(task)
+            score = result.get("score") if isinstance(result, dict) else "?"
+            _log("Completed task %d (ind=%s, score=%s)", i, ind_id, score)
             results.append(result)
         except Exception as exc:
             _log("Task %d failed: %s", i, exc, level=logging.ERROR)
