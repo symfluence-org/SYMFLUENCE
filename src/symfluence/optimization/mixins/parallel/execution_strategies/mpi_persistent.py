@@ -361,8 +361,9 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
         num_processes: int,
         worker_script: Path,
     ) -> list:
-        # +1 rank for the dedicated broker (rank 0 does no task work)
-        total_ranks = num_processes + 1
+        # Rank 0 is a dedicated broker; ranks 1..N-1 are workers.
+        # We use the requested num_processes (not +1) to stay within
+        # SLURM slot limits.  This gives N-1 task workers.
         cmd = [launcher]
         if launcher == "mpirun":
             cmd.extend([
@@ -371,7 +372,7 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
                 '-x', 'MKL_NUM_THREADS',
             ])
         cmd.extend([
-            '-n', str(total_ranks),
+            '-n', str(num_processes),
             python_exe,
             str(worker_script),
         ])
