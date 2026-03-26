@@ -298,7 +298,8 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
                     line = line.decode(errors='replace')
                 line = line.rstrip('\n')
                 if line:
-                    self.logger.debug(f"[MPI worker] {line}")
+                    # Log at INFO so worker output is visible in run logs
+                    self.logger.info(f"[MPI worker] {line}")
         except (ValueError, OSError):
             pass  # Stream closed
 
@@ -426,9 +427,8 @@ sys.stdout = sys.stderr  # all print() now goes to stderr
 # ------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
-    format='[%(asctime)s] [%(levelname)s] [Rank %(rank)s] %(message)s',
+    format='[%(asctime)s] [%(levelname)s] %(message)s',
     stream=sys.stderr,
-    defaults={{"rank": "?"}},
 )
 logger = logging.getLogger("mpi_persistent_worker")
 
@@ -437,6 +437,9 @@ for noisy in (
     'matplotlib', 'urllib3', 's3transfer',
 ):
     logging.getLogger(noisy).setLevel(logging.WARNING)
+
+# Rank is injected into messages after MPI init (see main())
+_rank = "?"
 
 # ------------------------------------------------------------------
 # Path setup & imports (happens ONCE)
@@ -496,7 +499,7 @@ def broker_loop(comm, rank, size):
         try:
             raw = _read_frame(stdin_buf)
         except EOFError:
-            logger.info("stdin closed — shutting down")
+            _log("stdin closed — shutting down")
             _broadcast_shutdown(comm, size)
             return
 
@@ -504,11 +507,11 @@ def broker_loop(comm, rank, size):
 
         # None is the shutdown sentinel
         if tasks is None:
-            logger.info("Received shutdown sentinel")
+            _log("Received shutdown sentinel")
             _broadcast_shutdown(comm, size)
             return
 
-        logger.info("Received batch of %d tasks", len(tasks))
+        _log("Received batch of %d tasks", len(tasks))
 
         # 2. Distribute tasks across ranks (including self)
         tasks_per_rank = _distribute_tasks(tasks, size)
@@ -529,7 +532,7 @@ def broker_loop(comm, rank, size):
         result_bytes = pickle.dumps(all_results, protocol=pickle.HIGHEST_PROTOCOL)
         _write_frame(_protocol_stdout, result_bytes)
 
-        logger.info("Sent %d results back to coordinator", len(all_results))
+        _log("Sent %d results back to coordinator", len(all_results))
 
 
 def worker_loop(comm, rank):
@@ -539,7 +542,7 @@ def worker_loop(comm, rank):
 
         # None is the shutdown sentinel
         if tasks is None:
-            logger.info("Received shutdown sentinel")
+            _log("Received shutdown sentinel")
             return
 
         results = _run_tasks(tasks, rank)
@@ -567,7 +570,7 @@ def _run_tasks(tasks, rank):
             result = _worker_func(task)
             results.append(result)
         except Exception as exc:
-            logger.error("Rank %d task %d failed: %s", rank, i, exc)
+            _log("Task %d failed: %s", i, exc, level=logging.ERROR)
             results.append({{
                 "individual_id": task.get("individual_id", -1),
                 "params": task.get("params", {{}}),
@@ -587,21 +590,19 @@ def _broadcast_shutdown(comm, size):
 # Entry point
 # ------------------------------------------------------------------
 
+def _log(msg, *args, level=logging.INFO):
+    """Log with rank prefix."""
+    logger.log(level, f"[Rank {{_rank}}] {{msg}}", *args)
+
+
 def main():
+    global _rank
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
     size = comm.Get_size()
+    _rank = rank
 
-    # Update the logging filter so %(rank)s works
-    for handler in logging.root.handlers:
-        old_fmt = handler.formatter
-        handler.setFormatter(
-            logging.Formatter(
-                fmt=f"[%(asctime)s] [%(levelname)s] [Rank {{rank}}] %(message)s",
-            )
-        )
-
-    logger.info("Worker started (size=%d)", size)
+    _log("Worker started (size=%d)", size)
 
     try:
         if rank == 0:
@@ -609,10 +610,12 @@ def main():
         else:
             worker_loop(comm, rank)
     except Exception as exc:
-        logger.error("Fatal error: %s", exc, exc_info=True)
+        _log("Fatal error: %s", exc, level=logging.ERROR)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
         comm.Abort(1)
     finally:
-        logger.info("Exiting")
+        _log("Exiting")
 
 
 if __name__ == "__main__":
