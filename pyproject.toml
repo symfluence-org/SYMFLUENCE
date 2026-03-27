@@ -6,7 +6,6 @@ build-backend = "hatchling.build"
 allow-direct-references = true
 
 [tool.hatch.build]
-sources = ["src"]
 
 [project]
 name = "symfluence"
