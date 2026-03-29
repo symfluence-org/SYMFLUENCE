@@ -8,12 +8,12 @@
 ! (3) the simulation start/end times must be within single quotes
 ! ***********************************************************************************************************************
 ! ***********************************************************************************************************************
-soilCatTbl                      ROSETTA         ! (03) soil-category dateset (STAS, STAS-RUC, ROSETTA)
-vegeParTbl                      MODIFIED_IGBP_MODIS_NOAH              ! (04) vegetation category dataset
+soilCatTbl                      ROSETTA         ! (03) soil-category dataset
+vegeParTbl                      USGS            ! (04) vegetation category dataset
 soilStress                      NoahType        ! (05) choice of function for the soil moisture control on stomatal resistance
 stomResist                      BallBerry       ! (06) choice of function for stomatal resistance
 ! ***********************************************************************************************************************
-num_method                      itertive        ! (07) choice of numerical method
+num_method                      homegrown       ! (07) choice of numerical method
 fDerivMeth                      analytic        ! (08) method used to calculate flux derivatives
 LAI_method                      monTable        ! (09) method used to determine LAI and SAI
 f_Richards                      mixdform        ! (10) form of Richard's equation
@@ -28,16 +28,19 @@ canopyEmis                      difTrans        ! (18) choice of parameterizatio
 snowIncept                      lightSnow       ! (19) choice of parameterization for snow interception
 windPrfile                      logBelowCanopy  ! (20) choice of wind profile through the canopy
 astability                      louisinv        ! (21) choice of stability function
-canopySrad                      CLM_2stream     ! (22) choice of canopy shortwave radiation method
-alb_method                      varDecay        ! (23) choice of albedo representation
-compaction                      consettl        ! (24) choice of compaction routine
+canopySrad                      BeersLaw        ! (22) choice of canopy shortwave radiation method
+alb_method                      conDecay        ! (23) choice of albedo representation
+compaction                      anderson        ! (24) choice of compaction routine
 snowLayers                      CLM_2010        ! (25) choice of method to combine and sub-divide snow layers
 thCondSnow                      jrdn1991        ! (26) choice of thermal conductivity representation for snow
 thCondSoil                      funcSoilWet     ! (27) choice of thermal conductivity representation for soil
 spatial_gw                      localColumn     ! (28) choice of method for the spatial representation of groundwater
 subRouting                      timeDlay        ! (29) choice of method for sub-grid routing
-infRateMax                      GreenAmpt
-nrgConserv			enthalpyForm
+nrgConserv                      enthalpyForm    ! (30) choice of variable in energy equations (BE residual or IDA state variable)
+infRateMax                      GreenAmpt       ! (31) choice of infiltration rate method
+surfRun_SE                      homegrown_SE    ! (32) saturation excess surface runoff parameterization
+read_force                      readPerStep     ! (33) method used to read forcing data
+write_buff                      writePerStep    ! (34) method used to write model output
 ! ***********************************************************************************************
 ! ***** description of the options available -- nothing below this point is read ****************
 ! ***********************************************************************************************
@@ -45,13 +48,13 @@ nrgConserv			enthalpyForm
 ! (01) simulation start time
 ! (02) simulation end time
 ! -----------------------------------------------------------------------------------------------
-! (03) soil-category dateset
+! (03) soil-category dataset
 ! STAS      ! STATSGO dataset
 ! STAS-RUC  ! ??
 ! ROSETTA   ! merged Rosetta table with STAS-RUC
 ! -----------------------------------------------------------------------------------------------
 ! (04) vegetation category dataset
-! USGS      ! USGS 24/27 category dataset
+! USGS                      ! USGS 24/27 category dataset
 ! MODIFIED_IGBP_MODIS_NOAH  ! MODIS 20-category dataset
 ! -----------------------------------------------------------------------------------------------
 ! (05) choice of function for the soil moisture control on stomatal resistance
@@ -64,12 +67,12 @@ nrgConserv			enthalpyForm
 ! Jarvis    ! Jarvis
 ! -----------------------------------------------------------------------------------------------
 ! (07) choice of numerical method
-! itertive  ! iterative
-! non_iter  ! non-iterative
-! itersurf  ! iterate only on the surface energy balance
+! homegrown ! home-grown backward Euler
+! kinsol    ! SUNDIALS backward Euler solution using Kinsol
+! ida       ! SUNDIALS solution using IDA
 ! -----------------------------------------------------------------------------------------------
 ! (08) method used to calculate flux derivatives
-! numericl  ! numerical derivatives
+! numericl  ! numerical derivatives (only works with SUNDIALS)
 ! analytic  ! analytical derivatives
 ! -----------------------------------------------------------------------------------------------
 ! (09) method used to determine LAI and SAI
@@ -109,7 +112,7 @@ nrgConserv			enthalpyForm
 ! -----------------------------------------------------------------------------------------------
 ! (17) choice of parameterization for vegetation roughness length and displacement height
 ! Raupach_BLM1994  ! Raupach (BLM 1994) "Simplified expressions..."
-! CM_QJRMS1998     ! Choudhury and Monteith (QJRMS 1998) "A four layer model for the heat budget..."
+! CM_QJRMS1988     ! Choudhury and Monteith (QJRMS 1998) "A four layer model for the heat budget..."
 ! vegTypeTable     ! constant parameters dependent on the vegetation type
 ! -----------------------------------------------------------------------------------------------
 ! (18) choice of parameterization for canopy emissivity
@@ -117,11 +120,11 @@ nrgConserv			enthalpyForm
 ! difTrans  ! parameterized as a function of diffuse transmissivity
 ! -----------------------------------------------------------------------------------------------
 ! (19) choice of parameterization for snow interception
-! stickySnow  ! maximum interception capacity an increasing function of temerature
+! stickySnow  ! maximum interception capacity an increasing function of temperature
 ! lightSnow   ! maximum interception capacity an inverse function of new snow density
 ! -----------------------------------------------------------------------------------------------
 ! (20) choice of wind profile
-! exponential ! exponential wind profile extends to the surface
+! exponential    ! exponential wind profile extends to the surface
 ! logBelowCanopy ! logarithmic profile below the vegetation canopy
 ! -----------------------------------------------------------------------------------------------
 ! (21) choice of stability function
@@ -166,5 +169,29 @@ nrgConserv			enthalpyForm
 ! (29) choice of method for sub-grid routing
 ! timeDlay  ! time-delay histogram
 ! qInstant  ! instantaneous routing
+! -----------------------------------------------------------------------------------------------
+! (30) choice of variable in energy equations (BE residual or IDA state variable)
+! closedForm      ! use temperature with closed form heat capacity
+! enthalpyForm    ! use enthalpy with soil temperature-enthalpy lookup tables
+! enthalpyFormAN  ! use enthalpy with soil temperature-enthalpy analytical solutions
+! -----------------------------------------------------------------------------------------------
+! (31) choice of infiltration rate method
+! GreenAmpt   ! Green-Ampt
+! topmodel_GA ! Green-Ampt with TOPMODEL conductivity rate
+! noInfExc    ! no infiltration excess runoff (saturation excess may still occur)
+! -----------------------------------------------------------------------------------------------
+! (32) choice of saturation excess (SE) surface runoff parameterization
+! zero_SE      ! zero SE surface runoff
+! homegrown_SE ! SE component of SUMMA's original liquid flux parameterization (default)
+! FUSEPRMS     ! FUSE PRMS surface runoff parameterization
+! FUSEAVIC     ! FUSE ARNO/VIC surface runoff parameterization
+! FUSETOPM     ! FUSE TOPMODEL surface runoff parameterization
+! -----------------------------------------------------------------------------------------------
+! (33) method used to read forcing data
+! readPerStep    ! read forcing data per time step (default)
+! readFullSeries ! read full forcing series in a buffered read
+! -----------------------------------------------------------------------------------------------
+! (34) method used to write model output
+! writePerStep    ! write model output per time step (default)
+! writeFullSeries ! write all data for a given output file in a buffered read
 ! ***********************************************************************************************
-! history Wed Jul 29 16:01:34 2020: /home/wknoben/summa/utils/convert_summa_config_v2_v3.py fileManager.txt
