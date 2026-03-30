@@ -256,6 +256,10 @@ class FileProcessor(ConfigMixin):
         """
         Get list of forcing files, excluding non-temporal files.
 
+        Filters by the configured forcing dataset when multiple datasets
+        are present in the same directory (e.g., after switching from
+        AORC to ERA5 without clearing old files).
+
         Args:
             forcing_path: Path to search for forcing files
             exclude_patterns: Patterns to exclude (default: attributes, metadata, etc.)
@@ -271,6 +275,27 @@ class FileProcessor(ConfigMixin):
             f for f in all_nc_files
             if not any(pattern in f.name.lower() for pattern in exclude_patterns)
         ])
+
+        # Filter by configured dataset to avoid processing stale files from
+        # a previously configured dataset (e.g., AORC files when ERA5 is active)
+        forcing_dataset = self._get_config_value(
+            lambda: self.config.forcing.dataset, dict_key='FORCING_DATASET'
+        )
+        if forcing_dataset:
+            dataset_lower = forcing_dataset.lower()
+            dataset_upper = forcing_dataset.upper()
+            dataset_files = [
+                f for f in forcing_files
+                if dataset_lower in f.name.lower() or dataset_upper in f.name
+            ]
+            if dataset_files:
+                other_count = len(forcing_files) - len(dataset_files)
+                if other_count > 0:
+                    self.logger.info(
+                        f"Filtered to {len(dataset_files)} {dataset_upper} file(s), "
+                        f"skipping {other_count} file(s) from other datasets"
+                    )
+                forcing_files = dataset_files
 
         excluded_count = len(all_nc_files) - len(forcing_files)
         if excluded_count > 0:
