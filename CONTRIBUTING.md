@@ -45,7 +45,7 @@ When creating new source files, include the standard SPDX header:
 
 ```python
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright 2024-2026 SYMFLUENCE Team <dev@symfluence.org>
+# Copyright 2024-2026 SYMFLUENCE Foundation <dev@symfluence.org>
 ```
 
 ### Contributor License Agreement (CLA)
@@ -54,7 +54,7 @@ All external contributors must sign the [Contributor License Agreement](CLA.md)
 before a pull request can be merged. The CLA is checked automatically by CI —
 unsigned PRs will fail the CLA check.
 
-**Why a CLA?** The CLA grants the SYMFLUENCE Team the rights needed to
+**Why a CLA?** The CLA grants the SYMFLUENCE Foundation the rights needed to
 maintain the project under GPL-3.0-or-later while preserving the option to offer
 the software under additional license terms (e.g., commercial licenses) in the
 future. This dual-licensing flexibility is described in

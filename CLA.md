@@ -3,7 +3,7 @@
 ## Individual Contributor License Agreement v1.0
 
 Thank you for your interest in contributing to SYMFLUENCE ("the Project"),
-maintained by the SYMFLUENCE Team <dev@symfluence.org>.
+maintained by the SYMFLUENCE Foundation <dev@symfluence.org>.
 
 By signing this agreement, you accept and agree to the following terms for your
 present and future contributions submitted to the Project.
@@ -21,16 +21,16 @@ Contribution.
 
 ### 2. Grant of Copyright License
 
-You hereby grant to the SYMFLUENCE Team and to recipients of software
-distributed by the SYMFLUENCE Team a perpetual, worldwide, non-exclusive,
+You hereby grant to the SYMFLUENCE Foundation and to recipients of software
+distributed by the SYMFLUENCE Foundation a perpetual, worldwide, non-exclusive,
 no-charge, royalty-free, irrevocable copyright license to reproduce, prepare
 derivative works of, publicly display, publicly perform, sublicense, and
 distribute Your Contributions and such derivative works.
 
 ### 3. Grant of Patent License
 
-You hereby grant to the SYMFLUENCE Team and to recipients of software
-distributed by the SYMFLUENCE Team a perpetual, worldwide, non-exclusive,
+You hereby grant to the SYMFLUENCE Foundation and to recipients of software
+distributed by the SYMFLUENCE Foundation a perpetual, worldwide, non-exclusive,
 no-charge, royalty-free, irrevocable patent license to make, have made, use,
 offer to sell, sell, import, and otherwise transfer the Contribution, where
 such license applies only to those patent claims licensable by You that are
@@ -50,7 +50,7 @@ You represent that:
 
 ### 5. Dual Licensing
 
-You acknowledge that the SYMFLUENCE Team may license the Project, including
+You acknowledge that the SYMFLUENCE Foundation may license the Project, including
 Your Contributions, under additional license terms beyond the GPL-3.0-or-later
 license, including commercial licenses. The copyright and sublicensing rights
 granted in Section 2 expressly permit this.
@@ -58,7 +58,7 @@ granted in Section 2 expressly permit this.
 ### 6. No Obligation
 
 You understand that the decision to include Your Contribution in the Project
-is at the sole discretion of the SYMFLUENCE Team, and this agreement does not
+is at the sole discretion of the SYMFLUENCE Foundation, and this agreement does not
 create an obligation to use or include any Contribution.
 
 ### 7. Support

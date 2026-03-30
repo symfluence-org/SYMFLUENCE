@@ -290,7 +290,7 @@ For organizations that require alternative licensing terms — including
 proprietary integration, redistribution without copyleft obligations,
 or operational deployment support — commercial licenses are available.
 
-Contact: darri@symfluence.org
+Contact: dev@symfluence.org
 
 ---
 
