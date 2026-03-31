@@ -1204,7 +1204,7 @@ Fix:
   1) Run this from the SYMFLUENCE project dir, or
   2) export SYMFLUENCE_CODE_DIR=/path/to/symfluence
 
-Docs: https://github.com/DarriEy/symfluence
+Docs: https://github.com/symfluence-org/symfluence
 EOF
 }
 

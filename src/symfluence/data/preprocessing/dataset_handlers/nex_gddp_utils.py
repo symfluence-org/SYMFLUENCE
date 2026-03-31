@@ -74,8 +74,8 @@ class NEXGDDPCMIP6Handler(BaseDatasetHandler):
             ds = ds.rename(rename_map)
 
         # ---- Precipitation: pr -> pptrate [kg m-2 s-1] ----
-        if "pptrate" in ds.data_vars:
-            pr = ds["pptrate"].astype("float32")
+        if "precipitation_flux" in ds.data_vars:
+            pr = ds["precipitation_flux"].astype("float32")
 
             # clean NaNs / negatives
             pr = xr.where(np.isfinite(pr), pr, 0.0)
@@ -86,51 +86,51 @@ class NEXGDDPCMIP6Handler(BaseDatasetHandler):
                 units="kg m-2 s-1",    # ≡ mm/s
                 standard_name="precipitation_flux",
             )
-            ds["pptrate"] = pr
+            ds["precipitation_flux"] = pr
 
         # ---- Longwave radiation ----
-        if "LWRadAtm" in ds.data_vars:
-            lw = ds["LWRadAtm"].astype("float32")
+        if "surface_downwelling_longwave_flux" in ds.data_vars:
+            lw = ds["surface_downwelling_longwave_flux"].astype("float32")
             lw = xr.where(np.isfinite(lw), lw, np.nan)
             lw.attrs.update(
                 long_name="Downwelling longwave radiation at surface",
                 units="W m-2",
                 standard_name="surface_downwelling_longwave_flux_in_air",
             )
-            ds["LWRadAtm"] = lw
+            ds["surface_downwelling_longwave_flux"] = lw
 
         # ---- Shortwave radiation ----
-        if "SWRadAtm" in ds.data_vars:
-            sw = ds["SWRadAtm"].astype("float32")
+        if "surface_downwelling_shortwave_flux" in ds.data_vars:
+            sw = ds["surface_downwelling_shortwave_flux"].astype("float32")
             sw = xr.where(np.isfinite(sw), sw, np.nan)
             sw.attrs.update(
                 long_name="Downwelling shortwave radiation at surface",
                 units="W m-2",
                 standard_name="surface_downwelling_shortwave_flux_in_air",
             )
-            ds["SWRadAtm"] = sw
+            ds["surface_downwelling_shortwave_flux"] = sw
 
         # ---- Air temperature ----
-        if "airtemp" in ds.data_vars:
-            ta = ds["airtemp"].astype("float32")
+        if "air_temperature" in ds.data_vars:
+            ta = ds["air_temperature"].astype("float32")
             ta = xr.where(np.isfinite(ta), ta, np.nan)
             ta.attrs.update(
                 long_name="Near-surface air temperature",
                 units="K",
                 standard_name="air_temperature",
             )
-            ds["airtemp"] = ta
+            ds["air_temperature"] = ta
 
         # ---- Specific humidity / relative humidity ----
-        if "spechum" in ds.data_vars:
-            q = ds["spechum"].astype("float32")
+        if "specific_humidity" in ds.data_vars:
+            q = ds["specific_humidity"].astype("float32")
             q = xr.where(np.isfinite(q), q, np.nan)
             q.attrs.update(
                 long_name="Near-Surface Specific Humidity",
                 units="kg kg-1",
                 standard_name="specific_humidity",
             )
-            ds["spechum"] = q
+            ds["specific_humidity"] = q
         elif "hurs" in ds.data_vars:
             # Keep as relative humidity; downstream forcing processor will
             # convert to specific humidity via Magnus formula
@@ -140,35 +140,35 @@ class NEXGDDPCMIP6Handler(BaseDatasetHandler):
                 long_name="Near-surface relative humidity",
                 units="percent",
             )
-            ds["relhum"] = hurs
+            ds["relative_humidity"] = hurs
             ds = ds.drop_vars("hurs")
 
         # ---- Wind speed ----
-        if "windspd" in ds.data_vars:
-            ws = ds["windspd"].astype("float32")
+        if "wind_speed" in ds.data_vars:
+            ws = ds["wind_speed"].astype("float32")
             ws = xr.where(np.isfinite(ws), ws, np.nan)
             ws.attrs.update(
                 long_name="Near-surface wind speed",
                 units="m s-1",
                 standard_name="wind_speed",
             )
-            ds["windspd"] = ws
+            ds["wind_speed"] = ws
 
         # ---- Air pressure (if present) ----
-        if "airpres" in ds.data_vars:
-            ap = ds["airpres"].astype("float32")
+        if "surface_air_pressure" in ds.data_vars:
+            ap = ds["surface_air_pressure"].astype("float32")
             ap = xr.where(np.isfinite(ap), ap, np.nan)
             ap.attrs.update(
                 long_name="surface air pressure",
                 units="Pa",
                 standard_name="air_pressure",
             )
-            ds["airpres"] = ap
+            ds["surface_air_pressure"] = ap
 
         keep_vars = [
             v for v in [
-                "pptrate", "LWRadAtm", "SWRadAtm",
-                "airtemp", "spechum", "relhum", "windspd", "airpres",
+                "precipitation_flux", "surface_downwelling_longwave_flux", "surface_downwelling_shortwave_flux",
+                "air_temperature", "specific_humidity", "relative_humidity", "wind_speed", "surface_air_pressure",
             ]
             if v in ds.data_vars
         ]
@@ -246,14 +246,14 @@ class NEXGDDPCMIP6Handler(BaseDatasetHandler):
 
         # Process each variable
         for var_name in ds.data_vars:
-            if var_name not in ['pptrate', 'airtemp', 'spechum', 'relhum', 'windspd', 'airpres', 'LWRadAtm', 'SWRadAtm']:
+            if var_name not in ['precipitation_flux', 'air_temperature', 'specific_humidity', 'relative_humidity', 'wind_speed', 'surface_air_pressure', 'surface_downwelling_longwave_flux', 'surface_downwelling_shortwave_flux']:
                 # Keep non-forcing variables as-is
                 ds_hourly[var_name] = ds[var_name]
                 continue
 
             var_data = ds[var_name]
 
-            if var_name == 'pptrate':
+            if var_name == 'precipitation_flux':
                 # Precipitation: Uniformly distribute daily total over 24 hours
                 # Use nearest neighbor interpolation with extrapolation
                 ds_hourly[var_name] = var_data.interp(
@@ -263,7 +263,7 @@ class NEXGDDPCMIP6Handler(BaseDatasetHandler):
                 )
                 self.logger.debug(f"  {var_name}: uniform distribution (nearest neighbor with extrapolation)")
 
-            elif var_name == 'SWRadAtm':
+            elif var_name == 'surface_downwelling_shortwave_flux':
                 # Shortwave radiation: Apply simple diurnal cycle
                 # Interpolate daily values with extrapolation, then apply diurnal pattern
                 interp_sw = var_data.interp(
@@ -385,6 +385,28 @@ class NEXGDDPCMIP6Handler(BaseDatasetHandler):
             )
             self.logger.error(msg)
             raise FileNotFoundError(msg)
+
+        # Filter to files whose year range overlaps the configured period
+        all_files = files
+        files = [
+            f for f in all_files
+            if self._file_overlaps_period(f, start_year, end_year)
+        ]
+        skipped = len(all_files) - len(files)
+        if skipped:
+            self.logger.info(
+                f"Skipped {skipped} NEX-GDDP-CMIP6 file(s) outside configured period "
+                f"{start_year}-{end_year}"
+            )
+
+        if not files:
+            self.logger.error(
+                f"No NEX-GDDP-CMIP6 files match the configured period {start_year}-{end_year}"
+            )
+            raise FileNotFoundError(
+                f"No NEX-GDDP-CMIP6 forcing files match the configured period "
+                f"{start_year}-{end_year} in {raw_forcing_path}"
+            )
 
         for f in files:
             self.logger.info(f"Processing NEX-GDDP-CMIP6 file: {f}")

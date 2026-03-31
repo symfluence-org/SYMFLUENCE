@@ -13,6 +13,7 @@ Key components:
     AnalysisRegistry: Registry for analysis types and methods
     BaseStructureEnsembleAnalyzer: Multi-model ensemble analysis
     OutputFileLocator: Utility for locating model output files
+    likelihood: Gaussian log-likelihood with observation uncertainty support
 
 Example:
     >>> from symfluence.evaluation import EvaluationRegistry

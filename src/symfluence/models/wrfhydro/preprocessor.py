@@ -207,13 +207,13 @@ class WRFHydroPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         aggregated_dir.mkdir(parents=True, exist_ok=True)
 
         var_map = {
-            'airtemp': ('T2D', 280.0),
-            'spechum': ('Q2D', 0.005),
-            'windspd': ('U2D', 2.0),
-            'airpres': ('PSFC', 101325.0),
-            'pptrate': ('RAINRATE', 0.0),
-            'SWRadAtm': ('SWDOWN', 0.0),
-            'LWRadAtm': ('LWDOWN', 300.0),
+            'air_temperature': ('T2D', 280.0),
+            'specific_humidity': ('Q2D', 0.005),
+            'wind_speed': ('U2D', 2.0),
+            'surface_air_pressure': ('PSFC', 101325.0),
+            'precipitation_flux': ('RAINRATE', 0.0),
+            'surface_downwelling_shortwave_flux': ('SWDOWN', 0.0),
+            'surface_downwelling_longwave_flux': ('LWDOWN', 300.0),
         }
 
         grid_shape = (3, 3)

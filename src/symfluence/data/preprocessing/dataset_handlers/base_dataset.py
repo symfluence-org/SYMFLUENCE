@@ -16,6 +16,7 @@ Variable Naming:
 New code should use CFIF names; legacy names are maintained for compatibility.
 """
 
+import re
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -252,7 +253,7 @@ class BaseDatasetHandler(ABC, ConfigMixin):
         >>> @DatasetRegistry.register('my_dataset')
         >>> class MyDatasetHandler(BaseDatasetHandler):
         ...     def get_variable_mapping(self):
-        ...         return {'t2m': 'airtemp', 'tp': 'pptrate'}
+        ...         return {'t2m': 'air_temperature', 'tp': 'precipitation_flux'}
         ...     def process_dataset(self, ds):
         ...         # Apply conversions
         ...         return ds
@@ -349,6 +350,42 @@ class BaseDatasetHandler(ABC, ConfigMixin):
         Returns:
             ``True`` if :meth:`merge_forcings` must be called.
         """
+
+    @staticmethod
+    def _file_overlaps_period(filepath: Path, start_year: int, end_year: int) -> bool:
+        """Check if a forcing file's time range overlaps the configured period.
+
+        Parses year information from the filename. Files whose years fall
+        entirely outside ``[start_year, end_year]`` are skipped; files with
+        no parseable year information are always included (safe fallback).
+        """
+        name = filepath.stem
+
+        # Try year range pattern like _2000-2003 or _2000_2003
+        range_match = re.search(r'(\d{4})[-_](\d{4})', name)
+        if range_match:
+            file_start = int(range_match.group(1))
+            file_end = int(range_match.group(2))
+            # Only accept as a year-range if values are plausible years
+            if 1900 <= file_start <= 2200 and 1900 <= file_end <= 2200:
+                return file_start <= end_year and file_end >= start_year
+
+        # Try YYYYMM pattern (monthly files like _200001.nc)
+        month_match = re.search(r'(\d{4})(\d{2})', name)
+        if month_match:
+            year = int(month_match.group(1))
+            if 1900 <= year <= 2200:
+                return start_year <= year <= end_year
+
+        # Try standalone 4-digit year (use lookaround instead of \b
+        # because \b treats underscore as a word character)
+        year_matches = re.findall(r'(?<!\d)(\d{4})(?!\d)', name)
+        plausible = [int(y) for y in year_matches if 1900 <= int(y) <= 2200]
+        if plausible:
+            return any(start_year <= y <= end_year for y in plausible)
+
+        # Cannot determine year — include (safe fallback)
+        return True
 
     def get_file_pattern(self) -> str:
         """Return the glob pattern for raw forcing files.

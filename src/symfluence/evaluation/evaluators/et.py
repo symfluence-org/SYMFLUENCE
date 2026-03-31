@@ -59,10 +59,6 @@ if TYPE_CHECKING:
 
 
 @EvaluationRegistry.register('ET')
-@EvaluationRegistry.register('MODIS_ET')
-@EvaluationRegistry.register('MOD16')
-@EvaluationRegistry.register('FLUXNET')
-@EvaluationRegistry.register('FLUXNET_ET')
 class ETEvaluator(ModelEvaluator):
     """Evapotranspiration and latent heat evaluator with multi-source support.
 

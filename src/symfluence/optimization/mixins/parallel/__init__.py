@@ -13,6 +13,7 @@ from .directory_manager import DirectoryManager
 from .execution_strategies import (
     ExecutionStrategy,
     MPIExecutionStrategy,
+    PersistentMPIExecutionStrategy,
     ProcessPoolExecutionStrategy,
     SequentialExecutionStrategy,
 )
@@ -30,4 +31,5 @@ __all__ = [
     'SequentialExecutionStrategy',
     'ProcessPoolExecutionStrategy',
     'MPIExecutionStrategy',
+    'PersistentMPIExecutionStrategy',
 ]

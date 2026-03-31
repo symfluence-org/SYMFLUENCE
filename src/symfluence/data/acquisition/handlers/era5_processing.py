@@ -16,20 +16,20 @@ import xarray as xr
 
 # Valid ranges for ERA5 variables after processing
 ERA5_VARIABLE_RANGES = {
-    'LWRadAtm': {'min': 50.0, 'max': 600.0},
-    'SWRadAtm': {'min': 0.0, 'max': 1500.0},
-    'pptrate': {'min': 0.0, 'max': 1.0},  # mm/s
+    'surface_downwelling_longwave_flux': {'min': 50.0, 'max': 600.0},
+    'surface_downwelling_shortwave_flux': {'min': 0.0, 'max': 1500.0},
+    'precipitation_flux': {'min': 0.0, 'max': 1.0},  # mm/s
 }
 
 # SUMMA variable attributes
 SUMMA_VARIABLE_ATTRS = {
-    'airpres': {'units': 'Pa', 'long_name': 'air pressure', 'standard_name': 'air_pressure'},
-    'airtemp': {'units': 'K', 'long_name': 'air temperature', 'standard_name': 'air_temperature'},
-    'windspd': {'units': 'm s-1', 'long_name': 'wind speed', 'standard_name': 'wind_speed'},
-    'spechum': {'units': 'kg kg-1', 'long_name': 'specific humidity', 'standard_name': 'specific_humidity'},
-    'pptrate': {'units': 'mm/s', 'long_name': 'precipitation rate', 'standard_name': 'precipitation_rate'},
-    'SWRadAtm': {'units': 'W m-2', 'long_name': 'shortwave radiation', 'standard_name': 'surface_downwelling_shortwave_flux_in_air'},
-    'LWRadAtm': {'units': 'W m-2', 'long_name': 'longwave radiation', 'standard_name': 'surface_downwelling_longwave_flux_in_air'},
+    'surface_air_pressure': {'units': 'Pa', 'long_name': 'air pressure', 'standard_name': 'air_pressure'},
+    'air_temperature': {'units': 'K', 'long_name': 'air temperature', 'standard_name': 'air_temperature'},
+    'wind_speed': {'units': 'm s-1', 'long_name': 'wind speed', 'standard_name': 'wind_speed'},
+    'specific_humidity': {'units': 'kg kg-1', 'long_name': 'specific humidity', 'standard_name': 'specific_humidity'},
+    'precipitation_flux': {'units': 'mm/s', 'long_name': 'precipitation rate', 'standard_name': 'precipitation_rate'},
+    'surface_downwelling_shortwave_flux': {'units': 'W m-2', 'long_name': 'shortwave radiation', 'standard_name': 'surface_downwelling_shortwave_flux_in_air'},
+    'surface_downwelling_longwave_flux': {'units': 'W m-2', 'long_name': 'longwave radiation', 'standard_name': 'surface_downwelling_longwave_flux_in_air'},
 }
 
 # Variable name mappings for different ERA5 sources
@@ -68,7 +68,7 @@ def calculate_wind_speed(u: xr.DataArray, v: xr.DataArray) -> xr.DataArray:
         Wind speed magnitude (m/s)
     """
     windspd = ((u**2 + v**2)**0.5).astype('float32')
-    windspd.attrs = SUMMA_VARIABLE_ATTRS['windspd']
+    windspd.attrs = SUMMA_VARIABLE_ATTRS['wind_speed']
     return windspd
 
 
@@ -97,7 +97,7 @@ def calculate_specific_humidity(dewpoint_K: xr.DataArray, pressure_Pa: xr.DataAr
 
     # Specific humidity from mixing ratio
     spechum = (r / (1.0 + r)).astype('float32')
-    spechum.attrs = SUMMA_VARIABLE_ATTRS['spechum']
+    spechum.attrs = SUMMA_VARIABLE_ATTRS['specific_humidity']
     return spechum
 
 
@@ -147,7 +147,7 @@ def deaccumulate_to_rate(
         scale_factor: Scaling factor to apply (e.g., 1000 for m to mm conversion)
         negate_if_negative: If True, negate values if minimum is negative
                            (handles ERA5's negative downward flux convention)
-        var_name: Variable name for range clamping (e.g., 'pptrate', 'LWRadAtm')
+        var_name: Variable name for range clamping (e.g., 'precipitation_flux', 'surface_downwelling_longwave_flux')
 
     Returns:
         Instantaneous rate values
@@ -208,7 +208,7 @@ def apply_valid_range(data: xr.DataArray, var_name: str) -> xr.DataArray:
 
     Args:
         data: Input data array
-        var_name: Variable name (e.g., 'LWRadAtm', 'SWRadAtm', 'pptrate')
+        var_name: Variable name (e.g., 'surface_downwelling_longwave_flux', 'surface_downwelling_shortwave_flux', 'precipitation_flux')
 
     Returns:
         Data clipped to valid range
@@ -294,20 +294,20 @@ def era5_to_summa_schema(
     temp_var = find_variable(ds, 'temperature', source)
     if temp_var:
         if source == 'arco':
-            processed_vars['airtemp'] = ds[temp_var].isel(time=slice(1, None)).astype('float32')
+            processed_vars['air_temperature'] = ds[temp_var].isel(time=slice(1, None)).astype('float32')
         else:
-            processed_vars['airtemp'] = ds[temp_var].astype('float32')
-        processed_vars['airtemp'].attrs = SUMMA_VARIABLE_ATTRS['airtemp']
+            processed_vars['air_temperature'] = ds[temp_var].astype('float32')
+        processed_vars['air_temperature'].attrs = SUMMA_VARIABLE_ATTRS['air_temperature']
         logger.debug(f"Processed temperature from {temp_var}")
 
     # Pressure
     pres_var = find_variable(ds, 'pressure', source)
     if pres_var:
         if source == 'arco':
-            processed_vars['airpres'] = ds[pres_var].isel(time=slice(1, None)).astype('float32')
+            processed_vars['surface_air_pressure'] = ds[pres_var].isel(time=slice(1, None)).astype('float32')
         else:
-            processed_vars['airpres'] = ds[pres_var].astype('float32')
-        processed_vars['airpres'].attrs = SUMMA_VARIABLE_ATTRS['airpres']
+            processed_vars['surface_air_pressure'] = ds[pres_var].astype('float32')
+        processed_vars['surface_air_pressure'].attrs = SUMMA_VARIABLE_ATTRS['surface_air_pressure']
         logger.debug(f"Processed pressure from {pres_var}")
 
     # Wind components -> wind speed
@@ -320,7 +320,7 @@ def era5_to_summa_schema(
         else:
             u = ds[u_var]
             v = ds[v_var]
-        processed_vars['windspd'] = calculate_wind_speed(u, v)
+        processed_vars['wind_speed'] = calculate_wind_speed(u, v)
         logger.debug(f"Calculated wind speed from {u_var}, {v_var}")
 
     # Specific humidity (from dewpoint and pressure)
@@ -332,7 +332,7 @@ def era5_to_summa_schema(
         else:
             dewpoint = ds[dew_var]
             pressure = ds[pres_var]
-        processed_vars['spechum'] = calculate_specific_humidity(dewpoint, pressure)
+        processed_vars['specific_humidity'] = calculate_specific_humidity(dewpoint, pressure)
         logger.debug(f"Calculated specific humidity from {dew_var}, {pres_var}")
 
     # === Accumulated variables (need de-accumulation) ===
@@ -344,17 +344,17 @@ def era5_to_summa_schema(
             ds[precip_var], dt,
             scale_factor=1000.0,  # m to mm
             negate_if_negative=False,
-            var_name='pptrate'
+            var_name='precipitation_flux'
         )
         if source == 'arco':
-            processed_vars['pptrate'] = pptrate
+            processed_vars['precipitation_flux'] = pptrate
         else:
             # For CDS, prepend first value to maintain time dimension
             original_times = ds['time'].values
             first_val = pptrate.isel(time=0).drop_vars('time')
             pptrate_full = xr.concat([first_val.expand_dims('time'), pptrate.drop_vars('time')], dim='time')
-            processed_vars['pptrate'] = pptrate_full.assign_coords(time=original_times)
-        processed_vars['pptrate'].attrs = SUMMA_VARIABLE_ATTRS['pptrate']
+            processed_vars['precipitation_flux'] = pptrate_full.assign_coords(time=original_times)
+        processed_vars['precipitation_flux'].attrs = SUMMA_VARIABLE_ATTRS['precipitation_flux']
         logger.debug(f"Processed precipitation from {precip_var}")
 
     # Shortwave radiation
@@ -364,16 +364,16 @@ def era5_to_summa_schema(
             ds[sw_var], dt,
             scale_factor=1.0,
             negate_if_negative=False,
-            var_name='SWRadAtm'
+            var_name='surface_downwelling_shortwave_flux'
         )
         if source == 'arco':
-            processed_vars['SWRadAtm'] = sw_rad
+            processed_vars['surface_downwelling_shortwave_flux'] = sw_rad
         else:
             original_times = ds['time'].values
             first_val = sw_rad.isel(time=0).drop_vars('time')
             sw_rad_full = xr.concat([first_val.expand_dims('time'), sw_rad.drop_vars('time')], dim='time')
-            processed_vars['SWRadAtm'] = sw_rad_full.assign_coords(time=original_times)
-        processed_vars['SWRadAtm'].attrs = SUMMA_VARIABLE_ATTRS['SWRadAtm']
+            processed_vars['surface_downwelling_shortwave_flux'] = sw_rad_full.assign_coords(time=original_times)
+        processed_vars['surface_downwelling_shortwave_flux'].attrs = SUMMA_VARIABLE_ATTRS['surface_downwelling_shortwave_flux']
         logger.debug(f"Processed shortwave radiation from {sw_var}")
 
     # Longwave radiation - CRITICAL: ERA5 may encode downward flux as negative
@@ -383,19 +383,19 @@ def era5_to_summa_schema(
             ds[lw_var], dt,
             scale_factor=1.0,
             negate_if_negative=True,  # Handle negative downward flux convention
-            var_name='LWRadAtm'
+            var_name='surface_downwelling_longwave_flux'
         )
         if source == 'arco':
-            processed_vars['LWRadAtm'] = lw_rad
+            processed_vars['surface_downwelling_longwave_flux'] = lw_rad
         else:
             original_times = ds['time'].values
             first_val = lw_rad.isel(time=0).drop_vars('time')
             lw_rad_full = xr.concat([first_val.expand_dims('time'), lw_rad.drop_vars('time')], dim='time')
-            processed_vars['LWRadAtm'] = lw_rad_full.assign_coords(time=original_times)
-        processed_vars['LWRadAtm'].attrs = SUMMA_VARIABLE_ATTRS['LWRadAtm']
+            processed_vars['surface_downwelling_longwave_flux'] = lw_rad_full.assign_coords(time=original_times)
+        processed_vars['surface_downwelling_longwave_flux'].attrs = SUMMA_VARIABLE_ATTRS['surface_downwelling_longwave_flux']
 
         # Validate longwave radiation
-        lw_mean = float(processed_vars['LWRadAtm'].mean().values)
+        lw_mean = float(processed_vars['surface_downwelling_longwave_flux'].mean().values)
         if lw_mean < 50:
             # Only error if extremely low (likely data quality issue)
             raise ValueError(f"LW radiation critically low: {lw_mean:.1f} W/m^2 (min threshold: 50)")

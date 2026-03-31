@@ -56,11 +56,6 @@ if TYPE_CHECKING:
 
 
 @EvaluationRegistry.register('SOIL_MOISTURE')
-@EvaluationRegistry.register('SM')
-@EvaluationRegistry.register('SM_POINT')
-@EvaluationRegistry.register('SM_SMAP')
-@EvaluationRegistry.register('SM_ISMN')
-@EvaluationRegistry.register('SM_ESA')
 class SoilMoistureEvaluator(ModelEvaluator):
     """Soil moisture evaluator supporting multiple observation sources.
 

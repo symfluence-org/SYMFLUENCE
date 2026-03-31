@@ -33,15 +33,14 @@ class ForcingDataProcessor:
 
     # Standard variable mappings (ERA5 style to common names)
     DEFAULT_VARIABLE_MAPPING = {
-        'airtemp': 'temp',
-        'pptrate': 'pr',
         'air_temperature': 'temp',
+        'precipitation_flux': 'pr',
         'precipitation_rate': 'pr',
-        'specific_humidity': 'spechum',
-        'wind_speed': 'windspd',
-        'shortwave_radiation': 'SWRadAtm',
-        'longwave_radiation': 'LWRadAtm',
-        'surface_pressure': 'airpres',
+        'specific_humidity': 'specific_humidity',
+        'wind_speed': 'wind_speed',
+        'shortwave_radiation': 'surface_downwelling_shortwave_flux',
+        'longwave_radiation': 'surface_downwelling_longwave_flux',
+        'surface_pressure': 'surface_air_pressure',
     }
 
     # Standard unit conversions
@@ -421,14 +420,14 @@ class ForcingDataProcessor:
 
     # Standard variable name fallback sequences
     VARIABLE_FALLBACKS = {
-        'precip': ['pr', 'pptrate', 'precipitation', 'precip', 'rainfall', 'prcp', 'PRCP', 'PPT'],
-        'temp': ['temp', 'airtemp', 'air_temperature', 'tas', 'T2', 'tmean', 'TAVE'],
+        'precip': ['pr', 'precipitation_flux', 'precipitation', 'precip', 'rainfall', 'prcp', 'PRCP', 'PPT'],
+        'temp': ['temp', 'air_temperature', 'air_temperature', 'tas', 'T2', 'tmean', 'TAVE'],
         'pet': ['pet', 'potevap', 'evspsblpot', 'PET', 'eto', 'potential_evapotranspiration'],
-        'shortwave': ['SWRadAtm', 'sw_radiation', 'rsds', 'SWDOWN', 'ssrd', 'shortwave_radiation'],
-        'longwave': ['LWRadAtm', 'lw_radiation', 'rlds', 'LWDOWN', 'strd', 'longwave_radiation'],
-        'humidity': ['spechum', 'specific_humidity', 'q', 'QVAPOR', 'hus'],
-        'wind': ['windspd', 'wind_speed', 'sfcWind', 'WIND', 'wspd', 'u10'],
-        'pressure': ['airpres', 'surface_pressure', 'ps', 'PSFC', 'sp'],
+        'shortwave': ['surface_downwelling_shortwave_flux', 'sw_radiation', 'rsds', 'SWDOWN', 'ssrd', 'shortwave_radiation'],
+        'longwave': ['surface_downwelling_longwave_flux', 'lw_radiation', 'rlds', 'LWDOWN', 'strd', 'longwave_radiation'],
+        'humidity': ['specific_humidity', 'specific_humidity', 'q', 'QVAPOR', 'hus'],
+        'wind': ['wind_speed', 'wind_speed', 'sfcWind', 'WIND', 'wspd', 'u10'],
+        'pressure': ['surface_air_pressure', 'surface_pressure', 'ps', 'PSFC', 'sp'],
     }
 
     def extract_variable_with_fallback(

@@ -70,11 +70,11 @@ class SlopeAreaMethod(ConfigMixin):
             f"{mpi_prefix}{self.taudem_dir}/slopearea -slp {self.interim_dir}/elv-slp.tif -sca {self.interim_dir}/elv-sca.tif -sa {self.interim_dir}/elv-sa.tif -par {slope_exponent} {area_exponent}",
 
             # Threshold the slope-area grid
-            f"{mpi_prefix}{self.taudem_dir}/threshold -ssa {self.interim_dir}/elv-sa.tif -src {self.interim_dir}/elv-src-sa.tif -thresh {slope_area_threshold}",
+            f"{mpi_prefix}{self.taudem_dir}/threshold -ssa {self.interim_dir}/elv-sa.tif -src {self.interim_dir}/elv-src.tif -thresh {slope_area_threshold}",
 
             # D8 contributing area weighted by slope-area sources
             f"{mpi_prefix}{self.taudem_dir}/aread8 -p {self.interim_dir}/elv-fdir.tif "
-            f"-wg {self.interim_dir}/elv-src-sa.tif "
+            f"-wg {self.interim_dir}/elv-src.tif "
             f"-ad8 {self.interim_dir}/elv-ad8_sa.tif -nc",
 
             # Move outlets to stream network

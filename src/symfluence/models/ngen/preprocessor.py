@@ -90,7 +90,7 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         )
         _selected = {m.strip().upper() for m in modules_selected_str.split(',') if m.strip()}
 
-        _all_modules = ['SLOTH', 'PET', 'NOAH', 'CFE']
+        _all_modules = ['SLOTH', 'PET', 'NOAH', 'CFE', 'TOPMODEL', 'SACSMA', 'SNOW17']
         _resolved = {}
         for mod_name in _all_modules:
             config_enabled = mod_name in _selected
@@ -106,17 +106,26 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         self._include_pet = _resolved['PET']
         self._include_noah = _resolved['NOAH']
         self._include_cfe = _resolved['CFE']
+        self._include_topmodel = _resolved['TOPMODEL']
+        self._include_sacsma = _resolved['SACSMA']
+        self._include_snow17 = _resolved['SNOW17']
 
-        # QINSUR-based coupling: NOAH and PET serve complementary roles.
-        # NOAH handles snow physics, canopy interception, and surface energy balance,
-        # outputting QINSUR (net water input to soil surface) as CFE's precipitation input.
-        # PET provides potential evapotranspiration for CFE's internal soil moisture accounting.
-        # No double-counting: QINSUR is post-interception water; PET drives CFE's soil ET.
+        # Validate module exclusivity
+        self._validate_module_exclusivity()
+
+        # Determine the active runoff module name for logging
+        active_runoff = [m for m in ['CFE', 'TOPMODEL', 'SACSMA']
+                         if getattr(self, f'_include_{m.lower()}', False)]
+        runoff_name = active_runoff[0] if active_runoff else 'none'
+
+        # Coupling logic: NOAH/Snow-17 and PET serve complementary roles.
+        # The land-surface/snow module outputs net water input as the runoff module's
+        # precipitation input. PET provides potential ET for soil moisture accounting.
         if self._include_noah and self._include_pet:
             self.logger.info(
-                "NOAH+PET both enabled: using QINSUR-based coupling. "
-                "NOAH provides QINSUR (post-snow/interception water) to CFE as precipitation; "
-                "PET provides potential ET for CFE's soil moisture depletion."
+                f"NOAH+PET both enabled: using QINSUR-based coupling. "
+                f"NOAH provides QINSUR (post-snow/interception water) to {runoff_name} as precipitation; "
+                f"PET provides potential ET for {runoff_name}'s soil moisture depletion."
             )
         elif self._include_noah and not self._include_pet:
             # Get the ET fallback configuration
@@ -132,7 +141,7 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                 self._noah_et_fallback = 'EVAPOTRANS'
 
             self.logger.info(
-                f"NOAH enabled but PET disabled: CFE will receive NOAH's {self._noah_et_fallback} "
+                f"NOAH enabled but PET disabled: {runoff_name} will receive NOAH's {self._noah_et_fallback} "
                 f"(actual ET) instead of potential ET. For physically correct potential ET, "
                 f"add PET to NGEN_MODULES_SELECTED."
             )
@@ -145,6 +154,36 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         self.logger.info(f"  PET: {'ENABLED' if self._include_pet else 'DISABLED'}")
         self.logger.info(f"  NOAH-OWP: {'ENABLED' if self._include_noah else 'DISABLED'}")
         self.logger.info(f"  CFE: {'ENABLED' if self._include_cfe else 'DISABLED'}")
+        self.logger.info(f"  TOPMODEL: {'ENABLED' if self._include_topmodel else 'DISABLED'}")
+        self.logger.info(f"  SAC-SMA: {'ENABLED' if self._include_sacsma else 'DISABLED'}")
+        self.logger.info(f"  Snow-17: {'ENABLED' if self._include_snow17 else 'DISABLED'}")
+
+    def _validate_module_exclusivity(self):
+        """Validate that mutually exclusive modules are not both enabled.
+
+        Enforces:
+        - Rainfall-runoff slot: exactly one of CFE, TOPMODEL, SAC-SMA
+        - Snow/land-surface slot: at most one of NOAH, Snow-17
+        """
+        # Rainfall-runoff: at most one
+        runoff_modules = [m for m in ['CFE', 'TOPMODEL', 'SACSMA']
+                          if getattr(self, f'_include_{m.lower()}', False)]
+        if len(runoff_modules) > 1:
+            keep = runoff_modules[0]
+            for drop in runoff_modules[1:]:
+                setattr(self, f'_include_{drop.lower()}', False)
+            self.logger.warning(
+                f"Multiple runoff modules enabled ({', '.join(runoff_modules)}). "
+                f"Keeping {keep}, disabling {', '.join(runoff_modules[1:])}."
+            )
+
+        # Snow/land-surface: at most one
+        if self._include_noah and self._include_snow17:
+            self.logger.warning(
+                "Both NOAH and Snow-17 enabled. They occupy the same slot. "
+                "Keeping NOAH, disabling Snow-17."
+            )
+            self._include_snow17 = False
 
     def _detect_npm_lib_dir(self) -> Optional[Path]:
         """Detect the npm-installed symfluence dist/lib/ directory."""
@@ -175,6 +214,9 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             "PET": f"libpetbmi{lib_ext}",
             "NOAH": f"libsurfacebmi{lib_ext}",
             "CFE": f"libcfebmi{lib_ext}",
+            "TOPMODEL": f"libtopmodelbmi{lib_ext}",
+            "SACSMA": f"libsacbmi{lib_ext}",
+            "SNOW17": f"libsnow17_bmi{lib_ext}",
         }
 
         # --- 1. Try npm-bundled libraries first (when install_path is default) ---
@@ -214,6 +256,9 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             "PET": ("extern/evapotranspiration/evapotranspiration/cmake_build", f"libpetbmi{lib_ext}"),
             "NOAH": ("extern/noah-owp-modular/cmake_build", f"libsurfacebmi{lib_ext}"),
             "CFE": ("extern/cfe/cmake_build", f"libcfebmi{lib_ext}"),
+            "TOPMODEL": ("extern/topmodel/cmake_build", f"libtopmodelbmi{lib_ext}"),
+            "SACSMA": ("extern/sac-sma/cmake_build", f"libsacbmi{lib_ext}"),
+            "SNOW17": ("extern/snow17/cmake_build", f"libsnow17_bmi{lib_ext}"),
         }
 
         for name, (subpath, libname) in module_subpaths.items():
@@ -283,6 +328,9 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             self.setup_dir / "PET",
             self.setup_dir / "NOAH",
             self.setup_dir / "NOAH" / "parameters",
+            self.setup_dir / "TOPMODEL",
+            self.setup_dir / "SACSMA",
+            self.setup_dir / "SNOW17",
             self.forcing_dir / "csv"
         ]
         if additional_dirs:
@@ -482,33 +530,33 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         from symfluence.core.constants import UnitDetectionThresholds
 
         # Temperature: Convert °C to K if needed
-        if 'airtemp' in forcing_data:
-            temp_mean = float(forcing_data['airtemp'].mean())
+        if 'air_temperature' in forcing_data:
+            temp_mean = float(forcing_data['air_temperature'].mean())
             if temp_mean < UnitDetectionThresholds.TEMP_KELVIN_VS_CELSIUS:
                 self.logger.info("Converting temperature from °C to K (+273.15)")
-                forcing_data['airtemp'] = forcing_data['airtemp'] + 273.15
+                forcing_data['air_temperature'] = forcing_data['air_temperature'] + 273.15
             else:
                 self.logger.debug(f"Temperature appears to be in K (mean={temp_mean:.1f})")
 
         # Precipitation rate: Convert mm/day or mm/hour to kg m⁻² s⁻¹ (mm/s)
-        if 'pptrate' in forcing_data:
-            precip_units = forcing_data['pptrate'].attrs.get('units', '').lower()
-            precip_mean = float(forcing_data['pptrate'].mean())
-            precip_max = float(forcing_data['pptrate'].max())
+        if 'precipitation_flux' in forcing_data:
+            precip_units = forcing_data['precipitation_flux'].attrs.get('units', '').lower()
+            precip_mean = float(forcing_data['precipitation_flux'].mean())
+            precip_max = float(forcing_data['precipitation_flux'].max())
 
             if 'mm/day' in precip_units or 'mm day' in precip_units or 'mm d-1' in precip_units:
                 self.logger.info("Converting precipitation from mm/day to kg m⁻² s⁻¹ (÷86400)")
-                forcing_data['pptrate'] = forcing_data['pptrate'] / 86400.0
+                forcing_data['precipitation_flux'] = forcing_data['precipitation_flux'] / 86400.0
             elif 'mm/h' in precip_units or 'mm h-1' in precip_units or ('mm' in precip_units and 'hour' in precip_units):
                 self.logger.info("Converting precipitation from mm/hour to kg m⁻² s⁻¹ (÷3600)")
-                forcing_data['pptrate'] = forcing_data['pptrate'] / 3600.0
+                forcing_data['precipitation_flux'] = forcing_data['precipitation_flux'] / 3600.0
             elif precip_mean > 0.1 or precip_max > 1.0:
                 # Heuristic: if values are large, likely mm/day not mm/s
                 self.logger.warning(
                     f"Precipitation values appear too large for mm/s (mean={precip_mean:.3f}, max={precip_max:.3f}). "
                     f"Assuming mm/day and converting to kg m⁻² s⁻¹ (÷86400)"
                 )
-                forcing_data['pptrate'] = forcing_data['pptrate'] / 86400.0
+                forcing_data['precipitation_flux'] = forcing_data['precipitation_flux'] / 86400.0
             elif 'kg' in precip_units and 's' in precip_units:
                 self.logger.debug("Precipitation already in kg m⁻² s⁻¹")
             elif 'mm' in precip_units and 's' in precip_units:
@@ -517,18 +565,18 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                 self.logger.debug(f"Precipitation units unclear ({precip_units}), assuming already in kg m⁻² s⁻¹")
 
         # Air pressure: Convert hPa/kPa to Pa if needed
-        if 'airpres' in forcing_data:
-            pres_units = forcing_data['airpres'].attrs.get('units', '').lower()
-            pres_mean = float(forcing_data['airpres'].mean())
+        if 'surface_air_pressure' in forcing_data:
+            pres_units = forcing_data['surface_air_pressure'].attrs.get('units', '').lower()
+            pres_mean = float(forcing_data['surface_air_pressure'].mean())
 
             if 'hpa' in pres_units or (pres_mean > 100 and pres_mean < 2000):
                 # Likely hPa (typical range 950-1050 hPa)
                 self.logger.info("Converting pressure from hPa to Pa (×100)")
-                forcing_data['airpres'] = forcing_data['airpres'] * 100.0
+                forcing_data['surface_air_pressure'] = forcing_data['surface_air_pressure'] * 100.0
             elif 'kpa' in pres_units or (pres_mean > 10 and pres_mean < 200):
                 # Likely kPa (typical range 95-105 kPa)
                 self.logger.info("Converting pressure from kPa to Pa (×1000)")
-                forcing_data['airpres'] = forcing_data['airpres'] * 1000.0
+                forcing_data['surface_air_pressure'] = forcing_data['surface_air_pressure'] * 1000.0
             elif pres_mean > 50000 and pres_mean < 110000:
                 self.logger.debug(f"Pressure appears to be in Pa (mean={pres_mean:.0f})")
             else:
@@ -537,12 +585,12 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                     f"Assuming Pa if > 10000, otherwise converting from hPa"
                 )
                 if pres_mean < 10000:
-                    forcing_data['airpres'] = forcing_data['airpres'] * 100.0
+                    forcing_data['surface_air_pressure'] = forcing_data['surface_air_pressure'] * 100.0
 
         # Specific humidity: should be kg/kg (0-0.1 range), sometimes given as g/kg
-        if 'spechum' in forcing_data:
-            hum_units = forcing_data['spechum'].attrs.get('units', '').lower().strip()
-            hum_max = float(forcing_data['spechum'].max())
+        if 'specific_humidity' in forcing_data:
+            hum_units = forcing_data['specific_humidity'].attrs.get('units', '').lower().strip()
+            hum_max = float(forcing_data['specific_humidity'].max())
 
             # Check if units explicitly indicate g/kg (but NOT kg/kg or kg kg-1)
             is_g_per_kg = (
@@ -552,12 +600,12 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
             if is_g_per_kg or hum_max > 1.0:
                 self.logger.info("Converting specific humidity from g/kg to kg/kg (÷1000)")
-                forcing_data['spechum'] = forcing_data['spechum'] / 1000.0
+                forcing_data['specific_humidity'] = forcing_data['specific_humidity'] / 1000.0
             else:
                 self.logger.debug(f"Specific humidity appears to be in kg/kg (units='{hum_units}', max={hum_max:.6f})")
 
         # Radiation (SWRadAtm, LWRadAtm) should be in W/m² - typically already correct
-        for rad_var in ['SWRadAtm', 'LWRadAtm']:
+        for rad_var in ['surface_downwelling_shortwave_flux', 'surface_downwelling_longwave_flux']:
             if rad_var in forcing_data:
                 self.logger.debug(f"{rad_var} assuming W/m² (standard unit)")
 
@@ -592,6 +640,10 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         forcing_data = fdp.load_forcing_data(self.forcing_basin_path)
         forcing_data = forcing_data.sortby('time')
 
+        # Normalize legacy SUMMA-style names to CFIF standard at the boundary
+        from symfluence.data.preprocessing.cfif.variables import normalize_to_cfif
+        forcing_data = normalize_to_cfif(forcing_data)
+
         # Convert units to NGEN/AORC standards (K, Pa, kg/m²/s, W/m²)
         forcing_data = self._convert_forcing_units_to_ngen(forcing_data)
 
@@ -615,16 +667,16 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             )
             # Use mass-conserving resampling: sum for fluxes, mean for state variables
             # Convert precipitation rate to depth for resampling, then back to rate
-            if 'pptrate' in forcing_data:
+            if 'precipitation_flux' in forcing_data:
                 # Convert mm/s to mm for the source timestep
-                forcing_data['pptrate_depth'] = forcing_data['pptrate'] * inferred_step_seconds
+                forcing_data['pptrate_depth'] = forcing_data['precipitation_flux'] * inferred_step_seconds
 
             # Define resampling strategy for each variable
             resample_dict = {}
             for var in forcing_data.data_vars:
-                if var in ['pptrate', 'pptrate_depth']:
+                if var in ['precipitation_flux', 'pptrate_depth']:
                     continue  # Handle precipitation separately
-                elif var in ['SWRadAtm', 'LWRadAtm']:
+                elif var in ['surface_downwelling_shortwave_flux', 'surface_downwelling_longwave_flux']:
                     # Radiation: use mean (could also use interpolation, but mean is safer)
                     resample_dict[var] = 'mean'
                 else:
@@ -639,7 +691,7 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                 # Sum the precipitation depth over the resampled period
                 precip_depth_hourly = forcing_data['pptrate_depth'].resample(time='1h').sum()
                 # Convert back to rate (mm/h → mm/s)
-                forcing_data_resampled['pptrate'] = precip_depth_hourly / 3600.0
+                forcing_data_resampled['precipitation_flux'] = precip_depth_hourly / 3600.0
                 # Remove temporary depth variable
                 if 'pptrate_depth' in forcing_data_resampled:
                     forcing_data_resampled = forcing_data_resampled.drop_vars('pptrate_depth')
@@ -708,18 +760,18 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         """
         Decompose scalar wind speed into U and V components when needed.
 
-        If forcing data contains 'windspd' (scalar wind speed) but lacks U and V
+        If forcing data contains 'wind_speed' (scalar wind speed) but lacks U and V
         components, this method creates them by assuming westerly wind direction.
 
         Args:
-            forcing_data: Forcing dataset possibly containing 'windspd'
+            forcing_data: Forcing dataset possibly containing 'wind_speed'
 
         Returns:
-            Dataset with 'windspeed_u' and 'windspeed_v' added if needed
+            Dataset with 'eastward_wind' and 'northward_wind' added if needed
         """
-        has_u = 'windspeed_u' in forcing_data
-        has_v = 'windspeed_v' in forcing_data
-        has_scalar = 'windspd' in forcing_data
+        has_u = 'eastward_wind' in forcing_data
+        has_v = 'northward_wind' in forcing_data
+        has_scalar = 'wind_speed' in forcing_data
 
         # If we already have both components, nothing to do
         if has_u and has_v:
@@ -733,21 +785,21 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # Assume westerly wind (from west, blowing east): U = windspd, V = 0
         # This is a common assumption when direction is unknown
         self.logger.warning(
-            "Converting scalar wind speed (windspd) to U/V components. "
-            "Assuming westerly wind (U=windspd, V=0) since wind direction is not available. "
+            "Converting scalar wind speed to U/V components. "
+            "Assuming westerly wind (U=wind_speed, V=0) since wind direction is not available. "
             "This approximation may affect PET and energy balance calculations."
         )
 
         if not has_u:
-            forcing_data['windspeed_u'] = forcing_data['windspd'].copy()
-            forcing_data['windspeed_u'].attrs['long_name'] = 'U-component of wind (assumed from scalar windspd)'
-            forcing_data['windspeed_u'].attrs['units'] = 'm/s'
+            forcing_data['eastward_wind'] = forcing_data['wind_speed'].copy()
+            forcing_data['eastward_wind'].attrs['long_name'] = 'U-component of wind (assumed from scalar wind speed)'
+            forcing_data['eastward_wind'].attrs['units'] = 'm/s'
 
         if not has_v:
             # Create V-component as zeros (westerly wind assumption)
-            forcing_data['windspeed_v'] = xr.zeros_like(forcing_data['windspd'])
-            forcing_data['windspeed_v'].attrs['long_name'] = 'V-component of wind (assumed zero for westerly wind)'
-            forcing_data['windspeed_v'].attrs['units'] = 'm/s'
+            forcing_data['northward_wind'] = xr.zeros_like(forcing_data['wind_speed'])
+            forcing_data['northward_wind'].attrs['long_name'] = 'V-component of wind (assumed zero for westerly wind)'
+            forcing_data['northward_wind'].attrs['units'] = 'm/s'
 
         return forcing_data
 
@@ -787,14 +839,14 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # Variable mapping from ERA5/internal names to BMI standard names for NGEN
         # Use BMI standard naming that NGEN modules expect
         var_mapping = {
-            'pptrate': 'atmosphere_water__liquid_equivalent_precipitation_rate',
-            'airtemp': 'land_surface_air__temperature',
-            'spechum': 'atmosphere_air_water~vapor__specific_humidity',
-            'airpres': 'land_surface_air__pressure',
-            'SWRadAtm': 'land_surface_radiation~incoming~shortwave__energy_flux',
-            'LWRadAtm': 'land_surface_radiation~incoming~longwave__energy_flux',
-            'windspeed_u': 'land_surface_wind__x_component_of_velocity',
-            'windspeed_v': 'land_surface_wind__y_component_of_velocity',
+            'precipitation_flux': 'atmosphere_water__liquid_equivalent_precipitation_rate',
+            'air_temperature': 'land_surface_air__temperature',
+            'specific_humidity': 'atmosphere_air_water~vapor__specific_humidity',
+            'surface_air_pressure': 'land_surface_air__pressure',
+            'surface_downwelling_shortwave_flux': 'land_surface_radiation~incoming~shortwave__energy_flux',
+            'surface_downwelling_longwave_flux': 'land_surface_radiation~incoming~longwave__energy_flux',
+            'eastward_wind': 'land_surface_wind__x_component_of_velocity',
+            'northward_wind': 'land_surface_wind__y_component_of_velocity',
         }
 
         for idx, cat_id in enumerate(catchment_ids):
@@ -828,9 +880,9 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             # After decomposition, these should exist, but check just in case
             missing_wind_vars = []
             if 'land_surface_wind__x_component_of_velocity' not in df.columns:
-                missing_wind_vars.append('windspeed_u (U-component of wind)')
+                missing_wind_vars.append('eastward_wind (U-component of wind)')
             if 'land_surface_wind__y_component_of_velocity' not in df.columns:
-                missing_wind_vars.append('windspeed_v (V-component of wind)')
+                missing_wind_vars.append('northward_wind (V-component of wind)')
 
             if missing_wind_vars:
                 raise ValueError(
@@ -851,7 +903,7 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         ngen_ds = xr.Dataset()
         ngen_ds['ids'] = xr.DataArray(np.array(catchment_ids, dtype=object), dims=['catchment-id'])
         ngen_ds['Time'] = xr.DataArray(np.tile(time_ns, (n_cats, 1)).astype(np.float64), dims=['catchment-id', 'time'], attrs={'units': 'ns'})
-        var_mapping = {'pptrate': 'precip_rate', 'airtemp': 'TMP_2maboveground', 'spechum': 'SPFH_2maboveground', 'airpres': 'PRES_surface', 'SWRadAtm': 'DSWRF_surface', 'LWRadAtm': 'DLWRF_surface'}
+        var_mapping = {'precipitation_flux': 'precip_rate', 'air_temperature': 'TMP_2maboveground', 'specific_humidity': 'SPFH_2maboveground', 'surface_air_pressure': 'PRES_surface', 'surface_downwelling_shortwave_flux': 'DSWRF_surface', 'surface_downwelling_longwave_flux': 'DLWRF_surface'}
         for e_v, n_v in var_mapping.items():
             if e_v in forcing_data:
                 data = forcing_data[e_v].values.T
@@ -870,7 +922,12 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         catchment_gdf = gpd.read_file(self.get_catchment_path())
         config_gen = NgenConfigGenerator(self.config_dict, self.logger, self.setup_dir, catchment_gdf.crs)
         noah_et_fallback = getattr(self, '_noah_et_fallback', 'EVAPOTRANS')
-        config_gen.set_module_availability(cfe=self._include_cfe, pet=self._include_pet, noah=self._include_noah, sloth=self._include_sloth, noah_et_fallback=noah_et_fallback)
+        config_gen.set_module_availability(
+            cfe=self._include_cfe, pet=self._include_pet, noah=self._include_noah,
+            sloth=self._include_sloth, noah_et_fallback=noah_et_fallback,
+            topmodel=self._include_topmodel, sacsma=self._include_sacsma,
+            snow17=self._include_snow17,
+        )
         config_gen.generate_all_configs(catchment_gdf, self.hru_id_col)
 
     def generate_realization_config(self, catchment_file: Path, nexus_file: Path, forcing_file: Path):
@@ -888,7 +945,12 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         """
         config_gen = NgenConfigGenerator(self.config_dict, self.logger, self.setup_dir, getattr(self, 'catchment_crs', None))
         noah_et_fallback = getattr(self, '_noah_et_fallback', 'EVAPOTRANS')
-        config_gen.set_module_availability(cfe=self._include_cfe, pet=self._include_pet, noah=self._include_noah, sloth=self._include_sloth, noah_et_fallback=noah_et_fallback)
+        config_gen.set_module_availability(
+            cfe=self._include_cfe, pet=self._include_pet, noah=self._include_noah,
+            sloth=self._include_sloth, noah_et_fallback=noah_et_fallback,
+            topmodel=self._include_topmodel, sacsma=self._include_sacsma,
+            snow17=self._include_snow17,
+        )
         config_gen.generate_realization_config(forcing_file, self.project_dir, lib_paths=self._ngen_lib_paths)
 
         # Generate t-route config if routing is enabled

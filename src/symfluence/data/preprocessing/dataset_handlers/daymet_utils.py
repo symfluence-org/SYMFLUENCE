@@ -98,54 +98,54 @@ class DaymetHandler(BaseDatasetHandler):
             ds = rename_map_apply(ds, rename_map)
 
         # --- Derive mean air temperature (K) ---
-        if 'airtemp_max' in ds and 'airtemp_min' in ds:
-            tmax_c = ds['airtemp_max']
-            tmin_c = ds['airtemp_min']
+        if 'air_temperature_max' in ds and 'air_temperature_min' in ds:
+            tmax_c = ds['air_temperature_max']
+            tmin_c = ds['air_temperature_min']
             airtemp_k = (tmax_c + tmin_c) / 2.0 + 273.15
             airtemp_k.attrs = {
                 'units': 'K',
                 'long_name': 'air temperature (mean of tmax and tmin)',
                 'standard_name': 'air_temperature',
             }
-            ds['airtemp'] = airtemp_k
+            ds['air_temperature'] = airtemp_k
             self.logger.info("Derived mean air temperature from tmax/tmin")
 
         # --- Precipitation: mm/day -> kg m-2 s-1 ---
-        if 'pptrate' in ds:
-            prcp = ds['pptrate'].astype('float32')
+        if 'precipitation_flux' in ds:
+            prcp = ds['precipitation_flux'].astype('float32')
             prcp = xr.where(np.isfinite(prcp), prcp, 0.0)
             prcp = xr.where(prcp < 0.0, 0.0, prcp)
             # mm/day -> kg m-2 s-1 (1 mm = 1 kg/m^2)
-            ds['pptrate'] = prcp / 86400.0
-            ds['pptrate'].attrs = {
+            ds['precipitation_flux'] = prcp / 86400.0
+            ds['precipitation_flux'].attrs = {
                 'units': 'kg m-2 s-1',
                 'long_name': 'precipitation rate',
                 'standard_name': 'precipitation_flux',
             }
 
         # --- Shortwave radiation: daylight average -> 24h average ---
-        if 'SWRadAtm' in ds and 'day_length' in ds:
+        if 'surface_downwelling_shortwave_flux' in ds and 'day_length' in ds:
             dayl_s = ds['day_length']
             # Daymet srad is average over daylight hours; convert to 24h average
-            ds['SWRadAtm'] = ds['SWRadAtm'] * (dayl_s / 86400.0)
-            ds['SWRadAtm'].attrs = {
+            ds['surface_downwelling_shortwave_flux'] = ds['surface_downwelling_shortwave_flux'] * (dayl_s / 86400.0)
+            ds['surface_downwelling_shortwave_flux'].attrs = {
                 'units': 'W m-2',
                 'long_name': 'downward shortwave radiation (24h average)',
                 'standard_name': 'surface_downwelling_shortwave_flux_in_air',
             }
             self.logger.info("Converted Daymet shortwave from daylight-average to 24h-average")
-        elif 'SWRadAtm' in ds:
-            ds['SWRadAtm'].attrs = {
+        elif 'surface_downwelling_shortwave_flux' in ds:
+            ds['surface_downwelling_shortwave_flux'].attrs = {
                 'units': 'W m-2',
                 'long_name': 'downward shortwave radiation at the surface',
                 'standard_name': 'surface_downwelling_shortwave_flux_in_air',
             }
 
         # --- Estimate surface pressure from elevation ---
-        if 'airpres' not in ds:
+        if 'surface_air_pressure' not in ds:
             elevation = self._get_elevation(ds)
-            if 'airtemp' in ds:
-                t_k = ds['airtemp']
+            if 'air_temperature' in ds:
+                t_k = ds['air_temperature']
             else:
                 t_k = self.SEA_LEVEL_TEMP
 
@@ -159,21 +159,21 @@ class DaymetHandler(BaseDatasetHandler):
                 }
             else:
                 airpres = xr.DataArray(
-                    np.full_like(ds['airtemp'].values, airpres) if 'airtemp' in ds else airpres,
-                    dims=ds['airtemp'].dims if 'airtemp' in ds else (),
+                    np.full_like(ds['air_temperature'].values, airpres) if 'air_temperature' in ds else airpres,
+                    dims=ds['air_temperature'].dims if 'air_temperature' in ds else (),
                     attrs={
                         'units': 'Pa',
                         'long_name': 'surface air pressure (estimated from elevation)',
                         'standard_name': 'air_pressure',
                     }
                 )
-            ds['airpres'] = airpres
+            ds['surface_air_pressure'] = airpres
             self.logger.info("Estimated surface pressure from elevation (barometric formula)")
 
         # --- Estimate specific humidity from vapor pressure ---
-        if 'spechum' not in ds and 'water_vapor_pressure' in ds and 'airpres' in ds:
+        if 'specific_humidity' not in ds and 'water_vapor_pressure' in ds and 'surface_air_pressure' in ds:
             vp = ds['water_vapor_pressure']  # Pa
-            p = ds['airpres']                # Pa
+            p = ds['surface_air_pressure']                # Pa
             # q = 0.622 * e / (p - 0.378 * e)
             epsilon = 0.622
             spechum = epsilon * vp / (p - (1 - epsilon) * vp)
@@ -183,12 +183,12 @@ class DaymetHandler(BaseDatasetHandler):
                 'long_name': 'specific humidity (estimated from vapor pressure)',
                 'standard_name': 'specific_humidity',
             }
-            ds['spechum'] = spechum
+            ds['specific_humidity'] = spechum
             self.logger.info("Estimated specific humidity from vapor pressure")
 
         # --- Estimate longwave radiation (Brutsaert 1975) ---
-        if 'LWRadAtm' not in ds and 'airtemp' in ds:
-            t_k = ds['airtemp']
+        if 'surface_downwelling_longwave_flux' not in ds and 'air_temperature' in ds:
+            t_k = ds['air_temperature']
             if 'water_vapor_pressure' in ds:
                 vp_hpa = ds['water_vapor_pressure'] / 100.0  # Pa -> hPa
                 # Brutsaert (1975) clear-sky emissivity
@@ -203,12 +203,12 @@ class DaymetHandler(BaseDatasetHandler):
                 'long_name': 'downward longwave radiation (estimated, Brutsaert 1975)',
                 'standard_name': 'surface_downwelling_longwave_flux_in_air',
             }
-            ds['LWRadAtm'] = lw
+            ds['surface_downwelling_longwave_flux'] = lw
             self.logger.info("Estimated longwave radiation using Brutsaert (1975)")
 
         # --- Default wind speed ---
-        if 'windspd' not in ds and 'airtemp' in ds:
-            template = ds['airtemp']
+        if 'wind_speed' not in ds and 'air_temperature' in ds:
+            template = ds['air_temperature']
             windspd = xr.full_like(template, self.DEFAULT_WIND_SPEED)
             windspd.attrs = {
                 'units': 'm s-1',
@@ -216,7 +216,7 @@ class DaymetHandler(BaseDatasetHandler):
                 'standard_name': 'wind_speed',
                 'note': 'Daymet does not provide wind data; using climatological default',
             }
-            ds['windspd'] = windspd
+            ds['wind_speed'] = windspd
             self.logger.warning(
                 f"Daymet does not provide wind speed. "
                 f"Using default value of {self.DEFAULT_WIND_SPEED} m/s. "

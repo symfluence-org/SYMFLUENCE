@@ -30,11 +30,11 @@ class ForcingComparisonPlotter(BasePlotter):
 
     # Variable-specific colormap mappings
     VARIABLE_COLORMAPS: Dict[str, str] = {
-        'pptrate': 'Blues',
+        'precipitation_flux': 'Blues',
         'precipitation': 'Blues',
         'pr': 'Blues',
         'prcp': 'Blues',
-        'airtemp': 'RdYlBu_r',
+        'air_temperature': 'RdYlBu_r',
         'temperature': 'RdYlBu_r',
         'tas': 'RdYlBu_r',
         't2m': 'RdYlBu_r',
@@ -45,13 +45,12 @@ class ForcingComparisonPlotter(BasePlotter):
         'rsds': 'YlOrRd',
         'longwave': 'YlOrRd',
         'shortwave': 'YlOrRd',
-        'spechum': 'YlGnBu',
         'specific_humidity': 'YlGnBu',
         'huss': 'YlGnBu',
-        'windspd': 'Purples',
+        'wind_speed': 'Purples',
         'wind': 'Purples',
         'sfcwind': 'Purples',
-        'airpres': 'Greys',
+        'surface_air_pressure': 'Greys',
         'pressure': 'Greys',
         'ps': 'Greys',
     }
@@ -63,7 +62,7 @@ class ForcingComparisonPlotter(BasePlotter):
         remapped_forcing_file: Path,
         forcing_grid_shp: Path,
         hru_shp: Path,
-        variable: str = 'pptrate',
+        variable: str = 'precipitation_flux',
         time_index: int = 0
     ) -> Optional[str]:
         """
@@ -74,7 +73,7 @@ class ForcingComparisonPlotter(BasePlotter):
             remapped_forcing_file: Path to remapped NetCDF forcing file
             forcing_grid_shp: Path to forcing grid shapefile
             hru_shp: Path to HRU/catchment shapefile
-            variable: Variable to visualize (default: 'pptrate')
+            variable: Variable to visualize (default: 'precipitation_flux')
             time_index: Time index to visualize (default: 0)
 
         Returns:

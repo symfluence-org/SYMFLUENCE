@@ -167,6 +167,9 @@ _clone_if_missing "SLOTH" "https://github.com/NOAA-OWP/SLoTH.git"             "e
 _clone_if_missing "PET"   "https://github.com/NOAA-OWP/evapotranspiration.git" "extern/evapotranspiration/evapotranspiration"
 _clone_if_missing "Noah-MP" "https://github.com/NOAA-OWP/noah-owp-modular.git" "extern/noah-owp-modular"
 _clone_if_missing "iso_c_fortran_bmi" "https://github.com/NOAA-OWP/iso_c_fortran_bmi.git" "extern/iso_c_fortran_bmi"
+_clone_if_missing "TOPMODEL" "https://github.com/NOAA-OWP/topmodel.git"       "extern/topmodel"
+_clone_if_missing "SAC-SMA"  "https://github.com/NOAA-OWP/sac-sma.git"       "extern/sac-sma"
+_clone_if_missing "Snow-17"  "https://github.com/NOAA-OWP/snow17.git"        "extern/snow17"
 
 # Verify Fortran compiler
 echo "Checking Fortran compiler..."
@@ -591,6 +594,94 @@ else
   fi
 fi
 
+# --- Build TOPMODEL (C module - topography-based rainfall-runoff) ---
+if [ -d "extern/topmodel" ] && [ -f "extern/topmodel/CMakeLists.txt" ]; then
+  echo "Building TOPMODEL..."
+  (
+    set +e
+    cd extern/topmodel
+    git_clean submodule update --init --recursive 2>/dev/null || true
+    rm -rf cmake_build && mkdir -p cmake_build
+    cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -S . -B cmake_build 2>&1
+    cmake --build cmake_build -j ${NCORES:-4} 2>&1
+  )
+  if _lib_found extern/topmodel/cmake_build/libtopmodelbmi.*; then
+    echo "TOPMODEL built successfully"
+  else
+    echo "WARNING: TOPMODEL build failed (non-fatal)"
+  fi
+else
+  echo "TOPMODEL submodule not found or empty — skipping"
+fi
+
+# --- Build SAC-SMA (Fortran module - Sacramento Soil Moisture Accounting) ---
+if [ -d "extern/sac-sma" ] && [ -f "extern/sac-sma/CMakeLists.txt" ] && [ -n "$FC" ]; then
+  echo "Building SAC-SMA (Fortran)..."
+  (
+    set +e
+    cd extern/sac-sma
+    git_clean submodule update --init --recursive 2>/dev/null || true
+    rm -rf cmake_build && mkdir -p cmake_build
+
+    SAC_CMAKE_ARGS="-DCMAKE_BUILD_TYPE=Release"
+    SAC_CMAKE_ARGS="$SAC_CMAKE_ARGS -DCMAKE_Fortran_COMPILER=$FC"
+    SAC_CMAKE_ARGS="$SAC_CMAKE_ARGS -DNGEN_IS_MAIN_PROJECT=ON"
+    SAC_CMAKE_ARGS="$SAC_CMAKE_ARGS -DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+
+    cmake $SAC_CMAKE_ARGS -S . -B cmake_build 2>&1
+    cmake --build cmake_build -j ${NCORES:-4} 2>&1
+  )
+  if _lib_found extern/sac-sma/cmake_build/libsacbmi.*; then
+    echo "SAC-SMA built successfully"
+  else
+    echo "WARNING: SAC-SMA build failed (non-fatal)"
+  fi
+else
+  if [ ! -d "extern/sac-sma" ] || [ ! -f "extern/sac-sma/CMakeLists.txt" ]; then
+    echo "SAC-SMA submodule not found or empty — skipping"
+  elif [ -z "$FC" ]; then
+    echo "No Fortran compiler available — skipping SAC-SMA build"
+  fi
+fi
+
+# --- Build Snow-17 (Fortran module - temperature-index snow model) ---
+# Snow-17 needs ISO_C_FORTRAN_BMI_PATH to build as a shared BMI library.
+# Library target name is snow17_bmi (produces libsnow17_bmi.{so,dylib}).
+if [ -d "extern/snow17" ] && [ -f "extern/snow17/CMakeLists.txt" ] && [ -n "$FC" ]; then
+  echo "Building Snow-17 (Fortran)..."
+  (
+    set +e
+    cd extern/snow17
+    git_clean submodule update --init --recursive 2>/dev/null || true
+    rm -rf cmake_build && mkdir -p cmake_build
+
+    SNOW17_CMAKE_ARGS="-DCMAKE_BUILD_TYPE=Release"
+    SNOW17_CMAKE_ARGS="$SNOW17_CMAKE_ARGS -DCMAKE_Fortran_COMPILER=$FC"
+    SNOW17_CMAKE_ARGS="$SNOW17_CMAKE_ARGS -DNGEN_IS_MAIN_PROJECT=ON"
+    SNOW17_CMAKE_ARGS="$SNOW17_CMAKE_ARGS -DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+    # Point to iso_c_fortran_bmi so BMI_SHARED_LIB is enabled.
+    # Must use :PATH type hint to override CMake's option() bool type.
+    ISO_C_BMI_DIR="$(cd ../iso_c_fortran_bmi 2>/dev/null && pwd)"
+    if [ -n "$ISO_C_BMI_DIR" ] && [ -d "$ISO_C_BMI_DIR" ]; then
+      SNOW17_CMAKE_ARGS="$SNOW17_CMAKE_ARGS -DISO_C_FORTRAN_BMI_PATH:PATH=$ISO_C_BMI_DIR"
+    fi
+
+    cmake $SNOW17_CMAKE_ARGS -S . -B cmake_build 2>&1
+    cmake --build cmake_build -j ${NCORES:-4} 2>&1
+  )
+  if _lib_found extern/snow17/cmake_build/libsnow17_bmi.*; then
+    echo "Snow-17 built successfully"
+  else
+    echo "WARNING: Snow-17 build failed (non-fatal)"
+  fi
+else
+  if [ ! -d "extern/snow17" ] || [ ! -f "extern/snow17/CMakeLists.txt" ]; then
+    echo "Snow-17 submodule not found or empty — skipping"
+  elif [ -z "$FC" ]; then
+    echo "No Fortran compiler available — skipping Snow-17 build"
+  fi
+fi
+
 # ================================================================
 # Install t-route (Python packages for routing)
 # ================================================================
@@ -677,6 +768,9 @@ echo "SLOTH:       $(_lib_found extern/sloth/cmake_build/libslothmodel.* && echo
 echo "CFE:         $(_lib_found extern/cfe/cmake_build/libcfebmi.* && echo 'OK' || echo 'Not built')"
 echo "PET:         $(_lib_found extern/evapotranspiration/evapotranspiration/cmake_build/libpetbmi.* && echo 'OK' || echo 'Not built')"
 echo "Noah-MP:     $(_lib_found extern/noah-owp-modular/cmake_build/libsurfacebmi.* && echo 'OK' || echo 'Not built')"
+echo "TOPMODEL:    $(_lib_found extern/topmodel/cmake_build/libtopmodelbmi.* && echo 'OK' || echo 'Not built')"
+echo "SAC-SMA:     $(_lib_found extern/sac-sma/cmake_build/libsacbmi.* && echo 'OK' || echo 'Not built')"
+echo "Snow-17:     $(_lib_found extern/snow17/cmake_build/libsnow17_bmi.* && echo 'OK' || echo 'Not built')"
 echo "t-route:     $($PYTHON_EXE -c 'import ngen_routing; print("OK")' 2>/dev/null || echo 'Not installed')"
 echo "=============================================="
             '''.strip()

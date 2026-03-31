@@ -41,14 +41,14 @@ class DataQualityHandler:
     # Variable-specific valid ranges
     VALID_RANGES = {
         'temp': (-100, 60),           # Temperature in Celsius
-        'airtemp': (150, 350),        # Temperature in Kelvin
+        'air_temperature': (150, 350),        # Temperature in Kelvin
         'pr': (0, 1000),              # Precipitation mm/day
-        'pptrate': (0, 0.01),         # Precipitation rate kg/m2/s
-        'spechum': (0, 0.05),         # Specific humidity kg/kg
-        'windspd': (0, 100),          # Wind speed m/s
-        'SWRadAtm': (0, 1500),        # Shortwave radiation W/m2
-        'LWRadAtm': (0, 700),         # Longwave radiation W/m2
-        'airpres': (50000, 110000),   # Pressure Pa
+        'precipitation_flux': (0, 0.01),         # Precipitation rate kg/m2/s
+        'specific_humidity': (0, 0.05),         # Specific humidity kg/kg
+        'wind_speed': (0, 100),          # Wind speed m/s
+        'surface_downwelling_shortwave_flux': (0, 1500),        # Shortwave radiation W/m2
+        'surface_downwelling_longwave_flux': (0, 700),         # Longwave radiation W/m2
+        'surface_air_pressure': (50000, 110000),   # Pressure Pa
     }
 
     def __init__(

@@ -252,20 +252,27 @@ class RemappingWeightGenerator(ConfigMixin):
                 shutil.rmtree(temp_dir, ignore_errors=True)
 
     def _detect_forcing_variables(self, forcing_file: Path) -> List[str]:
-        """Detect available SUMMA forcing variables in a NetCDF file."""
-        all_summa_vars = ['airpres', 'LWRadAtm', 'SWRadAtm', 'pptrate', 'airtemp', 'spechum', 'windspd', 'relhum']
+        """Detect available forcing variables in a NetCDF file (CFIF or legacy names)."""
+        all_cfif_vars = [
+            'surface_air_pressure', 'surface_downwelling_longwave_flux',
+            'surface_downwelling_shortwave_flux', 'precipitation_flux',
+            'air_temperature', 'specific_humidity', 'wind_speed', 'relative_humidity',
+        ]
+        all_legacy_vars = ['airpres', 'LWRadAtm', 'SWRadAtm', 'pptrate', 'airtemp', 'spechum', 'windspd', 'relhum']
 
         available = []
         try:
             with nc4.Dataset(forcing_file, 'r') as ncid:
-                available = [v for v in all_summa_vars if v in ncid.variables]
+                available = [v for v in all_cfif_vars if v in ncid.variables]
+                if not available:
+                    available = [v for v in all_legacy_vars if v in ncid.variables]
         finally:
             gc.collect()
 
         if not available:
             raise ValueError(f"No SUMMA forcing variables found in {forcing_file}")
 
-        self.logger.info(f"Detected {len(available)}/{len(all_summa_vars)} SUMMA variables: {available}")
+        self.logger.info(f"Detected {len(available)}/{len(all_cfif_vars)} forcing variables: {available}")
         return available
 
     def _analyze_forcing_file(
@@ -441,9 +448,15 @@ class RemappingWeightApplier(ConfigMixin):
         if self._detected_vars:
             return self._detected_vars
 
-        all_summa_vars = ['airpres', 'LWRadAtm', 'SWRadAtm', 'pptrate', 'airtemp', 'spechum', 'windspd', 'relhum']
+        all_cfif_vars = [
+            'surface_air_pressure', 'surface_downwelling_longwave_flux',
+            'surface_downwelling_shortwave_flux', 'precipitation_flux',
+            'air_temperature', 'specific_humidity', 'wind_speed', 'relative_humidity',
+        ]
+        all_legacy_vars = ['airpres', 'LWRadAtm', 'SWRadAtm', 'pptrate', 'airtemp', 'spechum', 'windspd', 'relhum']
         with xr.open_dataset(forcing_file) as ds:
-            return [v for v in all_summa_vars if v in ds.data_vars]
+            result = [v for v in all_cfif_vars if v in ds.data_vars]
+            return result if result else [v for v in all_legacy_vars if v in ds.data_vars]
 
     def determine_output_filename(self, input_file: Path) -> Path:
         """

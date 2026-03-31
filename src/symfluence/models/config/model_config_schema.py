@@ -270,7 +270,7 @@ def _create_summa_schema() -> ModelConfigSchema:
             forcing_dir_key='FORCING_SUMMA_PATH',
             default_forcing_subpath='forcing/SUMMA_input',
             forcing_file_pattern='{domain}_forcing.nc',
-            required_variables=['time', 'pptrate', 'airtemp', 'spechum', 'windspd', 'SWRadAtm', 'LWRadAtm', 'airpres']
+            required_variables=['time', 'precipitation_flux', 'air_temperature', 'specific_humidity', 'wind_speed', 'surface_downwelling_shortwave_flux', 'surface_downwelling_longwave_flux', 'surface_air_pressure']
         ),
         output=OutputConfig(
             output_dir_key='EXPERIMENT_OUTPUT_SUMMA',
@@ -534,7 +534,7 @@ def _create_gnn_schema() -> ModelConfigSchema:
             forcing_dir_key='FORCING_GNN_PATH',
             default_forcing_subpath='forcing/basin_averaged_data',
             forcing_file_pattern='*.nc',
-            required_variables=['time', 'pptrate', 'airtemp']
+            required_variables=['time', 'precipitation_flux', 'air_temperature']
         ),
         output=OutputConfig(
             output_dir_key='EXPERIMENT_OUTPUT_GNN',

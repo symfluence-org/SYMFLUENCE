@@ -60,7 +60,7 @@ function handleBuiltin(args) {
     console.log('  workflow    Run hydrological model workflows');
     console.log('  binary      Manage pre-built model binaries');
     console.log('  ...         All other symfluence CLI commands\n');
-    console.log('Documentation: https://github.com/DarriEy/SYMFLUENCE');
+    console.log('Documentation: https://github.com/symfluence-org/SYMFLUENCE');
     return true;
   }
 

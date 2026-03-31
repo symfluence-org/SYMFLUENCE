@@ -19,12 +19,18 @@ def test_observation_registry():
     assert 'modis_et' in datasets
 
 def test_evaluation_registry():
-    """Verify that evaluators are correctly registered."""
+    """Verify that evaluators are correctly registered under canonical names."""
     evaluators = EvaluationRegistry.list_evaluators()
     assert 'STREAMFLOW' in evaluators
     assert 'TWS' in evaluators
-    assert 'SCA' in evaluators
+    assert 'SNOW' in evaluators
     assert 'ET' in evaluators
+    assert 'SOIL_MOISTURE' in evaluators
+
+    # Aliases should resolve via the registry but not appear in list_evaluators
+    from symfluence.core.registries import R
+    assert R.evaluators.get('SCA') is not None  # alias for SNOW
+    assert R.evaluators.get('SM') is not None    # alias for SOIL_MOISTURE
 
 def test_multivariate_objective_calculation():
     """Test the composite score calculation logic."""

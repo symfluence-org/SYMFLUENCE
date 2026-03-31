@@ -15,6 +15,7 @@ import logging
 from typing import Optional, Tuple, Union
 
 from shapely.geometry import GeometryCollection, MultiPolygon, Polygon
+from shapely.validation import make_valid
 
 from symfluence.core.mixins import LoggingMixin
 
@@ -75,9 +76,9 @@ def clean_geometry(
 
         # Fix invalid geometries
         if not geometry.is_valid:
-            geometry = geometry.buffer(0)
+            geometry = make_valid(geometry)
 
-            # Check again after buffer
+            # Check again after repair
             if not isinstance(geometry, (Polygon, MultiPolygon)):
                 return None
 

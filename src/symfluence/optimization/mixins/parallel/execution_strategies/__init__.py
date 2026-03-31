@@ -9,6 +9,7 @@ Different strategies for parallel task execution.
 
 from .base import ExecutionStrategy
 from .mpi import MPIExecutionStrategy
+from .mpi_persistent import PersistentMPIExecutionStrategy
 from .process_pool import ProcessPoolExecutionStrategy
 from .sequential import SequentialExecutionStrategy
 
@@ -17,4 +18,5 @@ __all__ = [
     'SequentialExecutionStrategy',
     'ProcessPoolExecutionStrategy',
     'MPIExecutionStrategy',
+    'PersistentMPIExecutionStrategy',
 ]

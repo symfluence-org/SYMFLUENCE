@@ -240,6 +240,24 @@ rm -f disable_mpi.pl
 echo "MPI disabling complete"
 
 # =====================================================
+# STEP 2b: Fix external function declarations in _diff modules
+# =====================================================
+echo ""
+echo "=== Step 2b: Patching external function declarations ==="
+
+# q_misscell_diff.f90 (in the physics/ directory) wraps its subroutine
+# inside a MODULE, unlike the original q_misscell.f90 which is a bare
+# subroutine.  Inside a module with IMPLICIT NONE, gfortran requires
+# the EXTERNAL attribute to recognise LOGISMOOTH as a function rather
+# than a scalar variable.  Without this patch the build fails with:
+#   Error: 'logismooth' at (1) is not a function
+QMISC_DIFF="FUSE_SRC/physics/q_misscell_diff.f90"
+if [ -f "$QMISC_DIFF" ]; then
+    sed -i.bak 's/REAL(SP) *:: *LOGISMOOTH/REAL(SP), EXTERNAL :: LOGISMOOTH/' "$QMISC_DIFF" && rm -f "${QMISC_DIFF}.bak"
+    echo "  Patched LOGISMOOTH declaration in q_misscell_diff.f90"
+fi
+
+# =====================================================
 # STEP 3: Run make
 # =====================================================
 echo ""

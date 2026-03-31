@@ -184,8 +184,8 @@ class PRMSPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
         # Extract variables (ERA5 basin-averaged format)
         # airtemp in K, pptrate in mm/s
-        airtemp = ds['airtemp'].values.squeeze()  # (time,) in K
-        pptrate = ds['pptrate'].values.squeeze()   # (time,) in mm/s
+        airtemp = ds['air_temperature'].values.squeeze()  # (time,) in K
+        pptrate = ds['precipitation_flux'].values.squeeze()   # (time,) in mm/s
 
         # Convert to pandas for daily resampling
         times = pd.DatetimeIndex(ds['time'].values)

@@ -248,7 +248,10 @@ class NgenRunner(BaseModelRunner):  # type: ignore[misc]
         lib_paths = []
         for sub in ["extern/sloth/cmake_build", "extern/cfe/cmake_build",
                      "extern/evapotranspiration/evapotranspiration/cmake_build",
-                     "extern/noah-owp-modular/cmake_build"]:
+                     "extern/noah-owp-modular/cmake_build",
+                     "extern/topmodel/cmake_build",
+                     "extern/sac-sma/cmake_build",
+                     "extern/snow17/cmake_build"]:
             p1 = ngen_base / sub
             p2 = ngen_base / "cmake_build" / sub
             if p1.exists():
@@ -353,6 +356,12 @@ class NgenRunner(BaseModelRunner):  # type: ignore[misc]
                                     target_subpath = "extern/sloth/cmake_build"
                                 elif 'surface' in lib_path.lower() or 'noah' in lib_path.lower():
                                     target_subpath = "extern/noah-owp-modular/cmake_build"
+                                elif 'topmodel' in lib_path.lower():
+                                    target_subpath = "extern/topmodel/cmake_build"
+                                elif 'sac' in lib_path.lower():
+                                    target_subpath = "extern/sac-sma/cmake_build"
+                                elif 'snow17' in lib_path.lower():
+                                    target_subpath = "extern/snow17/cmake_build"
 
                                 if target_subpath:
                                     filename = Path(lib_path).name
@@ -388,6 +397,9 @@ class NgenRunner(BaseModelRunner):  # type: ignore[misc]
                                     if 'PET' in mod_type_name or 'pet' in old_path.lower(): target_mod = 'PET'
                                     elif 'CFE' in mod_type_name or 'cfe' in old_path.lower(): target_mod = 'CFE'
                                     elif 'NOAH' in mod_type_name or 'noah' in old_path.lower() or '.input' in old_path.lower(): target_mod = 'NOAH'
+                                    elif 'TOPMODEL' in mod_type_name or 'topmodel' in old_path.lower(): target_mod = 'TOPMODEL'
+                                    elif 'SACSMA' in mod_type_name or 'sacsma' in old_path.lower(): target_mod = 'SACSMA'
+                                    elif 'SNOW17' in mod_type_name or 'snow17' in old_path.lower(): target_mod = 'SNOW17'
 
                                     if target_mod:
                                         filename = Path(old_path).name

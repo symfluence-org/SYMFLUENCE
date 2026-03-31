@@ -61,6 +61,9 @@ class NgenParameterManager(BaseParameterManager):
         self.cfe_txt_dir = self.ngen_setup_dir / 'CFE'
         self.noah_dir = self.ngen_setup_dir / 'NOAH'
         self.pet_dir  = self.ngen_setup_dir / 'PET'
+        self.topmodel_dir = self.ngen_setup_dir / 'TOPMODEL'
+        self.sacsma_dir = self.ngen_setup_dir / 'SACSMA'
+        self.snow17_dir = self.ngen_setup_dir / 'SNOW17'
 
         # expected JSONs (may not exist; that's fine)
         self.noah_config = self.noah_dir / 'noah_config.json'
@@ -120,6 +123,19 @@ class NgenParameterManager(BaseParameterManager):
                         res = res.split('.')[0]
                     return res
 
+        # Fallback to other module directories
+        for mod_dir in [self.topmodel_dir, self.sacsma_dir, self.snow17_dir]:
+            if mod_dir.exists():
+                candidates = list(mod_dir.glob("cat-*_*.txt"))
+                if candidates:
+                    filename = candidates[0].name
+                    match = re.search(r'cat-([a-zA-Z0-9_-]+)', filename)
+                    if match:
+                        res = match.group(1)
+                        if '_' in res:
+                            res = res.split('_')[0]
+                        return res
+
         return None
 
     # ========================================================================
@@ -151,6 +167,9 @@ class NgenParameterManager(BaseParameterManager):
             'CFE': ('NGEN_CFE_PARAM_BOUNDS', lambda: self.config.model.ngen.cfe_param_bounds),
             'NOAH': ('NGEN_NOAH_PARAM_BOUNDS', lambda: self.config.model.ngen.noah_param_bounds),
             'PET': ('NGEN_PET_PARAM_BOUNDS', lambda: self.config.model.ngen.pet_param_bounds),
+            'TOPMODEL': ('NGEN_TOPMODEL_PARAM_BOUNDS', lambda: self.config.model.ngen.topmodel_param_bounds),
+            'SACSMA': ('NGEN_SACSMA_PARAM_BOUNDS', lambda: self.config.model.ngen.sacsma_param_bounds),
+            'SNOW17': ('NGEN_SNOW17_PARAM_BOUNDS', lambda: self.config.model.ngen.snow17_param_bounds),
         }
         for module, (config_key, typed_accessor) in config_bounds_keys.items():
             module_bounds = self._get_config_value(
@@ -210,7 +229,7 @@ class NgenParameterManager(BaseParameterManager):
         modules = [m.strip().upper() for m in modules_str.split(',') if m.strip()]
 
         # Validate modules (filter invalid ones without mutating during iteration)
-        valid_modules = ['CFE', 'NOAH', 'PET']
+        valid_modules = ['CFE', 'NOAH', 'PET', 'TOPMODEL', 'SACSMA', 'SNOW17']
         validated = []
         for module in modules:
             if module in valid_modules:
@@ -244,6 +263,27 @@ class NgenParameterManager(BaseParameterManager):
             if pet_params_str is None:
                 pet_params_str = 'wind_speed_measurement_height_m'
             params['PET'] = [p.strip() for p in pet_params_str.split(',') if p.strip()]
+
+        # TOPMODEL parameters
+        if 'TOPMODEL' in self.modules_to_calibrate:
+            topmodel_params_str = self._get_config_value(lambda: self.config.model.ngen.topmodel_params_to_calibrate, default='m,lnTe,Srmax,td', dict_key='NGEN_TOPMODEL_PARAMS_TO_CALIBRATE')
+            if topmodel_params_str is None:
+                topmodel_params_str = 'm,lnTe,Srmax,td'
+            params['TOPMODEL'] = [p.strip() for p in topmodel_params_str.split(',') if p.strip()]
+
+        # SAC-SMA parameters
+        if 'SACSMA' in self.modules_to_calibrate:
+            sacsma_params_str = self._get_config_value(lambda: self.config.model.ngen.sacsma_params_to_calibrate, default='UZTWM,UZFWM,UZK,LZTWM,LZFPM,LZFSM,LZPK,LZSK,ZPERC,REXP,PFREE', dict_key='NGEN_SACSMA_PARAMS_TO_CALIBRATE')
+            if sacsma_params_str is None:
+                sacsma_params_str = 'UZTWM,UZFWM,UZK,LZTWM,LZFPM,LZFSM,LZPK,LZSK,ZPERC,REXP,PFREE'
+            params['SACSMA'] = [p.strip() for p in sacsma_params_str.split(',') if p.strip()]
+
+        # Snow-17 parameters
+        if 'SNOW17' in self.modules_to_calibrate:
+            snow17_params_str = self._get_config_value(lambda: self.config.model.ngen.snow17_params_to_calibrate, default='SCF,MFMAX,MFMIN,TIPM,PLWHC', dict_key='NGEN_SNOW17_PARAMS_TO_CALIBRATE')
+            if snow17_params_str is None:
+                snow17_params_str = 'SCF,MFMAX,MFMIN,TIPM,PLWHC'
+            params['SNOW17'] = [p.strip() for p in snow17_params_str.split(',') if p.strip()]
 
         return params
 
@@ -338,6 +378,15 @@ class NgenParameterManager(BaseParameterManager):
 
             if 'PET' in module_params:
                 success = success and self._update_pet_config(module_params['PET'])
+
+            if 'TOPMODEL' in module_params:
+                success = success and self._update_topmodel_config(module_params['TOPMODEL'])
+
+            if 'SACSMA' in module_params:
+                success = success and self._update_sacsma_config(module_params['SACSMA'])
+
+            if 'SNOW17' in module_params:
+                success = success and self._update_snow17_config(module_params['SNOW17'])
 
             return success
 
@@ -882,4 +931,139 @@ class NgenParameterManager(BaseParameterManager):
 
         except Exception as e:  # noqa: BLE001 — calibration resilience
             self.logger.error(f"Error updating PET config: {e}")
+            return False
+
+    def _update_topmodel_config(self, params: Dict[str, float]) -> bool:
+        """Update TOPMODEL configuration (key=value text file)."""
+        try:
+            candidates = []
+            if getattr(self, "hydro_id", None):
+                candidates = list(self.topmodel_dir.glob(f"cat-{self.hydro_id}_topmodel_config.txt"))
+            if not candidates:
+                candidates = list(self.topmodel_dir.glob("*.txt"))
+            if not candidates:
+                self.logger.error(f"TOPMODEL config not found in {self.topmodel_dir}")
+                return False
+            if len(candidates) > 1:
+                self.logger.error("Multiple TOPMODEL configs; set NGEN_ACTIVE_CATCHMENT_ID")
+                return False
+
+            path = candidates[0]
+            lines = path.read_text(encoding='utf-8').splitlines()
+
+            # Map calibration param names -> TOPMODEL config keys
+            keymap = {
+                'm': 'szm',
+                'lnTe': 't0',
+                'Srmax': 'srmax',
+                'Sr0': 'sr0',
+                'td': 'td',
+                'k_route': 'chv',
+                'S0': 'Q0',
+            }
+
+            updated = set()
+            for i, line in enumerate(lines):
+                if '=' not in line or line.strip().startswith('#'):
+                    continue
+                k, rhs = line.split('=', 1)
+                k = k.strip()
+                for p, cfg_key in keymap.items():
+                    if p in params and k == cfg_key:
+                        lines[i] = f"{k}={params[p]:.8g}"
+                        updated.add(p)
+
+            for p in params:
+                if p in keymap and p not in updated:
+                    self.logger.warning(f"TOPMODEL parameter {p} not found in {path.name}")
+
+            if updated:
+                path.write_text("\n".join(lines) + "\n", encoding='utf-8')
+                self.logger.debug(f"Updated TOPMODEL config with {len(updated)} parameter(s)")
+            return True
+
+        except Exception as e:  # noqa: BLE001 — calibration resilience
+            self.logger.error(f"Error updating TOPMODEL config: {e}")
+            return False
+
+    def _update_sacsma_config(self, params: Dict[str, float]) -> bool:
+        """Update SAC-SMA configuration (key=value text file, direct key match)."""
+        try:
+            candidates = []
+            if getattr(self, "hydro_id", None):
+                candidates = list(self.sacsma_dir.glob(f"cat-{self.hydro_id}_sacsma_config.txt"))
+            if not candidates:
+                candidates = list(self.sacsma_dir.glob("*.txt"))
+            if not candidates:
+                self.logger.error(f"SAC-SMA config not found in {self.sacsma_dir}")
+                return False
+            if len(candidates) > 1:
+                self.logger.error("Multiple SAC-SMA configs; set NGEN_ACTIVE_CATCHMENT_ID")
+                return False
+
+            path = candidates[0]
+            lines = path.read_text(encoding='utf-8').splitlines()
+
+            updated = set()
+            for i, line in enumerate(lines):
+                if '=' not in line or line.strip().startswith('#'):
+                    continue
+                k, rhs = line.split('=', 1)
+                k = k.strip()
+                if k in params:
+                    lines[i] = f"{k}={params[k]:.8g}"
+                    updated.add(k)
+
+            for p in params:
+                if p not in updated:
+                    self.logger.warning(f"SAC-SMA parameter {p} not found in {path.name}")
+
+            if updated:
+                path.write_text("\n".join(lines) + "\n", encoding='utf-8')
+                self.logger.debug(f"Updated SAC-SMA config with {len(updated)} parameter(s)")
+            return True
+
+        except Exception as e:  # noqa: BLE001 — calibration resilience
+            self.logger.error(f"Error updating SAC-SMA config: {e}")
+            return False
+
+    def _update_snow17_config(self, params: Dict[str, float]) -> bool:
+        """Update Snow-17 configuration (key=value text file, direct key match)."""
+        try:
+            candidates = []
+            if getattr(self, "hydro_id", None):
+                candidates = list(self.snow17_dir.glob(f"cat-{self.hydro_id}_snow17_config.txt"))
+            if not candidates:
+                candidates = list(self.snow17_dir.glob("*.txt"))
+            if not candidates:
+                self.logger.error(f"Snow-17 config not found in {self.snow17_dir}")
+                return False
+            if len(candidates) > 1:
+                self.logger.error("Multiple Snow-17 configs; set NGEN_ACTIVE_CATCHMENT_ID")
+                return False
+
+            path = candidates[0]
+            lines = path.read_text(encoding='utf-8').splitlines()
+
+            updated = set()
+            for i, line in enumerate(lines):
+                if '=' not in line or line.strip().startswith('#'):
+                    continue
+                k, rhs = line.split('=', 1)
+                k = k.strip()
+                if k in params:
+                    lines[i] = f"{k}={params[k]:.8g}"
+                    updated.add(k)
+
+            for p in params:
+                if p not in updated:
+                    self.logger.warning(f"Snow-17 parameter {p} not found in {path.name}")
+
+            if updated:
+                path.write_text("\n".join(lines) + "\n", encoding='utf-8')
+                self.logger.debug(f"Updated Snow-17 config with {len(updated)} parameter(s)")
+            return True
+
+        except Exception as e:  # noqa: BLE001 — calibration resilience
+            self.logger.error(f"Error updating Snow-17 config: {e}")
             return False

@@ -58,6 +58,7 @@ _handler_imports = [
     ('nex_gddp_utils', 'NEXGDDPCMIP6Handler'),
     ('hrrr_utils', 'HRRRHandler'),
     ('daymet_utils', 'DaymetHandler'),
+    ('nwm3_retrospective_utils', 'NWM3RetrospectiveHandler'),
 ]
 
 # Track successfully imported handlers
@@ -103,7 +104,8 @@ __all__ = [
     "CONUS404Handler",
     "NEXGDDPCMIP6Handler",
     "HRRRHandler",
-    "DaymetHandler"
+    "DaymetHandler",
+    "NWM3RetrospectiveHandler",
 ]
 
 __version__ = "1.0.1"

@@ -339,18 +339,29 @@ class RemappingWeightGenerator(ConfigMixin):
 
         try:
             with xr.open_dataset(sample_file, engine="h5netcdf") as ds:
-                all_summa_vars = [
-                    'airpres', 'LWRadAtm', 'SWRadAtm', 'pptrate',
-                    'airtemp', 'spechum', 'windspd', 'relhum'
+                # CFIF standard variable names (primary)
+                all_cfif_vars = [
+                    'surface_air_pressure', 'surface_downwelling_longwave_flux',
+                    'surface_downwelling_shortwave_flux', 'precipitation_flux',
+                    'air_temperature', 'specific_humidity', 'wind_speed',
+                    'relative_humidity',
                 ]
-                available_vars = [v for v in all_summa_vars if v in ds]
+                available_vars = [v for v in all_cfif_vars if v in ds]
 
                 if not available_vars:
-                    raise ValueError(f"No SUMMA forcing variables found in {sample_file}")
+                    # Fallback: legacy SUMMA-style variable names
+                    all_legacy_vars = [
+                        'airpres', 'LWRadAtm', 'SWRadAtm', 'pptrate',
+                        'airtemp', 'spechum', 'windspd', 'relhum',
+                    ]
+                    available_vars = [v for v in all_legacy_vars if v in ds]
+
+                if not available_vars:
+                    raise ValueError(f"No forcing variables found in {sample_file}")
 
                 self.logger.info(
-                    f"Detected {len(available_vars)}/{len(all_summa_vars)} "
-                    f"SUMMA variables: {available_vars}"
+                    f"Detected {len(available_vars)} "
+                    f"forcing variables: {available_vars}"
                 )
 
                 # Calculate grid resolution

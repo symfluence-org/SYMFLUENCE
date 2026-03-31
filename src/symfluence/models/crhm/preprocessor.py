@@ -225,11 +225,11 @@ class CRHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         """Write forcing data in CRHM .obs format."""
         # Variable mapping from ERA5/forcing names to CRHM names
         var_map = {
-            't': ['airtemp', 'temperature', 'tas', 'temp', 't2m'],
-            'p': ['pptrate', 'precipitation', 'pr', 'precip', 'tp'],
+            't': ['air_temperature', 'temperature', 'tas', 'temp', 't2m'],
+            'p': ['precipitation_flux', 'precipitation', 'pr', 'precip', 'tp'],
             'rh': ['rh', 'relative_humidity', 'hurs'],
-            'u': ['windspd', 'wind_speed', 'sfcWind', 'wind'],
-            'Qsi': ['SWRadAtm', 'ssrd', 'rsds', 'swdown', 'shortwave'],
+            'u': ['wind_speed', 'wind_speed', 'sfcWind', 'wind'],
+            'Qsi': ['surface_downwelling_shortwave_flux', 'ssrd', 'rsds', 'swdown', 'shortwave'],
         }
 
         times = forcing_ds['time'].values if 'time' in forcing_ds else pd.date_range(start_date, end_date, freq='h')
@@ -268,7 +268,7 @@ class CRHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
                     elif crhm_var == 'p':
                         # CRHM expects mm per timestep
-                        if 'mm/s' in src_units or candidate == 'pptrate':
+                        if 'mm/s' in src_units or candidate == 'precipitation_flux':
                             data = data * dt_seconds
                             logger.info(f"Converted {candidate} from mm/s to mm/timestep")
                         elif src_units == 'm' or candidate == 'tp':
@@ -307,7 +307,7 @@ class CRHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                     # Derive from specific humidity if available
                     derived = False
                     if 't' in data_columns:
-                        for q_name in ['spechum', 'specific_humidity', 'huss', 'q']:
+                        for q_name in ['specific_humidity', 'specific_humidity', 'huss', 'q']:
                             if q_name in forcing_ds:
                                 q_data = forcing_ds[q_name].values
                                 if q_data.ndim > 1:

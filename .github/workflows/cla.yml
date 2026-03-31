@@ -53,10 +53,10 @@ jobs:
             if (!signed) {
               const body = `### CLA Required
 
-            Thank you for your contribution! Before we can merge this pull request, you need to sign the [Contributor License Agreement](../blob/main/CLA.md).
+            Thank you for your contribution! Before we can merge this pull request, you need to sign the [Contributor License Agreement](https://github.com/symfluence-org/SYMFLUENCE/blob/main/CLA.md).
 
             **How to sign:**
-            1. Read the [CLA](../blob/main/CLA.md)
+            1. Read the [CLA](https://github.com/symfluence-org/SYMFLUENCE/blob/main/CLA.md)
             2. Add your information to the \`CLA_SIGNATURES\` file via a separate PR
             3. Once merged, this check will pass automatically on your next push
 

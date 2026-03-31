@@ -44,3 +44,22 @@ class ExecutionStrategy(ABC):
     def name(self) -> str:
         """Return the strategy name for logging."""
         pass
+
+    def startup(self) -> None:
+        """Called once before the first execute() call.
+
+        Override in subclasses that need one-time initialization
+        (e.g., launching persistent worker processes).
+        """
+
+    def shutdown(self) -> None:
+        """Called once after the last execute() call.
+
+        Override in subclasses that need cleanup
+        (e.g., terminating persistent worker processes).
+        """
+
+    @property
+    def is_persistent(self) -> bool:
+        """Whether this strategy keeps workers alive across execute() calls."""
+        return False

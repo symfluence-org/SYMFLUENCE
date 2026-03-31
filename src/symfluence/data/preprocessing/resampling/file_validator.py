@@ -20,10 +20,15 @@ class FileValidator:
     Checks for required dimensions, variables, and reasonable file sizes.
     """
 
-    # Expected SUMMA forcing variables
+    # Expected forcing variables (CFIF names + legacy SUMMA names for backward compat)
     EXPECTED_VARS = [
+        # CFIF standard names
+        'surface_air_pressure', 'surface_downwelling_longwave_flux',
+        'surface_downwelling_shortwave_flux', 'precipitation_flux',
+        'air_temperature', 'specific_humidity', 'wind_speed',
+        # Legacy SUMMA-style names (for pre-existing data files)
         'airpres', 'LWRadAtm', 'SWRadAtm', 'pptrate',
-        'airtemp', 'spechum', 'windspd'
+        'airtemp', 'spechum', 'windspd',
     ]
 
     # Minimum file size for valid data (100KB)

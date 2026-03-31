@@ -4059,6 +4059,20 @@ USE_TRANSFER_FUNCTIONS: false
 #   Description: Bounds for transfer function coefficients
 TRANSFER_FUNCTION_COEFF_BOUNDS: null
 
+# TRANSFER_FUNCTION_ATTRIBUTES
+#   Type:        str | None
+#   Default:     None
+#   Source:      SUMMAConfig (model_configs_hydrology.py)
+#   Description: Path to attributes file used by transfer functions for parameter regionalization
+TRANSFER_FUNCTION_ATTRIBUTES: null
+
+# TRANSFER_FUNCTION_PARAM_CONFIG
+#   Type:        dict | None
+#   Default:     None
+#   Source:      SUMMAConfig (model_configs_hydrology.py)
+#   Description: Configuration dictionary mapping parameters to transfer function specifications
+TRANSFER_FUNCTION_PARAM_CONFIG: null
+
 # FUSE_SOLUTION_METHOD
 #   Type:        int | None
 #   Default:     None

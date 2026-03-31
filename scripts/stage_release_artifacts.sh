@@ -1000,8 +1000,8 @@ See `LICENSES/` directory for individual tool licenses.
 
 ## Support
 
-- Issues: https://github.com/DarriEy/SYMFLUENCE/issues
-- Documentation: https://github.com/DarriEy/SYMFLUENCE
+- Issues: https://github.com/symfluence-org/SYMFLUENCE/issues
+- Documentation: https://github.com/symfluence-org/SYMFLUENCE
 
 ---
 

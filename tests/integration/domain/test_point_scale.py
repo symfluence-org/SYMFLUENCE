@@ -22,7 +22,7 @@ from test_helpers.geospatial import (
 from test_helpers.helpers import load_config_template, write_config
 
 # GitHub release URL for example data
-EXAMPLE_DATA_URL = "https://github.com/DarriEy/SYMFLUENCE/releases/download/examples-data-v0.5.5/example_data_v0.5.5.zip"
+EXAMPLE_DATA_URL = "https://github.com/symfluence-org/SYMFLUENCE/releases/download/examples-data-v0.5.5/example_data_v0.5.5.zip"
 
 
 

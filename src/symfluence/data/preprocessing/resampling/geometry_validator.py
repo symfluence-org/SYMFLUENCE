@@ -52,13 +52,6 @@ class GeometryValidator:
             if not geom.is_valid:
                 invalid_count += 1
                 try:
-                    # Try buffer(0) first - simple and effective for most cases
-                    repaired = geom.buffer(0)
-                    if repaired.is_valid and not repaired.is_empty:
-                        repaired_count += 1
-                        return repaired
-
-                    # Fall back to make_valid for more complex issues
                     repaired = make_valid(geom)
                     if repaired.is_valid and not repaired.is_empty:
                         repaired_count += 1

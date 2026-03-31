@@ -333,7 +333,7 @@ class TestForcingDiagnostics:
 
                 # Mock xarray dataset
                 mock_ds = Mock()
-                mock_ds.data_vars = ['pptrate', 'airtemp']
+                mock_ds.data_vars = ['precipitation_flux', 'air_temperature']
                 mock_var = Mock()
                 mock_var.dims = ['time', 'lat', 'lon']
                 mock_var.values = np.random.random((10, 5, 5))
@@ -341,7 +341,7 @@ class TestForcingDiagnostics:
                 mock_var.plot = Mock()
                 mock_ds.__getitem__ = Mock(return_value=mock_var)
                 mock_ds.dims = {'time': 10}
-                mock_ds.__iter__ = Mock(return_value=iter(['pptrate', 'airtemp']))
+                mock_ds.__iter__ = Mock(return_value=iter(['precipitation_flux', 'air_temperature']))
                 mock_ds.close = Mock()
                 mock_xr.return_value = mock_ds
 
@@ -374,7 +374,7 @@ class TestForcingDiagnostics:
                 # Create separate mock datasets for raw and remapped to avoid conflicts
                 def create_mock_dataset():
                     mock_ds = Mock()
-                    mock_ds.data_vars = ['pptrate']
+                    mock_ds.data_vars = ['precipitation_flux']
 
                     # Create a mock variable with all necessary attributes
                     mock_var = Mock()

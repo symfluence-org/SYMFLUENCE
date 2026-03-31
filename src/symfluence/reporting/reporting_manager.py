@@ -216,7 +216,7 @@ class ReportingManager(ConfigMixin):
         remapped_forcing_file: Path,
         forcing_grid_shp: Path,
         hru_shp: Path,
-        variable: str = 'pptrate',
+        variable: str = 'precipitation_flux',
         time_index: int = 0,
     ) -> Optional[str]:
         """Visualize raw vs. remapped forcing data comparison."""

@@ -68,6 +68,9 @@ def _bootstrap_bmi_adapters(R: type) -> None:  # noqa: N803
         "SNOW17": "symfluence.coupling.adapters.jax_adapters.Snow17JAXComponent",
         "XAJ": "symfluence.coupling.adapters.jax_adapters.XAJJAXComponent",
         "SACSMA": "symfluence.coupling.adapters.jax_adapters.SacSmaJAXComponent",
+        "HBV": "symfluence.coupling.adapters.jax_adapters.HBVJAXComponent",
+        "HECHMS": "symfluence.coupling.adapters.jax_adapters.HecHmsJAXComponent",
+        "TOPMODEL": "symfluence.coupling.adapters.jax_adapters.TopmodelJAXComponent",
     }
 
     for name, path in process_models.items():
@@ -78,6 +81,7 @@ def _bootstrap_bmi_adapters(R: type) -> None:  # noqa: N803
     # Aliases for common alternate names
     R.bmi_adapters.alias("XINANJIANG", "XAJ")
     R.bmi_adapters.alias("SAC-SMA", "SACSMA")
+    R.bmi_adapters.alias("HEC-HMS", "HECHMS")
 
 
 def _bootstrap_metrics(R: type) -> None:  # noqa: N803

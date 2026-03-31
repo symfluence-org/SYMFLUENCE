@@ -44,7 +44,7 @@ installer:
 
 .. code-block:: bash
 
-   git clone https://github.com/DarriEy/SYMFLUENCE.git
+   git clone https://github.com/symfluence-org/SYMFLUENCE.git
    cd SYMFLUENCE
    ./scripts/symfluence-bootstrap --install
 
@@ -142,6 +142,7 @@ ARC (University of Calgary):
    module load openmpi/4.1.6
    module load python/3.11.7
    module load r/4.4.1
+   module load geos 
 
 FIR (Compute Canada):
 
