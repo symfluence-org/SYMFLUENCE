@@ -103,7 +103,7 @@ src/symfluence/coupling/worker.py:178:except Exception as e:  # noqa: BLE001 —
 src/symfluence/coupling/worker.py:224:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/coupling/worker.py:249:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/data/acquisition/base.py:127:except Exception as e:  # noqa: BLE001 — diagnostic plots are non-critical
-src/symfluence/data/acquisition/handlers/__init__.py:91:except Exception as _e:  # noqa: BLE001 — optional handler import resilience
+src/symfluence/data/acquisition/handlers/__init__.py:93:except Exception as _e:  # noqa: BLE001 — optional handler import resilience
 src/symfluence/data/acquisition/handlers/aorc.py:140:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/data/acquisition/handlers/aorc.py:85:except Exception as primary_err:  # noqa: BLE001
 src/symfluence/data/acquisition/handlers/aorc.py:92:except Exception as fallback_err:  # noqa: BLE001
@@ -308,7 +308,7 @@ src/symfluence/data/preprocessing/attribute_processors/hydrology.py:256:except E
 src/symfluence/data/preprocessing/attribute_processors/soil.py:467:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/attribute_processors/soil.py:503:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/dataset_alignment_manager.py:177:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/dataset_handlers/__init__.py:73:except Exception as _e:  # noqa: BLE001 — optional dependency
+src/symfluence/data/preprocessing/dataset_handlers/__init__.py:74:except Exception as _e:  # noqa: BLE001 — optional dependency
 src/symfluence/data/preprocessing/dataset_handlers/aorc_utils.py:372:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/dataset_handlers/aorc_utils.py:400:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/dataset_handlers/carra_utils.py:228:except Exception as e:  # noqa: BLE001 — preprocessing resilience
@@ -331,6 +331,8 @@ src/symfluence/data/preprocessing/dataset_handlers/hrrr_utils.py:415:except Exce
 src/symfluence/data/preprocessing/dataset_handlers/nex_gddp_utils.py:192:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/dataset_handlers/nex_gddp_utils.py:415:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/dataset_handlers/nex_gddp_utils.py:424:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/preprocessing/dataset_handlers/nwm3_retrospective_utils.py:253:except Exception as e:  # noqa: BLE001
+src/symfluence/data/preprocessing/dataset_handlers/nwm3_retrospective_utils.py:272:except Exception as e:  # noqa: BLE001
 src/symfluence/data/preprocessing/dataset_handlers/rdrs_utils.py:280:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/dataset_handlers/rdrs_utils.py:293:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/dataset_handlers/rdrs_utils.py:449:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
@@ -372,11 +374,11 @@ src/symfluence/data/preprocessing/shapefile_manager.py:215:except Exception as e
 src/symfluence/data/preprocessing/shapefile_manager.py:274:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/time_window_manager.py:166:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/utils/archive_utils.py:66:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/utils/variable_utils.py:1004:except Exception as pe:  # noqa: BLE001 — must-not-raise contract
-src/symfluence/data/utils/variable_utils.py:1027:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
-src/symfluence/data/utils/variable_utils.py:1043:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
-src/symfluence/data/utils/variable_utils.py:1058:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
-src/symfluence/data/utils/variable_utils.py:886:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
+src/symfluence/data/utils/variable_utils.py:1014:except Exception as pe:  # noqa: BLE001 — must-not-raise contract
+src/symfluence/data/utils/variable_utils.py:1037:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
+src/symfluence/data/utils/variable_utils.py:1053:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
+src/symfluence/data/utils/variable_utils.py:1068:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
+src/symfluence/data/utils/variable_utils.py:896:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/data_assimilation/da_manager.py:168:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/data_assimilation/enkf/ensemble_manager.py:291:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/data_assimilation/enkf/ensemble_manager.py:362:except Exception:  # noqa: BLE001 — must-not-raise contract
