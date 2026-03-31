@@ -189,10 +189,10 @@ class LumpedWatershedDelineator(BaseGeofabricDelineator):
             return None
         try:
             return int(value)
-        except Exception:
+        except Exception:  # noqa: BLE001
             try:
                 return int(float(value))
-            except Exception:
+            except Exception:  # noqa: BLE001
                 return str(value)
 
     def _build_upstream_id_set_from_rivers(
@@ -251,7 +251,7 @@ class LumpedWatershedDelineator(BaseGeofabricDelineator):
                     df = df.rename(columns=rename_map)
 
             return df
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.logger.warning(f"Could not parse TauDEM tree file {tree_path}: {e}")
             return None
 
@@ -378,7 +378,7 @@ class LumpedWatershedDelineator(BaseGeofabricDelineator):
                     f"Existing streamnet watershed shapefile is empty: {interim_watershed_shp}; "
                     "will re-polygonize elv-watersheds.tif"
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 self.logger.warning(
                     f"Could not read existing streamnet watershed shapefile ({e}); "
                     "will re-polygonize elv-watersheds.tif"
@@ -395,7 +395,7 @@ class LumpedWatershedDelineator(BaseGeofabricDelineator):
                     f"Re-polygonized non-empty streamnet watershed shapefile from {streamnet_watershed_raster}"
                 )
                 return interim_watershed_shp
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.logger.warning(
                 f"Explicit polygonization of streamnet watershed raster failed ({e})"
             )
@@ -677,7 +677,7 @@ class LumpedWatershedDelineator(BaseGeofabricDelineator):
                         f"ratio={area_ratio:.3f}"
                     )
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             self.logger.warning(f"Fallback area validation failed: {e}")
 
     def _delineate_with_taudem(self) -> Optional[Path]:
@@ -751,7 +751,7 @@ class LumpedWatershedDelineator(BaseGeofabricDelineator):
                     try:
                         rivers_preview = gpd.read_file(interim_river_shp)
                         use_streamnet_selection = len(rivers_preview) > 0
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001
                         self.logger.warning(
                             f"Could not read streamnet river shapefile ({e}); will try basin-tree fallback."
                         )
@@ -780,7 +780,7 @@ class LumpedWatershedDelineator(BaseGeofabricDelineator):
                     )
                     watershed_gdf = self._polygonize_valid_streamnet_watershed_mask(streamnet_watershed_raster)
                     self.logger.info("Recovered lumped basin from valid non-nodata streamnet watershed mask")
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001
                     self.logger.warning(
                         f"Valid-mask streamnet watershed recovery failed ({e}); falling back to snapped gagewatershed raster polygonization."
                     )
@@ -788,7 +788,7 @@ class LumpedWatershedDelineator(BaseGeofabricDelineator):
                     watershed_gdf = gpd.read_file(watershed_shp_path)
 
                     if watershed_gdf.empty:
-                        raise RuntimeError("Fallback gagewatershed polygonization produced an empty lumped basin")
+                        raise RuntimeError("Fallback gagewatershed polygonization produced an empty lumped basin") from None
 
                     if watershed_gdf.crs is None:
                         watershed_gdf = watershed_gdf.set_crs("EPSG:4326")
