@@ -1,6 +1,6 @@
 {
   "name": "symfluence",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "SYnergistic Modelling Framework for Linking and Unifying Earth-system Nexii for Computational Exploration - Pre-compiled hydrological modeling tools",
   "main": "index.js",
   "bin": {
