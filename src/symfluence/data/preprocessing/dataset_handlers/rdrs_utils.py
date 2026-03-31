@@ -42,6 +42,8 @@ class RDRSHandler(BaseDatasetHandler):
         standardizer = VariableStandardizer(self.logger)
         combined = standardizer.get_rename_map('RDRS')
         combined.update(standardizer.get_rename_map('RDRS_v3.1'))
+        combined.update(standardizer.get_rename_map('CASR_v3.1'))
+        combined.update(standardizer.get_rename_map('CASR_v3.2'))
         return combined
 
     def process_dataset(self, ds: xr.Dataset) -> xr.Dataset:
