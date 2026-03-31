@@ -183,6 +183,16 @@ class VariableStandardizer:
             'UGRD_10maboveground': 'eastward_wind',
             'VGRD_10maboveground': 'northward_wind',
         },
+        'NWM3_RETROSPECTIVE': {
+            'RAINRATE': 'precipitation_flux',
+            'T2D': 'air_temperature',
+            'Q2D': 'specific_humidity',
+            'PSFC': 'surface_air_pressure',
+            'LWDOWN': 'surface_downwelling_longwave_flux',
+            'SWDOWN': 'surface_downwelling_shortwave_flux',
+            'U2D': 'eastward_wind',
+            'V2D': 'northward_wind',
+        },
         'NEX-GDDP': {
             'pr': 'precipitation_flux',
             'tas': 'air_temperature',

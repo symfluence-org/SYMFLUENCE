@@ -81,6 +81,8 @@ _handler_modules = [
     'glwd',
     'root_zone_storage',
     'wokam',
+    # NWM retrospective
+    'nwm3_retrospective',
 ]
 
 for _module_name in _handler_modules:

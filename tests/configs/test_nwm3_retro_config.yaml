@@ -1,0 +1,142 @@
+# Test config: NWM3 retrospective e2e with SUMMA
+# Point domain near Estes Park, CO — NWM3 as standalone forcing source
+# Short period (3 days) to keep download fast
+SYMFLUENCE_DATA_DIR: default
+SYMFLUENCE_CODE_DIR: default
+DOMAIN_NAME: estes_park_nwm3_test
+EXPERIMENT_ID: nwm3_test
+EXPERIMENT_TIME_START: "2020-01-01 01:00"
+EXPERIMENT_TIME_END: "2020-01-03 23:00"
+CALIBRATION_PERIOD: null
+EVALUATION_PERIOD: null
+SPINUP_PERIOD: null
+NUM_PROCESSES: 1
+FORCE_RUN_ALL_STEPS: false
+USE_LOCAL_SCRATCH: false
+RANDOM_SEED: null
+LOG_LEVEL: INFO
+LOG_TO_FILE: true
+LOG_FORMAT: detailed
+
+# Domain: point near Estes Park, CO
+POUR_POINT_COORDS: 40.38/-105.06
+BOUNDING_BOX_COORDS: 40.381/-105.061/40.379/-105.059
+DOMAIN_DEFINITION_METHOD: point
+ROUTING_DELINEATION: lumped
+GEOFABRIC_TYPE: na
+DELINEATION_METHOD: stream_threshold
+STREAM_THRESHOLD: 5000
+LUMPED_WATERSHED_METHOD: TauDEM
+CLEANUP_INTERMEDIATE_FILES: false
+DELINEATE_COASTAL_WATERSHEDS: false
+DELINEATE_BY_POURPOINT: true
+MOVE_OUTLETS_MAX_DISTANCE: 200
+MIN_GRU_SIZE: 0
+SUB_GRID_DISCRETIZATION: GRUs
+ELEVATION_BAND_SIZE: 200
+MIN_HRU_SIZE: 4
+
+# Data: NWM3 retrospective as standalone forcing source
+DATA_ACCESS: cloud
+FORCING_DATASET: NWM3_RETROSPECTIVE
+FORCING_VARIABLES: default
+FORCING_MEASUREMENT_HEIGHT: 2
+FORCING_TIME_STEP_SIZE: 3600
+APPLY_LAPSE_RATE: true
+LAPSE_RATE: 0.0065
+FORCING_SHAPE_LAT_NAME: lat
+FORCING_SHAPE_LON_NAME: lon
+PET_METHOD: oudin
+DEM_SOURCE: copernicus
+
+# Model: SUMMA
+HYDROLOGICAL_MODEL: SUMMA
+ROUTING_MODEL: mizuRoute
+SUMMA_EXE: summa_sundials.exe
+SUMMA_INSTALL_PATH: /Users/darri.eythorsson/compHydro/SYMFLUENCE_data/installs/summa/bin
+SETTINGS_SUMMA_CONNECT_HRUS: true
+SETTINGS_SUMMA_TRIALPARAM_N: 0
+SETTINGS_SUMMA_TRIALPARAM_1: null
+SETTINGS_SUMMA_USE_PARALLEL_SUMMA: false
+SETTINGS_SUMMA_PATH: default
+SETTINGS_SUMMA_FILEMANAGER: fileManager.txt
+SETTINGS_SUMMA_FORCING_LIST: forcingFileList.txt
+SETTINGS_SUMMA_COLDSTATE: coldState.nc
+SETTINGS_SUMMA_TRIALPARAMS: trialParams.nc
+SETTINGS_SUMMA_ATTRIBUTES: attributes.nc
+SETTINGS_SUMMA_OUTPUT: outputControl.txt
+SETTINGS_SUMMA_GRU_COUNT: 1
+EXPERIMENT_OUTPUT_SUMMA: default
+EXPERIMENT_LOG_SUMMA: default
+
+# Minimal SUMMA decisions
+SUMMA_DECISION_OPTIONS:
+  snowIncept:
+  - lightSnow
+  compaction:
+  - anderson
+  snowLayers:
+  - CLM_2010
+  alb_method:
+  - conDecay
+  thCondSnow:
+  - smnv2000
+  vegeParTbl:
+  - MODIFIED_IGBP_MODIS_NOAH
+  soilStress:
+  - NoahType
+  stomResist:
+  - BallBerry
+  LAI_method:
+  - monTable
+  veg_traits:
+  - Raupach_BLM1994
+  canopyEmis:
+  - difTrans
+  windPrfile:
+  - logBelowCanopy
+  canopySrad:
+  - BeersLaw
+  soilCatTbl:
+  - ROSETTA
+  f_Richards:
+  - mixdform
+  groundwatr:
+  - bigBuckt
+  hc_profile:
+  - constant
+  bcLowrSoiH:
+  - drainage
+  thCondSoil:
+  - funcSoilWet
+  spatial_gw:
+  - localColumn
+  subRouting:
+  - timeDlay
+  num_method:
+  - itertive
+  fDerivMeth:
+  - analytic
+  bcUpprTdyn:
+  - nrg_flux
+  bcLowrTdyn:
+  - zeroFlux
+  bcUpprSoiH:
+  - liq_flux
+  astability:
+  - louisinv
+
+# Observations (skip for this test)
+EVALUATION_DATA:
+- streamflow
+ANALYSES:
+- benchmarking
+STREAMFLOW_DATA_PROVIDER: USGS
+DOWNLOAD_USGS_DATA: true
+STATION_ID: '06741510'
+SIM_REACH_ID: 123
+
+# Params (minimal set)
+PARAMS_TO_CALIBRATE: tempCritRain,k_soil
+BASIN_PARAMS_TO_CALIBRATE: routingGammaScale
+CALIBRATION_TIMESTEP: daily

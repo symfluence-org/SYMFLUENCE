@@ -39,8 +39,8 @@ subRouting                      timeDlay        ! (29) choice of method for sub-
 nrgConserv                      enthalpyForm    ! (30) choice of variable in energy equations (BE residual or IDA state variable)
 infRateMax                      GreenAmpt       ! (31) choice of infiltration rate method
 surfRun_SE                      homegrown_SE    ! (32) saturation excess surface runoff parameterization
-read_force                      readPerStep     ! (33) method used to read forcing data
-write_buff                      writePerStep    ! (34) method used to write model output
+! read_force and write_buff are internal SUMMA engine modules, not
+! user-configurable model decisions — removed from the decisions file.
 ! ***********************************************************************************************
 ! ***** description of the options available -- nothing below this point is read ****************
 ! ***********************************************************************************************
