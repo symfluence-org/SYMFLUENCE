@@ -357,12 +357,12 @@ def _run_case_logic(cfg_path: Path, project_dir: Path, case: dict) -> None:
 
     # Clean forcing outputs from prior dataset runs
     for subdir in ["raw_data", "basin_averaged_data", "merged_path"]:
-        shutil.rmtree(project_dir / "forcing" / subdir, ignore_errors=True)
+        shutil.rmtree(project_dir / "data" / "forcing" / subdir, ignore_errors=True)
 
     symfluence = SYMFLUENCE(cfg_path)
     symfluence.managers["data"].acquire_forcings()
 
-    raw_data_dir = project_dir / "forcing" / "raw_data"
+    raw_data_dir = project_dir / "data" / "forcing" / "raw_data"
     expect_glob = case["expect_glob"]
     if isinstance(expect_glob, (list, tuple)):
         matches = []
