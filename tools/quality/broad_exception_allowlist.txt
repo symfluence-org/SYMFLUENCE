@@ -333,9 +333,9 @@ src/symfluence/data/preprocessing/dataset_handlers/nex_gddp_utils.py:415:except 
 src/symfluence/data/preprocessing/dataset_handlers/nex_gddp_utils.py:424:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/dataset_handlers/nwm3_retrospective_utils.py:253:except Exception as e:  # noqa: BLE001
 src/symfluence/data/preprocessing/dataset_handlers/nwm3_retrospective_utils.py:272:except Exception as e:  # noqa: BLE001
-src/symfluence/data/preprocessing/dataset_handlers/rdrs_utils.py:280:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/dataset_handlers/rdrs_utils.py:293:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/dataset_handlers/rdrs_utils.py:449:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
+src/symfluence/data/preprocessing/dataset_handlers/rdrs_utils.py:282:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/preprocessing/dataset_handlers/rdrs_utils.py:295:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/preprocessing/dataset_handlers/rdrs_utils.py:451:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/data/preprocessing/elevation_calculator.py:105:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/elevation_calculator.py:137:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/elevation_calculator.py:161:except Exception as e:  # noqa: BLE001 — preprocessing resilience
@@ -468,9 +468,17 @@ src/symfluence/geospatial/geofabric/delineators/grid_delineator.py:548:except Ex
 src/symfluence/geospatial/geofabric/delineators/grid_delineator.py:610:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/geospatial/geofabric/delineators/grid_delineator.py:774:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/geospatial/geofabric/delineators/grid_delineator.py:921:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/geospatial/geofabric/delineators/lumped_delineator.py:122:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/geospatial/geofabric/delineators/lumped_delineator.py:184:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/geospatial/geofabric/delineators/lumped_delineator.py:269:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/geospatial/geofabric/delineators/lumped_delineator.py:122:except Exception as e:  # noqa: BLE001
+src/symfluence/geospatial/geofabric/delineators/lumped_delineator.py:180:except Exception as e:  # noqa: BLE001
+src/symfluence/geospatial/geofabric/delineators/lumped_delineator.py:192:except Exception:  # noqa: BLE001
+src/symfluence/geospatial/geofabric/delineators/lumped_delineator.py:195:except Exception:  # noqa: BLE001
+src/symfluence/geospatial/geofabric/delineators/lumped_delineator.py:254:except Exception as e:  # noqa: BLE001
+src/symfluence/geospatial/geofabric/delineators/lumped_delineator.py:381:except Exception as e:  # noqa: BLE001
+src/symfluence/geospatial/geofabric/delineators/lumped_delineator.py:398:except Exception as e:  # noqa: BLE001
+src/symfluence/geospatial/geofabric/delineators/lumped_delineator.py:680:except Exception as e:  # noqa: BLE001
+src/symfluence/geospatial/geofabric/delineators/lumped_delineator.py:754:except Exception as e:  # noqa: BLE001
+src/symfluence/geospatial/geofabric/delineators/lumped_delineator.py:783:except Exception as e:  # noqa: BLE001
+src/symfluence/geospatial/geofabric/delineators/lumped_delineator.py:857:except Exception as e:  # noqa: BLE001
 src/symfluence/geospatial/geofabric/delineators/point_delineator.py:92:except Exception as exc:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/geospatial/geofabric/methods/drop_analysis.py:105:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/geospatial/geofabric/methods/drop_analysis.py:122:except Exception as e:  # noqa: BLE001 — preprocessing resilience
