@@ -257,29 +257,35 @@ class ChunkedDownloadMixin:
         output_file = Path(output_file)
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
-        # Open and merge
-        # chunks=None disables dask to avoid scheduler deadlocks when
-        # called inside forked processes (e.g., pytest-xdist, MPI workers).
-        with xr.open_mfdataset(
-            chunk_files,
-            combine=combine,
-            concat_dim=concat_dim if combine == 'nested' else None,
-            chunks=None,
-            parallel=False,
-            data_vars='minimal',
-            coords='minimal',
-            compat='override'
-        ) as ds_merged:
-            # Apply time slice if specified
-            if time_slice is not None:
-                start, end = time_slice
-                ds_merged = ds_merged.sel(time=slice(start, end))
+        # Load each chunk fully into memory and close file handles immediately.
+        # Avoids dask scheduler deadlocks AND HDF5 C-library hangs that occur
+        # when open_mfdataset keeps file handles alive inside forked processes
+        # (pytest-xdist workers, MPI ranks).
+        datasets = []
+        for f in chunk_files:
+            datasets.append(xr.load_dataset(f))
 
-            # Write output
-            if encoding:
-                ds_merged.to_netcdf(output_file, encoding=encoding)
-            else:
-                ds_merged.to_netcdf(output_file)
+        if len(datasets) == 1:
+            ds_merged = datasets[0]
+        else:
+            ds_merged = xr.concat(
+                datasets,
+                dim=concat_dim,
+                data_vars='minimal',
+                coords='minimal',
+                compat='override'
+            )
+
+        # Apply time slice if specified
+        if time_slice is not None:
+            start, end = time_slice
+            ds_merged = ds_merged.sel(time=slice(start, end))
+
+        # Write output
+        if encoding:
+            ds_merged.to_netcdf(output_file, encoding=encoding)
+        else:
+            ds_merged.to_netcdf(output_file)
 
         # Cleanup chunk files
         if cleanup:
