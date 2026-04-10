@@ -28,6 +28,7 @@ from .chirps import CHIRPSHandler
 from .cmc_snow import CMCSnowHandler
 from .cnes_grgs_tws import CNESGRGSHandler
 from .daymet import DaymetHandler
+from .dga import DGAStreamflowHandler
 from .era5_land import ERA5LandHandler
 from .fluxcom import FLUXCOMETHandler
 from .fluxnet import FLUXNETObservationHandler
@@ -151,6 +152,8 @@ __all__ = [
     "ESACCISMHandler",
     "SMOSSMHandler",
     "ASCATSMHandler",
+    # DGA (Chile)
+    "DGAStreamflowHandler",
     # USGS
     "USGSStreamflowHandler",
     "USGSGroundwaterHandler",
