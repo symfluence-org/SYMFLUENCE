@@ -1036,7 +1036,7 @@ update_config_paths_in_yaml() {
 try_pixi_install() {
     local project_dir="$1"
 
-    # Skip if user opts out
+    # Skip if user opts out (legacy env var — kept for backward compat)
     if [[ "${SYMFLUENCE_SKIP_PIXI:-}" == "1" ]]; then
         print_info "Skipping pixi (SYMFLUENCE_SKIP_PIXI=1)"
         return 1
@@ -1421,9 +1421,10 @@ main() {
         # Detect 2i2c/JupyterHub environment
         detect_2i2c_environment || true
 
-        # Try pixi first (preferred — single shared libhdf5, no ABI conflicts)
+        # Pixi environment manager (opt-in via SYMFLUENCE_USE_PIXI=1)
+        # Default is pip/venv which is well-tested and documented.
         PIXI_ACTIVE=false
-        if [[ "$IS_2I2C_ENVIRONMENT" != "true" ]]; then
+        if [[ "${SYMFLUENCE_USE_PIXI:-}" == "1" && "$IS_2I2C_ENVIRONMENT" != "true" ]]; then
             try_pixi_install "$symfluence_dir" || true
         fi
 
