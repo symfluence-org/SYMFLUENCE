@@ -27,7 +27,7 @@ Running the Examples
    .. code-block:: bash
 
       ./scripts/symfluence-bootstrap --install
-      source .venv/bin/activate
+      source venv/bin/activate
 
 2. Launch an example directly from the CLI:
    .. code-block:: bash

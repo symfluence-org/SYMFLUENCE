@@ -47,10 +47,11 @@ installer:
    git clone https://github.com/symfluence-org/SYMFLUENCE.git
    cd SYMFLUENCE
    ./scripts/symfluence-bootstrap --install
+   source venv/bin/activate
 
 What this does:
 
-- Creates/updates ``.venv/`` (Python 3.11 recommended)
+- Creates/updates ``venv/`` (Python 3.11 recommended)
 - Installs Python dependencies with ``pip``
 - Reuses the environment on subsequent runs
 
@@ -60,9 +61,9 @@ If you prefer to manage the environment yourself:
 
 .. code-block:: bash
 
-   python3 -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install -e .
 
 System Prerequisites
 --------------------
