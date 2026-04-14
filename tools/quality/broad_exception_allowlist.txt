@@ -220,7 +220,7 @@ src/symfluence/data/acquisition/zonal_stats_processor.py:558:except Exception as
 src/symfluence/data/acquisition/zonal_stats_processor.py:667:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/data/cache/forcing_cache.py:299:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/cache/forcing_cache.py:382:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/data_manager.py:292:except Exception as e:  # noqa: BLE001 — must-not-raise contract
+src/symfluence/data/data_manager.py:294:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/data/model_ready/attributes_builder.py:193:except Exception:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/model_ready/attributes_builder.py:355:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/model_ready/attributes_builder.py:386:except Exception as e:  # noqa: BLE001 — preprocessing resilience
