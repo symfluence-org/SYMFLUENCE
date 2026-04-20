@@ -2,12 +2,15 @@
 # Copyright (C) 2024-2026 SYMFLUENCE Team <dev@symfluence.org>
 
 """
-Tests pinning rpy2 as an opt-in (GR-only) dependency.
+Tests pinning rpy2 as a GR-only runtime requirement.
 
-Regression coverage for the change that removed unconditional rpy2 install
-paths from scripts/symfluence-bootstrap. If rpy2 ever leaks into a non-GR
-import path, importing the affected module would crash on machines without
-R installed — these tests catch that at CI time.
+The bootstrap installer attempts rpy2 by default so GR works out of the
+box on systems with R, but the install is best-effort — failure is
+non-fatal. These tests pin two invariants:
+  1. Non-GR runners (SUMMA, FUSE, mizuRoute, acquisition,
+     discretization) import without requiring rpy2 at all.
+  2. GR's deferred-import ImportError stays actionable when rpy2 is
+     unavailable, telling the user how to install it manually.
 """
 
 import sys
@@ -43,9 +46,9 @@ def test_non_gr_module_does_not_force_rpy2(modname):
     assert mod is not None
 
 
-def test_gr_runner_error_mentions_with_gr_flag(monkeypatch):
+def test_gr_runner_error_actionable_when_rpy2_missing(monkeypatch):
     """If rpy2 is unavailable, GRRunner.__init__ must raise an ImportError
-    whose message points users at the correct opt-in command (--with-gr).
+    that tells the user how to install rpy2 manually.
 
     This is the only user-visible escape hatch for "I tried GR and it
     failed", so the error message must stay actionable."""
@@ -60,8 +63,8 @@ def test_gr_runner_error_mentions_with_gr_flag(monkeypatch):
 
     msg = str(exc.value)
     assert "rpy2" in msg
-    assert "--with-gr" in msg, (
-        "GR ImportError must point users at the bootstrap --with-gr opt-in "
-        "or the equivalent pip install command."
+    # Must offer a concrete install command (manual pip install or extras)
+    assert "pip install" in msg, (
+        "GR ImportError must offer a concrete pip install command "
+        "so users know how to enable GR after a failed default install."
     )
-    assert "[r]" in msg or "extras" in msg.lower() or ".[r]" in msg
