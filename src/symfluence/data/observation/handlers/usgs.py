@@ -51,6 +51,25 @@ class USGSStreamflowHandler(BaseObservationHandler):
             lambda: self.config.data.download_usgs_data, default=False
         )
 
+        # Same opt-out semantics as the WSC handler: if this handler is
+        # invoked at all, the workflow already decided USGS streamflow
+        # is needed. Treat ``download_usgs_data`` as opt-OUT so users
+        # don't need to set two flags (provider + download) for the
+        # obvious behaviour.
+        streamflow_provider = (
+            self._get_config_value(
+                lambda: self.config.data.streamflow_data_provider,
+                default='',
+            ) or ''
+        )
+        if not download_enabled and str(streamflow_provider).upper() == 'USGS':
+            self.logger.info(
+                "streamflow_data_provider=USGS implies download_usgs_data=True; "
+                "enabling NWIS download by default. Set DOWNLOAD_USGS_DATA: false "
+                "to opt out (e.g. when using pre-staged data)."
+            )
+            download_enabled = True
+
         # Ensure station ID is properly formatted (usually 8+ digits)
         station_id_str = str(station_id)
         if station_id_str.isdigit() and len(station_id_str) < 8:

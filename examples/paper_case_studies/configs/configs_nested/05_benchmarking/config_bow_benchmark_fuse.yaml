@@ -1,14 +1,19 @@
-# Experiment 6: Model Decision Ensemble (Section 3.5)
-# Uses FUSE to enumerate 64 model structure combinations
-# Produces Figure 9: decision tree performance spread
+# Experiment 5: Benchmarking with FUSE (Section 3.4)
+# Calibrates FUSE on Bow at Banff and evaluates against persistence /
+# climatology / long-term mean baselines. Mirrors config_bow_benchmark.yaml
+# (SUMMA) so users can reproduce Figure 8's FUSE point.
+#
+# To benchmark another model, copy this file and replace the model block
+# with the corresponding entry from
+# 02_model_ensemble/models/config_<model>.yaml, then keep
+# `analyses: [benchmarking]` below.
 
 system:
   data_dir: ./data/
   code_dir: ./
-  random_seed: 42
 domain:
   name: Bow_at_Banff_lumped_era5
-  experiment_id: fuse_decision_ensemble
+  experiment_id: benchmark_fuse
   time_start: 2002-01-01 01:00
   time_end: 2009-12-31 23:00
   calibration_period: 2004-01-01, 2007-12-31
@@ -29,27 +34,6 @@ model:
   routing_model: none
   fuse:
     spatial_mode: lumped
-    decision_options:
-      RFERR:
-      - additive_e
-      - multiplc_e
-      ARCH1:
-      - tension1_1
-      ARCH2:
-      - tens2pll_2
-      QSURF:
-      - arno_x_vic
-      - prms_varnt
-      QPERC:
-      - perc_f2sat
-      ESOIL:
-      - sequential
-      QINTF:
-      - intflwnone
-      Q_TDH:
-      - rout_gamma
-      SNOWM:
-      - temp_index
     params_to_calibrate: MAXWATR_1,MAXWATR_2,BASERTE,QB_POWR,TIMEDELAY,PERCRTE,FRACTEN,RTFRAC1,MBASE,MFMAX,MFMIN,PXTEMP,LAPSE
 optimization:
   methods:
@@ -61,4 +45,4 @@ evaluation:
   streamflow:
     station_id: 05BB001
   analyses:
-  - decision_analysis
+  - benchmarking

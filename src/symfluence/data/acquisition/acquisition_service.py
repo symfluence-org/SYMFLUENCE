@@ -231,6 +231,78 @@ class AcquisitionService(ConfigurableMixin):
         self.domain_name = self._get_config_value(lambda: self.config.domain.name)
         self.project_dir = self.data_dir / f"domain_{self.domain_name}"
         self.variable_handler = VariableHandler(self.config, self.logger, 'ERA5', 'SUMMA')
+        self._auto_bbox_logged = False
+
+    def _resolve_bounding_box(self, purpose: str) -> str:
+        """Resolve BOUNDING_BOX_COORDS with auto-derivation for point domains.
+
+        If the user set ``BOUNDING_BOX_COORDS`` explicitly, that value wins.
+        Otherwise, for point domains (``DOMAIN_DEFINITION_METHOD: point``) with
+        ``POUR_POINT_COORDS`` set, a small square bbox is derived from the
+        point using ``POINT_BUFFER_DISTANCE`` (defaults to 0.01°, ~1 km).
+
+        Args:
+            purpose: Short label ("attributes" or "forcing") used in error
+                and log messages so users know which call site failed.
+
+        Returns:
+            The resolved bbox string in "north/west/south/east" order.
+
+        Raises:
+            ValueError: If no bbox is provided and auto-derivation does not
+                apply (non-point domain, or point domain without coords).
+        """
+        bbox_str = self._get_config_value(
+            lambda: self.config.domain.bounding_box_coords, default=None
+        )
+        if bbox_str:
+            return bbox_str
+
+        definition_method = str(self._get_config_value(
+            lambda: self.config.domain.definition_method, default=''
+        )).lower()
+        pour_point = self._get_config_value(
+            lambda: self.config.domain.pour_point_coords, default=None
+        )
+
+        if definition_method == 'point' and pour_point:
+            try:
+                lat_str, lon_str = str(pour_point).split('/')
+                lat, lon = float(lat_str), float(lon_str)
+            except (ValueError, AttributeError) as exc:
+                raise ValueError(
+                    f"Cannot auto-derive BOUNDING_BOX_COORDS for {purpose}: "
+                    f"POUR_POINT_COORDS='{pour_point}' is not in 'lat/lon' format."
+                ) from exc
+
+            buffer = self._get_config_value(
+                lambda: self.config.domain.delineation.point_buffer_distance,
+                default=None,
+                dict_key='POINT_BUFFER_DISTANCE',
+            )
+            if buffer is None:
+                buffer = 0.01  # ~1 km at the equator
+            buffer = float(buffer)
+
+            derived = f"{lat + buffer}/{lon - buffer}/{lat - buffer}/{lon + buffer}"
+            if not self._auto_bbox_logged:
+                self.logger.info(
+                    f"BOUNDING_BOX_COORDS not set; auto-derived {derived} "
+                    f"from POUR_POINT_COORDS={pour_point} with buffer={buffer}° "
+                    f"(point domain). Override by setting BOUNDING_BOX_COORDS "
+                    f"explicitly or POINT_BUFFER_DISTANCE."
+                )
+                self._auto_bbox_logged = True
+            return derived
+
+        raise ValueError(
+            f"BOUNDING_BOX_COORDS is required for cloud-based {purpose} "
+            f"acquisition (DATA_ACCESS: CLOUD) but was not set. Add "
+            f"BOUNDING_BOX_COORDS: 'north/west/south/east' to your "
+            f"configuration file (e.g. '44.5/-87.9/44.2/-87.5'). "
+            f"For point domains, setting POUR_POINT_COORDS alone is enough — "
+            f"the bbox is auto-derived using POINT_BUFFER_DISTANCE (default 0.01°)."
+        )
 
     def _run_parallel_tasks(
         self,
@@ -314,15 +386,7 @@ class AcquisitionService(ConfigurableMixin):
         if data_access == 'CLOUD':
             self.logger.info(f"Cloud data access enabled for attributes (DEM_SOURCE: {dem_source})")
 
-            bbox_str = self._get_config_value(
-                lambda: self.config.domain.bounding_box_coords, default=None)
-            if not bbox_str:
-                raise ValueError(
-                    "BOUNDING_BOX_COORDS is required for cloud-based attribute "
-                    "acquisition (DATA_ACCESS: CLOUD) but was not set. Add "
-                    "BOUNDING_BOX_COORDS: 'north/west/south/east' to your "
-                    "configuration file (e.g. '44.5/-87.9/44.2/-87.5')."
-                )
+            bbox_str = self._resolve_bounding_box("attributes")
 
             try:
                 downloader = CloudForcingDownloader(self.config, self.logger)
@@ -351,7 +415,7 @@ class AcquisitionService(ConfigurableMixin):
                             return downloader.download_alos_dem()
                         elif dem_source == 'merit_hydro':
                             gr = gistoolRunner(self.config, self.logger)
-                            bbox = self._get_config_value(lambda: self.config.domain.bounding_box_coords).split('/')
+                            bbox = bbox_str.split('/')
                             latlims = f"{bbox[0]},{bbox[2]}"
                             lonlims = f"{bbox[1]},{bbox[3]}"
                             self._acquire_elevation_data(gr, dem_dir, latlims, lonlims)
@@ -571,14 +635,7 @@ class AcquisitionService(ConfigurableMixin):
             if not check_cloud_access_availability(forcing_dataset, self.logger):
                 raise ValueError(f"Dataset '{forcing_dataset}' does not support DATA_ACCESS: cloud.")
 
-            if not self._get_config_value(
-                lambda: self.config.domain.bounding_box_coords, default=None):
-                raise ValueError(
-                    "BOUNDING_BOX_COORDS is required for cloud-based forcing "
-                    "acquisition (DATA_ACCESS: CLOUD) but was not set. Add "
-                    "BOUNDING_BOX_COORDS: 'north/west/south/east' to your "
-                    "configuration file."
-                )
+            bbox = self._resolve_bounding_box("forcing")
 
             raw_data_dir = resolve_data_subdir(self.project_dir, 'forcing') / 'raw_data'
             raw_data_dir.mkdir(parents=True, exist_ok=True)
@@ -592,8 +649,8 @@ class AcquisitionService(ConfigurableMixin):
                 enable_checksum=self._get_config_value(lambda: self.config.data.forcing_cache_checksum, default=True, dict_key='FORCING_CACHE_CHECKSUM')
             )
 
-            # Generate cache key
-            bbox = self._get_config_value(lambda: self.config.domain.bounding_box_coords)
+            # Generate cache key (reuse the bbox resolved above so a point
+            # domain's auto-derived bbox ends up in the cache key too).
             time_start = self._get_config_value(lambda: self.config.domain.time_start)
             time_end = self._get_config_value(lambda: self.config.domain.time_end)
 
@@ -755,16 +812,36 @@ class AcquisitionService(ConfigurableMixin):
         elif additional_obs is None:
             additional_obs = []
 
+        # Track which observations are PRIMARY (configured via
+        # streamflow_data_provider — failure here breaks downstream
+        # calibration / benchmarking and must NOT be silently swallowed
+        # as a warning). All other observations remain best-effort.
+        # Co-author NB/NV reported a calibration crash where the workflow
+        # said the obs step was complete (exit 0) but no streamflow file
+        # had been written — root cause: WSC handler failed silently
+        # because HYDAT was not installed.
+        primary_obs: set = set()
+
         # Auto-detect observation types based on config flags (matching process_observed_data logic)
         streamflow_provider = (self._get_config_value(lambda: self.config.data.streamflow_data_provider) or '').upper()
         if streamflow_provider == 'USGS' and 'USGS_STREAMFLOW' not in additional_obs:
             additional_obs.append('USGS_STREAMFLOW')
+            primary_obs.add('USGS_STREAMFLOW')
         elif streamflow_provider == 'WSC' and 'WSC_STREAMFLOW' not in additional_obs:
             additional_obs.append('WSC_STREAMFLOW')
+            primary_obs.add('WSC_STREAMFLOW')
         elif streamflow_provider == 'SMHI' and 'SMHI_STREAMFLOW' not in additional_obs:
             additional_obs.append('SMHI_STREAMFLOW')
+            primary_obs.add('SMHI_STREAMFLOW')
         elif streamflow_provider == 'LAMAH_ICE' and 'LAMAH_ICE_STREAMFLOW' not in additional_obs:
             additional_obs.append('LAMAH_ICE_STREAMFLOW')
+            primary_obs.add('LAMAH_ICE_STREAMFLOW')
+        elif streamflow_provider:
+            # Provider was configured but doesn't match a known shortcut —
+            # mark whatever already in additional_obs that matches as primary.
+            for obs in additional_obs:
+                if 'STREAMFLOW' in str(obs).upper():
+                    primary_obs.add(str(obs).upper())
 
         # Check for USGS Groundwater download
         download_usgs_gw = self._get_config_value(lambda: self.config.evaluation.usgs_gw.download, default=False, dict_key='DOWNLOAD_USGS_GW')
@@ -829,9 +906,44 @@ class AcquisitionService(ConfigurableMixin):
 
         if tasks:
             results = self._run_parallel_tasks(tasks, desc="Acquiring observations")
+            primary_failures: List[Tuple[str, Exception]] = []
             for name, result in results.items():
                 if isinstance(result, Exception):
-                    self.logger.warning(f"Failed to acquire additional observation {name}: {result}")
+                    if name.upper() in primary_obs:
+                        # Primary streamflow provider failure — never silent.
+                        primary_failures.append((name, result))
+                        self.logger.error(
+                            f"Failed to acquire primary streamflow observation "
+                            f"{name}: {result}"
+                        )
+                    else:
+                        # Optional observation (GRACE, SNOTEL, etc.) — best-effort.
+                        self.logger.warning(
+                            f"Failed to acquire optional observation {name}: {result}"
+                        )
+
+            if primary_failures:
+                # Surface a single actionable error covering all failed primaries.
+                # Downstream calibration / benchmarking depend on this file; if
+                # it's missing they'll crash later with confusing 'No such file'
+                # errors. Fail here instead so the user knows where to look.
+                names = ', '.join(name for name, _ in primary_failures)
+                first_msg = str(primary_failures[0][1])
+                hint = ""
+                if 'HYDAT' in first_msg or 'WSC' in names.upper():
+                    hint = (
+                        " Hint: WSC streamflow requires the HYDAT SQLite "
+                        "database (Hydat.sqlite3) to be installed and "
+                        "DATATOOL_DATASET_ROOT pointed at its parent. "
+                        "See https://collaboration.cmc.ec.gc.ca/cmc/hydrometrics/www/"
+                    )
+                raise ValueError(
+                    f"Primary streamflow observation acquisition failed for: "
+                    f"{names}. Downstream calibration / benchmarking / decision "
+                    f"analyses will fail without this data, so the workflow stops "
+                    f"here rather than producing silent zeros.{hint} "
+                    f"Original error: {first_msg}"
+                )
 
     def acquire_em_earth_forcings(self):
         """Acquire EM-Earth precipitation and temperature data."""

@@ -784,6 +784,8 @@ def test_chirps_acquisition_and_processing(mock_config, tmp_path):
 
 
 @pytest.mark.integration
+@pytest.mark.slow
+@pytest.mark.timeout(900)  # CHIRPS downloads full annual files (~1-6 GB) before subsetting
 def test_chirps_live_acquisition(tmp_path):
     """
     Live E2E test for CHIRPS precipitation data acquisition.

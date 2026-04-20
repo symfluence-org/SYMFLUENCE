@@ -1,0 +1,42 @@
+# Experiment 5: Benchmarking with HYPE (Section 3.4)
+# Calibrates HYPE on Bow at Banff and evaluates against persistence /
+# climatology / long-term mean baselines. Mirrors config_bow_benchmark.yaml
+# (SUMMA) so users can reproduce Figure 8's HYPE point.
+
+system:
+  data_dir: ./data/
+  code_dir: ./
+domain:
+  name: Bow_at_Banff_lumped_era5
+  experiment_id: benchmark_hype
+  time_start: 2002-01-01 01:00
+  time_end: 2009-12-31 23:00
+  calibration_period: 2004-01-01, 2007-12-31
+  evaluation_period: 2008-01-01, 2009-12-31
+  spinup_period: 2002-01-01, 2003-12-31
+  pour_point_coords: 51.1722/-115.5717
+  bounding_box_coords: 51.76/-116.55/50.95/-115.5
+  definition_method: lumped
+  delineation:
+    routing: lumped
+  discretization: GRUs
+data:
+  streamflow_data_provider: WSC
+forcing:
+  dataset: ERA5
+model:
+  hydrological_model: HYPE
+  routing_model: none
+  hype:
+    params_to_calibrate: ttmp,cmlt,cevp,lp,epotdist,rrcs1,rrcs2,rcgrw,rivvel,damp,wcwp,wcfc,wcep,srrcs
+optimization:
+  methods:
+  - iteration
+  algorithm: DDS
+  iterations: 1000
+  metric: KGE
+evaluation:
+  streamflow:
+    station_id: 05BB001
+  analyses:
+  - benchmarking

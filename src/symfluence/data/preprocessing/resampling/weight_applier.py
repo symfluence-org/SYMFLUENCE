@@ -237,7 +237,22 @@ class RemappingWeightApplier(ConfigMixin):
         return esmr
 
     def _detect_file_variables(self, file: Path, worker_str: str) -> list:
-        """Detect forcing variables in the file (CFIF or legacy SUMMA names)."""
+        """Detect forcing variables in the file.
+
+        Tries, in order:
+          1. CFIF standard names (e.g. 'air_temperature') — the post-merge
+             expectation.
+          2. Legacy SUMMA-style names (e.g. 'airtemp') — older intermediate
+             format kept for back-compat.
+          3. Raw dataset names from the active dataset handler's rename
+             map (e.g. 'tas' for NEX-GDDP, 'pr' for RDRS-projection,
+             'RDRS_v2.1_P_TT_1.5m' for native RDRS). When matches are
+             found here it means the per-handler ``process_dataset`` step
+             was bypassed; we materialise a renamed copy in-place so
+             EASYMORE produces a CFIF-named output and SUMMA's forcing
+             processor can read it. This is the defensive guard described
+             in feedback item 3.1.
+        """
         try:
             with xr.open_dataset(file, engine="h5netcdf") as ds:
                 # CFIF standard variable names (primary)
@@ -258,9 +273,19 @@ class RemappingWeightApplier(ConfigMixin):
                     available_vars = [v for v in all_legacy_vars if v in ds]
 
                 if not available_vars:
+                    # Defensive guard: try the dataset handler's rename map.
+                    # If raw dataset names are present, the per-handler
+                    # process_dataset step was bypassed somewhere upstream;
+                    # materialise a CFIF-renamed copy in-place so EASYMORE
+                    # gets standardised names.
+                    handler_vars = self._maybe_rename_with_handler(file, ds, worker_str)
+                    if handler_vars:
+                        return handler_vars
+
+                if not available_vars:
                     self.logger.error(
                         f"{worker_str}No forcing variables found in {file.name} "
-                        f"(checked CFIF and legacy SUMMA names). "
+                        f"(checked CFIF, legacy SUMMA, and dataset-handler rename map). "
                         f"Available variables: {list(ds.variables.keys())}"
                     )
                     return []
@@ -279,6 +304,72 @@ class RemappingWeightApplier(ConfigMixin):
             return []
         finally:
             gc.collect()
+
+    def _maybe_rename_with_handler(
+        self,
+        file: Path,
+        ds: xr.Dataset,
+        worker_str: str,
+    ) -> list:
+        """Apply dataset-handler standardisation in-place if raw names are present.
+
+        Returns the list of CFIF variable names now in the file, or [] if
+        nothing matched. Reopens the file because xr does not allow
+        in-place rewrite of the dataset that's currently open.
+        """
+        if self.dataset_handler is None:
+            return []
+        # Discover the rename map for this handler. Older handlers expose
+        # ``get_variable_mapping``; newer ones use ``process_dataset``.
+        rename_map = {}
+        if hasattr(self.dataset_handler, 'get_variable_mapping'):
+            try:
+                full_map = self.dataset_handler.get_variable_mapping() or {}
+                rename_map = {k: v for k, v in full_map.items() if k in ds.variables}
+            except Exception as e:  # noqa: BLE001 — defensive guard, don't kill remap
+                self.logger.debug(f"{worker_str}get_variable_mapping failed: {e}")
+
+        if not rename_map:
+            return []
+
+        self.logger.warning(
+            f"{worker_str}{file.name} has raw dataset variables "
+            f"({sorted(rename_map.keys())}); the per-handler standardisation "
+            f"step appears to have been skipped. Materialising a CFIF-renamed "
+            f"copy in-place so remapping can proceed. "
+            f"This indicates an upstream wiring gap — see feedback item 3.1."
+        )
+        try:
+            ds_load = xr.open_dataset(file, engine="h5netcdf").load()
+            try:
+                ds_proc = self.dataset_handler.process_dataset(ds_load)
+                tmp = file.with_suffix(file.suffix + '.cfif_tmp')
+                ds_proc.to_netcdf(tmp)
+            finally:
+                ds_load.close()
+            tmp.replace(file)
+        except Exception as e:  # noqa: BLE001 — defensive guard, don't kill remap
+            self.logger.error(
+                f"{worker_str}Failed to materialise CFIF-renamed copy of "
+                f"{file.name}: {e}"
+            )
+            return []
+
+        # Re-detect on the rewritten file
+        with xr.open_dataset(file, engine="h5netcdf") as ds2:
+            cfif_now = [
+                v for v in (
+                    'surface_air_pressure', 'surface_downwelling_longwave_flux',
+                    'surface_downwelling_shortwave_flux', 'precipitation_flux',
+                    'air_temperature', 'specific_humidity', 'wind_speed',
+                    'relative_humidity', 'eastward_wind', 'northward_wind',
+                )
+                if v in ds2
+            ]
+        self.logger.info(
+            f"{worker_str}{file.name} now contains CFIF variables: {cfif_now}"
+        )
+        return cfif_now
 
     def _move_output_file(
         self,

@@ -36,6 +36,31 @@ class WSCStreamflowHandler(BaseObservationHandler):
         data_access = self._get_config_value(lambda: self.config.domain.data_access, default='local', dict_key='DATA_ACCESS')
         download_enabled = self._get_config_value(lambda: self.config.evaluation.streamflow.download_wsc, default=False, dict_key='DOWNLOAD_WSC_DATA')
         station_id = self._get_config_value(lambda: self.config.evaluation.streamflow.station_id, dict_key='STATION_ID')
+
+        # If this handler is being invoked at all, the workflow has
+        # already decided WSC streamflow is needed (either via
+        # ``streamflow_data_provider: WSC`` or an explicit entry in
+        # ``additional_observations``). Treat ``download_wsc`` as opt-OUT,
+        # not opt-in: the user should not need to set two flags to get
+        # the obvious behaviour. This also prevents a silent fall-through
+        # to the HYDAT path on machines without the HYDAT SQLite,
+        # which was reported by NB/NV.
+        streamflow_provider = (
+            self._get_config_value(
+                lambda: self.config.data.streamflow_data_provider,
+                default='',
+                dict_key='STREAMFLOW_DATA_PROVIDER',
+            ) or ''
+        )
+        if not download_enabled and str(streamflow_provider).upper() == 'WSC':
+            self.logger.info(
+                "streamflow_data_provider=WSC implies download_wsc=True; "
+                "enabling cloud GeoMet acquisition by default. "
+                "Set DOWNLOAD_WSC_DATA: false to opt out (e.g. when using "
+                "pre-staged HYDAT data)."
+            )
+            download_enabled = True
+
         self.logger.debug(f"WSC acquire - data_access={data_access}, download_enabled={download_enabled}, station_id={station_id}")
 
         if not station_id:
@@ -46,8 +71,12 @@ class WSCStreamflowHandler(BaseObservationHandler):
         raw_dir.mkdir(parents=True, exist_ok=True)
         raw_file = raw_dir / f"wsc_{station_id}_raw.csv"
 
-        # Cloud pathway: Use WSC GeoMet API
-        if data_access == 'cloud' and download_enabled:
+        # Cloud pathway: Use WSC GeoMet API. Default to GeoMet whenever
+        # download is enabled, regardless of data_access — GeoMet is the
+        # canonical public API and is reachable from any environment.
+        # Only fall through to HYDAT when the user explicitly disabled
+        # download (treating WSC as a local-data path).
+        if download_enabled:
             self.logger.debug("Calling _download_from_geomet")
             return self._download_from_geomet(station_id, raw_file)
 

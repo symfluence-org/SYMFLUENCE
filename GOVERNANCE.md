@@ -19,7 +19,7 @@ optimization algorithms interoperate through shared interface definitions.
 This governance document exists to protect that coherence as the contributor
 base grows. Architecture can enable coordination. It cannot sustain it. The
 norms established here are the social complement to the technical patterns
-described in the SYFMLUENCE papers (Eythorsson et al., 2026a,b,c).
+described in the SYMFLUENCE papers (Eythorsson et al., 2026a,b,c).
 
 ---
 
@@ -334,6 +334,7 @@ series:
 
 ## Document History
 
-| Version | Date       | Author           | Summary                    |
-|---------|------------|------------------|----------------------------|
-| 1.0     | 2026-03-13 | Darri Eythorsson | Initial governance document |
+| Version | Date       | Author           | Summary                                                                 |
+|---------|------------|------------------|-------------------------------------------------------------------------|
+| 1.0     | 2026-03-13 | Darri Eythorsson | Initial governance document                                             |
+| 1.1     | 2026-04-20 | Darri Eythorsson | Cross-reference [LICENSING.md](LICENSING.md) (initial licensing policy) |

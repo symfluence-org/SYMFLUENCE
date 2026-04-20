@@ -188,6 +188,8 @@ class DataManager(BaseManager):
                 additional_obs.append('smhi_streamflow')
             elif streamflow_provider == 'LAMAH_ICE' and 'lamah_ice_streamflow' not in [o.lower() for o in additional_obs]:
                 additional_obs.append('lamah_ice_streamflow')
+            elif streamflow_provider == 'DGA' and 'dga_streamflow' not in [o.lower() for o in additional_obs]:
+                additional_obs.append('dga_streamflow')
 
             # Check for USGS Groundwater download and ensure it's in additional_obs
             download_usgs_gw = self._get_config_value(
@@ -246,7 +248,7 @@ class DataManager(BaseManager):
 
             # Only run traditional if NOT using the formalized handlers
             # Note: Registry uses lowercase keys, so we check with case-insensitive comparison
-            formalized_providers = ['usgs_streamflow', 'wsc_streamflow', 'smhi_streamflow', 'lamah_ice_streamflow']
+            formalized_providers = ['usgs_streamflow', 'wsc_streamflow', 'smhi_streamflow', 'lamah_ice_streamflow', 'dga_streamflow']
             additional_obs_lower = [o.lower() for o in additional_obs]
             is_formalized = any(obs in additional_obs_lower for obs in formalized_providers)
 

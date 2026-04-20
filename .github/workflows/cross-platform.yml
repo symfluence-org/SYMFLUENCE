@@ -81,8 +81,6 @@ jobs:
 
       - name: Install Python dependencies
         shell: bash
-        env:
-          RPY2_CFFI_MODE: ABI  # Skip R requirement for rpy2
         run: |
           if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
             source "$CONDA/etc/profile.d/conda.sh"
@@ -175,7 +173,6 @@ jobs:
       SYMFLUENCE_CODE: ${{ github.workspace }}
       SYMFLUENCE_DATA: ${{ github.workspace }}/symfluence_data
       SYMFLUENCE_SKIP_PIXI: "1"
-      RPY2_CFFI_MODE: ABI  # Skip R requirement for rpy2
 
     steps:
       - name: Free up disk space (Linux)
@@ -340,8 +337,6 @@ jobs:
 
       - name: Install Python dependencies
         shell: bash
-        env:
-          RPY2_CFFI_MODE: ABI
         run: |
           if [[ "${{ runner.os }}" == "Windows" ]]; then
             source "$CONDA/etc/profile.d/conda.sh"
@@ -487,7 +482,6 @@ jobs:
       SYMFLUENCE_CODE: ${{ github.workspace }}
       SYMFLUENCE_DATA: ${{ github.workspace }}/symfluence_data
       SYMFLUENCE_SKIP_PIXI: "1"
-      RPY2_CFFI_MODE: ABI  # Skip R requirement for rpy2
 
     steps:
       - name: Free up disk space (Linux)
@@ -660,8 +654,6 @@ jobs:
 
       - name: Install Python dependencies
         shell: bash
-        env:
-          RPY2_CFFI_MODE: ABI
         run: |
           if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
             source "$CONDA/etc/profile.d/conda.sh"

@@ -240,6 +240,25 @@ rm -f disable_mpi.pl
 echo "MPI disabling complete"
 
 # =====================================================
+# STEP 2a: Fix uninitialized NUMPSET in run_def mode
+# =====================================================
+echo ""
+echo "=== Step 2a: Patching NUMPSET initialization ==="
+
+# fuse_driver.f90 never sets NUMPSET in the run_def branch, so it
+# defaults to 0.  NF_DEF_DIM(..., 0, ...) returns "Invalid dimension
+# size" and FUSE silently produces no output.  All other branches
+# (run_pre, calib_sce, run_best) set NUMPSET correctly.
+if [ -f "$FUSE_DRIVER_FILE" ] && ! grep -q "NUMPSET=1.*SYMFLUENCE patch" "$FUSE_DRIVER_FILE"; then
+    # Insert NUMPSET=1 after the run_def IF statement.  The upstream source
+    # never initializes NUMPSET in this branch (all other branches do),
+    # causing NF_DEF_DIM to fail with "Invalid dimension size" (size=0).
+    sed -i.bak "/fuse_mode == 'run_def'.*default parameter values/a\\
+\\  NUMPSET=1  ! only the one default parameter set is run (SYMFLUENCE patch)" "$FUSE_DRIVER_FILE" && rm -f "${FUSE_DRIVER_FILE}.bak"
+    echo "  Patched NUMPSET=1 in run_def branch of fuse_driver.f90"
+fi
+
+# =====================================================
 # STEP 2b: Fix external function declarations in _diff modules
 # =====================================================
 echo ""

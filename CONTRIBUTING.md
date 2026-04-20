@@ -17,7 +17,7 @@ We welcome all contributions — from bug fixes and documentation improvements t
    ```bash
    ./scripts/symfluence-bootstrap --install
    ```
-   This will create and manage a `.venv` automatically.
+   This will create and manage a `venv/` directory automatically.
    If you prefer manual setup:
    ```bash
    python -m venv venv

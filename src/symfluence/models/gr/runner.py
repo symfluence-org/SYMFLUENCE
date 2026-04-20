@@ -102,8 +102,11 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
         # GR-specific: Check rpy2 dependency BEFORE calling super()
         if not HAS_RPY2:
             raise ImportError(
-                "GR models require R and rpy2. "
-                "Please install R and rpy2, or use a different model. "
+                "GR models require R and rpy2, but rpy2 could not be imported. "
+                "The bootstrap installer attempts rpy2 by default; if it failed "
+                "(e.g. R not on the system), other models continue to work but "
+                "GR is unavailable until you install R and rpy2 manually: "
+                "`pip install rpy2` (or `pip install -e \".[r]\"`). "
                 "See https://rpy2.github.io/doc/latest/html/overview.html#installation"
             )
 
