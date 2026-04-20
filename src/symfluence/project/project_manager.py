@@ -69,10 +69,31 @@ class ProjectManager(ConfigurableMixin):
         """
         Set up the project directory structure.
 
-        Creates the main project directory and all required subdirectories based on
-        a predefined structure. This structure includes directories for:
-        - Shapefiles (pour point, catchment, river network, river basins)
-        - Attribute data
+        Creates the main project directory and all required subdirectories.
+        Project layout (canonical, post-2026):
+
+            {project_dir}/
+              shapefiles/{pour_point, catchment, river_network, river_basins}/
+              data/
+                attributes/      <- DEM, soil, landclass, etc.
+                forcing/         <- raw + merged + basin-averaged forcing
+                observations/    <- streamflow, snotel, etc.
+                model_ready/     <- model-agnostic store
+
+        The ``data/`` prefix is created up-front so that
+        ``resolve_data_subdir`` consistently resolves to the new layout
+        for fresh projects. Without this, ``setup_project`` used to
+        create the legacy ``attributes/`` directory directly, which made
+        ``resolve_data_subdir`` pick the legacy path on subsequent
+        reads. Some downstream callers (e.g. TauDEM in
+        ``define_domain``) construct the path from string templates
+        anchored at ``data/attributes/...`` and then fail to find the
+        DEM that was written into the legacy ``attributes/...`` tree.
+
+        Legacy projects with a pre-existing ``attributes/`` directory
+        continue to work via the backward-compat branch in
+        ``resolve_data_subdir`` — this change only affects fresh
+        ``setup_project`` runs.
 
         Returns:
             Path: Path to the created project directory
@@ -85,18 +106,35 @@ class ProjectManager(ConfigurableMixin):
         # Create main project directory
         self.project_dir.mkdir(parents=True, exist_ok=True)
 
-        # Define directory structure
-        directories = {
-            'shapefiles': ['pour_point', 'catchment', 'river_network', 'river_basins'],
-            'attributes': []
-        }
+        # Top-level shapefile structure (unchanged — shapefiles live
+        # outside data/ by convention since they are domain-defining
+        # artefacts produced before any data acquisition).
+        shapefile_subdirs = ['pour_point', 'catchment', 'river_network', 'river_basins']
+        shapefiles_path = self.project_dir / 'shapefiles'
+        shapefiles_path.mkdir(parents=True, exist_ok=True)
+        for subdir in shapefile_subdirs:
+            (shapefiles_path / subdir).mkdir(parents=True, exist_ok=True)
 
-        # Create directory structure
-        for main_dir, subdirs in directories.items():
-            main_path = self.project_dir / main_dir
-            main_path.mkdir(parents=True, exist_ok=True)
-            for subdir in subdirs:
-                (main_path / subdir).mkdir(parents=True, exist_ok=True)
+        # Canonical data subtree. We only create ``data/{subdir}`` when
+        # no legacy ``{subdir}`` already exists at the project root.
+        # Pre-staged test fixtures and legacy domains keep working
+        # because resolve_data_subdir still finds their legacy paths.
+        # Fresh projects get the canonical layout because neither path
+        # exists yet, so we create ``data/{subdir}`` and resolve_data_subdir
+        # picks it on every read.
+        data_subdirs = ['attributes', 'forcing', 'observations', 'model_ready']
+        data_path = self.project_dir / 'data'
+        data_path.mkdir(parents=True, exist_ok=True)
+        for subdir in data_subdirs:
+            legacy_path = self.project_dir / subdir
+            if legacy_path.exists():
+                self.logger.debug(
+                    f"Legacy '{subdir}/' directory present at {legacy_path}; "
+                    f"skipping creation of data/{subdir} so resolve_data_subdir "
+                    f"keeps using the legacy path."
+                )
+                continue
+            (data_path / subdir).mkdir(parents=True, exist_ok=True)
 
         self.logger.info(f"Project directory created at: {self.project_dir}")
         return self.project_dir

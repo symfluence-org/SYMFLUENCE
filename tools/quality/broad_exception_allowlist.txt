@@ -1151,7 +1151,7 @@ src/symfluence/optimization/mixins/parallel_execution.py:698:except Exception as
 src/symfluence/optimization/mixins/parallel_execution.py:706:except Exception as e2:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/optimization/optimization_manager.py:527:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/optimization/optimizers/base_model_optimizer.py:1045:except Exception as e:  # noqa: BLE001 — must-not-raise contract
-src/symfluence/project/project_manager.py:168:except Exception as e:  # noqa: BLE001 — configuration resilience
+src/symfluence/project/project_manager.py:206:except Exception as e:  # noqa: BLE001 — configuration resilience
 src/symfluence/project/workflow_orchestrator.py:510:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/project/workflow_orchestrator.py:651:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/reporting/core/base_plotter.py:156:except Exception as e:  # noqa: BLE001 — plotting resilience
