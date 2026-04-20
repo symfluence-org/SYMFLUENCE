@@ -363,7 +363,9 @@ src/symfluence/data/preprocessing/resampling/shapefile_processor.py:269:except E
 src/symfluence/data/preprocessing/resampling/shapefile_processor.py:288:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/data/preprocessing/resampling/shapefile_processor.py:76:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/resampling/weight_applier.py:160:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/resampling/weight_applier.py:277:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/preprocessing/resampling/weight_applier.py:302:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/preprocessing/resampling/weight_applier.py:329:except Exception as e:  # noqa: BLE001 — defensive guard, don't kill remap
+src/symfluence/data/preprocessing/resampling/weight_applier.py:351:except Exception as e:  # noqa: BLE001 — defensive guard, don't kill remap
 src/symfluence/data/preprocessing/resampling/weight_generator.py:255:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/resampling/weight_generator.py:398:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/data/preprocessing/resampling/weight_generator.py:424:except Exception as e:  # noqa: BLE001 — preprocessing resilience
