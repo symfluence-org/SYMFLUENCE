@@ -112,3 +112,51 @@ def test_resolve_data_subdir_legacy_layout_still_works(tmp_path):
         "{project}/attributes/ path when it exists, so existing data "
         "is not orphaned by the canonical-layout fix."
     )
+
+
+def test_setup_project_preserves_legacy_layout(tmp_path):
+    """If a legacy ``attributes/`` (or other data subdir) already exists
+    at the project root — e.g. pre-staged test fixtures or a domain
+    downloaded from a release bundle — setup_project must NOT create
+    an empty ``data/attributes/`` next to it. Otherwise
+    resolve_data_subdir would pick the new (empty) path and downstream
+    steps would fail with 'No such file or directory'.
+
+    This protects the test_point_scale_workflow integration test
+    (and any other legacy-format domains) from regressing on PR #35.
+    """
+    cfg = _make_config(tmp_path)
+    pm = ProjectManager(cfg, logging.getLogger("test_setup_project_legacy"))
+
+    # Pre-stage a legacy-layout attributes directory with a fake DEM
+    # before calling setup_project, simulating a downloaded test domain.
+    project_dir = tmp_path / "domain_layout_test"
+    legacy_attrs = project_dir / "attributes" / "elevation" / "dem"
+    legacy_attrs.mkdir(parents=True)
+    (legacy_attrs / "domain_layout_test_elv.tif").write_bytes(b"fake")
+
+    pm.setup_project()
+
+    # The legacy attributes layout must remain the only one — no
+    # empty data/attributes/ created beside it.
+    assert (project_dir / "attributes" / "elevation" / "dem"
+            / "domain_layout_test_elv.tif").exists(), \
+        "Legacy DEM must still be reachable at the legacy path"
+    assert not (project_dir / "data" / "attributes").exists(), (
+        "setup_project must not create data/attributes/ when the "
+        "legacy attributes/ directory already exists; that would make "
+        "resolve_data_subdir pick the empty new path and orphan the "
+        "pre-staged data."
+    )
+
+    # And resolve_data_subdir must still pick the legacy path
+    resolved = resolve_data_subdir(project_dir, "attributes")
+    assert resolved == project_dir / "attributes"
+
+    # But subdirs that are NOT pre-staged (e.g. forcing) get the new
+    # canonical layout — fresh paths are still canonical when there's
+    # no legacy to defer to.
+    assert (project_dir / "data" / "forcing").is_dir(), (
+        "Subdirs without a legacy counterpart should still be created "
+        "under the canonical data/ tree."
+    )

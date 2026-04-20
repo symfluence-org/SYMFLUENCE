@@ -115,13 +115,25 @@ class ProjectManager(ConfigurableMixin):
         for subdir in shapefile_subdirs:
             (shapefiles_path / subdir).mkdir(parents=True, exist_ok=True)
 
-        # Canonical data subtree. Creating these here pins the
-        # resolve_data_subdir result to the new layout for the rest of
-        # the workflow on fresh projects.
+        # Canonical data subtree. We only create ``data/{subdir}`` when
+        # no legacy ``{subdir}`` already exists at the project root.
+        # Pre-staged test fixtures and legacy domains keep working
+        # because resolve_data_subdir still finds their legacy paths.
+        # Fresh projects get the canonical layout because neither path
+        # exists yet, so we create ``data/{subdir}`` and resolve_data_subdir
+        # picks it on every read.
         data_subdirs = ['attributes', 'forcing', 'observations', 'model_ready']
         data_path = self.project_dir / 'data'
         data_path.mkdir(parents=True, exist_ok=True)
         for subdir in data_subdirs:
+            legacy_path = self.project_dir / subdir
+            if legacy_path.exists():
+                self.logger.debug(
+                    f"Legacy '{subdir}/' directory present at {legacy_path}; "
+                    f"skipping creation of data/{subdir} so resolve_data_subdir "
+                    f"keeps using the legacy path."
+                )
+                continue
             (data_path / subdir).mkdir(parents=True, exist_ok=True)
 
         self.logger.info(f"Project directory created at: {self.project_dir}")
