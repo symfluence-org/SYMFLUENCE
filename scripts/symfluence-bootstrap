@@ -85,7 +85,11 @@ detect_2i2c_environment() {
 setup_2i2c_conda_env() {
     # Set up a conda environment for 2i2c that:
     # 1. Lives in the repo root (.conda-env) for persistence across sessions
-    # 2. Installs GDAL and rpy2 via conda (pre-built, no compilation)
+    # 2. Installs GDAL and rpy2 via conda (pre-built, no compilation).
+    #    rpy2 is included so the GR model family is available out of the
+    #    box; if conda cannot resolve rpy2, we fall back to a build that
+    #    omits it and GR remains unavailable until the user installs it
+    #    manually (other models continue to work).
     # 3. Sets system compilers to avoid broken conda gcc
 
     local env_path="${1:-.conda-env}"
@@ -105,7 +109,7 @@ setup_2i2c_conda_env() {
     if [[ ! -d "$env_path" ]]; then
         print_info "Creating conda environment with GDAL, compilers, and build tools..."
         conda create -p "$env_path" python=3.11 gdal numpy rpy2 cmake compilers openmpi netcdf-fortran m4 flex bison udunits2 expat openblas -c conda-forge -y || {
-            print_warning "Full conda env creation failed, trying minimal..."
+            print_warning "conda env creation including rpy2 failed; retrying without rpy2 (GR will be unavailable until rpy2 is installed manually)..."
             conda create -p "$env_path" python=3.11 gdal numpy cmake compilers openmpi netcdf-fortran m4 flex bison udunits2 expat openblas -c conda-forge -y || {
                 print_error "Failed to create conda environment"
                 return 1
@@ -900,36 +904,49 @@ install_python_requirements() {
         fi
     }
 
+    # Helper: best-effort rpy2 install so the GR model family is available
+    # out of the box on systems with R + a working build environment.
+    # rpy2 install failure is intentionally non-fatal — GR is the only
+    # model that needs R, and an unavailable GR is acceptable while the
+    # rest of SYMFLUENCE works. The deferred-import in models/gr/runner.py
+    # raises a clear ImportError when GR is actually requested without rpy2.
+    _install_rpy2_best_effort() {
+        print_info "Attempting rpy2 install for GR support (RPY2_CFFI_MODE=${RPY2_CFFI_MODE:-API})..."
+        if ! python -m pip install rpy2 $pip_flags; then
+            print_warning "rpy2 install failed in API mode; retrying in ABI mode (no R required at install time)..."
+            RPY2_CFFI_MODE=ABI python -m pip install rpy2 $pip_flags || \
+                print_warning "rpy2 install failed; GR models will be unavailable until rpy2 is installed manually (other models continue to work)"
+        fi
+    }
+
     if python -m pip install -r "$tmp" $pip_flags; then
         rm -f "$tmp"
         _install_torch
         _install_netcdf_from_source
         _install_mpi4py
+        _install_rpy2_best_effort
         [[ "$gdal_filtered" == "true" ]] && install_gdal_python || true
-        if [[ "$rpy2_filtered" == "true" ]]; then
-            print_info "Attempting rpy2 install (RPY2_CFFI_MODE=$RPY2_CFFI_MODE)..."
-            python -m pip install rpy2 $pip_flags || print_warning "rpy2 install failed (continuing)"
-        fi
         command -v gdal-config >/dev/null 2>&1 && install_gdal_python || true
         print_success "Core dependencies installed"
         return 0
     fi
 
-    # Retry with ABI mode
-    print_warning "Install failed with RPY2_CFFI_MODE=$RPY2_CFFI_MODE; retrying with ABI..."
-    export RPY2_CFFI_MODE=ABI
+    # Generic retry — pip can fail for transient reasons (network, mirror,
+    # SSL). Frame the retry honestly rather than blaming RPY2_CFFI_MODE,
+    # which only matters when actually installing rpy2 (a separate step
+    # below). This message used to read "Install failed with
+    # RPY2_CFFI_MODE=...", which made every transient pip failure look
+    # like an R/rpy2 problem.
+    print_warning "pip install failed; retrying once before giving up..."
     if python -m pip install -r "$tmp" $pip_flags; then
         rm -f "$tmp"
         _install_torch
         _install_netcdf_from_source
         _install_mpi4py
+        _install_rpy2_best_effort
         [[ "$gdal_filtered" == "true" ]] && install_gdal_python || true
-        if [[ "$rpy2_filtered" == "true" ]]; then
-            print_info "Attempting rpy2 install in ABI mode..."
-            python -m pip install rpy2 $pip_flags || print_warning "rpy2 install failed (continuing)"
-        fi
         command -v gdal-config >/dev/null 2>&1 && install_gdal_python || true
-        print_success "Dependencies installed in ABI mode"
+        print_success "Dependencies installed (after retry)"
         return 0
     fi
 
@@ -1545,7 +1562,13 @@ NCEOF
         # Always use python -m pip to ensure correct Python version is used
         $python_cmd -m pip install --upgrade pip || print_warning "pip upgrade failed"
 
-        setup_r_environment || print_warning "R setup had issues, continuing..."
+        # R/rpy2 setup is best-effort — it makes GR models work out of the
+        # box on systems with R installed. If R is not present, this step
+        # logs a warning and continues; SUMMA, FUSE, HBV, HYPE, mizuRoute,
+        # NGEN, etc. do not need R, so the rest of the install proceeds.
+        # GR will fail at instantiation time with a clear ImportError until
+        # the user installs R + rpy2.
+        setup_r_environment || print_warning "R setup had issues; GR will be unavailable until R is installed (other models continue to work)"
         setup_netcdf_environment || true
 
         # Generate requirements.txt from pyproject.toml (source of truth)
@@ -1611,8 +1634,12 @@ else:
                 print_error "Failed to install minimal dependencies"; exit 1;
             }
             if [[ "$IS_2I2C_ENVIRONMENT" != "true" ]]; then
-                print_info "Attempting to install rpy2 (optional)..."
-                $python_cmd -m pip install rpy2 || print_warning "rpy2 installation failed (continuing)"
+                # Best-effort rpy2 install so the GR model family works out of
+                # the box on systems with R installed. Failure is non-fatal —
+                # only GR needs R, and the deferred-import in gr/runner.py
+                # raises a clear ImportError if GR is actually requested.
+                print_info "Attempting rpy2 install for GR support (optional)..."
+                $python_cmd -m pip install rpy2 || print_warning "rpy2 installation failed; GR will be unavailable (other models continue to work)"
                 command -v gdal-config >/dev/null 2>&1 && install_gdal_python || true
             fi
         fi
