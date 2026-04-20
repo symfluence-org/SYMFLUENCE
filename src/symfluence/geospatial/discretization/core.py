@@ -244,6 +244,32 @@ class DomainDiscretizer(PathResolverMixin):
                 dict_key='CATCHMENT_SHP_NAME'
             )
             if catchment_name != "default":
+                # Non-default name means the user is bringing their own HRU
+                # shapefile — we skip discretization and just sort it. Fail
+                # early with an actionable message if that file doesn't
+                # actually exist, rather than letting sort_catchment_shape()
+                # raise a bare FileNotFoundError from deep inside geopandas.
+                catchment_path_cfg = self._get_config_value(
+                    lambda: self.config.paths.catchment_path,
+                    default='default',
+                    dict_key='CATCHMENT_PATH'
+                )
+                if catchment_path_cfg == "default":
+                    catchment_subpath = self._get_catchment_subpath(catchment_name)
+                    expected_path = self.project_dir / catchment_subpath / catchment_name
+                else:
+                    expected_path = Path(catchment_path_cfg) / catchment_name
+
+                if not expected_path.exists():
+                    raise FileNotFoundError(
+                        f"CATCHMENT_SHP_NAME='{catchment_name}' is set, so SYMFLUENCE "
+                        f"expects a user-provided HRU shapefile at:\n  {expected_path}\n"
+                        f"but that file does not exist. Either:\n"
+                        f"  (a) set CATCHMENT_SHP_NAME: default so the discretization "
+                        f"step generates it, or\n"
+                        f"  (b) place your custom HRU shapefile at the path above."
+                    )
+
                 self.logger.debug(f"Using provided catchment shapefile: {catchment_name}")
 
                 # Just sort the existing shapefile
