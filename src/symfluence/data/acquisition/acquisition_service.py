@@ -231,6 +231,78 @@ class AcquisitionService(ConfigurableMixin):
         self.domain_name = self._get_config_value(lambda: self.config.domain.name)
         self.project_dir = self.data_dir / f"domain_{self.domain_name}"
         self.variable_handler = VariableHandler(self.config, self.logger, 'ERA5', 'SUMMA')
+        self._auto_bbox_logged = False
+
+    def _resolve_bounding_box(self, purpose: str) -> str:
+        """Resolve BOUNDING_BOX_COORDS with auto-derivation for point domains.
+
+        If the user set ``BOUNDING_BOX_COORDS`` explicitly, that value wins.
+        Otherwise, for point domains (``DOMAIN_DEFINITION_METHOD: point``) with
+        ``POUR_POINT_COORDS`` set, a small square bbox is derived from the
+        point using ``POINT_BUFFER_DISTANCE`` (defaults to 0.01°, ~1 km).
+
+        Args:
+            purpose: Short label ("attributes" or "forcing") used in error
+                and log messages so users know which call site failed.
+
+        Returns:
+            The resolved bbox string in "north/west/south/east" order.
+
+        Raises:
+            ValueError: If no bbox is provided and auto-derivation does not
+                apply (non-point domain, or point domain without coords).
+        """
+        bbox_str = self._get_config_value(
+            lambda: self.config.domain.bounding_box_coords, default=None
+        )
+        if bbox_str:
+            return bbox_str
+
+        definition_method = str(self._get_config_value(
+            lambda: self.config.domain.definition_method, default=''
+        )).lower()
+        pour_point = self._get_config_value(
+            lambda: self.config.domain.pour_point_coords, default=None
+        )
+
+        if definition_method == 'point' and pour_point:
+            try:
+                lat_str, lon_str = str(pour_point).split('/')
+                lat, lon = float(lat_str), float(lon_str)
+            except (ValueError, AttributeError) as exc:
+                raise ValueError(
+                    f"Cannot auto-derive BOUNDING_BOX_COORDS for {purpose}: "
+                    f"POUR_POINT_COORDS='{pour_point}' is not in 'lat/lon' format."
+                ) from exc
+
+            buffer = self._get_config_value(
+                lambda: self.config.domain.delineation.point_buffer_distance,
+                default=None,
+                dict_key='POINT_BUFFER_DISTANCE',
+            )
+            if buffer is None:
+                buffer = 0.01  # ~1 km at the equator
+            buffer = float(buffer)
+
+            derived = f"{lat + buffer}/{lon - buffer}/{lat - buffer}/{lon + buffer}"
+            if not self._auto_bbox_logged:
+                self.logger.info(
+                    f"BOUNDING_BOX_COORDS not set; auto-derived {derived} "
+                    f"from POUR_POINT_COORDS={pour_point} with buffer={buffer}° "
+                    f"(point domain). Override by setting BOUNDING_BOX_COORDS "
+                    f"explicitly or POINT_BUFFER_DISTANCE."
+                )
+                self._auto_bbox_logged = True
+            return derived
+
+        raise ValueError(
+            f"BOUNDING_BOX_COORDS is required for cloud-based {purpose} "
+            f"acquisition (DATA_ACCESS: CLOUD) but was not set. Add "
+            f"BOUNDING_BOX_COORDS: 'north/west/south/east' to your "
+            f"configuration file (e.g. '44.5/-87.9/44.2/-87.5'). "
+            f"For point domains, setting POUR_POINT_COORDS alone is enough — "
+            f"the bbox is auto-derived using POINT_BUFFER_DISTANCE (default 0.01°)."
+        )
 
     def _run_parallel_tasks(
         self,
@@ -314,15 +386,7 @@ class AcquisitionService(ConfigurableMixin):
         if data_access == 'CLOUD':
             self.logger.info(f"Cloud data access enabled for attributes (DEM_SOURCE: {dem_source})")
 
-            bbox_str = self._get_config_value(
-                lambda: self.config.domain.bounding_box_coords, default=None)
-            if not bbox_str:
-                raise ValueError(
-                    "BOUNDING_BOX_COORDS is required for cloud-based attribute "
-                    "acquisition (DATA_ACCESS: CLOUD) but was not set. Add "
-                    "BOUNDING_BOX_COORDS: 'north/west/south/east' to your "
-                    "configuration file (e.g. '44.5/-87.9/44.2/-87.5')."
-                )
+            bbox_str = self._resolve_bounding_box("attributes")
 
             try:
                 downloader = CloudForcingDownloader(self.config, self.logger)
@@ -351,7 +415,7 @@ class AcquisitionService(ConfigurableMixin):
                             return downloader.download_alos_dem()
                         elif dem_source == 'merit_hydro':
                             gr = gistoolRunner(self.config, self.logger)
-                            bbox = self._get_config_value(lambda: self.config.domain.bounding_box_coords).split('/')
+                            bbox = bbox_str.split('/')
                             latlims = f"{bbox[0]},{bbox[2]}"
                             lonlims = f"{bbox[1]},{bbox[3]}"
                             self._acquire_elevation_data(gr, dem_dir, latlims, lonlims)
@@ -571,14 +635,7 @@ class AcquisitionService(ConfigurableMixin):
             if not check_cloud_access_availability(forcing_dataset, self.logger):
                 raise ValueError(f"Dataset '{forcing_dataset}' does not support DATA_ACCESS: cloud.")
 
-            if not self._get_config_value(
-                lambda: self.config.domain.bounding_box_coords, default=None):
-                raise ValueError(
-                    "BOUNDING_BOX_COORDS is required for cloud-based forcing "
-                    "acquisition (DATA_ACCESS: CLOUD) but was not set. Add "
-                    "BOUNDING_BOX_COORDS: 'north/west/south/east' to your "
-                    "configuration file."
-                )
+            bbox = self._resolve_bounding_box("forcing")
 
             raw_data_dir = resolve_data_subdir(self.project_dir, 'forcing') / 'raw_data'
             raw_data_dir.mkdir(parents=True, exist_ok=True)
@@ -592,8 +649,8 @@ class AcquisitionService(ConfigurableMixin):
                 enable_checksum=self._get_config_value(lambda: self.config.data.forcing_cache_checksum, default=True, dict_key='FORCING_CACHE_CHECKSUM')
             )
 
-            # Generate cache key
-            bbox = self._get_config_value(lambda: self.config.domain.bounding_box_coords)
+            # Generate cache key (reuse the bbox resolved above so a point
+            # domain's auto-derived bbox ends up in the cache key too).
             time_start = self._get_config_value(lambda: self.config.domain.time_start)
             time_end = self._get_config_value(lambda: self.config.domain.time_end)
 
