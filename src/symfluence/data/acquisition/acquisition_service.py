@@ -812,16 +812,36 @@ class AcquisitionService(ConfigurableMixin):
         elif additional_obs is None:
             additional_obs = []
 
+        # Track which observations are PRIMARY (configured via
+        # streamflow_data_provider — failure here breaks downstream
+        # calibration / benchmarking and must NOT be silently swallowed
+        # as a warning). All other observations remain best-effort.
+        # Co-author NB/NV reported a calibration crash where the workflow
+        # said the obs step was complete (exit 0) but no streamflow file
+        # had been written — root cause: WSC handler failed silently
+        # because HYDAT was not installed.
+        primary_obs: set = set()
+
         # Auto-detect observation types based on config flags (matching process_observed_data logic)
         streamflow_provider = (self._get_config_value(lambda: self.config.data.streamflow_data_provider) or '').upper()
         if streamflow_provider == 'USGS' and 'USGS_STREAMFLOW' not in additional_obs:
             additional_obs.append('USGS_STREAMFLOW')
+            primary_obs.add('USGS_STREAMFLOW')
         elif streamflow_provider == 'WSC' and 'WSC_STREAMFLOW' not in additional_obs:
             additional_obs.append('WSC_STREAMFLOW')
+            primary_obs.add('WSC_STREAMFLOW')
         elif streamflow_provider == 'SMHI' and 'SMHI_STREAMFLOW' not in additional_obs:
             additional_obs.append('SMHI_STREAMFLOW')
+            primary_obs.add('SMHI_STREAMFLOW')
         elif streamflow_provider == 'LAMAH_ICE' and 'LAMAH_ICE_STREAMFLOW' not in additional_obs:
             additional_obs.append('LAMAH_ICE_STREAMFLOW')
+            primary_obs.add('LAMAH_ICE_STREAMFLOW')
+        elif streamflow_provider:
+            # Provider was configured but doesn't match a known shortcut —
+            # mark whatever already in additional_obs that matches as primary.
+            for obs in additional_obs:
+                if 'STREAMFLOW' in str(obs).upper():
+                    primary_obs.add(str(obs).upper())
 
         # Check for USGS Groundwater download
         download_usgs_gw = self._get_config_value(lambda: self.config.evaluation.usgs_gw.download, default=False, dict_key='DOWNLOAD_USGS_GW')
@@ -886,9 +906,44 @@ class AcquisitionService(ConfigurableMixin):
 
         if tasks:
             results = self._run_parallel_tasks(tasks, desc="Acquiring observations")
+            primary_failures: List[Tuple[str, Exception]] = []
             for name, result in results.items():
                 if isinstance(result, Exception):
-                    self.logger.warning(f"Failed to acquire additional observation {name}: {result}")
+                    if name.upper() in primary_obs:
+                        # Primary streamflow provider failure — never silent.
+                        primary_failures.append((name, result))
+                        self.logger.error(
+                            f"Failed to acquire primary streamflow observation "
+                            f"{name}: {result}"
+                        )
+                    else:
+                        # Optional observation (GRACE, SNOTEL, etc.) — best-effort.
+                        self.logger.warning(
+                            f"Failed to acquire optional observation {name}: {result}"
+                        )
+
+            if primary_failures:
+                # Surface a single actionable error covering all failed primaries.
+                # Downstream calibration / benchmarking depend on this file; if
+                # it's missing they'll crash later with confusing 'No such file'
+                # errors. Fail here instead so the user knows where to look.
+                names = ', '.join(name for name, _ in primary_failures)
+                first_msg = str(primary_failures[0][1])
+                hint = ""
+                if 'HYDAT' in first_msg or 'WSC' in names.upper():
+                    hint = (
+                        " Hint: WSC streamflow requires the HYDAT SQLite "
+                        "database (Hydat.sqlite3) to be installed and "
+                        "DATATOOL_DATASET_ROOT pointed at its parent. "
+                        "See https://collaboration.cmc.ec.gc.ca/cmc/hydrometrics/www/"
+                    )
+                raise ValueError(
+                    f"Primary streamflow observation acquisition failed for: "
+                    f"{names}. Downstream calibration / benchmarking / decision "
+                    f"analyses will fail without this data, so the workflow stops "
+                    f"here rather than producing silent zeros.{hint} "
+                    f"Original error: {first_msg}"
+                )
 
     def acquire_em_earth_forcings(self):
         """Acquire EM-Earth precipitation and temperature data."""
