@@ -703,12 +703,12 @@ src/symfluence/models/gr/postprocessor.py:34:except Exception:  # noqa: BLE001 -
 src/symfluence/models/gr/postprocessor.py:83:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/gr/preprocessor.py:192:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/gr/preprocessor.py:262:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/gr/runner.py:261:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/gr/runner.py:303:except Exception as e:  # noqa: BLE001 — model execution resilience
+src/symfluence/models/gr/runner.py:264:except Exception as e:  # noqa: BLE001 — model execution resilience
+src/symfluence/models/gr/runner.py:306:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/gr/runner.py:50:except Exception:  # noqa: BLE001 - Broad exception required for rpy2 import failures
-src/symfluence/models/gr/runner.py:550:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/gr/runner.py:562:except Exception as cleanup_error:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/gr/runner.py:946:except Exception as e:  # noqa: BLE001 — model execution resilience
+src/symfluence/models/gr/runner.py:553:except Exception as e:  # noqa: BLE001 — model execution resilience
+src/symfluence/models/gr/runner.py:565:except Exception as cleanup_error:  # noqa: BLE001 — model execution resilience
+src/symfluence/models/gr/runner.py:949:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/gr/visualizer.py:29:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/gsflow/calibration/optimizer.py:152:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/gsflow/calibration/parameter_manager.py:98:except Exception as e:  # noqa: BLE001 — calibration resilience
