@@ -12,7 +12,7 @@ name = "symfluence"
 description = "SYnergistic Modelling Framework for Linking and Unifying Earth-system Nexii for Computational Exploration"
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 authors = [{ name = "SYMFLUENCE Team", email = "dev@symfluence.org" }]
 dynamic = ["version"]
 
