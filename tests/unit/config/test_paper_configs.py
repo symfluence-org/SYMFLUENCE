@@ -42,3 +42,32 @@ def test_decision_ensemble_sets_random_seed():
         "reproducibility of DDS-driven decision enumeration."
     )
     assert isinstance(cfg.system.random_seed, int)
+
+
+# Benchmark configs — one per model family. PW reported that 05_benchmarking
+# only shipped a SUMMA config, making it impossible to reproduce Figure 8's
+# other model points without copy-paste. The variants below close that gap.
+BENCHMARK_CONFIGS = [
+    ("config_bow_benchmark.yaml",       "SUMMA"),
+    ("config_bow_benchmark_fuse.yaml",  "FUSE"),
+    ("config_bow_benchmark_hbv.yaml",   "HBV"),
+    ("config_bow_benchmark_gr4j.yaml",  "GR4J"),
+    ("config_bow_benchmark_hype.yaml",  "HYPE"),
+]
+
+
+@pytest.mark.parametrize("filename,expected_model", BENCHMARK_CONFIGS)
+def test_benchmark_config_loads(filename, expected_model):
+    """Each 05_benchmarking variant must parse, target the right model, and
+    enable the benchmarking analysis. Removing the analysis or swapping the
+    model field would silently invalidate the experiment."""
+    cfg = _load(CONFIGS_NESTED / "05_benchmarking" / filename)
+    assert str(cfg.model.hydrological_model).upper() == expected_model.upper(), (
+        f"{filename} must target {expected_model}; got {cfg.model.hydrological_model}"
+    )
+    analyses = cfg.evaluation.analyses or []
+    analyses_lower = [str(a).lower() for a in analyses]
+    assert "benchmarking" in analyses_lower, (
+        f"{filename} must include 'benchmarking' in evaluation.analyses; "
+        f"got {analyses}"
+    )
