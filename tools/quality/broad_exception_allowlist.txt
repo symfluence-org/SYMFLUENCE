@@ -43,8 +43,8 @@ src/symfluence/cli/commands/data_commands.py:86:except Exception as exc:  # noqa
 src/symfluence/cli/commands/fews_commands.py:152:except Exception as exc:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/cli/commands/fews_commands.py:54:except Exception as exc:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/cli/commands/fews_commands.py:87:except Exception as exc:  # noqa: BLE001 — wrap-and-raise to domain error
-src/symfluence/cli/external_tools_config.py:431:except Exception:  # noqa: BLE001
-src/symfluence/cli/external_tools_config.py:436:except Exception as exc:  # noqa: BLE001
+src/symfluence/cli/external_tools_config.py:434:except Exception:  # noqa: BLE001
+src/symfluence/cli/external_tools_config.py:439:except Exception as exc:  # noqa: BLE001
 src/symfluence/cli/preset_registry.py:163:except Exception:  # noqa: BLE001
 src/symfluence/cli/preset_registry.py:173:except Exception:  # noqa: BLE001
 src/symfluence/cli/services/tool_installer.py:1019:except Exception:  # noqa: BLE001 — top-level fallback
