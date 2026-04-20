@@ -5,6 +5,7 @@
 system:
   data_dir: ./data/
   code_dir: ./
+  random_seed: 42
 domain:
   name: Bow_at_Banff_lumped_era5
   experiment_id: fuse_decision_ensemble
