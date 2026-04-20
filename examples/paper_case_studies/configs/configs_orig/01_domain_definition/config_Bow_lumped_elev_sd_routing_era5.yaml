@@ -56,7 +56,11 @@ ASPECT_PATH: default
 
 # Shapefile settings - Catchment shape (elevation-band HRUs within lumped GRU)
 CATCHMENT_PATH: default
-CATCHMENT_SHP_NAME: Bow_at_Banff_lumped_era5_HRUs_elevation.shp  # Use elevation-band HRU shapefile
+# CATCHMENT_SHP_NAME must be 'default' here so the discretization step
+# generates the HRU shapefile. Setting it to a filename tells the code to
+# skip generation and load that filename as a BYO shapefile — which then
+# fails at step 5 because the file does not yet exist.
+CATCHMENT_SHP_NAME: default  # Auto-named {DOMAIN_NAME}_HRUs_{SUB_GRID_DISCRETIZATION}.shp
 CATCHMENT_SHP_LAT: center_lat
 CATCHMENT_SHP_LON: center_lon
 CATCHMENT_SHP_AREA: HRU_area
