@@ -97,7 +97,10 @@ def _register_taudem(common_env: str) -> None:
         'default_path_suffix': 'installs/TauDEM/bin',
         'default_exe': 'pitremove',
         'repository': 'https://github.com/dtarb/TauDEM.git',
-        'branch': None,
+        # Pin to a tagged release so that upstream HEAD drift cannot break
+        # installs. v5.4.0 (Dec 2025) is the most recent tagged release and
+        # ships the CMakeLists layout the TAUDEM_BUILD_COMMAND expects.
+        'branch': 'v5.4.0',
         'install_dir': 'TauDEM',
         'build_commands': [
             common_env,
