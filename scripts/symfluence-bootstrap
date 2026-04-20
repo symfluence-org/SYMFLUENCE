@@ -85,8 +85,10 @@ detect_2i2c_environment() {
 setup_2i2c_conda_env() {
     # Set up a conda environment for 2i2c that:
     # 1. Lives in the repo root (.conda-env) for persistence across sessions
-    # 2. Installs GDAL and rpy2 via conda (pre-built, no compilation)
-    # 3. Sets system compilers to avoid broken conda gcc
+    # 2. Installs GDAL via conda (pre-built, no compilation)
+    # 3. Optionally installs rpy2 — only when SYMFLUENCE_WITH_GR=1 is set,
+    #    since R is only required by the GR model family.
+    # 4. Sets system compilers to avoid broken conda gcc
 
     local env_path="${1:-.conda-env}"
 
@@ -98,13 +100,20 @@ setup_2i2c_conda_env() {
         return 1
     fi
 
+    # Optional GR/R support — opt-in only.
+    local _gr_pkg=""
+    if [[ "${SYMFLUENCE_WITH_GR:-}" == "1" ]]; then
+        _gr_pkg="rpy2"
+        print_info "SYMFLUENCE_WITH_GR=1 set — including rpy2 in conda env (for GR models)"
+    fi
+
     # Create conda environment with pre-built packages
     # Include cmake, compilers (for ABI compatibility), openmpi (for TauDEM),
     # netcdf-fortran (for SUMMA/mizuRoute/FUSE builds), m4/flex/bison (for rhessys),
     # and udunits2/expat (for ngen)
     if [[ ! -d "$env_path" ]]; then
         print_info "Creating conda environment with GDAL, compilers, and build tools..."
-        conda create -p "$env_path" python=3.11 gdal numpy rpy2 cmake compilers openmpi netcdf-fortran m4 flex bison udunits2 expat openblas -c conda-forge -y || {
+        conda create -p "$env_path" python=3.11 gdal numpy $_gr_pkg cmake compilers openmpi netcdf-fortran m4 flex bison udunits2 expat openblas -c conda-forge -y || {
             print_warning "Full conda env creation failed, trying minimal..."
             conda create -p "$env_path" python=3.11 gdal numpy cmake compilers openmpi netcdf-fortran m4 flex bison udunits2 expat openblas -c conda-forge -y || {
                 print_error "Failed to create conda environment"
@@ -900,36 +909,44 @@ install_python_requirements() {
         fi
     }
 
+    # Helper: opt-in rpy2 install for GR support.
+    # GR is the only model family that needs R; rpy2 is in the [r] extra.
+    # Triggered by --with-gr flag (sets SYMFLUENCE_WITH_GR=1) or env var.
+    _maybe_install_rpy2() {
+        if [[ "${SYMFLUENCE_WITH_GR:-}" != "1" ]]; then return 0; fi
+        print_info "SYMFLUENCE_WITH_GR=1 set — installing rpy2 (RPY2_CFFI_MODE=${RPY2_CFFI_MODE:-API})..."
+        if ! python -m pip install rpy2 $pip_flags; then
+            print_warning "rpy2 install failed in API mode; retrying in ABI mode (no R required)..."
+            RPY2_CFFI_MODE=ABI python -m pip install rpy2 $pip_flags || \
+                print_warning "rpy2 install failed (continuing without GR support)"
+        fi
+    }
+
     if python -m pip install -r "$tmp" $pip_flags; then
         rm -f "$tmp"
         _install_torch
         _install_netcdf_from_source
         _install_mpi4py
+        _maybe_install_rpy2
         [[ "$gdal_filtered" == "true" ]] && install_gdal_python || true
-        if [[ "$rpy2_filtered" == "true" ]]; then
-            print_info "Attempting rpy2 install (RPY2_CFFI_MODE=$RPY2_CFFI_MODE)..."
-            python -m pip install rpy2 $pip_flags || print_warning "rpy2 install failed (continuing)"
-        fi
         command -v gdal-config >/dev/null 2>&1 && install_gdal_python || true
         print_success "Core dependencies installed"
         return 0
     fi
 
-    # Retry with ABI mode
-    print_warning "Install failed with RPY2_CFFI_MODE=$RPY2_CFFI_MODE; retrying with ABI..."
-    export RPY2_CFFI_MODE=ABI
+    # Generic retry — pip can fail for transient reasons (network, mirror,
+    # SSL). Frame the retry honestly rather than blaming RPY2_CFFI_MODE,
+    # which only matters when actually installing rpy2 (opt-in via --with-gr).
+    print_warning "pip install failed; retrying once before giving up..."
     if python -m pip install -r "$tmp" $pip_flags; then
         rm -f "$tmp"
         _install_torch
         _install_netcdf_from_source
         _install_mpi4py
+        _maybe_install_rpy2
         [[ "$gdal_filtered" == "true" ]] && install_gdal_python || true
-        if [[ "$rpy2_filtered" == "true" ]]; then
-            print_info "Attempting rpy2 install in ABI mode..."
-            python -m pip install rpy2 $pip_flags || print_warning "rpy2 install failed (continuing)"
-        fi
         command -v gdal-config >/dev/null 2>&1 && install_gdal_python || true
-        print_success "Dependencies installed in ABI mode"
+        print_success "Dependencies installed (after retry)"
         return 0
     fi
 
@@ -1219,6 +1236,8 @@ Wrapper-only options:
   --wrapper-info     Show wrapper and environment information
   --wrapper-debug    Run wrapper in debug mode
   --install          Set up Python environment and install external tools
+  --with-gr          Also install R/rpy2 support (only needed for GR models;
+                     equivalent to setting SYMFLUENCE_WITH_GR=1)
 
 All other options are passed to the symfluence CLI (see 'symfluence --help').
 EOF
@@ -1375,6 +1394,7 @@ main() {
             return 0
         fi
         [[ "$arg" == "--install" ]] && run_install=true
+        [[ "$arg" == "--with-gr" ]] && export SYMFLUENCE_WITH_GR=1
     done
 
     # Set sane defaults for SYMFLUENCE_* based on working dir
@@ -1545,7 +1565,15 @@ NCEOF
         # Always use python -m pip to ensure correct Python version is used
         $python_cmd -m pip install --upgrade pip || print_warning "pip upgrade failed"
 
-        setup_r_environment || print_warning "R setup had issues, continuing..."
+        # R/rpy2 is only required for the GR model family. Skip the whole
+        # R-environment setup unless the user explicitly opted in via
+        # --with-gr (sets SYMFLUENCE_WITH_GR=1). All other models — SUMMA,
+        # FUSE, HBV, HYPE, mizuRoute, NGEN, etc. — do not need R.
+        if [[ "${SYMFLUENCE_WITH_GR:-}" == "1" ]]; then
+            setup_r_environment || print_warning "R setup had issues, continuing..."
+        else
+            print_info "Skipping R/rpy2 setup (only GR models need it). Pass --with-gr or set SYMFLUENCE_WITH_GR=1 to enable."
+        fi
         setup_netcdf_environment || true
 
         # Generate requirements.txt from pyproject.toml (source of truth)
@@ -1611,8 +1639,12 @@ else:
                 print_error "Failed to install minimal dependencies"; exit 1;
             }
             if [[ "$IS_2I2C_ENVIRONMENT" != "true" ]]; then
-                print_info "Attempting to install rpy2 (optional)..."
-                $python_cmd -m pip install rpy2 || print_warning "rpy2 installation failed (continuing)"
+                # rpy2 is opt-in (only needed for GR models). Use --with-gr
+                # or set SYMFLUENCE_WITH_GR=1 to install it here too.
+                if [[ "${SYMFLUENCE_WITH_GR:-}" == "1" ]]; then
+                    print_info "SYMFLUENCE_WITH_GR=1 set — installing rpy2 (for GR models)..."
+                    $python_cmd -m pip install rpy2 || print_warning "rpy2 installation failed (continuing without GR support)"
+                fi
                 command -v gdal-config >/dev/null 2>&1 && install_gdal_python || true
             fi
         fi

@@ -102,8 +102,11 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
         # GR-specific: Check rpy2 dependency BEFORE calling super()
         if not HAS_RPY2:
             raise ImportError(
-                "GR models require R and rpy2. "
-                "Please install R and rpy2, or use a different model. "
+                "GR models require R and rpy2, which are not installed. "
+                "rpy2 is intentionally an opt-in dependency in SYMFLUENCE — "
+                "no other model needs R. To enable GR, run "
+                "`./scripts/symfluence-bootstrap --install --with-gr` "
+                "(or `pip install -e \".[r]\"` if you manage your own env). "
                 "See https://rpy2.github.io/doc/latest/html/overview.html#installation"
             )
 
