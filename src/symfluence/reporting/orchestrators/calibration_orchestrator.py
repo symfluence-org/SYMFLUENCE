@@ -47,6 +47,27 @@ class CalibrationOrchestrator(ConfigMixin):
         self.analysis_plotter = analysis_plotter
         self.model_output_orchestrator = model_output_orchestrator
 
+    def _find_summa_final_evaluation_file(self, experiment_id: str) -> Optional[Path]:
+        """Find calibrated SUMMA daily output from the final evaluation run."""
+        algorithm = str(self._get_config_value(
+            lambda: self.config.optimization.algorithm,
+            default='optimization',
+            dict_key='ITERATIVE_OPTIMIZATION_ALGORITHM',
+        )).lower()
+        final_eval_file = (
+            self.project_dir / "optimization" / "SUMMA" /
+            f"{algorithm}_{experiment_id}" / "final_evaluation" /
+            f"{experiment_id}_day.nc"
+        )
+        if final_eval_file.exists():
+            return final_eval_file
+
+        optimization_dir = self.project_dir / "optimization" / "SUMMA"
+        candidates = list(optimization_dir.glob(f"*/final_evaluation/{experiment_id}_day.nc"))
+        if not candidates:
+            return None
+        return max(candidates, key=lambda path: path.stat().st_mtime)
+
     @skip_if_not_visualizing()
     def generate_model_comparison_overview(
         self,
@@ -201,7 +222,17 @@ class CalibrationOrchestrator(ConfigMixin):
 
             elif calibration_target in ('swe', 'snow', 'snow_water_equivalent'):
                 # SWE calibration -> SUMMA outputs with SWE observations
-                summa_plots = self.model_output_orchestrator.visualize_summa_outputs(experiment_id)
+                final_eval_file = self._find_summa_final_evaluation_file(experiment_id)
+                if final_eval_file is not None:
+                    self.logger.info(f"Loading calibrated SUMMA output from: {final_eval_file}")
+                    summa_plots = self.analysis_plotter.plot_summa_outputs(
+                        experiment_id,
+                        summa_file=final_eval_file,
+                        output_suffix="calibrated",
+                    )
+                else:
+                    self.logger.info("No calibrated SUMMA final-evaluation output found; using standard simulation output")
+                    summa_plots = self.model_output_orchestrator.visualize_summa_outputs(experiment_id)
                 if 'scalarSWE' in summa_plots:
                     plot_paths['scalarSWE'] = summa_plots['scalarSWE']
                     plot_paths['model_comparison'] = summa_plots['scalarSWE']
