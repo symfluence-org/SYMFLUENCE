@@ -313,6 +313,55 @@ else
     exit 1
 fi
 
+# =====================================================
+# STEP 4: Embed RPATH so the binary finds its libraries
+#         at runtime without DYLD_LIBRARY_PATH / LD_LIBRARY_PATH
+# =====================================================
+echo ""
+echo "=== Step 4: Embedding RPATH ==="
+
+FUSE_BIN="../bin/fuse.exe"
+
+_rpath_dirs=""
+_collect_rpath() {
+    local d="$1"
+    if [ -d "$d" ] && echo ":${_rpath_dirs}:" | grep -qv ":${d}:"; then
+        _rpath_dirs="${_rpath_dirs:+${_rpath_dirs}:}${d}"
+    fi
+}
+_collect_rpath "${HDF5_LIB_DIR}"
+_collect_rpath "${NETCDF_LIB_DIR}"
+_collect_rpath "${NETCDF_C_LIB_DIR}"
+[ -n "${NETCDF_FORTRAN:-}" ] && _collect_rpath "${NETCDF_FORTRAN}/lib"
+[ -n "${CONDA_PREFIX:-}" ] && _collect_rpath "${CONDA_PREFIX}/lib"
+if [ -n "${LD_LIBRARY_PATH:-}" ]; then
+    IFS=':' read -ra _ldp <<< "$LD_LIBRARY_PATH"
+    for _d in "${_ldp[@]}"; do
+        [ -n "$_d" ] && _collect_rpath "$_d"
+    done
+fi
+
+if [ -n "$_rpath_dirs" ] && [ -f "$FUSE_BIN" ]; then
+    case "$(uname -s)" in
+        Darwin)
+            IFS=':' read -ra _dirs <<< "$_rpath_dirs"
+            for _d in "${_dirs[@]}"; do
+                install_name_tool -add_rpath "$_d" "$FUSE_BIN" 2>/dev/null || true
+            done
+            echo "RPATH (macOS): embedded ${#_dirs[@]} paths via install_name_tool"
+            ;;
+        Linux)
+            patchelf_bin="$(command -v patchelf 2>/dev/null || true)"
+            if [ -n "$patchelf_bin" ]; then
+                "$patchelf_bin" --set-rpath "$_rpath_dirs" "$FUSE_BIN"
+                echo "RPATH (Linux): set via patchelf"
+            else
+                echo "RPATH (Linux): patchelf not found, skipping (set LD_LIBRARY_PATH at runtime)"
+            fi
+            ;;
+    esac
+fi
+
 echo "=== FUSE Build Complete ==="
             '''.strip()
         ],

@@ -113,6 +113,13 @@ class SystemDiagnostics(BaseService):
             title="System Libraries",
         )
 
+        # Geospatial Python library compatibility
+        self._console.newline()
+        self._console.info("Python geospatial libraries...")
+        self._console.rule()
+
+        geo_ok = self._check_geospatial_compatibility()
+
         # Summary
         self._console.newline()
         self._console.rule()
@@ -121,8 +128,10 @@ class SystemDiagnostics(BaseService):
         tc_status = "[green]Found[/green]" if toolchain_found else "[red]Not found[/red]"
         self._console.indent(f"Toolchain metadata: {tc_status}")
         self._console.indent(f"System libraries: {found_libs}/{total_libs} found")
+        geo_status = "[green]OK[/green]" if geo_ok else "[yellow]Issues detected[/yellow]"
+        self._console.indent(f"Geospatial libraries: {geo_status}")
 
-        if found_binaries == total_binaries and toolchain_found and found_libs >= 3:
+        if found_binaries == total_binaries and toolchain_found and found_libs >= 3 and geo_ok:
             self._console.newline()
             self._console.success("System is ready for SYMFLUENCE!")
         elif found_binaries == 0:
@@ -162,12 +171,14 @@ class SystemDiagnostics(BaseService):
                 break
 
         if not toolchain_path:
-            self._console.error("No toolchain metadata found.")
+            self._console.warning("No binaries installed yet.")
             self._console.newline()
-            self._console.info("Toolchain metadata is generated during installation.")
-            self._console.indent("Install binaries with:")
-            self._console.indent("  npm install -g symfluence")
-            self._console.indent("  symfluence binary install")
+            self._console.info("Model binaries (SUMMA, mizuRoute, FUSE, etc.) must be installed")
+            self._console.info("before 'symfluence binary info' can report on them.")
+            self._console.newline()
+            self._console.indent("Install binaries with one of:")
+            self._console.indent("  npm install -g symfluence        # pre-built binaries")
+            self._console.indent("  symfluence binary install         # build from source")
             return False
 
         return self._read_toolchain_metadata(toolchain_path)
@@ -318,8 +329,82 @@ class SystemDiagnostics(BaseService):
                 except (OSError, TypeError, ValueError, json.JSONDecodeError) as e:
                     self._console.warning(f"Error reading {toolchain_path}: {e}")
 
-        self._console.error("No toolchain metadata found")
+        self._console.warning("No toolchain metadata found — run 'symfluence binary install' first")
         return False
+
+    def _check_geospatial_compatibility(self) -> bool:
+        """Check that rasterio, fiona, and GDAL import without compression-library conflicts."""
+        all_ok = True
+
+        checks = [
+            ("rasterio", "rasterio"),
+            ("fiona", "fiona"),
+            ("geopandas", "geopandas"),
+        ]
+
+        for display_name, module_name in checks:
+            try:
+                mod = __import__(module_name)
+                version = getattr(mod, '__version__', getattr(mod, '__gdal_version__', '?'))
+                self._console.indent(f"{display_name} {version}: [green]OK[/green]")
+            except ImportError:
+                self._console.indent(f"{display_name}: [yellow]not installed[/yellow]")
+            except Exception as e:  # noqa: BLE001
+                all_ok = False
+                err_str = str(e)
+                self._console.indent(f"{display_name}: [red]FAILED[/red]")
+                if 'ZSTD' in err_str or 'zstd' in err_str:
+                    self._console.indent(
+                        f"  ZSTD mismatch: {display_name} was built against a "
+                        "different ZSTD than the one installed. Reinstall with:"
+                    )
+                    self._console.indent(f"    pip install --force-reinstall --no-binary :all: {module_name}")
+                elif 'BLOSC' in err_str or 'blosc' in err_str:
+                    self._console.indent(
+                        f"  BLOSC mismatch: {display_name} was built against a "
+                        "different BLOSC than the one installed. Reinstall with:"
+                    )
+                    self._console.indent(f"    pip install --force-reinstall --no-binary :all: {module_name}")
+                else:
+                    self._console.indent(f"  Error: {err_str}")
+
+        # Check GDAL Python bindings (optional)
+        try:
+            from osgeo import gdal
+            gdal_version = gdal.__version__ if hasattr(gdal, '__version__') else gdal.VersionInfo()
+            self._console.indent(f"GDAL bindings {gdal_version}: [green]OK[/green]")
+        except ImportError:
+            self._console.indent("GDAL bindings: [dim]not installed (optional)[/dim]")
+        except Exception as e:  # noqa: BLE001
+            all_ok = False
+            self._console.indent(f"GDAL bindings: [red]FAILED[/red] — {e}")
+
+        # Cross-check: try a rasterio open to exercise the compression codecs
+        if all_ok:
+            try:
+                import rasterio
+                drivers = rasterio.drivers.raster_driver_extensions()
+                if 'tif' in drivers:
+                    self._console.indent("rasterio GeoTIFF driver: [green]OK[/green]")
+                else:
+                    self._console.indent("rasterio GeoTIFF driver: [yellow]not available[/yellow]")
+                    all_ok = False
+            except Exception as e:  # noqa: BLE001
+                self._console.indent(f"rasterio driver check: [red]FAILED[/red] — {e}")
+                all_ok = False
+
+        if not all_ok:
+            self._console.newline()
+            self._console.warning(
+                "Geospatial library issues detected. This typically happens when "
+                "mixing conda and pip installs, or when system GDAL differs from "
+                "the version rasterio/fiona were built against."
+            )
+            self._console.indent("Recommended fix: reinstall the geospatial stack from a single source:")
+            self._console.indent("  conda install -c conda-forge rasterio fiona geopandas gdal")
+            self._console.indent("  OR: pip install --force-reinstall rasterio fiona")
+
+        return all_ok
 
     def _check_system_libraries(self) -> tuple:
         """

@@ -27,6 +27,12 @@ Requirements: Linux (Ubuntu 22.04+, RHEL 9+, Debian 12+ x86_64) or macOS 12+
 (Apple Silicon). System libraries NetCDF and HDF5 must be installed via your
 package manager.
 
+.. note::
+
+   **Python 3.11–3.13 only.** Key geospatial dependencies (Fiona, rasterio,
+   GDAL) do not yet ship wheels for Python 3.14+. If you are on 3.14, create a
+   3.11 or 3.12 environment instead (``python3.11 -m venv venv``).
+
 **Option 2: pip (Python framework only)**
 
 .. code-block:: bash
