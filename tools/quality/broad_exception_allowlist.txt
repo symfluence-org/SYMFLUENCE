@@ -50,6 +50,9 @@ src/symfluence/cli/external_tools_config.py:_import_model_build_instructions:exc
 src/symfluence/cli/external_tools_config.py:_import_model_build_instructions:except Exception:  # noqa: BLE001
 src/symfluence/cli/preset_registry.py:PresetRegistry.get_all_presets:except Exception:  # noqa: BLE001
 src/symfluence/cli/preset_registry.py:PresetRegistry.get_all_presets:except Exception:  # noqa: BLE001
+src/symfluence/cli/services/system_diagnostics.py:SystemDiagnostics._check_geospatial_compatibility:except Exception as e:  # noqa: BLE001
+src/symfluence/cli/services/system_diagnostics.py:SystemDiagnostics._check_geospatial_compatibility:except Exception as e:  # noqa: BLE001
+src/symfluence/cli/services/system_diagnostics.py:SystemDiagnostics._check_geospatial_compatibility:except Exception as e:  # noqa: BLE001
 src/symfluence/cli/services/tool_installer.py:ToolInstaller._generate_toolchain_metadata:except Exception:  # noqa: BLE001 — top-level fallback
 src/symfluence/cli/services/tool_installer.py:ToolInstaller._generate_toolchain_metadata:except Exception:  # noqa: BLE001 — top-level fallback
 src/symfluence/cli/services/tool_installer.py:ToolInstaller._generate_toolchain_metadata:except Exception:  # noqa: BLE001 — top-level fallback
