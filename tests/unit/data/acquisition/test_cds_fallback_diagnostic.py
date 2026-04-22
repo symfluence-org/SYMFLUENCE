@@ -17,6 +17,7 @@ without reading source. This test pins the content of that warning.
 """
 
 import logging
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -92,14 +93,25 @@ def test_cds_fallback_warning_names_common_setup_failures(tmp_path, caplog):
 
 
 def _isolate_cds_env(monkeypatch, tmp_path, *, home_has_rc: bool = False):
-    """Point ``HOME`` at ``tmp_path`` and clear CDSAPI_* env vars so
-    each diagnostic case is independent of the developer's real CDS
-    credentials."""
+    """Point the home directory at ``tmp_path`` and clear CDSAPI_* env
+    vars so each diagnostic case is independent of the developer's real
+    CDS credentials.
+
+    ``os.path.expanduser("~")`` consults different env vars by platform:
+    POSIX reads ``HOME``; Windows reads ``USERPROFILE`` (with
+    ``HOMEDRIVE``/``HOMEPATH`` as fallback). We set all of them so this
+    helper works on every runner in CI.
+    """
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    tp = Path(tmp_path)
+    if tp.drive:
+        monkeypatch.setenv("HOMEDRIVE", tp.drive)
+        monkeypatch.setenv("HOMEPATH", str(tp)[len(tp.drive):])
     monkeypatch.delenv("CDSAPI_KEY", raising=False)
     monkeypatch.delenv("CDSAPI_URL", raising=False)
     if not home_has_rc:
-        rc = tmp_path / ".cdsapirc"
+        rc = tp / ".cdsapirc"
         if rc.exists():
             rc.unlink()
 
