@@ -591,11 +591,37 @@ class AnalysisManager(ConfigurableMixin):
                         'best_combinations': best_combinations
                     }
                 else:
-                    available = R.decision_analyzers.keys()
+                    # Decision analysis is only meaningful for models that
+                    # expose alternative physics-parameterization choices
+                    # (currently SUMMA). Conceptual / lumped models like
+                    # HBV, GR4J, HYPE have a fixed structure by design
+                    # and there is nothing to analyse. Previously this
+                    # path emitted a generic INFO ("No decision analyzer
+                    # registered for model X") that a co-author read as
+                    # a bug — "why isn't HBV registered?" — and the step
+                    # still marked ✓ Complete with no output. Record the
+                    # skip explicitly and say why.
                     self.logger.info(
-                        f"No decision analyzer registered for model: {model}. "
-                        f"Available analyzers: {available}"
+                        f"{model}: skipping decision analysis — no "
+                        "decision structure by design (decision analysis "
+                        "requires a model with alternative physics "
+                        "parameterizations; registered analyzers: "
+                        f"{sorted(R.decision_analyzers.keys())})"
                     )
+                    decision_results[model] = {
+                        'skipped': True,
+                        'skipped_reason': 'no decision structure by design',
+                    }
+
+            # Summary so the workflow log makes the skip visible without
+            # re-reading per-model lines.
+            analysed = [m for m, v in decision_results.items() if not v.get('skipped')]
+            skipped = [m for m, v in decision_results.items() if v.get('skipped')]
+            self.logger.info(
+                f"Decision analysis summary: {len(analysed)}/{len(decision_results)} "
+                "models analysed"
+                + (f"; skipped by design: {', '.join(skipped)}" if skipped else "")
+            )
 
             return decision_results if decision_results else None
 
