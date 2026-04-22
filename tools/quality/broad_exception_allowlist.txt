@@ -236,6 +236,7 @@ src/symfluence/data/model_ready/observations_builder.py:ObservationsNetCDFBuilde
 src/symfluence/data/observation/base.py:BaseObservationHandler._open_dataset:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/observation/base.py:BaseObservationHandler.safe_acquire:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/data/observation/base.py:BaseObservationHandler.safe_process:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
+src/symfluence/data/observation/handlers/ana.py:ANAStreamflowHandler._extract_station:except Exception:  # noqa: BLE001
 src/symfluence/data/observation/handlers/camels.py:CAMELSBRStreamflowHandler._parse_streamflow_file:except Exception:  # noqa: BLE001
 src/symfluence/data/observation/handlers/camels.py:CAMELSCLStreamflowHandler._parse_streamflow_file:except Exception:  # noqa: BLE001
 src/symfluence/data/observation/handlers/camels.py:_merge_attr_files:except Exception:  # noqa: BLE001 — skip unparseable files
@@ -588,7 +589,11 @@ src/symfluence/models/clm/calibration/worker.py:CLMWorker.run_model._get_cpu_pct
 src/symfluence/models/clm/calibration/worker.py:CLMWorker.run_model:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/clm/calibration/worker.py:_evaluate_clm_parameters_worker:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/clm/domain_generator.py:CLMDomainGenerator._get_catchment_area_from_gdf:except Exception:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/clm/domain_generator.py:CLMDomainGenerator.get_mean_elevation:except Exception:  # noqa: BLE001 — model execution resilience
+src/symfluence/models/clm/domain_generator.py:CLMDomainGenerator._load_hru_shapefile:except Exception:  # noqa: BLE001
+src/symfluence/models/clm/domain_generator.py:CLMDomainGenerator.get_elevation_stats:except Exception:  # noqa: BLE001
+src/symfluence/models/clm/domain_generator.py:CLMDomainGenerator.get_mean_elevation:except Exception:  # noqa: BLE001
+src/symfluence/models/clm/domain_generator.py:CLMDomainGenerator.get_mean_elevation:except Exception:  # noqa: BLE001
+src/symfluence/models/clm/domain_generator.py:CLMDomainGenerator.get_mean_elevation:except Exception:  # noqa: BLE001
 src/symfluence/models/clm/nuopc_generator.py:_ensure_cesm_inputdata:except Exception as exc:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/clm/postprocessor.py:CLMPostProcessor._get_catchment_area:except Exception:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/clm/surface_generator.py:CLMSurfaceGenerator._get_soil_fractions:except Exception as e:  # noqa: BLE001 — model execution resilience
