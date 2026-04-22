@@ -36,10 +36,22 @@ pytestmark = [pytest.mark.unit, pytest.mark.quick]
 
 
 def _make_analyzer():
-    cfg = MagicMock()
-    logger = logging.getLogger("test_sa_loud_fail")
-    reporting = MagicMock()
-    return SensitivityAnalyzer(cfg, logger, reporting)
+    """Build an analyzer without running __init__.
+
+    SensitivityAnalyzer's ConfigMixin base computes a project directory
+    from config.system.data_dir at construction time. With a MagicMock
+    config those attribute accesses return child MagicMocks whose repr
+    (e.g. "<MagicMock name='mock.system.data_dir' ...>") contains '<'
+    and '>'. POSIX Path() silently accepts that string; Windows rejects
+    it with WinError 123. Bypassing __init__ avoids the path-construction
+    code entirely — the bounds validation under test doesn't touch self
+    attributes beyond self.logger.
+    """
+    analyzer = SensitivityAnalyzer.__new__(SensitivityAnalyzer)
+    analyzer.config = MagicMock()
+    analyzer.logger = logging.getLogger("test_sa_loud_fail")
+    analyzer.reporting_manager = MagicMock()
+    return analyzer
 
 
 def test_stringified_bounds_raise_actionable_value_error():
