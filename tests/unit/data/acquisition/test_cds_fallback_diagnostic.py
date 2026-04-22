@@ -21,7 +21,10 @@ from unittest.mock import patch
 
 import pytest
 
-from symfluence.data.acquisition.handlers.era5 import ERA5Acquirer
+from symfluence.data.acquisition.handlers.era5 import (
+    ERA5Acquirer,
+    diagnose_cds_credentials,
+)
 
 pytestmark = [pytest.mark.unit, pytest.mark.quick]
 
@@ -86,3 +89,118 @@ def test_cds_fallback_warning_names_common_setup_failures(tmp_path, caplog):
         "warning must state the minimum cdsapi version"
     assert "regenerate" in joined.lower() or "profile" in joined.lower(), \
         "warning must point users at key regeneration"
+
+
+def _isolate_cds_env(monkeypatch, tmp_path, *, home_has_rc: bool = False):
+    """Point ``HOME`` at ``tmp_path`` and clear CDSAPI_* env vars so
+    each diagnostic case is independent of the developer's real CDS
+    credentials."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("CDSAPI_KEY", raising=False)
+    monkeypatch.delenv("CDSAPI_URL", raising=False)
+    if not home_has_rc:
+        rc = tmp_path / ".cdsapirc"
+        if rc.exists():
+            rc.unlink()
+
+
+def test_diagnose_no_credentials_at_all(tmp_path, monkeypatch):
+    """With no ``~/.cdsapirc`` and no env vars, the diagnostic should
+    explain how to create the file from scratch and mention the
+    gcsfs escape hatch so the user isn't stuck."""
+    _isolate_cds_env(monkeypatch, tmp_path)
+    msg = diagnose_cds_credentials()
+    assert msg is not None
+    assert "No CDS API credentials found" in msg
+    assert ".cdsapirc" in msg
+    assert "cds.climate.copernicus.eu/profile" in msg
+    assert "gcsfs" in msg.lower()
+
+
+def test_diagnose_old_api_v2_url_in_rc(tmp_path, monkeypatch):
+    """A ``~/.cdsapirc`` with the pre-Sept-2024 ``/api/v2`` URL must
+    be called out explicitly — this was the single most common cause
+    of silent CDS failure during the 2024 migration."""
+    _isolate_cds_env(monkeypatch, tmp_path, home_has_rc=True)
+    (tmp_path / ".cdsapirc").write_text(
+        "url: https://cds.climate.copernicus.eu/api/v2\n"
+        "key: abcd-efgh-ijkl-mnop\n"
+    )
+    msg = diagnose_cds_credentials()
+    assert msg is not None
+    assert "/api/v2" in msg
+    assert "pre-September-2024" in msg
+
+
+def test_diagnose_old_uid_colon_key_format(tmp_path, monkeypatch):
+    """A key in the pre-Sept-2024 ``<UID>:<API_KEY>`` colon format
+    must be named as the problem, with a pointer to key regeneration."""
+    _isolate_cds_env(monkeypatch, tmp_path, home_has_rc=True)
+    (tmp_path / ".cdsapirc").write_text(
+        "url: https://cds.climate.copernicus.eu/api\n"
+        "key: 12345:abcd-efgh-ijkl-mnop\n"
+    )
+    msg = diagnose_cds_credentials()
+    assert msg is not None
+    assert "pre-September-2024" in msg
+    assert "profile" in msg.lower()
+
+
+def test_diagnose_missing_url_line(tmp_path, monkeypatch):
+    """An rc file with a key but no url line should be named out —
+    cdsapi's own error for this case is cryptic."""
+    _isolate_cds_env(monkeypatch, tmp_path, home_has_rc=True)
+    (tmp_path / ".cdsapirc").write_text("key: abcd-efgh-ijkl-mnop\n")
+    msg = diagnose_cds_credentials()
+    assert msg is not None
+    assert "missing a 'url:' line" in msg
+
+
+def test_diagnose_missing_key_line(tmp_path, monkeypatch):
+    """An rc file with a url but no key line should be named out."""
+    _isolate_cds_env(monkeypatch, tmp_path, home_has_rc=True)
+    (tmp_path / ".cdsapirc").write_text(
+        "url: https://cds.climate.copernicus.eu/api\n"
+    )
+    msg = diagnose_cds_credentials()
+    assert msg is not None
+    assert "missing a 'key:' line" in msg
+
+
+def test_diagnose_valid_setup_returns_none(tmp_path, monkeypatch):
+    """A correctly-configured ``~/.cdsapirc`` against the
+    post-migration endpoint must return ``None`` so callers proceed
+    normally."""
+    _isolate_cds_env(monkeypatch, tmp_path, home_has_rc=True)
+    (tmp_path / ".cdsapirc").write_text(
+        "url: https://cds.climate.copernicus.eu/api\n"
+        "key: abcd-efgh-ijkl-mnop\n"
+    )
+    assert diagnose_cds_credentials() is None
+
+
+def test_diagnose_old_env_url(tmp_path, monkeypatch):
+    """An env-var-only setup with the old ``/api/v2`` URL must be
+    named — some CI environments inject ``CDSAPI_URL`` without
+    touching ``~``."""
+    _isolate_cds_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("CDSAPI_KEY", "abcd-efgh-ijkl-mnop")
+    monkeypatch.setenv("CDSAPI_URL", "https://cds.climate.copernicus.eu/api/v2")
+    msg = diagnose_cds_credentials()
+    assert msg is not None
+    assert "/api/v2" in msg
+    assert "CDSAPI_URL" in msg
+
+
+def test_make_cds_client_preflight_raises_with_diagnostic(tmp_path, monkeypatch):
+    """The ``_make_cds_client`` helper must refuse to instantiate
+    when :func:`diagnose_cds_credentials` returns a problem, and the
+    raised error must carry the diagnostic so the user sees it
+    without a stack-trace hunt."""
+    from symfluence.data.acquisition.handlers import cds_datasets
+
+    _isolate_cds_env(monkeypatch, tmp_path)
+    with pytest.raises(RuntimeError) as excinfo:
+        cds_datasets._make_cds_client()
+    assert "CDS API client" in str(excinfo.value)
+    assert "No CDS API credentials" in str(excinfo.value)
