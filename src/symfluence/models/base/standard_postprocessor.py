@@ -544,15 +544,20 @@ class RoutedModelPostprocessor(StandardModelPostprocessor):
 
             if sim_reach_id is not None:
                 sim_reach_id = int(sim_reach_id)
-                # Select by reach ID
                 if 'reachID' in ds:
-                    segment_index = ds['reachID'].values == sim_reach_id
-                    ds_selected = ds.sel(seg=segment_index)
+                    segment_mask = ds['reachID'].values == sim_reach_id
+                    if segment_mask.any():
+                        idx = int(segment_mask.argmax())
+                        ds_selected = ds.isel(seg=idx)
+                    else:
+                        self.logger.warning(
+                            f"SIM_REACH_ID={sim_reach_id} not found in reachID; "
+                            f"falling back to outlet (last segment)"
+                        )
+                        ds_selected = ds.isel(seg=-1)
                 else:
-                    # Fall back to last segment (outlet)
                     ds_selected = ds.isel(seg=-1)
             else:
-                # Default to last segment
                 ds_selected = ds.isel(seg=-1)
 
             # Extract routing variable

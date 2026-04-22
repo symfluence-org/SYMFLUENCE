@@ -467,9 +467,11 @@ class OptimizationManager(BaseManager):
 
                         # Extract optimization history
                         history = []
-                        if 'iteration' in results_df.columns or 'Iteration' in results_df.columns:
-                            iter_col = 'iteration' if 'iteration' in results_df.columns else 'Iteration'
-                            obj_cols = [c for c in results_df.columns if 'objective' in c.lower() or 'kge' in c.lower() or 'fitness' in c.lower()]
+                        iter_candidates = ['iteration', 'Iteration']
+                        iter_col = next((c for c in iter_candidates if c in results_df.columns), None)
+                        if iter_col:
+                            obj_cols = [c for c in results_df.columns
+                                        if any(k in c.lower() for k in ['objective', 'kge', 'fitness', 'score', 'nse', 'rmse'])]
                             obj_col = obj_cols[0] if obj_cols else None
                             if obj_col:
                                 for _, row in results_df.iterrows():
@@ -479,7 +481,12 @@ class OptimizationManager(BaseManager):
                                     })
 
                         # Extract best parameters - find actual best row, not just row 0
-                        param_cols = [c for c in results_df.columns if c not in ['iteration', 'Iteration', 'objective', 'Objective', 'kge', 'KGE', 'fitness']]
+                        non_param = {'iteration', 'Iteration', 'objective', 'Objective',
+                                     'kge', 'KGE', 'fitness', 'score', 'timestamp',
+                                     'crash_count', 'crash_rate', 'Calib_RMSE',
+                                     'Calib_KGE', 'Calib_KGEp', 'Calib_KGEnp',
+                                     'Calib_NSE', 'Calib_MAE'}
+                        param_cols = [c for c in results_df.columns if c not in non_param]
                         best_params = {}
                         if not results_df.empty and param_cols:
                             # Try to load best params from JSON file first (most reliable)

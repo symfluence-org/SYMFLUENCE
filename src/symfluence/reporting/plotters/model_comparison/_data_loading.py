@@ -143,7 +143,9 @@ class ModelComparisonDataLoadingMixin:
         if "seg" in var_data.dims:
             if sim_reach_id and dataset is not None and "reachID" in dataset:
                 segment_mask = dataset["reachID"].values == int(sim_reach_id)
-                return var_data.sel(seg=segment_mask).to_pandas()
+                if segment_mask.any():
+                    idx = int(segment_mask.argmax())
+                    return var_data.isel(seg=idx).to_pandas()
             outlet_idx = int(np.argmax(var_data.mean(dim="time").values))
             return var_data.isel(seg=outlet_idx).to_pandas()
 

@@ -19,6 +19,12 @@ from tqdm import tqdm
 
 from symfluence.core.mixins import ConfigMixin
 
+_NON_PARAM_COLS = frozenset({
+    'Iteration', 'iteration', 'score', 'timestamp', 'crash_count', 'crash_rate',
+    'Calib_RMSE', 'Calib_KGE', 'Calib_KGEp', 'Calib_KGEnp', 'Calib_NSE', 'Calib_MAE',
+    'RMSE', 'KGE', 'KGEp', 'NSE', 'MAE', 'objective', 'Objective', 'fitness',
+})
+
 
 class SensitivityAnalyzer(ConfigMixin):
     """
@@ -98,9 +104,7 @@ class SensitivityAnalyzer(ConfigMixin):
             pd.Series: Sensitivity indices for each parameter, or -999 if failed.
         """
         self.logger.info(f"Performing sensitivity analysis using {metric} metric")
-        non_param_cols = {'Iteration', 'iteration', 'score', 'timestamp', 'crash_count', 'crash_rate',
-                          'Calib_RMSE', 'Calib_KGE', 'Calib_KGEp', 'Calib_KGEnp', 'Calib_NSE', 'Calib_MAE'}
-        parameter_columns = [col for col in samples.columns if col not in non_param_cols]
+        parameter_columns = [col for col in samples.columns if col not in _NON_PARAM_COLS]
 
         if len(samples) < min_samples:
             self.logger.warning(f"Insufficient data for reliable sensitivity analysis. Have {len(samples)} samples, recommend at least {min_samples}.")
@@ -151,7 +155,7 @@ class SensitivityAnalyzer(ConfigMixin):
             pd.Series: Total-order Sobol indices for each parameter.
         """
         self.logger.info(f"Performing Sobol analysis using {metric} metric")
-        parameter_columns = [col for col in samples.columns if col not in ['Iteration', 'RMSE', 'KGE', 'KGEp', 'NSE', 'MAE']]
+        parameter_columns = [col for col in samples.columns if col not in _NON_PARAM_COLS]
 
         problem = {
             'num_vars': len(parameter_columns),
@@ -220,7 +224,7 @@ class SensitivityAnalyzer(ConfigMixin):
             pd.Series: Spearman correlation coefficients for each parameter.
         """
         self.logger.info(f"Performing correlation analysis using {metric} metric")
-        parameter_columns = [col for col in samples.columns if col not in ['Iteration', 'RMSE', 'KGE', 'KGEp', 'NSE', 'MAE']]
+        parameter_columns = [col for col in samples.columns if col not in _NON_PARAM_COLS]
         correlations = []
         for param in parameter_columns:
             corr, _ = spearmanr(samples[param], samples[metric])
