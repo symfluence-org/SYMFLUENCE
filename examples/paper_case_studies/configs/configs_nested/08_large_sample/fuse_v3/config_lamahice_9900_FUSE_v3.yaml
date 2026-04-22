@@ -12,6 +12,7 @@ system:
 domain:
   name: '9900'
   bounding_box_coords: 64.92838841078853/-19.203204846673323/64.36622958461295/-18.34531749850082
+  pour_point_coords: 64.473784/-18.886755
   experiment_id: run_3
   time_start: 2000-01-01 03:00
   time_end: 2008-12-31 21:00

@@ -12,6 +12,7 @@ system:
 domain:
   name: '17'
   bounding_box_coords: 65.96945987254752/-23.1292050930227/65.66595776258796/-22.68932589423991
+  pour_point_coords: 65.869477/-22.861858
   experiment_id: run_gr_v2
   time_start: 2000-01-01 03:00
   time_end: 2008-12-31 21:00
