@@ -133,16 +133,41 @@ class _TileDownloadMixin:
             self.logger.error(f"Failed to download {tile_name}: {e}")
             raise
 
-    def _merge_tiles(self, tile_paths: list, out_path: Path, compress: str = 'lzw') -> Path:
-        """Merge multiple tile files into a single GeoTIFF."""
-        if len(tile_paths) == 1:
+    def _merge_tiles(
+        self,
+        tile_paths: list,
+        out_path: Path,
+        compress: str = 'lzw',
+        bounds: tuple = None,
+    ) -> Path:
+        """Merge multiple tile files into a single GeoTIFF.
+
+        Args:
+            tile_paths: Per-tile GeoTIFFs (e.g. 1° Copernicus DEM tiles).
+            out_path: Destination for the merged output.
+            compress: Raster compression for the output.
+            bounds: Optional (xmin, ymin, xmax, ymax) in the tiles' CRS.
+                When given, the merge is clipped to this rectangle.
+                The Copernicus DEM acquirer fetches whole 1° tiles, so
+                without clipping a basin requesting a small bbox that
+                straddles two tiles ends up with a 2 °×1° mosaic
+                (~26M pixels). Passing the bbox here cuts the merged
+                raster to the requested area, typically making
+                downstream TauDEM delineation ~10–100× faster.
+        """
+        if len(tile_paths) == 1 and bounds is None:
             if out_path.exists():
                 out_path.unlink()
             tile_paths[0].replace(out_path)
-        else:
-            self.logger.info(f"Merging {len(tile_paths)} tiles into {out_path}")
-            src_files = [rasterio.open(p) for p in tile_paths]
-            mosaic, out_trans = rio_merge(src_files)
+            return out_path
+
+        self.logger.info(f"Merging {len(tile_paths)} tiles into {out_path}")
+        src_files = [rasterio.open(p) for p in tile_paths]
+        try:
+            merge_kwargs = {}
+            if bounds is not None:
+                merge_kwargs['bounds'] = tuple(bounds)
+            mosaic, out_trans = rio_merge(src_files, **merge_kwargs)
             out_meta = src_files[0].meta.copy()
             out_meta.update({
                 "height": mosaic.shape[1],
@@ -157,9 +182,11 @@ class _TileDownloadMixin:
                 out_meta["BIGTIFF"] = "YES"
             with rasterio.open(out_path, "w", **out_meta) as dest:
                 dest.write(mosaic)
+        finally:
             for src in src_files:
                 src.close()
-            for p in tile_paths:
+        for p in tile_paths:
+            if p != out_path:
                 p.unlink(missing_ok=True)
         return out_path
 
@@ -248,7 +275,18 @@ class CopDEM30Acquirer(BaseAcquisitionHandler, RetryMixin, _TileDownloadMixin):
             if not tile_paths:
                 raise FileNotFoundError(f"No {self._PRODUCT_NAME} tiles found for bbox: {self.bbox}")
 
-            self._merge_tiles(tile_paths, out_path)
+            # Clip the merged raster to the requested bbox. Without this,
+            # a 4 km² basin whose bbox straddles a 1° tile boundary ends
+            # up with a ~26M-pixel mosaic (whole two tiles), and the
+            # downstream TauDEM pitremove/d8flowdir/aread8 chain spends
+            # minutes per call on mostly-wasted pixels.
+            bounds = (
+                self.bbox['lon_min'],
+                self.bbox['lat_min'],
+                self.bbox['lon_max'],
+                self.bbox['lat_max'],
+            )
+            self._merge_tiles(tile_paths, out_path, bounds=bounds)
 
         except (
             requests.RequestException,
