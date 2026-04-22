@@ -706,6 +706,12 @@ class WorkflowDiagnosticPlotter(BasePlotter):
         timestamp = self._get_timestamp()
         plot_filename = output_dir / f'{timestamp}_{model_name}_input_diagnostic.png'
 
+        # Routing models keep their files in settings/, not forcing/
+        if model_name.upper() == 'MIZUROUTE':
+            settings_candidate = input_dir.parent.parent / 'settings' / 'mizuRoute'
+            if settings_candidate.exists():
+                input_dir = settings_candidate
+
         fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
         # Panel 1: File inventory
@@ -805,6 +811,11 @@ class WorkflowDiagnosticPlotter(BasePlotter):
             checks = [
                 ('Qobs.txt', (input_dir / 'Qobs.txt').exists()),
                 ('Pobs.txt', (input_dir / 'Pobs.txt').exists()),
+            ]
+        elif model_name.upper() == 'MIZUROUTE':
+            checks = [
+                ('topology.nc', any(input_dir.glob('*topology*'))),
+                ('control file', any(input_dir.glob('*.control'))),
             ]
         elif model_name.upper() == 'MESH':
             checks = [
