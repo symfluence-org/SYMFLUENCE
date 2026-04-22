@@ -9,6 +9,7 @@ from multiple sources including satellite products, in-situ networks, and
 reanalysis datasets.
 """
 
+from .ana import ANAStreamflowHandler
 from .camels import (
     CAMELSAUSStreamflowHandler,
     CAMELSBRStreamflowHandler,
@@ -152,6 +153,8 @@ __all__ = [
     "ESACCISMHandler",
     "SMOSSMHandler",
     "ASCATSMHandler",
+    # ANA (Brazil / CAMELS-BR)
+    "ANAStreamflowHandler",
     # DGA (Chile)
     "DGAStreamflowHandler",
     # USGS
