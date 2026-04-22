@@ -51,7 +51,12 @@ dependencies = [
   "intake-xarray",
   "netCDF4>=1.6.0,<2.0.0",
   "h5netcdf>=1.1.0,<2.0.0",
-  "cdsapi>=0.6.0,<1.0.0",
+  # cdsapi 0.7.0 is the first release that speaks the post-September-2024
+  # CDS endpoint (https://cds.climate.copernicus.eu/api, no /v2). Pinning
+  # below 0.7.0 lets pip resolve an older package that silently 404s on
+  # every CDS download and triggers the ARCO fallback with a misleading
+  # error. Lower bound is strict for this reason.
+  "cdsapi>=0.7.0,<1.0.0",
   "s3fs>=2023.0.0",
   "cftime>=1.6.0,<2.0.0",
   # Hydrology specific

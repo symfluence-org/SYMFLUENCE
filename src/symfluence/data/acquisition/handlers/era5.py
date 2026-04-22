@@ -11,7 +11,7 @@ Data Store (CDS) with automatic pathway selection and parallel processing.
 import logging
 import os
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -145,10 +145,124 @@ def has_cds_credentials() -> bool:
 
     Note:
         The .cdsapirc file should contain:
-        url: https://cds.climate.copernicus.eu/api/v2
-        key: <YOUR_UID>:<YOUR_API_KEY>
+        url: https://cds.climate.copernicus.eu/api
+        key: <YOUR_API_KEY>
+
+        (For users on pre-September-2024 CDS setups: the old
+        ``https://cds.climate.copernicus.eu/api/v2`` endpoint and the
+        old ``<UID>:<API_KEY>`` key format are no longer supported.
+        Regenerate your key at cds.climate.copernicus.eu/profile and
+        upgrade ``cdsapi>=0.7.0`` — this is enforced by pyproject.toml.)
     """
     return os.path.exists(os.path.expanduser('~/.cdsapirc')) or 'CDSAPI_KEY' in os.environ
+
+
+def diagnose_cds_credentials() -> Optional[str]:
+    """Inspect ``~/.cdsapirc`` and ``CDSAPI_*`` env vars and return a
+    human-readable description of any problem, or ``None`` if the
+    setup looks usable against the post-September-2024 CDS endpoint.
+
+    Diagnoses the specific failure modes that bit users during the
+    2024 CDS migration and that our own reviewers hit during paper
+    reproduction. Designed to be called from error-raise sites so the
+    message the user sees points at a concrete thing to fix rather
+    than a generic "credentials not found".
+
+    Returns:
+        ``None`` when credentials look valid for the new CDS endpoint,
+        otherwise a multi-line string suitable for embedding in an
+        exception message.
+    """
+    rc_path = Path(os.path.expanduser('~/.cdsapirc'))
+    env_key = os.environ.get('CDSAPI_KEY')
+    env_url = os.environ.get('CDSAPI_URL')
+
+    if not rc_path.exists() and not env_key:
+        return (
+            "No CDS API credentials found. SYMFLUENCE looked for:\n"
+            f"  1. {rc_path} (the standard cdsapi config file)\n"
+            "  2. CDSAPI_KEY / CDSAPI_URL environment variables\n"
+            "and neither was present. To set up CDS access:\n"
+            "  1. Register at https://cds.climate.copernicus.eu and "
+            "accept the data-use terms for the dataset you need\n"
+            "     (for ERA5, visit the ERA5 catalog page and click "
+            "'Accept terms' at least once).\n"
+            "  2. Copy your API key from https://cds.climate.copernicus.eu/profile\n"
+            "  3. Create ~/.cdsapirc with exactly these two lines:\n"
+            "       url: https://cds.climate.copernicus.eu/api\n"
+            "       key: <YOUR_API_KEY>\n"
+            "Alternative: you can skip ~/.cdsapirc and install gcsfs "
+            "(``pip install gcsfs``) to use the ARCO-ERA5 path on "
+            "Google Cloud, which needs no credentials."
+        )
+
+    problems: List[str] = []
+    if env_key and ':' in env_key:
+        problems.append(
+            "CDSAPI_KEY looks like the pre-September-2024 '<UID>:<API_KEY>' "
+            "format, which the new CDS rejects. Regenerate your key at "
+            "https://cds.climate.copernicus.eu/profile — the new format is a "
+            "single token, no colon."
+        )
+    if env_url and '/api/v2' in env_url:
+        problems.append(
+            f"CDSAPI_URL is set to {env_url!r}, which is the "
+            "pre-September-2024 endpoint. Change it to "
+            "'https://cds.climate.copernicus.eu/api' (no /v2)."
+        )
+
+    if rc_path.exists():
+        try:
+            rc_text = rc_path.read_text(encoding='utf-8', errors='replace')
+        except OSError as exc:
+            return (
+                f"~/.cdsapirc exists at {rc_path} but could not be read: "
+                f"{exc}. Check the file permissions."
+            )
+        rc_lines = [
+            ln.strip() for ln in rc_text.splitlines()
+            if ln.strip() and not ln.lstrip().startswith('#')
+        ]
+        rc_map = {}
+        for ln in rc_lines:
+            if ':' in ln:
+                k, _, v = ln.partition(':')
+                rc_map[k.strip().lower()] = v.strip()
+        rc_url = rc_map.get('url', '')
+        rc_key = rc_map.get('key', '')
+
+        if not rc_url:
+            problems.append(
+                f"~/.cdsapirc at {rc_path} is missing a 'url:' line. "
+                "Add: url: https://cds.climate.copernicus.eu/api"
+            )
+        elif '/api/v2' in rc_url:
+            problems.append(
+                f"~/.cdsapirc url is '{rc_url}', which is the "
+                "pre-September-2024 endpoint. Change to "
+                "'https://cds.climate.copernicus.eu/api' (no /v2)."
+            )
+        if not rc_key:
+            problems.append(
+                f"~/.cdsapirc at {rc_path} is missing a 'key:' line. "
+                "Add: key: <YOUR_API_KEY> (copy from "
+                "https://cds.climate.copernicus.eu/profile)."
+            )
+        elif ':' in rc_key:
+            problems.append(
+                "~/.cdsapirc key looks like the pre-September-2024 "
+                "'<UID>:<API_KEY>' format, which the new CDS rejects. "
+                "Regenerate at https://cds.climate.copernicus.eu/profile — "
+                "the new format is a single token, no colon."
+            )
+
+    if problems:
+        return (
+            "CDS credential setup has issue(s) that will prevent downloads:\n  - "
+            + "\n  - ".join(problems)
+        )
+    return None
+
 
 @AcquisitionRegistry.register('ERA5')
 class ERA5Acquirer(BaseAcquisitionHandler):
@@ -221,7 +335,18 @@ class ERA5Acquirer(BaseAcquisitionHandler):
                     use_cds = True
                 else:
                     self.logger.error("Neither gcsfs nor CDS credentials available for ERA5 download")
-                    raise ImportError("Install gcsfs (pip install gcsfs) or configure CDS credentials (~/.cdsapirc)")
+                    diag = diagnose_cds_credentials() or (
+                        "No CDS credentials found at ~/.cdsapirc or in "
+                        "CDSAPI_KEY/CDSAPI_URL environment variables."
+                    )
+                    raise ImportError(
+                        "ERA5 download requires either gcsfs (for the ARCO cloud "
+                        "path, no credentials needed) or CDS credentials (for the "
+                        "CDS API path). Neither is configured.\n"
+                        "  To use ARCO: pip install gcsfs\n"
+                        "  To use CDS:\n"
+                        f"{diag}"
+                    )
         else:
             # Handle string values like "true", "True", "yes", etc.
             if isinstance(use_cds, str):
@@ -243,7 +368,32 @@ class ERA5Acquirer(BaseAcquisitionHandler):
                 PermissionError,
                 DataAcquisitionError,
             ) as e:
-                self.logger.warning(f"CDS pathway failed: {e}. Falling back to ARCO if possible.")
+                # Keep the silent-fallback design intent (ARCO is fine for
+                # the common case) but give the user enough detail to
+                # diagnose a CDS setup problem rather than chasing the
+                # ensuing ARCO error as if it were the primary failure.
+                # The two most common CDS setup errors post-Sept-2024
+                # are: (a) a ~/.cdsapirc pointing at /api/v2 which the
+                # new CDS rejects, and (b) cdsapi<0.7.0 not speaking
+                # the new API. Both look like generic failures from
+                # inside this except block.
+                base_msg = (
+                    "CDS pathway failed: %s. Falling back to ARCO (Google Cloud).\n"
+                    "  If the ARCO fallback also fails, the root cause is usually CDS setup:\n"
+                    "    • ~/.cdsapirc url must be https://cds.climate.copernicus.eu/api (no /v2).\n"
+                    "    • cdsapi must be >=0.7.0 (new API). Check with: python -c 'import cdsapi; print(cdsapi.__version__)'.\n"
+                    "    • The API key is now a single token (not <UID>:<KEY>). Regenerate at "
+                    "cds.climate.copernicus.eu/profile."
+                )
+                diag = diagnose_cds_credentials()
+                if diag:
+                    self.logger.warning(
+                        base_msg + "\n  Detected problem(s) with your local setup:\n%s",
+                        e,
+                        diag,
+                    )
+                else:
+                    self.logger.warning(base_msg, e)
 
         self.logger.info("Using ARCO (Google Cloud) pathway for ERA5")
         return ERA5ARCOAcquirer(self.config, self.logger).download(output_dir)

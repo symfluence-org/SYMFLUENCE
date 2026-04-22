@@ -32,6 +32,24 @@ except ImportError:
 from ...utils import VariableStandardizer
 from ..base import BaseAcquisitionHandler
 from ..registry import AcquisitionRegistry
+from .era5 import diagnose_cds_credentials
+
+
+def _make_cds_client() -> "cdsapi.Client":
+    """Instantiate ``cdsapi.Client()`` after a preflight credential check.
+
+    Runs :func:`diagnose_cds_credentials` first so the user sees an
+    actionable message (wrong URL, old key format, missing file) instead
+    of the opaque ``AttributeError``/``ConnectionError`` that cdsapi
+    raises when it finds no or malformed credentials.
+    """
+    diag = diagnose_cds_credentials()
+    if diag is not None:
+        raise RuntimeError(
+            "Cannot initialise CDS API client — credential check failed:\n"
+            f"{diag}"
+        )
+    return cdsapi.Client()
 
 
 class CDSRegionalReanalysisHandler(BaseAcquisitionHandler, ABC):
@@ -206,7 +224,7 @@ class CDSRegionalReanalysisHandler(BaseAcquisitionHandler, ABC):
             return chunk_path
 
         # Create a thread-local client
-        c = cdsapi.Client()
+        c = _make_cds_client()
 
         logging.info(f"Processing {self._get_dataset_id()} for {year}-{month:02d}...")
 
@@ -582,7 +600,7 @@ class CDSRegionalReanalysisHandler(BaseAcquisitionHandler, ABC):
                 "CARRA CDS requests reject per-timestep retrieval; "
                 "use the multi-hour request only."
             )
-        c = cdsapi.Client()
+        c = _make_cds_client()
         datasets = []
         domain_name = self.domain_name
         dataset_id = self._get_dataset_id()
