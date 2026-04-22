@@ -140,11 +140,10 @@ class CLMSurfaceGenerator:
         add_2d('PCT_OCEAN', 0.0)
         add_2d('PCT_URBAN', 0.0)
 
-        # PFT distribution: 5% bare, 60% needleleaf evergreen, 35% c3 arctic
+        # PFT distribution from MODIS land cover
+        pft_dist = self._get_pft_distribution(lat)
         pct_nat = np.zeros((1, 1, 15))
-        pct_nat[0, 0, 0] = 5.0
-        pct_nat[0, 0, 1] = 60.0
-        pct_nat[0, 0, 12] = 35.0
+        pct_nat[0, 0, :] = pft_dist
         v = ds.createVariable('PCT_NAT_PFT', 'f8', ('lsmlat', 'lsmlon', 'natpft'))
         v[:] = pct_nat
 
@@ -209,22 +208,37 @@ class CLMSurfaceGenerator:
             add_2d(ef_name, ef_val, units='ug/m2/hr')
 
         # -- Monthly vegetation data for satellite phenology (SP) --
-        # LAI seasonal cycle for active PFTs
-        lai_tree = [2.5, 2.5, 2.5, 3.0, 3.5, 4.0, 4.5, 4.5, 4.0, 3.5, 3.0, 2.5]
-        lai_grass = [0., 0., 0., 0.2, 0.5, 1.2, 1.5, 1.5, 0.8, 0.3, 0., 0.]
+        lai_net = [2.5, 2.5, 2.5, 3.0, 3.5, 4.0, 4.5, 4.5, 4.0, 3.5, 3.0, 2.5]
+        lai_bet = [5.0, 5.0, 5.0, 5.2, 5.5, 5.8, 6.0, 6.0, 5.8, 5.5, 5.2, 5.0]
+        lai_bdt = [0.5, 0.5, 1.0, 2.0, 3.5, 5.0, 5.5, 5.0, 4.0, 2.5, 1.0, 0.5]
+        lai_shrub = [0.2, 0.2, 0.3, 0.5, 1.0, 1.5, 1.8, 1.8, 1.2, 0.6, 0.3, 0.2]
+        lai_c3g = [0., 0., 0., 0.2, 0.5, 1.2, 1.5, 1.5, 0.8, 0.3, 0., 0.]
+        lai_c4g = [0., 0., 0., 0.3, 0.8, 1.8, 2.5, 2.5, 1.5, 0.5, 0., 0.]
+
+        pft_lai = {1: lai_net, 2: lai_net, 3: lai_net,
+                   4: lai_bet, 5: lai_bet, 6: lai_bdt, 7: lai_bdt, 8: lai_bdt,
+                   9: lai_shrub, 10: lai_shrub, 11: lai_shrub,
+                   12: lai_c3g, 13: lai_c3g, 14: lai_c4g}
+        pft_sai = {i: [1.0]*12 for i in range(1, 9)}
+        pft_sai.update({i: [0.5]*12 for i in range(9, 15)})
+        pft_htop = {1: 17., 2: 17., 3: 14., 4: 35., 5: 20., 6: 20., 7: 18.,
+                    8: 14., 9: 0.5, 10: 0.5, 11: 0.5, 12: 0.5, 13: 0.5, 14: 0.5}
+        pft_hbot = {k: v * 0.5 if v > 1.0 else 0.1 for k, v in pft_htop.items()}
+
+        active_pfts = [i for i in range(15) if pft_dist[i] > 0.5]
+        lai_map = {i: pft_lai.get(i, [0.]*12) for i in active_pfts if i > 0}
+        sai_map = {i: pft_sai.get(i, [0.5]*12) for i in active_pfts if i > 0}
+        htop_map = {i: [pft_htop.get(i, 0.5)]*12 for i in active_pfts if i > 0}
+        hbot_map = {i: [pft_hbot.get(i, 0.1)]*12 for i in active_pfts if i > 0}
 
         for vname, pft_vals, attrs in [
-            ('MONTHLY_LAI',
-             {1: lai_tree, 12: lai_grass},
+            ('MONTHLY_LAI', lai_map,
              {'units': 'm^2/m^2', 'long_name': 'monthly leaf area index'}),
-            ('MONTHLY_SAI',
-             {1: [1.0]*12, 12: [0.5]*12},
+            ('MONTHLY_SAI', sai_map,
              {'units': 'm^2/m^2', 'long_name': 'monthly stem area index'}),
-            ('MONTHLY_HEIGHT_TOP',
-             {1: [17.0]*12, 12: [0.5]*12},
+            ('MONTHLY_HEIGHT_TOP', htop_map,
              {'units': 'm', 'long_name': 'monthly vegetation height top'}),
-            ('MONTHLY_HEIGHT_BOT',
-             {1: [8.5]*12, 12: [0.1]*12},
+            ('MONTHLY_HEIGHT_BOT', hbot_map,
              {'units': 'm', 'long_name': 'monthly vegetation height bottom'}),
         ]:
             data = np.zeros((12, 17, 1, 1))
