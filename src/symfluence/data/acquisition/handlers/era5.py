@@ -145,8 +145,14 @@ def has_cds_credentials() -> bool:
 
     Note:
         The .cdsapirc file should contain:
-        url: https://cds.climate.copernicus.eu/api/v2
-        key: <YOUR_UID>:<YOUR_API_KEY>
+        url: https://cds.climate.copernicus.eu/api
+        key: <YOUR_API_KEY>
+
+        (For users on pre-September-2024 CDS setups: the old
+        ``https://cds.climate.copernicus.eu/api/v2`` endpoint and the
+        old ``<UID>:<API_KEY>`` key format are no longer supported.
+        Regenerate your key at cds.climate.copernicus.eu/profile and
+        upgrade ``cdsapi>=0.7.0`` — this is enforced by pyproject.toml.)
     """
     return os.path.exists(os.path.expanduser('~/.cdsapirc')) or 'CDSAPI_KEY' in os.environ
 
@@ -243,7 +249,24 @@ class ERA5Acquirer(BaseAcquisitionHandler):
                 PermissionError,
                 DataAcquisitionError,
             ) as e:
-                self.logger.warning(f"CDS pathway failed: {e}. Falling back to ARCO if possible.")
+                # Keep the silent-fallback design intent (ARCO is fine for
+                # the common case) but give the user enough detail to
+                # diagnose a CDS setup problem rather than chasing the
+                # ensuing ARCO error as if it were the primary failure.
+                # The two most common CDS setup errors post-Sept-2024
+                # are: (a) a ~/.cdsapirc pointing at /api/v2 which the
+                # new CDS rejects, and (b) cdsapi<0.7.0 not speaking
+                # the new API. Both look like generic failures from
+                # inside this except block.
+                self.logger.warning(
+                    "CDS pathway failed: %s. Falling back to ARCO (Google Cloud).\n"
+                    "  If the ARCO fallback also fails, the root cause is usually CDS setup:\n"
+                    "    • ~/.cdsapirc url must be https://cds.climate.copernicus.eu/api (no /v2).\n"
+                    "    • cdsapi must be >=0.7.0 (new API). Check with: python -c 'import cdsapi; print(cdsapi.__version__)'.\n"
+                    "    • The API key is now a single token (not <UID>:<KEY>). Regenerate at "
+                    "cds.climate.copernicus.eu/profile.",
+                    e,
+                )
 
         self.logger.info("Using ARCO (Google Cloud) pathway for ERA5")
         return ERA5ARCOAcquirer(self.config, self.logger).download(output_dir)
