@@ -166,13 +166,68 @@ class SummaStructureAnalyzer(BaseStructureEnsembleAnalyzer):
         else:
             self.logger.info("Skipping mizuRoute routing (not configured)")
 
+    def _get_optimization_target(self) -> str:
+        return (self._resolve(
+            lambda: self.config.optimization.target,
+            'OPTIMIZATION_TARGET', 'streamflow'
+        ) or 'streamflow').lower()
+
     def calculate_performance_metrics(self) -> Dict[str, float]:
         """
-        Calculate performance metrics comparing simulated routed runoff to observations.
+        Calculate performance metrics for the current model run.
+
+        Dispatches to target-specific logic: streamflow uses mizuRoute routed
+        runoff; non-streamflow targets (SWE, SCA, ET, …) delegate to the
+        matching evaluator from the EvaluationRegistry.
 
         Returns:
             Dict: Dictionary containing KGE, NSE, MAE, and RMSE.
         """
+        opt_target = self._get_optimization_target()
+        if opt_target not in ('streamflow', 'flow', 'discharge'):
+            return self._calculate_evaluator_metrics(opt_target)
+        return self._calculate_streamflow_metrics()
+
+    def _calculate_evaluator_metrics(self, opt_target: str) -> Dict[str, float]:
+        """Delegate metric calculation to the appropriate evaluator."""
+        from symfluence.evaluation.registry import EvaluationRegistry
+
+        target_to_family = {
+            'swe': 'SNOW', 'sca': 'SNOW', 'snow_depth': 'SNOW', 'snow': 'SNOW',
+            'et': 'ET', 'latent_heat': 'ET', 'evapotranspiration': 'ET',
+            'sm_point': 'SOIL_MOISTURE', 'sm_smap': 'SOIL_MOISTURE',
+            'sm_esa': 'SOIL_MOISTURE', 'sm_ismn': 'SOIL_MOISTURE',
+            'soil_moisture': 'SOIL_MOISTURE', 'sm': 'SOIL_MOISTURE',
+        }
+        family = target_to_family.get(opt_target, opt_target.upper())
+
+        evaluator = EvaluationRegistry.get_evaluator(
+            family, self.config, self.logger, self.project_dir,
+            target=opt_target,
+        )
+        if evaluator is None:
+            self.logger.error(
+                "No evaluator registered for '%s' (family '%s')", opt_target, family,
+            )
+            return {'kge': np.nan, 'kgep': np.nan, 'nse': np.nan, 'mae': np.nan, 'rmse': np.nan}
+
+        sim_dir = self.project_dir / 'simulations' / self.experiment_id / 'SUMMA'
+        result = evaluator.calculate_metrics(
+            sim=sim_dir, calibration_only=False,
+        )
+        if not result:
+            return {'kge': np.nan, 'kgep': np.nan, 'nse': np.nan, 'mae': np.nan, 'rmse': np.nan}
+
+        return {
+            'kge': float(result.get('KGE', result.get('Calib_KGE', np.nan))),
+            'kgep': float(result.get('KGEp', result.get('Calib_KGEp', np.nan))),
+            'nse': float(result.get('NSE', result.get('Calib_NSE', np.nan))),
+            'mae': float(result.get('MAE', result.get('Calib_MAE', np.nan))),
+            'rmse': float(result.get('RMSE', result.get('Calib_RMSE', np.nan))),
+        }
+
+    def _calculate_streamflow_metrics(self) -> Dict[str, float]:
+        """Original streamflow-specific metric calculation using mizuRoute output."""
         # Load observations
         obs_file_path = self._resolve(
             lambda: self.config.paths.observations_path,
@@ -198,7 +253,6 @@ class SummaStructureAnalyzer(BaseStructureEnsembleAnalyzer):
         )
 
         if sim_path_config == 'default' or not sim_path_config:
-            # Construct default mizuRoute output path
             start_year = (self.time_start or '1990').split('-')[0]
             sim_file_path = (
                 self.project_dir / 'simulations' / self.experiment_id /
@@ -213,27 +267,22 @@ class SummaStructureAnalyzer(BaseStructureEnsembleAnalyzer):
 
         # Process observations
         dfObs = pd.read_csv(obs_file_path, index_col='datetime', parse_dates=True)
-        # Use discharge_cms and resample to hourly
         if 'discharge_cms' in dfObs.columns:
             obs_series = dfObs['discharge_cms'].resample('h').mean()
         else:
-            # Fallback to first non-date column
             data_col = [c for c in dfObs.columns if c.lower() not in ['datetime', 'date']][0]
             obs_series = dfObs[data_col].resample('h').mean()
 
         # Process simulations
         with xr.open_dataset(sim_file_path, engine='netcdf4') as ds:
-            # Filter by reach ID
             if 'reachID' in ds.variables:
                 segment_index = ds['reachID'].values == int(sim_reach_ID)
                 ds_sel = ds.sel(seg=segment_index)
             else:
                 ds_sel = ds.isel(seg=0)
 
-            # Extract routed runoff
             var_name = 'IRFroutedRunoff' if 'IRFroutedRunoff' in ds_sel.variables else 'KWTroutedRunoff'
             if var_name not in ds_sel.variables:
-                # Fallback to any routed runoff variable
                 var_name = [v for v in ds_sel.variables if 'routedRunoff' in v][0]
 
             sim_df = ds_sel[var_name].to_dataframe().reset_index()
