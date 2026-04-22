@@ -153,11 +153,12 @@ class CLMSurfaceGenerator:
         v = ds.createVariable('PCT_CFT', 'f8', ('lsmlat', 'lsmlon', 'cft'))
         v[:] = pct_cft
 
-        # -- Topography --
+        # -- Topography (from DEM) --
+        std_elev, mean_slope = self.pp.domain_generator.get_elevation_stats()
         add_2d('FMAX', 0.5)
         add_2d('TOPO', mean_elev, units='m')
-        add_2d('STD_ELEV', 500.0, units='m')
-        add_2d('SLOPE', 15.0)
+        add_2d('STD_ELEV', std_elev, units='m')
+        add_2d('SLOPE', mean_slope)
 
         # -- Soil properties (10 layers) --
         n_sl = 10

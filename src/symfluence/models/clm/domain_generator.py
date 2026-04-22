@@ -103,23 +103,97 @@ class CLMDomainGenerator:
             return 2210.0
 
     def get_mean_elevation(self) -> float:
-        """Get mean elevation from DEM."""
-        dem_dir = self.pp.project_attributes_dir / 'elevation'
-        if dem_dir.exists():
-            for f in dem_dir.glob('*dem*.nc'):
+        """Get mean elevation from HRU shapefile or DEM (GeoTIFF/NetCDF)."""
+        # 1. Try HRU shapefile elev_mean attribute
+        try:
+            gdf = self._load_hru_shapefile()
+            if gdf is not None and 'elev_mean' in gdf.columns:
+                val = float(gdf['elev_mean'].mean())
+                if val > 0:
+                    logger.info(f"Elevation from HRU shapefile: {val:.1f} m")
+                    return val
+        except Exception:  # noqa: BLE001
+            pass
+
+        # 2. Try DEM GeoTIFF
+        elev_dir = self.pp.project_attributes_dir / 'elevation'
+        if elev_dir.exists():
+            import rasterio
+            for pattern in ['**/*elv*.tif', '**/*dem*.tif', '**/*elevation*.tif']:
+                for f in elev_dir.glob(pattern):
+                    try:
+                        with rasterio.open(f) as src:
+                            data = src.read(1)
+                            valid = data[(data > -9999) & (data < 9000)]
+                            if len(valid) > 0:
+                                val = float(valid.mean())
+                                logger.info(f"Elevation from DEM GeoTIFF: {val:.1f} m")
+                                return val
+                    except Exception:  # noqa: BLE001
+                        continue
+
+        # 3. Try DEM NetCDF
+        if elev_dir.exists():
+            for f in elev_dir.glob('*dem*.nc'):
                 try:
                     ds = xr.open_dataset(f)
                     for var in ['elev', 'elevation', 'dem', 'z']:
                         if var in ds.data_vars:
                             val = float(ds[var].mean().values)
                             ds.close()
+                            logger.info(f"Elevation from DEM NetCDF: {val:.1f} m")
                             return val
                     ds.close()
-                except Exception:  # noqa: BLE001 — model execution resilience
+                except Exception:  # noqa: BLE001
                     continue
-        return float(self.pp._get_config_value(
-            lambda: None, default=1500.0, dict_key='MEAN_ELEVATION'
+
+        default = float(self.pp._get_config_value(
+            lambda: None, default=300.0, dict_key='MEAN_ELEVATION'
         ))
+        logger.warning(f"Could not read DEM; using default elevation: {default} m")
+        return default
+
+    def get_elevation_stats(self) -> tuple:
+        """Get elevation std dev and mean slope from DEM GeoTIFF."""
+        elev_dir = self.pp.project_attributes_dir / 'elevation'
+        if elev_dir.exists():
+            import rasterio
+            for pattern in ['**/*elv*.tif', '**/*dem*.tif', '**/*elevation*.tif']:
+                for f in elev_dir.glob(pattern):
+                    try:
+                        with rasterio.open(f) as src:
+                            data = src.read(1).astype(float)
+                            valid_mask = (data > -9999) & (data < 9000)
+                            valid = data[valid_mask]
+                            if len(valid) < 4:
+                                continue
+                            std_elev = float(np.std(valid))
+                            res = abs(src.res[0]) * 111000
+                            gy, gx = np.gradient(data, res)
+                            slope_rad = np.arctan(np.sqrt(gx**2 + gy**2))
+                            slope_deg = float(np.degrees(slope_rad[valid_mask].mean()))
+                            logger.info(f"DEM stats: std_elev={std_elev:.1f} m, slope={slope_deg:.1f} deg")
+                            return std_elev, slope_deg
+                    except Exception:  # noqa: BLE001
+                        continue
+        return 100.0, 5.0
+
+    def _load_hru_shapefile(self):
+        """Load HRU shapefile from standard project paths."""
+        import geopandas as gpd
+        search_dirs = [
+            self.pp.project_dir / 'shapefiles' / 'catchment' / 'lumped',
+            self.pp.project_dir / 'shapefiles' / 'river_basins',
+        ]
+        for d in search_dirs:
+            if not d.exists():
+                continue
+            for f in d.rglob('*.shp'):
+                try:
+                    return gpd.read_file(f)
+                except Exception:  # noqa: BLE001
+                    continue
+        return None
 
     # ------------------------------------------------------------------ #
     #  Domain and mesh file generation
