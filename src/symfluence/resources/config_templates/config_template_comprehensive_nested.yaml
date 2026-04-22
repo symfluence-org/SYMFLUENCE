@@ -108,20 +108,26 @@ domain:
   # ---------------------------------------------------------------------------
   # Simulation time period (must include spin-up if needed)
   # Format: "YYYY-MM-DD HH:MM"
-  time_start: "2010-01-01 00:00"
-  time_end: "2020-12-31 23:00"
+  #
+  # The defaults below mirror the paper Figure 4 simulation window for
+  # the Bow at Banff case study (Eythorsson et al. 2026b): 2002-01-01
+  # through 2009-12-31, with a 2002–2003 spin-up, 2004–2007 calibration,
+  # 2008–2009 evaluation. Replace all four fields when adapting this
+  # template to your own domain.
+  time_start: "2002-01-01 00:00"
+  time_end: "2009-12-31 23:00"
 
   # Calibration period for parameter optimization
   # Format: "YYYY-MM-DD, YYYY-MM-DD" (start, end)
-  calibration_period: null
+  calibration_period: "2004-01-01, 2007-12-31"
   calibration_start_date: null
   calibration_end_date: null
 
   # Independent validation period
-  evaluation_period: null
+  evaluation_period: "2008-01-01, 2009-12-31"
 
   # Model warm-up period (excluded from evaluation)
-  spinup_period: null
+  spinup_period: "2002-01-01, 2003-12-31"
 
   # ---------------------------------------------------------------------------
   # Spatial Definition Method (REQUIRED)
