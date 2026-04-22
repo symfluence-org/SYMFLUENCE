@@ -315,6 +315,18 @@ class AnalysisManager(ConfigurableMixin):
         """
         self.logger.info("Starting benchmarking analysis")
 
+        opt_target = self._get_config_value(
+            lambda: self.config.optimization.target,
+            dict_key='OPTIMIZATION_TARGET',
+        ) or 'streamflow'
+        if opt_target.lower() != 'streamflow':
+            self.logger.info(
+                "Skipping benchmarking: HydroBM benchmarks are streamflow-specific "
+                "and do not apply to OPTIMIZATION_TARGET='%s'",
+                opt_target,
+            )
+            return None
+
         with symfluence_error_handler(
             "benchmarking analysis",
             self.logger,
