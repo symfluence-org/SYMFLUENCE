@@ -2731,14 +2731,14 @@ SIMULATIONS_PATH: default
 # ================================================================================
 
 # CALIBRATION_PERIOD
-#   Type:        str
-#   Default:     None
-#   Source:      DomainConfig (domain.py)
-#   Usage:      14
 # The default below mirrors the paper Figure 4 calibration window for
 # the Bow at Banff case study (Eythorsson et al. 2026b). Replace with
 # your own domain's window when adapting this template. The calibration
 # window must lie inside EXPERIMENT_TIME_START..EXPERIMENT_TIME_END.
+#   Type:        str
+#   Default:     None
+#   Source:      DomainConfig (domain.py)
+#   Usage:      14
 CALIBRATION_PERIOD: "2004-01-01, 2007-12-31"
 
 # CALIBRATION_START_DATE
@@ -2802,13 +2802,13 @@ DOMAIN_NAME: "example_basin"
 BOUNDING_BOX_COORDS: null
 
 # EVALUATION_PERIOD
+# Mirrors the paper Figure 4 evaluation window for the Bow at Banff
+# case study. Must lie inside EXPERIMENT_TIME_START..EXPERIMENT_TIME_END
+# and must not overlap CALIBRATION_PERIOD.
 #   Type:        str
 #   Default:     None
 #   Source:      DomainConfig (domain.py)
 #   Usage:      7
-# Mirrors the paper Figure 4 evaluation window for the Bow at Banff
-# case study. Must lie inside EXPERIMENT_TIME_START..EXPERIMENT_TIME_END
-# and must not overlap CALIBRATION_PERIOD.
 EVALUATION_PERIOD: "2008-01-01, 2009-12-31"
 
 # EXPERIMENT_ID
@@ -2819,14 +2819,14 @@ EVALUATION_PERIOD: "2008-01-01, 2009-12-31"
 EXPERIMENT_ID: "run_1"
 
 # EXPERIMENT_TIME_END
-#   Type:        str
-#   Default:     None
-#   Source:      DomainConfig (domain.py)
-#   Usage:      54
 # The default below mirrors the paper Figure 4 simulation window for
 # the Bow at Banff case study (2002-01-01 through 2009-12-31, with a
 # 2002–2003 spin-up, 2004–2007 calibration, 2008–2009 evaluation).
 # Replace with your own simulation window when adapting this template.
+#   Type:        str
+#   Default:     None
+#   Source:      DomainConfig (domain.py)
+#   Usage:      54
 EXPERIMENT_TIME_END: "2009-12-31 23:00"
 
 # EXPERIMENT_TIME_START
