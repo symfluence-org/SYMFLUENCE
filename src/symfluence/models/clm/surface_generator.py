@@ -28,6 +28,93 @@ class CLMSurfaceGenerator:
     def __init__(self, preprocessor):
         self.pp = preprocessor
 
+    # MODIS IGBP → CLM5 natural PFT mapping (indices 0-14)
+    IGBP_TO_CLM_PFT = {
+        1:  {1: 80, 12: 20},
+        2:  {4: 80, 13: 20},
+        3:  {3: 80, 12: 20},
+        4:  {7: 60, 13: 30, 0: 10},
+        5:  {1: 30, 7: 30, 13: 30, 0: 10},
+        6:  {10: 60, 13: 30, 0: 10},
+        7:  {10: 30, 13: 30, 0: 40},
+        8:  {7: 40, 13: 40, 0: 20},
+        9:  {13: 50, 7: 20, 0: 30},
+        10: {13: 70, 0: 30},
+        11: {13: 60, 0: 20, 10: 20},
+        12: {13: 40, 0: 10},
+        13: {0: 60, 13: 40},
+        14: {13: 45, 7: 20, 0: 10},
+        15: {0: 100},
+        16: {0: 100},
+        17: {0: 100},
+    }
+    _BOREAL_LAT = 50.0
+    _TROPICAL_LAT = 23.5
+
+    def _get_pft_distribution(self, lat):
+        """Derive CLM5 PFT fractions from MODIS IGBP land cover GeoTIFF."""
+        try:
+            import rasterio
+            lc_dir = self.pp.project_dir / 'data' / 'attributes' / 'landclass'
+            lc_files = list(lc_dir.glob('*.tif')) if lc_dir.exists() else []
+            if not lc_files:
+                raise FileNotFoundError("No land cover GeoTIFF found")
+
+            with rasterio.open(lc_files[0]) as src:
+                data = src.read(1)
+                valid = data[data > 0]
+                if len(valid) == 0:
+                    raise ValueError("Empty land cover raster")
+                unique, counts = np.unique(valid, return_counts=True)
+                total = counts.sum()
+
+            pft_pct = np.zeros(15)
+            for igbp_class, count in zip(unique, counts):
+                frac = count / total
+                mapping = self.IGBP_TO_CLM_PFT.get(int(igbp_class), {0: 100})
+                for pft_idx, pct in mapping.items():
+                    pft_pct[pft_idx] += frac * pct
+
+            abs_lat = abs(lat)
+            if abs_lat < self._TROPICAL_LAT:
+                pft_pct[4] += pft_pct[1]; pft_pct[1] = 0
+                pft_pct[6] += pft_pct[7]; pft_pct[7] = 0
+                pft_pct[14] += pft_pct[13] * 0.7; pft_pct[13] *= 0.3
+            elif abs_lat > self._BOREAL_LAT:
+                pft_pct[2] += pft_pct[1]; pft_pct[1] = 0
+                pft_pct[11] += pft_pct[10]; pft_pct[10] = 0
+            else:
+                if abs_lat < 35:
+                    pft_pct[14] += pft_pct[13] * 0.6; pft_pct[13] *= 0.4
+
+            total_pct = pft_pct.sum()
+            if total_pct > 0:
+                pft_pct = pft_pct / total_pct * 100.0
+
+            pft_names = ['bare', 'NET_temp', 'NET_boreal', 'NDB',
+                         'BET_trop', 'BET_temp', 'BDT_trop', 'BDT_temp',
+                         'BDT_boreal', 'BES_temp', 'BDS_temp', 'BDS_boreal',
+                         'C3_arctic', 'C3_grass', 'C4_grass']
+            active = [(pft_names[i], pft_pct[i]) for i in range(15) if pft_pct[i] > 0.5]
+            logger.info(f"PFT distribution from MODIS (lat={lat:.1f}): "
+                        + ", ".join(f"{n}={p:.0f}%" for n, p in active))
+            return pft_pct
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Could not derive PFTs from MODIS: {e}; using defaults")
+            return self._default_pft_distribution(lat)
+
+    def _default_pft_distribution(self, lat):
+        """Fallback PFT distribution when MODIS data is unavailable."""
+        pft_pct = np.zeros(15)
+        abs_lat = abs(lat)
+        if abs_lat < self._TROPICAL_LAT:
+            pft_pct[0] = 5; pft_pct[4] = 60; pft_pct[14] = 35
+        elif abs_lat > self._BOREAL_LAT:
+            pft_pct[0] = 5; pft_pct[2] = 60; pft_pct[12] = 35
+        else:
+            pft_pct[0] = 5; pft_pct[1] = 60; pft_pct[13] = 35
+        return pft_pct
+
     def _get_soil_fractions(self):
         """Load sand/clay percentages from attributes store or config.
 
