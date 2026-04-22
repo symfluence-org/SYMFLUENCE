@@ -231,7 +231,7 @@ class CalibrationOrchestrator(ConfigMixin):
                         output_suffix="calibrated",
                     )
                 else:
-                    self.logger.info("No calibrated SUMMA final-evaluation output found; using standard simulation output")
+                    self.logger.info("No calibrated SUMMA final evaluation output found; using standard simulation output")
                     summa_plots = self.model_output_orchestrator.visualize_summa_outputs(experiment_id)
                 if 'scalarSWE' in summa_plots:
                     plot_paths['scalarSWE'] = summa_plots['scalarSWE']
