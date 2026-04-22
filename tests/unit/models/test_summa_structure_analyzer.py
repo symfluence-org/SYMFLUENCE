@@ -207,6 +207,145 @@ class TestSummaStructureAnalyzerLazyLoading:
         assert not any('Routing (mizuRoute)' in str(call) for call in self.logger.info.call_args_list)
 
 
+class TestCalculatePerformanceMetricsDispatch:
+    """Test that calculate_performance_metrics dispatches by OPTIMIZATION_TARGET."""
+
+    def setup_method(self):
+        self.base_config = {
+            'SYMFLUENCE_DATA_DIR': '/tmp/test_data',
+            'DOMAIN_NAME': 'test_domain',
+            'EXPERIMENT_ID': 'test_exp',
+            'SUMMA_DECISION_OPTIONS': {},
+        }
+        self.logger = Mock()
+
+    @patch('symfluence.models.summa.structure_analyzer.SummaRunner')
+    def test_default_target_is_streamflow(self, mock_summa_runner):
+        from symfluence.models.summa.structure_analyzer import SummaStructureAnalyzer
+
+        analyzer = SummaStructureAnalyzer(self.base_config, self.logger)
+        assert analyzer._get_optimization_target() == 'streamflow'
+
+    @patch('symfluence.models.summa.structure_analyzer.SummaRunner')
+    def test_swe_target_detected(self, mock_summa_runner):
+        from symfluence.models.summa.structure_analyzer import SummaStructureAnalyzer
+
+        config = {**self.base_config, 'OPTIMIZATION_TARGET': 'SWE'}
+        analyzer = SummaStructureAnalyzer(config, self.logger)
+        assert analyzer._get_optimization_target() == 'swe'
+
+    @patch('symfluence.models.summa.structure_analyzer.SummaRunner')
+    def test_streamflow_target_calls_streamflow_metrics(self, mock_summa_runner):
+        from symfluence.models.summa.structure_analyzer import SummaStructureAnalyzer
+
+        config = {**self.base_config, 'OPTIMIZATION_TARGET': 'streamflow'}
+        analyzer = SummaStructureAnalyzer(config, self.logger)
+        analyzer._calculate_streamflow_metrics = Mock(return_value={'kge': 0.8})
+        analyzer._calculate_evaluator_metrics = Mock()
+
+        result = analyzer.calculate_performance_metrics()
+
+        analyzer._calculate_streamflow_metrics.assert_called_once()
+        analyzer._calculate_evaluator_metrics.assert_not_called()
+        assert result == {'kge': 0.8}
+
+    @patch('symfluence.models.summa.structure_analyzer.SummaRunner')
+    def test_swe_target_calls_evaluator_metrics(self, mock_summa_runner):
+        from symfluence.models.summa.structure_analyzer import SummaStructureAnalyzer
+
+        config = {**self.base_config, 'OPTIMIZATION_TARGET': 'SWE'}
+        analyzer = SummaStructureAnalyzer(config, self.logger)
+        analyzer._calculate_streamflow_metrics = Mock()
+        analyzer._calculate_evaluator_metrics = Mock(return_value={'kge': 0.7})
+
+        result = analyzer.calculate_performance_metrics()
+
+        analyzer._calculate_evaluator_metrics.assert_called_once_with('swe')
+        analyzer._calculate_streamflow_metrics.assert_not_called()
+        assert result == {'kge': 0.7}
+
+    @patch('symfluence.models.summa.structure_analyzer.SummaRunner')
+    def test_flow_target_calls_streamflow_metrics(self, mock_summa_runner):
+        from symfluence.models.summa.structure_analyzer import SummaStructureAnalyzer
+
+        config = {**self.base_config, 'OPTIMIZATION_TARGET': 'flow'}
+        analyzer = SummaStructureAnalyzer(config, self.logger)
+        analyzer._calculate_streamflow_metrics = Mock(return_value={'kge': 0.9})
+
+        result = analyzer.calculate_performance_metrics()
+        analyzer._calculate_streamflow_metrics.assert_called_once()
+
+    @patch('symfluence.models.summa.structure_analyzer.SummaRunner')
+    def test_et_target_calls_evaluator_metrics(self, mock_summa_runner):
+        from symfluence.models.summa.structure_analyzer import SummaStructureAnalyzer
+
+        config = {**self.base_config, 'OPTIMIZATION_TARGET': 'ET'}
+        analyzer = SummaStructureAnalyzer(config, self.logger)
+        analyzer._calculate_evaluator_metrics = Mock(return_value={'kge': 0.6})
+
+        result = analyzer.calculate_performance_metrics()
+        analyzer._calculate_evaluator_metrics.assert_called_once_with('et')
+
+    @patch('symfluence.models.summa.structure_analyzer.SummaRunner')
+    @patch('symfluence.evaluation.registry.EvaluationRegistry.get_evaluator')
+    def test_evaluator_metrics_delegates_to_registry(self, mock_get_evaluator, mock_summa_runner):
+        from symfluence.models.summa.structure_analyzer import SummaStructureAnalyzer
+
+        mock_evaluator = Mock()
+        mock_evaluator.calculate_metrics.return_value = {
+            'KGE': 0.75, 'KGEp': 0.78, 'NSE': 0.70, 'MAE': 1.2, 'RMSE': 2.1,
+        }
+        mock_get_evaluator.return_value = mock_evaluator
+
+        config = {**self.base_config, 'OPTIMIZATION_TARGET': 'SWE'}
+        analyzer = SummaStructureAnalyzer(config, self.logger)
+
+        result = analyzer._calculate_evaluator_metrics('swe')
+
+        mock_get_evaluator.assert_called_once_with(
+            'SNOW', analyzer.config, analyzer.logger, analyzer.project_dir,
+            target='swe',
+        )
+        mock_evaluator.calculate_metrics.assert_called_once()
+        assert result['kge'] == 0.75
+        assert result['nse'] == 0.70
+
+    @patch('symfluence.models.summa.structure_analyzer.SummaRunner')
+    @patch('symfluence.evaluation.registry.EvaluationRegistry.get_evaluator')
+    def test_evaluator_metrics_returns_nan_when_no_evaluator(self, mock_get_evaluator, mock_summa_runner):
+        import numpy as np
+
+        from symfluence.models.summa.structure_analyzer import SummaStructureAnalyzer
+
+        mock_get_evaluator.return_value = None
+
+        config = {**self.base_config, 'OPTIMIZATION_TARGET': 'unknown_var'}
+        analyzer = SummaStructureAnalyzer(config, self.logger)
+
+        result = analyzer._calculate_evaluator_metrics('unknown_var')
+
+        assert np.isnan(result['kge'])
+        assert np.isnan(result['nse'])
+
+    @patch('symfluence.models.summa.structure_analyzer.SummaRunner')
+    @patch('symfluence.evaluation.registry.EvaluationRegistry.get_evaluator')
+    def test_evaluator_metrics_returns_nan_when_metrics_fail(self, mock_get_evaluator, mock_summa_runner):
+        import numpy as np
+
+        from symfluence.models.summa.structure_analyzer import SummaStructureAnalyzer
+
+        mock_evaluator = Mock()
+        mock_evaluator.calculate_metrics.return_value = None
+        mock_get_evaluator.return_value = mock_evaluator
+
+        config = {**self.base_config, 'OPTIMIZATION_TARGET': 'SWE'}
+        analyzer = SummaStructureAnalyzer(config, self.logger)
+
+        result = analyzer._calculate_evaluator_metrics('swe')
+
+        assert np.isnan(result['kge'])
+
+
 class TestBackwardCompatibility:
     """Test that existing code patterns still work."""
 
