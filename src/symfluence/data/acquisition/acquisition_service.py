@@ -421,7 +421,37 @@ class AcquisitionService(ConfigurableMixin):
                             self._acquire_elevation_data(gr, dem_dir, latlims, lonlims)
                             return dem_dir / f"domain_{self.domain_name}_elv.tif"
                         else:
-                            raise ValueError(f"Unsupported DEM_SOURCE: '{dem_source}'.")
+                            # Surface common misconfigurations with an actionable
+                            # hint instead of just "unsupported". MERIT-Hydro in
+                            # particular looks superficially right — it's in many
+                            # of our HPC paper configs — but it's only reachable
+                            # via the MAF gistool path, not cloud. If the user
+                            # set it with DATA_ACCESS=cloud they need a
+                            # cloud-reachable source.
+                            lower = str(dem_source).lower()
+                            accepted_cloud = [
+                                'copernicus', 'copdem90', 'copernicus_90',
+                                'fabdem', 'nasadem', 'srtm', 'etopo',
+                                'mapzen', 'alos',
+                            ]
+                            hint = ""
+                            if 'merit' in lower:
+                                hint = (
+                                    " MERIT-Hydro is only available via the MAF "
+                                    "gistool path (DATA_ACCESS: hpc). For "
+                                    "DATA_ACCESS: cloud, use 'copernicus' "
+                                    "(the default) or one of: "
+                                    f"{', '.join(accepted_cloud)}."
+                                )
+                            else:
+                                hint = (
+                                    f" Accepted cloud DEM sources: "
+                                    f"{', '.join(accepted_cloud)}."
+                                )
+                            raise ValueError(
+                                f"Unsupported DEM_SOURCE: '{dem_source}' for "
+                                f"DATA_ACCESS: cloud.{hint}"
+                            )
                     attr_tasks.append(('DEM', _acquire_dem))
                 else:
                     self.logger.info("Skipping DEM acquisition (DOWNLOAD_DEM is False)")
