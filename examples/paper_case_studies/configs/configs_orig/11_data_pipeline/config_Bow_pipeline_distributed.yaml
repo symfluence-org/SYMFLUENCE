@@ -33,7 +33,7 @@ ELEVATION_BAND_SIZE: 200  # metres
 MIN_HRU_SIZE: 4.0         # km²
 
 # DEM and geospatial attributes
-DEM_SOURCE: MERIT
+DEM_SOURCE: copernicus   # Cloud-reachable default (Copernicus GLO-30). Use 'merit_hydro' only with DATA_ACCESS: hpc via MAF gistool.
 DEM_PATH: default
 SOIL_CLASS_PATH: default
 LAND_CLASS_PATH: default
