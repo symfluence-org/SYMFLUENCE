@@ -33,15 +33,41 @@ class LamahIceStreamflowHandler(BaseObservationHandler):
     def acquire(self) -> Path:
         """
         Locates the raw LamaH-ICE file for the given station ID.
-        Expected config:
-        STATION_ID: '13'
-        LAMAH_ICE_PATH: '/path/to/lamah_ice'
+
+        Accepted config keys for the basin identifier (checked in order):
+            LAMAH_ICE_DOMAIN_ID: 105   # preferred — matches LaMAH-ICE's
+                                       # own D_gauges/.../ID_<n>.csv naming
+                                       # and is what the 08_large_sample
+                                       # paper configs (117 files) all use.
+            STATION_ID: 105            # legacy alias kept for generic
+                                       # cross-dataset configs.
+
+        LAMAH_ICE_PATH points at the local extracted dataset:
+            LAMAH_ICE_PATH: /path/to/lamah_ice
         """
-        station_id = self._get_config_value(lambda: self.config.evaluation.streamflow.station_id, dict_key='STATION_ID')
+        # LAMAH_ICE_DOMAIN_ID takes precedence. The 08_large_sample
+        # paper configs write this key; the handler previously only
+        # recognised STATION_ID, so every run silently failed at
+        # acquire with the misleading error "STATION_ID required for
+        # LAMAH_ICE acquisition".
+        station_id = (
+            self._get_config_value(
+                lambda: self.config.evaluation.lamah_ice.domain_id,
+                dict_key='LAMAH_ICE_DOMAIN_ID',
+            )
+            or self._get_config_value(
+                lambda: self.config.evaluation.streamflow.station_id,
+                dict_key='STATION_ID',
+            )
+        )
         lamah_path_str = self._get_config_value(lambda: self.config.data.lamah_ice_path, dict_key='LAMAH_ICE_PATH')
 
         if not station_id:
-            raise ValueError("STATION_ID required for LAMAH_ICE acquisition")
+            raise ValueError(
+                "LAMAH_ICE acquisition requires a basin identifier. Set "
+                "LAMAH_ICE_DOMAIN_ID (preferred — matches LaMAH-ICE's "
+                "own ID_<n>.csv naming) or STATION_ID in your config."
+            )
         if not lamah_path_str:
             raise ValueError("LAMAH_ICE_PATH required for LAMAH_ICE acquisition")
 
