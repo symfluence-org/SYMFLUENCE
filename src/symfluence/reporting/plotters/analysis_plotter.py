@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from symfluence.core.constants import ConfigKeys, UnitConversion
+from symfluence.core.constants import ConfigKeys, UnitConversion, UnitConverter
 from symfluence.reporting.core.base_plotter import BasePlotter
 from symfluence.reporting.panels import (
     FDCPanel,
@@ -669,15 +669,11 @@ class AnalysisPlotter(BasePlotter):
 
         obs_series = df[swe_col].astype(float)
 
-        # Auto-detect units: if max < 50, likely inches; convert to mm
-        if obs_series.max() < 50:
-            obs_series = obs_series * 25.4  # inches to mm
-        elif obs_series.max() < 500:
-            # Could be cm, convert to mm
-            if obs_series.max() < 100:
-                obs_series = obs_series * 10  # cm to mm
-
-        return obs_series
+        return UnitConverter.swe_inches_to_mm(
+            obs_series,
+            auto_detect=True,
+            logger=self.logger,
+        )
 
     @BasePlotter._plot_safe("loading energy flux observations")
     def _load_energy_flux_observations(self, flux_type: str = 'LE') -> Optional[pd.Series]:
@@ -819,7 +815,13 @@ class AnalysisPlotter(BasePlotter):
         })
 
     @BasePlotter._plot_safe("plot_summa_outputs")
-    def plot_summa_outputs(self, experiment_id: str) -> Dict[str, str]:
+    def plot_summa_outputs(
+        self,
+        experiment_id: str,
+        *,
+        summa_file: Optional[Path] = None,
+        output_suffix: str = "",
+    ) -> Dict[str, str]:
         """
         Create professional visualizations for SUMMA output variables.
 
@@ -858,7 +860,8 @@ class AnalysisPlotter(BasePlotter):
             'scalarSenHeatTotal': lambda: self._load_energy_flux_observations('H'),
         }
 
-        summa_file = self.project_dir / "simulations" / experiment_id / "SUMMA" / f"{experiment_id}_day.nc"
+        if summa_file is None:
+            summa_file = self.project_dir / "simulations" / experiment_id / "SUMMA" / f"{experiment_id}_day.nc"
         if not summa_file.exists():
             return {}
 
@@ -1191,7 +1194,8 @@ class AnalysisPlotter(BasePlotter):
                 # Layout adjustment not critical - may fail with complex GridSpec
                 pass
 
-            plot_file = plot_dir / f'{var_name}.png'
+            suffix = f"_{output_suffix}" if output_suffix else ""
+            plot_file = plot_dir / f'{var_name}{suffix}.png'
             self._save_and_close(fig, plot_file)
             plot_paths[str(var_name)] = str(plot_file)
         ds.close()
