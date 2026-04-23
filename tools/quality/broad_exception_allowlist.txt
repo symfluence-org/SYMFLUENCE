@@ -596,6 +596,7 @@ src/symfluence/models/clm/domain_generator.py:CLMDomainGenerator.get_mean_elevat
 src/symfluence/models/clm/domain_generator.py:CLMDomainGenerator.get_mean_elevation:except Exception:  # noqa: BLE001
 src/symfluence/models/clm/nuopc_generator.py:_ensure_cesm_inputdata:except Exception as exc:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/clm/postprocessor.py:CLMPostProcessor._get_catchment_area:except Exception:  # noqa: BLE001 — model execution resilience
+src/symfluence/models/clm/surface_generator.py:CLMSurfaceGenerator._get_pft_distribution:except Exception as e:  # noqa: BLE001
 src/symfluence/models/clm/surface_generator.py:CLMSurfaceGenerator._get_soil_fractions:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/clmparflow/calibration/parameter_manager.py:CLMParFlowParameterManager.get_initial_parameters:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/clmparflow/calibration/parameter_manager.py:CLMParFlowParameterManager.update_model_files:except Exception as e:  # noqa: BLE001 — calibration resilience
