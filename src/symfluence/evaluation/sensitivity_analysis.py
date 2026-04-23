@@ -157,10 +157,42 @@ class SensitivityAnalyzer(ConfigMixin):
         self.logger.info(f"Performing Sobol analysis using {metric} metric")
         parameter_columns = [col for col in samples.columns if col not in _NON_PARAM_COLS]
 
+        # SALib's sobol.analyze raises a generic "Bounds are not legal"
+        # ValueError when the bounds aren't numeric (e.g. a YAML pass
+        # serialized `[0.1, 2.0]` as `["0.1", "2.0"]`) or when min==max
+        # for any parameter (constant column, nothing to analyse).
+        # Both failures currently get swallowed upstream as a warning,
+        # so co-authors see "SA complete" with no output and no clue
+        # what went wrong. Validate here and raise a message that names
+        # the offending parameter and value.
+        bounds = []
+        for col in parameter_columns:
+            lo = samples[col].min()
+            hi = samples[col].max()
+            if not (isinstance(lo, (int, float, np.integer, np.floating)) and
+                    isinstance(hi, (int, float, np.integer, np.floating))):
+                raise ValueError(
+                    f"Sobol analysis cannot run: parameter '{col}' has "
+                    f"non-numeric bounds ({lo!r}, {hi!r}; types "
+                    f"{type(lo).__name__}/{type(hi).__name__}). This "
+                    "usually means the optimization results CSV has "
+                    "stringified numbers — check that the calibration "
+                    "writer serializes floats, not YAML-quoted strings."
+                )
+            if float(hi) <= float(lo):
+                raise ValueError(
+                    f"Sobol analysis cannot run: parameter '{col}' has "
+                    f"degenerate bounds (min={lo}, max={hi}). Every "
+                    "sample produced the same value, so there is no "
+                    "variance to attribute. Drop constant parameters "
+                    "from the calibration, or widen the search range."
+                )
+            bounds.append([float(lo), float(hi)])
+
         problem = {
             'num_vars': len(parameter_columns),
             'names': parameter_columns,
-            'bounds': [[samples[col].min(), samples[col].max()] for col in parameter_columns]
+            'bounds': bounds,
         }
 
         param_values = sobol_sample.sample(problem, 1024)
