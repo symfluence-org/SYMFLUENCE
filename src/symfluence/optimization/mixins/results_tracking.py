@@ -22,6 +22,50 @@ from symfluence.core.mixins import ConfigMixin
 logger = logging.getLogger(__name__)
 
 
+def _scalar_for_csv(value: Any) -> Any:
+    """Reduce a parameter value to a plain scalar for CSV serialisation.
+
+    SUMMA and other array-first parameter managers return
+    ``np.array([x])`` or per-HRU ``np.array([x, x, x])`` from
+    ``_format_parameter_value``. pandas will happily put those objects
+    into a DataFrame, but ``to_csv`` then writes their ``str(array)``
+    repr ("[0.1]", "[273.16 273.16 ...]") which downstream consumers
+    (SALib's sobol.analyze, VISCOUS) can't read back as numeric.
+
+    We reduce:
+      * length-1 arrays / lists / tuples to their single element;
+      * multi-element homogeneous arrays to their mean (per-HRU
+        parameters are calibrated jointly today, so the mean is a
+        lossless summary — if that changes, the right thing is to
+        log a separate per-HRU column rather than let the array
+        string leak into the CSV);
+      * numpy scalar types to their Python equivalent;
+      * anything else is returned unchanged.
+    """
+    if isinstance(value, np.ndarray):
+        flat = value.ravel()
+        if flat.size == 0:
+            return float("nan")
+        if flat.size == 1:
+            return flat.item()
+        # Homogeneous per-HRU broadcast — unique value; preserve it.
+        if np.unique(flat).size == 1:
+            return flat[0].item()
+        # Truly varying per-HRU — mean is a better summary than the
+        # array repr. Callers that need per-HRU can log separately.
+        return float(flat.mean())
+    if isinstance(value, (list, tuple)):
+        if len(value) == 1:
+            return _scalar_for_csv(value[0])
+        try:
+            return _scalar_for_csv(np.asarray(value))
+        except (TypeError, ValueError):
+            return value
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
+
+
 class ResultsTrackingMixin(ConfigMixin):
     """
     Mixin class providing results tracking and persistence for optimizers.
@@ -67,11 +111,25 @@ class ResultsTrackingMixin(ConfigMixin):
             params: Parameter values used
             additional_metrics: Optional additional metrics (NSE, RMSE, etc.)
         """
+        # Coerce array-valued parameters down to plain scalars before
+        # recording. Model-specific parameter managers (notably SUMMA's)
+        # return 1-element numpy arrays or per-HRU arrays from
+        # _format_parameter_value so the downstream model wrappers get
+        # the array type they expect. Feeding those arrays straight
+        # into pandas.DataFrame writes the string representation
+        # ("[0.1]", "[273.16]") to CSV — co-author PW reported that
+        # the sensitivity-analysis pipeline then read those columns
+        # as strings and SALib rejected them with "Bounds are not
+        # legal". Convert at the recording boundary so the CSV only
+        # carries numeric scalars without touching the shape passed
+        # to the model itself.
+        scalar_params = {k: _scalar_for_csv(v) for k, v in params.items()}
+
         record = {
             'iteration': iteration,
             'score': score,
             'timestamp': datetime.now().isoformat(),
-            **params,
+            **scalar_params,
         }
 
         if additional_metrics:
@@ -107,7 +165,9 @@ class ResultsTrackingMixin(ConfigMixin):
         # Check if better (for maximization problems like KGE)
         if score > self._best_score:
             self._best_score = score
-            self._best_params = params.copy()
+            # Same scalar coercion as record_iteration so the
+            # best-params JSON dump doesn't re-leak array reprs.
+            self._best_params = {k: _scalar_for_csv(v) for k, v in params.items()}
             self._best_iteration = iteration
 
             self.logger.debug(
