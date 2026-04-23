@@ -488,6 +488,7 @@ src/symfluence/geospatial/geofabric/delineators/lumped_delineator.py:LumpedWater
 src/symfluence/geospatial/geofabric/delineators/lumped_delineator.py:LumpedWatershedDelineator._normalize_id:except Exception:  # noqa: BLE001
 src/symfluence/geospatial/geofabric/delineators/lumped_delineator.py:LumpedWatershedDelineator._normalize_id:except Exception:  # noqa: BLE001
 src/symfluence/geospatial/geofabric/delineators/lumped_delineator.py:LumpedWatershedDelineator._read_taudem_tree:except Exception as e:  # noqa: BLE001
+src/symfluence/geospatial/geofabric/delineators/lumped_delineator.py:LumpedWatershedDelineator._select_lumped_basin_from_streamnet:except Exception as exc:  # noqa: BLE001 — metric projection is best-effort
 src/symfluence/geospatial/geofabric/delineators/lumped_delineator.py:LumpedWatershedDelineator._warn_if_fallback_area_looks_inconsistent:except Exception as e:  # noqa: BLE001
 src/symfluence/geospatial/geofabric/delineators/point_delineator.py:PointDelineator.create_point_domain_shapefile:except Exception as exc:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/geospatial/geofabric/methods/drop_analysis.py:DropAnalysisMethod.run:except Exception as e:  # noqa: BLE001 — preprocessing resilience
@@ -597,6 +598,7 @@ src/symfluence/models/clm/domain_generator.py:CLMDomainGenerator.get_mean_elevat
 src/symfluence/models/clm/domain_generator.py:CLMDomainGenerator.get_mean_elevation:except Exception:  # noqa: BLE001
 src/symfluence/models/clm/nuopc_generator.py:_ensure_cesm_inputdata:except Exception as exc:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/clm/postprocessor.py:CLMPostProcessor._get_catchment_area:except Exception:  # noqa: BLE001 — model execution resilience
+src/symfluence/models/clm/surface_generator.py:CLMSurfaceGenerator._get_pft_distribution:except Exception as e:  # noqa: BLE001
 src/symfluence/models/clm/surface_generator.py:CLMSurfaceGenerator._get_soil_fractions:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/clmparflow/calibration/parameter_manager.py:CLMParFlowParameterManager.get_initial_parameters:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/clmparflow/calibration/parameter_manager.py:CLMParFlowParameterManager.update_model_files:except Exception as e:  # noqa: BLE001 — calibration resilience
