@@ -154,7 +154,18 @@ class NEXGDDPCMIP6Handler(BaseDatasetHandler):
             )
             ds["wind_speed"] = ws
 
-        # ---- Air pressure (if present) ----
+        # ---- Air pressure ----
+        # NEX-GDDP-CMIP6 publishes {pr, tas, tasmax, tasmin, huss, hurs,
+        # rlds, rsds, sfcWind} — notably NOT surface pressure. SUMMA
+        # requires airpres, so when ps is absent we synthesize a
+        # physically-grounded estimate from the International Standard
+        # Atmosphere (ISA): first back-compute an equivalent altitude
+        # from mean 2m air temperature via the 6.5 K/km tropospheric
+        # lapse rate, then apply the ISA pressure-altitude relation.
+        # This is climatological and does NOT capture synoptic pressure
+        # variability, but it is physically consistent and avoids the
+        # older "fill with 101325 Pa everywhere" default that was
+        # physically unrealistic for high-elevation basins.
         if "surface_air_pressure" in ds.data_vars:
             ap = ds["surface_air_pressure"].astype("float32")
             ap = xr.where(np.isfinite(ap), ap, np.nan)
@@ -162,6 +173,42 @@ class NEXGDDPCMIP6Handler(BaseDatasetHandler):
                 long_name="surface air pressure",
                 units="Pa",
                 standard_name="air_pressure",
+            )
+            ds["surface_air_pressure"] = ap
+        elif "air_temperature" in ds.data_vars:
+            T0_ISA = 288.15  # sea-level temperature, K
+            P0_ISA = 101325.0  # sea-level pressure, Pa
+            L_ISA = 0.0065   # tropospheric lapse rate, K/m
+            T_mean = float(ds["air_temperature"].mean().values)
+            if not np.isfinite(T_mean) or T_mean <= 200 or T_mean >= 320:
+                z_est = 0.0
+                self.logger.warning(
+                    f"NEX-GDDP-CMIP6 missing surface pressure; could not "
+                    f"infer altitude from mean T={T_mean} — using sea-level "
+                    f"reference (101325 Pa). Downstream model output will "
+                    f"be biased for elevated basins."
+                )
+            else:
+                z_est = max(0.0, (T0_ISA - T_mean) / L_ISA)
+            # ISA pressure-altitude: P(z) = P0 * (1 - L*z/T0)^5.25588
+            factor = (1.0 - L_ISA * z_est / T0_ISA) ** 5.25588
+            p_synth = float(P0_ISA * factor)
+            self.logger.warning(
+                f"NEX-GDDP-CMIP6 does not publish surface pressure; "
+                f"synthesizing from mean air temperature "
+                f"(T_mean={T_mean:.1f} K -> z≈{z_est:.0f} m -> "
+                f"P≈{p_synth:.0f} Pa). This is a climatological estimate, "
+                f"not synoptic."
+            )
+            ap = xr.full_like(ds["air_temperature"], p_synth, dtype="float32")
+            ap.attrs.update(
+                long_name="surface air pressure (ISA climatological estimate)",
+                units="Pa",
+                standard_name="air_pressure",
+                synthesis_note=(
+                    "NEX-GDDP-CMIP6 does not provide pressure; "
+                    "synthesized via ISA at altitude inferred from mean T."
+                ),
             )
             ds["surface_air_pressure"] = ap
 
