@@ -12,6 +12,7 @@ system:
 domain:
   name: '3'
   bounding_box_coords: 65.48731010394621/-18.99881311070469/64.75068115613905/-17.969189064135367
+  pour_point_coords: 65.309835/-18.886048
   experiment_id: run_3
   time_start: 2000-01-01 03:00
   time_end: 2008-12-31 21:00

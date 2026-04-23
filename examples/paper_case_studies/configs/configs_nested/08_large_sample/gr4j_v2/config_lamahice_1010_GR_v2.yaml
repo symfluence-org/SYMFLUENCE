@@ -12,6 +12,7 @@ system:
 domain:
   name: '1010'
   bounding_box_coords: 64.92838841078853/-19.59304018289371/64.20868655559904/-18.34531749850082
+  pour_point_coords: 64.330998/-19.215507
   experiment_id: run_gr_v2
   time_start: 2000-01-01 03:00
   time_end: 2008-12-31 21:00
