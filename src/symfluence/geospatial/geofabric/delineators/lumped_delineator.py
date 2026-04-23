@@ -448,13 +448,68 @@ class LumpedWatershedDelineator(BaseGeofabricDelineator):
 
         gauge_geom = gauges_gdf.geometry.iloc[0]
 
-        touching = rivers_gdf[rivers_gdf.geometry.intersects(gauge_geom)]
+        # TauDEM's MoveOutletsToStreams snaps the gauge to the nearest
+        # stream pixel, which for large basins often lands at a point
+        # where a tiny first-order tributary coincides with the main
+        # stem. Picking the closest segment by default then selects the
+        # order-1 rivulet (Magnitude=1) and discards the full upstream
+        # catchment — observed on the 08_large_sample LaMAH-ICE id=102
+        # verification, where the main stem (Magnitude≈478, ~7000 km²
+        # upstream) sat 120 m away but the code picked a Magnitude=1
+        # stub and produced a 5 km² "lumped" basin.
+        #
+        # Fix: prefer the highest-magnitude (= largest upstream
+        # drainage) segment among the streams that coincide with or
+        # pass within a small tolerance of the snapped gauge. Fall back
+        # to distance-minimising when the streamnet has no Magnitude
+        # column.
+        SNAP_TOLERANCE_M = 200  # streams passing within 200 m of snapped gauge are candidates
+
+        # Candidates: every stream passing within SNAP_TOLERANCE_M of the
+        # snapped gauge. We cast this net wider than just
+        # `intersects(gauge_geom)` because TauDEM's MoveOutletsToStreams
+        # snaps to the nearest pixel, and at large basin outlets the
+        # snapped pixel often sits on a short order-1 tributary that
+        # happens to coincide with the main stem's buffer. Including
+        # all streams in a small radius lets the Magnitude-ranking
+        # below find the true main stem even when it's 100–200 m away
+        # from the snap point (observed on LaMAH-ICE id=102: the
+        # Magnitude=478 stem sat 124 m from a Magnitude=1 snap).
+        try:
+            # Project to a metric CRS for reliable distance-in-metres.
+            # ISN93 (EPSG:3057) is native for Iceland; for other regions
+            # pyproj's estimate_utm_crs would be ideal, but falling back
+            # to a synthetic local projection via `to_crs` keeps the
+            # behaviour consistent.
+            projected = rivers_gdf.to_crs("EPSG:3057")
+            gauge_proj = gpd.GeoSeries([gauge_geom], crs=gauges_gdf.crs).to_crs("EPSG:3057").iloc[0]
+            distances_m = projected.geometry.distance(gauge_proj)
+            touching = rivers_gdf[distances_m <= SNAP_TOLERANCE_M]
+        except Exception as exc:  # noqa: BLE001 — metric projection is best-effort
+            self.logger.debug(f"Metric snap-tolerance skipped: {exc}")
+            touching = rivers_gdf[rivers_gdf.geometry.intersects(gauge_geom)]
+
         if touching.empty:
+            # Nothing intersecting and nothing within tolerance — fall back
+            # to the single closest segment.
             distances = rivers_gdf.geometry.distance(gauge_geom)
             touching = rivers_gdf.loc[[distances.idxmin()]]
 
-        outlet_row = touching.iloc[0]
+        # Among candidates, prefer the highest-magnitude (largest upstream
+        # drainage) segment — that's the main stem. Fall back to
+        # strmOrder, then to first.
+        if 'Magnitude' in touching.columns:
+            outlet_row = touching.sort_values('Magnitude', ascending=False).iloc[0]
+        elif 'strmOrder' in touching.columns:
+            outlet_row = touching.sort_values('strmOrder', ascending=False).iloc[0]
+        else:
+            outlet_row = touching.iloc[0]
         outlet_id = self._normalize_id(outlet_row[river_id_col])
+
+        self.logger.info(
+            f"Selected outlet stream: {river_id_col}={outlet_id} "
+            f"(of {len(touching)} candidate segment(s) within {SNAP_TOLERANCE_M} m of snapped gauge)"
+        )
 
         upstream_ids = self._build_upstream_id_set_from_rivers(rivers_gdf, outlet_id, river_id_col, downstream_col)
         if not upstream_ids:
