@@ -66,15 +66,29 @@ DOMAIN_DEFINITION_METHODS = ['lumped', 'point', 'subset', 'delineate']
 # Available tools for binary installation
 # Default tools are installed by `symfluence binary install` (no arguments).
 # Experimental tools require explicit naming, e.g. `symfluence binary install rhessys`.
+# The default tier is the set `symfluence binary install` (no args)
+# compiles out of the box. Every process-based model that appears in
+# the paper's Fig 4 / Fig 8 multi-model ensemble is here so a fresh
+# install is enough to reproduce the paper. JAX re-implementations
+# (HBV*, SACSMA*, XAJ*, HECHMS*, TOPMODEL*, SUMMA+MOD) arrive as
+# pip/jax dependencies in pyproject.toml and don't need a binary
+# install. LSTM and GR4J are pure-Python / R-bridge models (no binary).
 DEFAULT_TOOLS = [
-    'sundials', 'summa', 'mizuroute', 'troute', 'fuse', 'taudem',
-    'gistool', 'datatool', 'ngen', 'ngiab', 'hype', 'mesh',
+    # Framework glue
+    'sundials', 'taudem', 'gistool', 'datatool',
+    # Routing
+    'mizuroute', 'troute',
+    # Hydrology engines in the paper's ensemble (alphabetical)
+    'clm', 'clmparflow', 'crhm', 'fuse', 'gsflow', 'hype',
+    'mesh', 'mhm', 'ngen', 'ngiab', 'parflow', 'pihm',
+    'prms', 'rhessys', 'summa', 'swat', 'vic', 'watflood',
+    'wflow', 'wrfhydro',
 ]
+# Experimental tier: not in the paper ensemble, still buildable on
+# explicit request.
 EXPERIMENTAL_TOOLS = [
-    'rhessys', 'openfews', 'wmfire', 'cfuse', 'droute', 'ignacio',
-    'vic', 'clm', 'swat', 'mhm', 'crhm', 'prms', 'modflow', 'gsflow',
-    'watflood', 'wflow', 'parflow', 'clmparflow', 'wrfhydro', 'pihm',
-    'enzyme',
+    'openfews', 'wmfire', 'cfuse', 'droute', 'ignacio',
+    'modflow', 'enzyme',
 ]
 EXTERNAL_TOOLS = DEFAULT_TOOLS + EXPERIMENTAL_TOOLS
 
@@ -398,8 +412,19 @@ For more help on a specific command:
         )
         _tools_help = (
             'Tools to install. If not specified, installs all default tools.\n'
-            f'  Default:      {", ".join(DEFAULT_TOOLS)}\n'
-            f'  Experimental: {", ".join(EXPERIMENTAL_TOOLS)}'
+            '\n'
+            f'  Default ({len(DEFAULT_TOOLS)} tools — covers every process-based model '
+            'in the paper Fig 4/Fig 8 ensemble):\n'
+            f'    {", ".join(DEFAULT_TOOLS)}\n'
+            f'  Experimental (explicit opt-in): {", ".join(EXPERIMENTAL_TOOLS)}\n'
+            '\n'
+            '  JAX re-implementations (HBV*, SACSMA*, XAJ*, HECHMS*, TOPMODEL*,\n'
+            '  SUMMA+MOD) arrive automatically with "pip install symfluence"\n'
+            '  and do not need a binary build.\n'
+            '  LSTM is PyTorch-only; GR4J uses airGR via rpy2 (R optional dep).\n'
+            '\n'
+            '  Binaries install under SYMFLUENCE_DATA_DIR/installs/<tool>/bin/\n'
+            '  (defaults to ./SYMFLUENCE_data/installs when SYMFLUENCE_DATA_DIR is unset).'
         )
         install_parser.add_argument('tools', nargs='*', metavar='TOOL',
                                   help=_tools_help)
