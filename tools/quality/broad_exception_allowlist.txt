@@ -282,6 +282,7 @@ src/symfluence/data/observation/handlers/hubeau.py:HubEauStreamflowHandler._down
 src/symfluence/data/observation/handlers/ims_snow.py:IMSSnowHandler.process:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/observation/handlers/jrc_water.py:JRCWaterHandler._compute_basin_stats:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/observation/handlers/jrc_water.py:JRCWaterHandler.process:except Exception as e:  # noqa: BLE001 — preprocessing resilience
+src/symfluence/data/observation/handlers/lamah_ice.py:_download_lamah_ice_zip:except Exception as e:  # noqa: BLE001 — wrap transport errors
 src/symfluence/data/observation/handlers/modis_snow.py:MODISSnowHandler._extract_with_catchment_mask:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/observation/handlers/modis_snow.py:MODISSnowHandler._process_netcdf:except Exception as e2:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/data/observation/handlers/modis_snow.py:MODISSnowHandler._process_netcdf:except Exception as e:  # noqa: BLE001 — preprocessing resilience
@@ -678,6 +679,7 @@ src/symfluence/models/fuse/calibration/parameter_manager.py:FUSEParameterManager
 src/symfluence/models/fuse/calibration/parameter_manager.py:FUSEParameterManager.verify_and_fix_parameter_files:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/fuse/calibration/transfer_functions.py:ParameterTransferManager.create_distributed_para_def:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/fuse/calibration/worker.py:FUSEWorker._calculate_multi_gauge_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
+src/symfluence/models/fuse/calibration/worker.py:FUSEWorker._calculate_multi_gauge_metrics:except Exception as exc:  # noqa: BLE001 — let the existence check below surface the real failure
 src/symfluence/models/fuse/forcing_processor.py:FuseForcingProcessor._calculate_distributed_pet:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/fuse/forcing_processor.py:FuseForcingProcessor._prepare_lumped_forcing:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/fuse/forcing_processor.py:FuseForcingProcessor.prepare_forcing_data:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
