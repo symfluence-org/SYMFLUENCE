@@ -29,11 +29,54 @@ try:
 except ImportError:  # pragma: no cover — pyviscous is an optional dep
     _pyviscous = None
 
+# Columns in the calibration-results CSV that are NOT calibration
+# parameters and must be excluded from sensitivity analysis.
+#
+# Gradient-based optimisers (ADAM, L-BFGS) write extra diagnostic
+# columns — grad_norm, lr, current_params — that co-author SH's
+# iter-3 feedback called out (04.SH.3): "Sensitivity analysis step
+# fails entirely for gradient-based algorithms — all parameters
+# throw a type error caused by ADAM-specific columns that the
+# sensitivity analyzer cannot handle." current_params in particular
+# is a Python list that pandas writes as a string literal.
+#
+# We also filter any non-numeric column up front in
+# ``_parameter_columns_for_sa`` as a belt-and-suspenders guard so
+# future optimisers that add their own diagnostic columns don't
+# regress this path.
 _NON_PARAM_COLS = frozenset({
-    'Iteration', 'iteration', 'score', 'timestamp', 'crash_count', 'crash_rate',
+    # Bookkeeping
+    'Iteration', 'iteration', 'step', 'timestamp', 'crash_count', 'crash_rate',
+    # Objective scores (various conventions)
+    'score', 'objective', 'Objective', 'fitness',
+    'RMSE', 'KGE', 'KGEp', 'KGEnp', 'NSE', 'MAE',
     'Calib_RMSE', 'Calib_KGE', 'Calib_KGEp', 'Calib_KGEnp', 'Calib_NSE', 'Calib_MAE',
-    'RMSE', 'KGE', 'KGEp', 'NSE', 'MAE', 'objective', 'Objective', 'fitness',
+    'Eval_RMSE', 'Eval_KGE', 'Eval_KGEp', 'Eval_KGEnp', 'Eval_NSE', 'Eval_MAE',
+    # Gradient-optimiser internals (ADAM / L-BFGS)
+    'grad_norm', 'lr', 'current_params', 'step_size',
+    'f_calls', 'n_iter', 'fun', 'gtol', 'ftol', 'xtol',
 })
+
+
+def _parameter_columns_for_sa(samples) -> list:
+    """Return the subset of columns that should be treated as
+    calibration parameters.
+
+    Drops:
+      1. Anything in ``_NON_PARAM_COLS`` (known bookkeeping / score /
+         optimiser-internal columns).
+      2. Non-numeric columns (string literals like ``"[0.1, 0.5]"``
+         from list-valued optimiser diagnostics, or bracketed
+         stringified arrays from older calibration runs that PR
+         #54 fixes at source but that still exist in on-disk
+         historical CSVs).
+    """
+    numeric_cols = [
+        c for c in samples.columns
+        if c not in _NON_PARAM_COLS
+        and pd.api.types.is_numeric_dtype(samples[c])
+    ]
+    return numeric_cols
 
 
 class SensitivityAnalyzer(ConfigMixin):
@@ -154,7 +197,7 @@ class SensitivityAnalyzer(ConfigMixin):
             pd.Series: Sensitivity indices for each parameter, or -999 if failed.
         """
         self.logger.info(f"Performing sensitivity analysis using {metric} metric")
-        parameter_columns = [col for col in samples.columns if col not in _NON_PARAM_COLS]
+        parameter_columns = _parameter_columns_for_sa(samples)
 
         if len(samples) < min_samples:
             self.logger.warning(f"Insufficient data for reliable sensitivity analysis. Have {len(samples)} samples, recommend at least {min_samples}.")
@@ -230,7 +273,7 @@ class SensitivityAnalyzer(ConfigMixin):
             pd.Series: Total-order Sobol indices for each parameter.
         """
         self.logger.info(f"Performing Sobol analysis using {metric} metric")
-        parameter_columns = [col for col in samples.columns if col not in _NON_PARAM_COLS]
+        parameter_columns = _parameter_columns_for_sa(samples)
 
         # SALib's sobol.analyze raises a generic "Bounds are not legal"
         # ValueError when the bounds aren't numeric (e.g. a YAML pass
@@ -301,7 +344,7 @@ class SensitivityAnalyzer(ConfigMixin):
             pd.Series: First-order sensitivity indices (S1) for each parameter.
         """
         self.logger.info(f"Performing RBD-FAST analysis using {metric} metric")
-        parameter_columns = [col for col in samples.columns if col not in ['Iteration', 'RMSE', 'KGE', 'KGEp', 'NSE', 'MAE']]
+        parameter_columns = _parameter_columns_for_sa(samples)
 
         problem = {
             'num_vars': len(parameter_columns),
@@ -331,7 +374,7 @@ class SensitivityAnalyzer(ConfigMixin):
             pd.Series: Spearman correlation coefficients for each parameter.
         """
         self.logger.info(f"Performing correlation analysis using {metric} metric")
-        parameter_columns = [col for col in samples.columns if col not in _NON_PARAM_COLS]
+        parameter_columns = _parameter_columns_for_sa(samples)
         correlations = []
         for param in parameter_columns:
             corr, _ = spearmanr(samples[param], samples[metric])

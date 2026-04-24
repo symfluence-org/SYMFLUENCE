@@ -54,24 +54,32 @@ def _make_analyzer():
     return analyzer
 
 
-def test_stringified_bounds_raise_actionable_value_error():
-    """If the samples DataFrame was round-tripped through YAML and
-    parameter columns ended up as strings, perform_sobol_analysis
-    must refuse up-front with a message that names the parameter
-    and the offending values — not SALib's generic 'Bounds are not
-    legal'."""
+def test_stringified_columns_are_filtered_not_crashed_on():
+    """If the samples DataFrame has stringified / non-numeric
+    columns (YAML round-trip artefact, ADAM's ``current_params``
+    list, etc.), ``_parameter_columns_for_sa`` drops them at source.
+    Sobol then runs cleanly on only the genuine numeric parameters.
+
+    This used to be a raise-loudly assertion (bounds-are-not-legal
+    with an actionable message), but the dtype-based filter
+    introduced alongside the ADAM/L-BFGS fix makes the crash path
+    unreachable for this case — stringified columns never reach the
+    validator. The two remaining bad-data cases that still warrant
+    a loud raise (numeric-but-degenerate bounds, numeric-but-constant
+    parameter) are covered below.
+    """
     samples = pd.DataFrame({
-        "param_a": ["0.1", "0.5", "2.0"],
+        "param_a": ["0.1", "0.5", "2.0"],  # stringified → filtered
         "param_b": [1.0, 2.0, 3.0],
         "RMSE": [0.1, 0.2, 0.3],
     })
     analyzer = _make_analyzer()
-    with pytest.raises(ValueError) as excinfo:
-        analyzer.perform_sobol_analysis(samples, metric="RMSE")
-    msg = str(excinfo.value)
-    assert "param_a" in msg
-    assert "non-numeric" in msg
-    assert "stringified" in msg.lower() or "yaml" in msg.lower()
+    # Must not raise — param_a is filtered out, SA runs on param_b only.
+    result = analyzer.perform_sobol_analysis(samples, metric="RMSE")
+    assert list(result.index) == ["param_b"], (
+        f"stringified column leaked through filter; "
+        f"parameters SA saw: {list(result.index)}"
+    )
 
 
 def test_constant_parameter_raises_actionable_value_error():
