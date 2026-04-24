@@ -173,16 +173,7 @@ class SummaStructureAnalyzer(BaseStructureEnsembleAnalyzer):
         ) or 'streamflow').lower()
 
     def calculate_performance_metrics(self) -> Dict[str, float]:
-        """
-        Calculate performance metrics for the current model run.
-
-        Dispatches to target-specific logic: streamflow uses mizuRoute routed
-        runoff; non-streamflow targets (SWE, SCA, ET, …) delegate to the
-        matching evaluator from the EvaluationRegistry.
-
-        Returns:
-            Dict: Dictionary containing KGE, NSE, MAE, and RMSE.
-        """
+        """Dispatch to the appropriate target-specific calculator."""
         opt_target = self._get_optimization_target()
         if opt_target not in ('streamflow', 'flow', 'discharge'):
             return self._calculate_evaluator_metrics(opt_target)
@@ -227,68 +218,14 @@ class SummaStructureAnalyzer(BaseStructureEnsembleAnalyzer):
         }
 
     def _calculate_streamflow_metrics(self) -> Dict[str, float]:
-        """Original streamflow-specific metric calculation using mizuRoute output."""
-        # Load observations
-        obs_file_path = self._resolve(
-            lambda: self.config.paths.observations_path,
-            'OBSERVATIONS_PATH', 'default'
-        )
-        if obs_file_path == 'default' or not obs_file_path:
-            obs_file_path = self.project_observations_dir / 'streamflow' / 'preprocessed' / f"{self.domain_name}_streamflow_processed.csv"
-        else:
-            obs_file_path = Path(obs_file_path)
+        """Streamflow metrics from routed (mizuRoute) or native-SUMMA output.
 
-        if not obs_file_path.exists():
-            self.logger.error(f"Observation file not found: {obs_file_path}")
-            raise FileNotFoundError(f"Missing observation file: {obs_file_path}")
-
-        # Load simulation results (mizuRoute output)
-        sim_reach_ID = self._resolve(
-            lambda: self.config.evaluation.sim_reach_id,
-            'SIM_REACH_ID', None
-        )
-        sim_path_config = self._resolve(
-            lambda: self.config.paths.simulations_path,
-            'SIMULATIONS_PATH', 'default'
-        )
-
-        if sim_path_config == 'default' or not sim_path_config:
-            start_year = (self.time_start or '1990').split('-')[0]
-            sim_file_path = (
-                self.project_dir / 'simulations' / self.experiment_id /
-                'mizuRoute' / f"{self.experiment_id}.h.{start_year}-01-01-03600.nc"
-            )
-        else:
-            sim_file_path = Path(sim_path_config)
-
-        if not sim_file_path.exists():
-            self.logger.error(f"Simulation output file not found: {sim_file_path}")
-            raise FileNotFoundError(f"Missing simulation output: {sim_file_path}")
-
-        # Process observations
-        dfObs = pd.read_csv(obs_file_path, index_col='datetime', parse_dates=True)
-        if 'discharge_cms' in dfObs.columns:
-            obs_series = dfObs['discharge_cms'].resample('h').mean()
-        else:
-            data_col = [c for c in dfObs.columns if c.lower() not in ['datetime', 'date']][0]
-            obs_series = dfObs[data_col].resample('h').mean()
-
-        # Process simulations
-        with xr.open_dataset(sim_file_path, engine='netcdf4') as ds:
-            if 'reachID' in ds.variables:
-                segment_index = ds['reachID'].values == int(sim_reach_ID)
-                ds_sel = ds.sel(seg=segment_index)
-            else:
-                ds_sel = ds.isel(seg=0)
-
-            var_name = 'IRFroutedRunoff' if 'IRFroutedRunoff' in ds_sel.variables else 'KWTroutedRunoff'
-            if var_name not in ds_sel.variables:
-                var_name = [v for v in ds_sel.variables if 'routedRunoff' in v][0]
-
-            sim_df = ds_sel[var_name].to_dataframe().reset_index()
-            sim_df.set_index('time', inplace=True)
-            sim_df.index = sim_df.index.round(freq='h')
-            sim_series = sim_df[var_name]
+        Reads mizuRoute output when ROUTING_MODEL is mizuRoute and the
+        file exists; otherwise falls back to SUMMA's own
+        ``averageRoutedRunoff`` (m/s, converted to m³/s via HRU area).
+        """
+        obs_series = self._load_streamflow_observations()
+        sim_series = self._load_streamflow_simulations()
 
         # Align series
         obs_aligned = obs_series.reindex(sim_series.index).dropna()
@@ -308,3 +245,128 @@ class SummaStructureAnalyzer(BaseStructureEnsembleAnalyzer):
             'mae': float(mae(obs_vals, sim_vals, transfo=1)),
             'rmse': float(rmse(obs_vals, sim_vals, transfo=1))
         }
+
+    def _load_streamflow_observations(self) -> pd.Series:
+        """Read the domain's preprocessed gauge CSV at hourly resolution."""
+        obs_file_path = self._resolve(
+            lambda: self.config.paths.observations_path,
+            'OBSERVATIONS_PATH', 'default'
+        )
+        if obs_file_path == 'default' or not obs_file_path:
+            obs_file_path = (
+                self.project_observations_dir / 'streamflow' / 'preprocessed'
+                / f"{self.domain_name}_streamflow_processed.csv"
+            )
+        else:
+            obs_file_path = Path(obs_file_path)
+
+        if not obs_file_path.exists():
+            raise FileNotFoundError(f"Missing observation file: {obs_file_path}")
+
+        dfObs = pd.read_csv(obs_file_path, index_col='datetime', parse_dates=True)
+        if 'discharge_cms' in dfObs.columns:
+            return dfObs['discharge_cms'].resample('h').mean()
+        data_col = [c for c in dfObs.columns if c.lower() not in ['datetime', 'date']][0]
+        return dfObs[data_col].resample('h').mean()
+
+    def _load_streamflow_simulations(self) -> pd.Series:
+        """Read simulated streamflow, preferring mizuRoute if configured and
+        present, otherwise falling back to SUMMA's native routed runoff.
+
+        Raises:
+            FileNotFoundError: when neither mizuRoute output nor a readable
+                SUMMA native output is available.
+        """
+        routing_model = str(self._resolve(
+            lambda: self.config.model.routing_model, 'ROUTING_MODEL', 'none'
+        )).lower()
+
+        if routing_model == 'mizuroute':
+            mizu_path = self._resolve_mizuroute_output_path()
+            if mizu_path.exists():
+                return self._read_mizuroute_series(mizu_path)
+            self.logger.warning(
+                f"ROUTING_MODEL=mizuRoute but {mizu_path} not found — "
+                "falling back to SUMMA native routed runoff."
+            )
+
+        return self._read_summa_native_series()
+
+    def _resolve_mizuroute_output_path(self) -> Path:
+        sim_path_config = self._resolve(
+            lambda: self.config.paths.simulations_path,
+            'SIMULATIONS_PATH', 'default'
+        )
+        if sim_path_config != 'default' and sim_path_config:
+            return Path(sim_path_config)
+        start_year = (self.time_start or '1990').split('-')[0]
+        return (
+            self.project_dir / 'simulations' / self.experiment_id
+            / 'mizuRoute' / f"{self.experiment_id}.h.{start_year}-01-01-03600.nc"
+        )
+
+    def _read_mizuroute_series(self, sim_file_path: Path) -> pd.Series:
+        sim_reach_ID = self._resolve(
+            lambda: self.config.evaluation.sim_reach_id, 'SIM_REACH_ID', None
+        )
+        with xr.open_dataset(sim_file_path, engine='netcdf4') as ds:
+            if 'reachID' in ds.variables and sim_reach_ID is not None:
+                ds_sel = ds.sel(seg=(ds['reachID'].values == int(sim_reach_ID)))
+            else:
+                ds_sel = ds.isel(seg=0)
+
+            var_name = 'IRFroutedRunoff' if 'IRFroutedRunoff' in ds_sel.variables else 'KWTroutedRunoff'
+            if var_name not in ds_sel.variables:
+                routed = [v for v in ds_sel.variables if 'routedRunoff' in v]
+                if not routed:
+                    raise KeyError(f"No routedRunoff variable found in {sim_file_path}")
+                var_name = routed[0]
+
+            sim_df = ds_sel[var_name].to_dataframe().reset_index()
+            sim_df.set_index('time', inplace=True)
+            sim_df.index = sim_df.index.round(freq='h')
+            return sim_df[var_name]
+
+    def _read_summa_native_series(self) -> pd.Series:
+        """Fallback: build a m³/s streamflow series from SUMMA's own
+        ``averageRoutedRunoff`` (m/s) scaled by HRU area."""
+        summa_dir = self.project_dir / 'simulations' / self.experiment_id / 'SUMMA'
+        candidates = sorted(summa_dir.glob(f"{self.experiment_id}*.nc"))
+        candidates = [p for p in candidates if 'day' not in p.stem]
+        if not candidates:
+            raise FileNotFoundError(
+                f"No SUMMA output under {summa_dir} and mizuRoute output also unavailable — "
+                "cannot compute streamflow metrics. Either enable routing "
+                "(ROUTING_MODEL: mizuRoute with a routed domain) or ensure the "
+                "SUMMA run produced averageRoutedRunoff."
+            )
+
+        with xr.open_dataset(candidates[0]) as ds:
+            if 'averageRoutedRunoff' not in ds:
+                raise KeyError(
+                    f"averageRoutedRunoff not in {candidates[0]}; "
+                    "native SUMMA fallback needs it."
+                )
+            var = ds['averageRoutedRunoff']
+            if 'hru' in var.dims and var.sizes['hru'] > 1:
+                if 'HRUarea' in ds:
+                    weights = ds['HRUarea'] / ds['HRUarea'].sum()
+                    series_m = (var * weights).sum(dim='hru').to_pandas()
+                else:
+                    series_m = var.mean(dim='hru').to_pandas()
+            else:
+                series_m = var.squeeze().to_pandas()
+
+            basin_area_m2 = float(ds['HRUarea'].sum()) if 'HRUarea' in ds else None
+
+        if basin_area_m2:
+            series_cms = series_m * basin_area_m2
+        else:
+            series_cms = series_m
+            self.logger.warning(
+                "HRUarea not present in SUMMA output; streamflow will be in m/s "
+                "(depth/time) rather than m³/s. Metrics may be on a different scale."
+            )
+
+        series_cms.index = pd.to_datetime(series_cms.index).round(freq='h')
+        return series_cms
