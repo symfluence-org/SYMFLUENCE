@@ -208,11 +208,17 @@ class BaseStructureEnsembleAnalyzer(ProjectContextMixin, ABC):
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
 
+        n_total = len(df)
         df = df.dropna(subset=['kge', 'nse'], how='all')
 
         if df.empty:
-            self.logger.warning("No valid results found to analyze.")
-            return {}
+            raise RuntimeError(
+                f"{self.__class__.__name__}: all {n_total} decision "
+                "combinations produced NaN metrics. See the per-combination "
+                "errors in the log (typical causes: missing simulation "
+                "output, misconfigured observations, or OPTIMIZATION_TARGET "
+                "incompatible with this model)."
+            )
 
         metrics_cols = ['kge', 'kgep', 'nse', 'mae', 'rmse']
         decisions = list(self.decision_options.keys())
