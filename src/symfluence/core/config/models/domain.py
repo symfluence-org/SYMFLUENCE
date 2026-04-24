@@ -194,6 +194,9 @@ class DomainConfig(BaseModel):
             'distribute': 'distributed',
             'discretized': 'semidistributed',  # deprecated
             'subset': 'semidistributed',  # now use subset_from_geofabric=True
+            # Spelling variants written by several paper configs
+            'semi_distributed': 'semidistributed',
+            'semi-distributed': 'semidistributed',
         }
         if v in legacy_mapping:
             if v == 'discretized':

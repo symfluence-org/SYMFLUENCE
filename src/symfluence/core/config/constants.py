@@ -32,4 +32,6 @@ VALID_DOMAIN_METHODS_CANONICAL = frozenset({
 VALID_DOMAIN_METHODS_WITH_LEGACY = frozenset({
     'point', 'lumped', 'semidistributed', 'distributed',
     'discretized', 'distribute', 'subset', 'delineate',
+    # Spelling variants — several paper configs write these
+    'semi_distributed', 'semi-distributed',
 })
