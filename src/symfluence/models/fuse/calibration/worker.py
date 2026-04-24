@@ -457,6 +457,24 @@ class FUSEWorker(BaseWorker):
             gauge_mapping_path = Path(gauge_mapping_path)
             obs_dir = Path(obs_dir)
 
+            # Auto-download LaMAH-Ice daily streamflow if the user pointed
+            # at a LaMAH-Ice D_gauges directory that isn't there yet.
+            if 'D_gauges' in obs_dir.parts and not obs_dir.exists():
+                try:
+                    from symfluence.data.observation.handlers.lamah_ice import (
+                        ensure_lamah_ice_streamflow,
+                    )
+                    # Trim to the dataset root (parent of D_gauges/...)
+                    lamah_root = obs_dir
+                    while lamah_root.name != 'D_gauges' and lamah_root.parent != lamah_root:
+                        lamah_root = lamah_root.parent
+                    lamah_root = lamah_root.parent
+                    ensure_lamah_ice_streamflow(lamah_root, self.logger)
+                except Exception as exc:  # noqa: BLE001 — let the existence check below surface the real failure
+                    self.logger.warning(
+                        f"LaMAH-Ice auto-download skipped: {exc}"
+                    )
+
             # Get topology file
             topology_path = self._find_topology_path(kwargs.get('settings_dir'))
 
