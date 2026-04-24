@@ -244,19 +244,13 @@ class FuseForcingProcessor(BaseForcingProcessor):
                 # Calculate from geometry
                 # If geographic CRS, reproject to projected CRS for accurate area
                 if catchment.crs and catchment.crs.is_geographic:
-                    self.logger.debug("Geographic CRS detected, reprojecting for area calculation")
-                    # Use an equal-area projection (Web Mercator for simplicity)
-                    catchment_projected = catchment.to_crs('EPSG:3857')
-                    areas = catchment_projected.geometry.area.values
+                    self.logger.debug("Geographic CRS detected, reprojecting to equal-area CRS for area calculation")
+                    catchment_projected = catchment.to_crs("EPSG:6933")
+                    areas = catchment_projected.geometry.area.values / 1e6  # km²
                 else:
                     areas = catchment.geometry.area.values
-
-                if areas.mean() > 1e6:
-                    # Likely in m², convert to km² for readability
-                    areas = areas / 1e6
-                    self.logger.debug("Calculated areas from geometry (converted m² to km²)")
-                else:
-                    self.logger.debug("Calculated areas from geometry")
+                    if areas.mean() > 1e6:
+                        areas = areas / 1e6
 
             # Verify we have the right number of areas
             if len(areas) != ds.sizes.get('hru', 0):
