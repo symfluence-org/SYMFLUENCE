@@ -1131,6 +1131,8 @@ class FUSERunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, Miz
                     updated_lines.append(f"'{output_path}'       ! OUTPUT_PATH\n")
                 elif stripped.startswith("'") and 'INPUT_PATH' in line:
                      updated_lines.append(f"'{input_path_str}'       ! INPUT_PATH\n")
+                elif stripped.startswith("'") and 'FORCING INFO' in line:
+                    updated_lines.append("'input_info.txt'                 ! FORCING INFO       = definition of the forcing file\n")
                 elif stripped.startswith("'") and 'FMODEL_ID' in line:
                     updated_lines.append(f"'{fuse_id}'                            ! FMODEL_ID          = string defining FUSE model, only used to name output files\n")
                 elif stripped.startswith("'") and 'M_DECISIONS' in line:
