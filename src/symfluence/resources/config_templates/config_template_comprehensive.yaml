@@ -2023,6 +2023,13 @@ LAMAH_ICE_PATH: null
 #   Usage:      LamaH-Ice station identifier for Iceland basins
 LAMAH_ICE_STATION_ID: null
 
+# LAMAH_ICE_DOMAIN_ID
+#   Type:        str | int
+#   Default:     None
+#   Source:      LAMAHICEConfig (evaluation.py)
+#   Usage:      LamaH-Ice basin identifier (matches ID_<n>.csv naming); preferred over STATION_ID
+LAMAH_ICE_DOMAIN_ID: null
+
 # ========================================
 # SMHI (Swedish Meteorological and Hydrological Institute)
 # ========================================

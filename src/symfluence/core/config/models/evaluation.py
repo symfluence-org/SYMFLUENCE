@@ -9,7 +9,7 @@ StreamflowConfig, SNOTELConfig, FluxNetConfig, USGSGWConfig, SMAPConfig,
 GRACEConfig, MODISSnowConfig, AttributesConfig, and the parent EvaluationConfig.
 """
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -166,6 +166,7 @@ class LAMAHICEConfig(BaseModel):
     download: bool = Field(default=False, alias='DOWNLOAD_LAMAH_ICE_DATA')
     path: Optional[str] = Field(default=None, alias='LAMAH_ICE_PATH')
     station_id: Optional[str] = Field(default=None, alias='LAMAH_ICE_STATION_ID')
+    domain_id: Optional[Union[str, int]] = Field(default=None, alias='LAMAH_ICE_DOMAIN_ID')
 
 
 class GlacierConfig(BaseModel):

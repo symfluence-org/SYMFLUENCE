@@ -202,7 +202,30 @@ class LamahIceStreamflowHandler(BaseObservationHandler):
                 dict_key='STATION_ID',
             )
         )
-        lamah_path_str = self._get_config_value(lambda: self.config.data.lamah_ice_path, dict_key='LAMAH_ICE_PATH')
+        # Backward compat: older configs may place domain_id under
+        # data.lamah_ice (a Pydantic extra dict) instead of
+        # evaluation.lamah_ice.domain_id.
+        if not station_id:
+            cfg = self.config
+            if isinstance(cfg, dict):
+                data_lamah = (cfg.get('data') or {}).get('lamah_ice')
+            else:
+                data_lamah = getattr(
+                    getattr(cfg, 'data', None), 'lamah_ice', None
+                )
+            if isinstance(data_lamah, dict) and 'domain_id' in data_lamah:
+                station_id = data_lamah['domain_id']
+
+        lamah_path_str = (
+            self._get_config_value(
+                lambda: self.config.evaluation.lamah_ice.path,
+                dict_key='LAMAH_ICE_PATH',
+            )
+            or self._get_config_value(
+                lambda: self.config.data.lamah_ice_path,
+                dict_key='LAMAH_ICE_PATH',
+            )
+        )
 
         if not station_id:
             raise ValueError(
