@@ -529,7 +529,22 @@ class VariableHandler:
     # Dataset variable name mappings
     DATASET_MAPPINGS = {
         'CFIF': {
-            # CF-Intermediate Format - used by model-agnostic preprocessing output
+            # Canonical CF names produced by the model-agnostic
+            # preprocessing pipeline. Earlier this entry only listed
+            # the legacy SUMMA short names (airtemp, pptrate, …),
+            # which made VariableHandler fail every lookup against a
+            # CFIF-named file with "No matching variable found" — the
+            # legacy names live below as aliases for backwards compat.
+            'air_temperature': {'standard_name': 'air_temperature', 'units': 'K'},
+            'surface_air_pressure': {'standard_name': 'surface_air_pressure', 'units': 'Pa'},
+            'specific_humidity': {'standard_name': 'specific_humidity', 'units': '1'},
+            'wind_speed': {'standard_name': 'wind_speed', 'units': 'm/s'},
+            'eastward_wind': {'standard_name': 'eastward_wind', 'units': 'm/s'},
+            'northward_wind': {'standard_name': 'northward_wind', 'units': 'm/s'},
+            'surface_downwelling_longwave_flux': {'standard_name': 'surface_downwelling_longwave_flux', 'units': 'W/m^2'},
+            'surface_downwelling_shortwave_flux': {'standard_name': 'surface_downwelling_shortwave_flux', 'units': 'W/m^2'},
+            'precipitation_flux': {'standard_name': 'precipitation_flux', 'units': 'mm/s'},
+            # Legacy SUMMA short names — older intermediate files.
             'airtemp': {'standard_name': 'air_temperature', 'units': 'K'},
             'airpres': {'standard_name': 'surface_air_pressure', 'units': 'Pa'},
             'spechum': {'standard_name': 'specific_humidity', 'units': '1'},
@@ -538,7 +553,7 @@ class VariableHandler:
             'windspd_v': {'standard_name': 'northward_wind', 'units': 'm/s'},
             'LWRadAtm': {'standard_name': 'surface_downwelling_longwave_flux', 'units': 'W/m^2'},
             'SWRadAtm': {'standard_name': 'surface_downwelling_shortwave_flux', 'units': 'W/m^2'},
-            'pptrate': {'standard_name': 'precipitation_flux', 'units': 'mm/s'}
+            'pptrate': {'standard_name': 'precipitation_flux', 'units': 'mm/s'},
         },
         'ERA5': {
             'airtemp': {'standard_name': 'air_temperature', 'units': 'K'},
