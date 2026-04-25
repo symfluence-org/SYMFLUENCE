@@ -131,6 +131,8 @@ cover/*.nc
 
 # Docs build artifacts
 docs/_build/
+# Local drafts, co-author response notes, slide decks — not published
+docs/presentations/
 config_template.yaml
 
 # Benchmark results (auto-generated)
@@ -184,3 +186,5 @@ papers/
 
 # Local settings
 settings/
+default/
+domain_domain/

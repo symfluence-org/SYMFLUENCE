@@ -39,8 +39,6 @@ domain:
   data_access: CLOUD
 data:
   streamflow_data_provider: LAMAH_ICE
-  lamah_ice:
-    domain_id: 92
 forcing:
   dataset: CARRA
   variables: default
@@ -100,6 +98,7 @@ optimization:
 evaluation:
   sim_reach_id: 1
   lamah_ice:
+    domain_id: 92
     path: ./data/
     download: true
   streamflow:
