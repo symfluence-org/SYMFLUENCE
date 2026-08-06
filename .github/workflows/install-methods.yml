@@ -80,8 +80,15 @@ jobs:
         if: matrix.method == 'conda'
         uses: conda-incubator/setup-miniconda@fc2d68f6413eb2d87b895e92f8584b5b94a10167 # v3
         with:
+          # Install into a named environment rather than `base`. `python-version`
+          # only governs the environment this action provisions; `base` keeps
+          # whatever interpreter the Miniconda image ships. Once that image moved
+          # to Python 3.14, `pip install .` into `base` failed against
+          # requires-python = ">=3.11,<3.14" with "requires a different Python:
+          # 3.14.6" (run 31116230252), even though 3.11 was requested right here.
+          activate-environment: symfluence
           python-version: '3.11'
-          auto-activate-base: true
+          auto-activate-base: false
           channels: conda-forge
 
       - name: Install documented system dependencies
@@ -128,7 +135,7 @@ jobs:
               ;;
             conda)
               source "$CONDA/etc/profile.d/conda.sh"
-              conda activate base
+              conda activate symfluence
               conda install -y -c conda-forge gdal netcdf4 || true
               pip install .
               ;;
@@ -175,7 +182,7 @@ jobs:
               python -c "import symfluence; print('import OK:', symfluence.__file__)"
               ;;
             conda)
-              source "$CONDA/etc/profile.d/conda.sh"; conda activate base
+              source "$CONDA/etc/profile.d/conda.sh"; conda activate symfluence
               symfluence --version
               python -c "import symfluence; print('import OK:', symfluence.__file__)"
               ;;
