@@ -150,12 +150,17 @@ class MODISSnowConfig(BaseModel):
 
     # Merged SCA settings (MOD10A1 + MYD10A1)
     merge: bool = Field(default=True, alias='MODIS_SCA_MERGE')
+    use_appeears: bool = Field(default=False, alias='MODIS_SCA_USE_APPEEARS')
     products: list = Field(default=['MOD10A1.061', 'MYD10A1.061'], alias='MODIS_SCA_PRODUCTS')
     merge_strategy: MergeStrategyType = Field(default='max', alias='MODIS_SCA_MERGE_STRATEGY')
     cloud_filter: bool = Field(default=True, alias='MODIS_SCA_CLOUD_FILTER')
     min_valid_ratio: float = Field(default=0.1, alias='MODIS_SCA_MIN_VALID_RATIO')
     normalize: bool = Field(default=True, alias='MODIS_SCA_NORMALIZE')
     use_catchment_mask: bool = Field(default=False, alias='MODIS_SCA_USE_CATCHMENT_MASK')
+    observation_mode: Literal['mean_ndsi', 'snow_fraction'] = Field(
+        default='mean_ndsi', alias='MODIS_SCA_OBSERVATION_MODE')
+    ndsi_threshold: float = Field(default=0.0, ge=0, le=100, alias='MODIS_SCA_NDSI_THRESHOLD')
+    max_basic_qa: int = Field(default=1, ge=0, le=3, alias='MODIS_SCA_MAX_BASIC_QA')
 
 
 class CanSWEConfig(BaseModel):

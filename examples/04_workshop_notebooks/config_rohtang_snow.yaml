@@ -1,0 +1,112 @@
+# Intelligent Rivers workshop: a point-scale Himalayan snow experiment.
+# Run from the SYMFLUENCE repository root:
+#   symfluence workflow run --config examples/04_workshop_notebooks/config_rohtang_snow.yaml
+# Snow figures and satellite comparisons are provided by the companion notebook.
+#
+# Requires installed SUMMA, CDS credentials (~/.cdsapirc), and NASA Earthdata
+# credentials (~/.netrc). All acquisition and preprocessing use SYMFLUENCE.
+# Rohtang Pass area, India: one HRU over a roughly 4.2 km2 snow footprint.
+
+DOMAIN_NAME: rohtang_snow
+EXPERIMENT_ID: intelligent_rivers_two_seasons
+SYMFLUENCE_CODE_DIR: .
+SYMFLUENCE_DATA_DIR: ../SYMFLUENCE_data
+
+DOMAIN_DEFINITION_METHOD: point
+POUR_POINT_COORDS: '32.37/77.25'
+BOUNDING_BOX_COORDS: '32.38/77.24/32.36/77.26'
+SUB_GRID_DISCRETIZATION: GRUs
+
+# Two snow seasons: fit the complete first melt season, then evaluate the next.
+EXPERIMENT_TIME_START: '2022-09-01 00:00'
+EXPERIMENT_TIME_END: '2024-08-31 23:00'
+SPINUP_PERIOD: '2022-09-01,2022-11-30'
+# First autumn remains initialization; fitting includes the full summer melt.
+# The following complete snow season is withheld from parameter selection.
+CALIBRATION_PERIOD: '2022-12-01,2023-08-31'
+EVALUATION_PERIOD: '2023-09-01,2024-08-31'
+
+DATA_ACCESS: cloud
+DEM_SOURCE: copdem90
+LAND_CLASS_SOURCE: modis
+DOWNLOAD_DEM: true
+DOWNLOAD_SOIL: true
+DOWNLOAD_LAND_COVER: true
+FORCING_DATASET: ERA5
+ERA5_USE_CDS: true
+FORCING_TIME_STEP_SIZE: 3600
+FORCING_MEASUREMENT_HEIGHT: 2
+APPLY_LAPSE_RATE: true
+LAPSE_RATE: 0.0065
+
+HYDROLOGICAL_MODEL: SUMMA
+ROUTING_MODEL: none
+SUMMA_EXE: summa_sundials.exe
+SETTINGS_SUMMA_USE_PARALLEL_SUMMA: false
+SETTINGS_SUMMA_CONNECT_HRUS: false
+# Record actual model precipitation partitioning for the forcing audit.
+SUMMA_ADDITIONAL_OUTPUTS:
+  scalarSnowfall: 1
+  scalarRainfall: 1
+  scalarSnowDepth: 24
+
+EVALUATION_DATA: [snow_cover]
+STREAMFLOW_DATA_PROVIDER: null
+DOWNLOAD_USGS_DATA: false
+DOWNLOAD_WSC_DATA: false
+DOWNLOAD_SNOTEL: false
+DOWNLOAD_MODIS_SNOW: true
+MODIS_SNOW_PRODUCT: MOD10A1.061
+# Range-specific raw cache avoids reusing the previous one-season subset.
+MODIS_SNOW_DIR: ../SYMFLUENCE_data/domain_rohtang_snow/data/observations/snow/20220901_20240831
+MODIS_SCA_PRODUCTS: [MOD10A1.061]
+MODIS_SCA_MERGE: true
+# Native AppEEARS path returns a spatially subsetted NetCDF, avoiding HDF4
+# reader requirements and full-tile downloads for this small footprint.
+MODIS_SCA_USE_APPEEARS: true
+MODIS_SCA_CLOUD_FILTER: true
+MODIS_MIN_PIXELS: 1
+MODIS_SCA_MIN_VALID_RATIO: 0.5
+MODIS_SCA_USE_CATCHMENT_MASK: true
+# Native observation operator: fraction of QA-screened pixels with NDSI > 0.
+# This estimates snow-covered area; it does not interpret NDSI/100 as area.
+MODIS_SCA_OBSERVATION_MODE: snow_fraction
+MODIS_SCA_NDSI_THRESHOLD: 0.0
+MODIS_SCA_MAX_BASIC_QA: 1
+MODIS_SCA_NORMALIZE: false
+OPTIMIZATION_METHODS: [iteration]
+OPTIMIZATION_TARGET: sca
+CALIBRATION_VARIABLE: sca
+# SUMMA daily snapshots and MODIS date labels are paired at their native
+# timestamps. Cloud gaps stay missing; no interpolation or gap-filling.
+CALIBRATION_TIMESTEP: native
+OPTIMIZATION_METRIC: MAE
+ITERATIVE_OPTIMIZATION_ALGORITHM: DE
+NUMBER_OF_ITERATIONS: 5
+POPULATION_SIZE: 8
+NUM_PROCESSES: 1
+RANDOM_SEED: 42
+SKIP_WARM_START: true
+# Small teaching budget, not a convergence claim. Bounds keep albedo ordered.
+PARAMS_TO_CALIBRATE: tempCritRain,frozenPrecipMultip,albedoMinSpring,albedoDecayRate
+BASIN_PARAMS_TO_CALIBRATE: ''
+PARAMETER_BOUNDS:
+  tempCritRain: [272.16, 274.16]
+  frozenPrecipMultip: [0.5, 1.5]
+  albedoMinSpring: [0.3, 0.55]
+  albedoDecayRate: [100000.0, 1000000.0]
+ANALYSES: []
+
+WORKFLOW_STEPS:
+  - setup_project
+  - create_pour_point
+  - acquire_attributes
+  - define_domain
+  - discretize_domain
+  - process_observed_data
+  - acquire_forcings
+  - model_agnostic_preprocessing
+  - model_specific_preprocessing
+  - run_model
+  - postprocess_results
+  - calibrate_model

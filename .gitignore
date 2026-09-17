@@ -32,6 +32,7 @@ examples/01_point_vertical_flux_estimation/**/*.yaml
 examples/02_watershed_modelling/**/*.yaml
 examples/03_large_domain_simulation/**/*.yaml
 examples/04_workshop_notebooks/**/*.yaml
+!examples/04_workshop_notebooks/config_rohtang_snow.yaml
 .confluence_env
 mpi_*
 # ...but never ignore mpi_*.py source modules (e.g. mpi_persistent.py, mpi_utils.py);

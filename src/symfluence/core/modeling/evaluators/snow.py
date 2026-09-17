@@ -206,26 +206,21 @@ class SnowEvaluator(ModelEvaluator):
         This method handles two extraction strategies:
 
         1. Direct SCA variable (scalarGroundSnowFraction):
-           - Returns fractional snow cover directly (0-1)
-           - Preferred when available
+           - Returns the model diagnostic directly (0-1).
+           - In SUMMA builds whose vegPhenlgy sets this from nSnow > 0,
+             it is binary snow-layer presence, not continuous sub-HRU cover.
+           - Inspect the active model implementation before interpreting it
+             as satellite fractional snow-covered area.
 
         2. Derived from SWE (scalarSWE):
            - Converts SWE to binary snow presence using threshold
            - SWE > threshold → snow present (1.0)
            - SWE ≤ threshold → no snow (0.0)
 
-        SCA from SWE Threshold: 1.0 kg/m²
-        --------------------------------
-        Physical reasoning for 1.0 kg/m² threshold:
-          - 1 kg/m² = 1 mm water equivalent of snow
-          - At typical snow density (100-300 kg/m³), this is 3-10 mm snow depth
-          - This is the minimum detectable snow for most satellite sensors
-          - MODIS snow detection limit is ~1-2 cm, roughly 2-5 kg/m² SWE
-          - Using 1.0 kg/m² is conservative (captures thin snow cover)
-          - Helps match satellite-derived SCA observations
-
-        Note: This binary conversion loses information about snow depth.
-        For continuous SCA, prefer scalarGroundSnowFraction if available.
+        The fallback threshold is 1.0 kg/m² (1 mm SWE). This is an
+        analysis convention, not a universal satellite detection limit.
+        Both the fallback and a binary direct diagnostic lose information
+        about snow mass and patchiness within an HRU.
 
         Args:
             ds: xarray Dataset with snow variables
@@ -237,7 +232,7 @@ class SnowEvaluator(ModelEvaluator):
             ValueError: If no suitable SCA variable found
         """
         # SCA threshold for deriving snow cover from SWE (kg/m²)
-        # 1.0 kg/m² ≈ 1 mm SWE ≈ minimum satellite-detectable snow
+        # 1.0 kg/m² = 1 mm SWE; an analysis threshold, not a sensor limit.
         SCA_SWE_THRESHOLD = 1.0
 
         sca_vars = ['scalarGroundSnowFraction', 'scalarSWE']

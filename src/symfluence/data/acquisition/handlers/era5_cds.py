@@ -86,7 +86,50 @@ class ERA5CDSAcquirer(BaseAcquisitionHandler, RetryMixin, ChunkedDownloadMixin, 
         cached = self._cached_month_chunk(year, month, self._output_dir)
         if cached is not None:
             return cached
+        cached = self._month_from_merged_record(year, month, self._output_dir)
+        if cached is not None:
+            return cached
         return self._download_and_process_month(year, month, self._output_dir)
+
+    def _month_from_merged_record(self, year: int, month: int, output_dir: Path) -> Optional[Path]:
+        """Reuse a complete month when extending an existing domain record.
+
+        Successful downloads remove temporary monthly chunks. Recover them
+        from the merged record only when all requested hours and the exact
+        requested CDS grid are present; incomplete or different-area records
+        must go back to CDS.
+        """
+        start = max(pd.Timestamp(year=year, month=month, day=1), self.start_date)
+        end = min(start.normalize().replace(day=1) + pd.offsets.MonthBegin(1)
+                  - pd.Timedelta(hours=1), self.end_date)
+        expected = pd.date_range(start, end, freq='h')
+        north, west, south, east = self.bbox_to_cds_area(snap_resolution=ERA5_GRID_RESOLUTION_DEG)
+        import numpy as np
+        expected_lat = np.arange(south, north + 0.01, ERA5_GRID_RESOLUTION_DEG)
+        expected_lon = np.arange(west, east + 0.01, ERA5_GRID_RESOLUTION_DEG)
+        required = {'air_temperature', 'surface_air_pressure', 'wind_speed',
+                    'specific_humidity', 'precipitation_flux',
+                    'surface_downwelling_shortwave_flux', 'surface_downwelling_longwave_flux'}
+        for path in sorted(output_dir.glob(f'domain_{self.domain_name}_ERA5_CDS_*.nc')):
+            try:
+                with xr.open_dataset(path) as ds:
+                    if not required.issubset(ds.data_vars) or not {'time', 'latitude', 'longitude'}.issubset(ds.coords):
+                        continue
+                    lat, lon = np.sort(ds.latitude.values), np.sort(ds.longitude.values)
+                    if (lat.shape != expected_lat.shape or lon.shape != expected_lon.shape
+                            or not np.allclose(lat, expected_lat) or not np.allclose(lon, expected_lon)):
+                        continue
+                    subset = ds.sel(time=slice(start, end))
+                    if not pd.DatetimeIndex(subset.time.values).equals(expected):
+                        continue
+                    subset = subset.load()
+                chunk = output_dir / f'{self.domain_name}_era5_cds_processed_{year}{month:02d}_temp.nc'
+                subset.to_netcdf(chunk)
+                self.logger.info(f'Reusing {year}-{month:02d} from {path.name}')
+                return chunk
+            except (OSError, ValueError, KeyError):
+                self.logger.debug(f'Cannot reuse month from {path.name}')
+        return None
 
     def _cached_month_chunk(self, year: int, month: int, output_dir: Path) -> Optional[Path]:
         """Return an already-downloaded month chunk, or None to fetch it.

@@ -142,6 +142,10 @@ class MODISSnowHandler(BaseObservationHandler):
             # Get the data array
             snow_data = ds[var_name]
 
+            mode = self._get_config_value(lambda: None, default='mean_ndsi', dict_key='MODIS_SCA_OBSERVATION_MODE')
+            if mode == 'snow_fraction':
+                return self._save_processed(self._extract_snow_fraction(snow_data, ds))
+
             # Apply quality filtering
             snow_data = self._apply_quality_filter(snow_data)
 
@@ -164,6 +168,53 @@ class MODISSnowHandler(BaseObservationHandler):
                 df['sca'] = df['sca'] / 100.0
 
             return self._save_processed(df)
+
+    def _extract_snow_fraction(self, data: xr.DataArray, ds: xr.Dataset) -> pd.DataFrame:
+        """Area-weighted fraction of clear, quality-screened pixels with snow.
+
+        NDSI is a snow index, not a subpixel snow fraction. Require retained
+        Basic QA and geographic pixel centres; never silently fall back to
+        an unmasked or unscreened calibration target.
+        """
+        if set(data.dims) != {'time', 'lat', 'lon'}:
+            raise ValueError('snow_fraction requires a time/lat/lon MODIS grid')
+        for coord in (data.lat, data.lon):
+            if coord.ndim != 1 or (coord.size > 2 and not np.allclose(
+                    np.diff(coord.values), np.diff(coord.values)[0])):
+                raise ValueError('snow_fraction requires regular geographic pixel centres')
+        if data.encoding.get('scale_factor', 1) != 1 or data.encoding.get('add_offset', 0) != 0:
+            raise ValueError('snow_fraction requires NDSI on its encoded 0–100 scale')
+        qa_name = 'NDSI_Snow_Cover_Basic_QA'
+        if qa_name not in ds:
+            raise ValueError('snow_fraction requires NDSI_Snow_Cover_Basic_QA')
+        threshold = self._get_config_value(lambda: None, default=0.0, dict_key='MODIS_SCA_NDSI_THRESHOLD')
+        max_qa = self._get_config_value(lambda: None, default=1, dict_key='MODIS_SCA_MAX_BASIC_QA')
+        lon, lat = np.meshgrid(data.lon.values, data.lat.values)
+        mask = np.ones(lon.shape, dtype=bool)
+        if self._get_config_value(lambda: None, default=False, dict_key='MODIS_SCA_USE_CATCHMENT_MASK'):
+            shp = self._resolve_catchment_shapefile()
+            if not HAS_GEO or shp is None:
+                raise ValueError('snow_fraction catchment masking requires a catchment shapefile and geopandas')
+            from shapely import intersects_xy
+            basin = gpd.read_file(shp).to_crs('EPSG:4326').geometry.union_all()
+            mask = intersects_xy(basin, lon, lat)
+        if not mask.any():
+            raise ValueError('No MODIS pixel centres inside the requested footprint')
+        weights = xr.DataArray(np.cos(np.deg2rad(lat)) * mask,
+                               dims=('lat', 'lon'), coords={'lat': data.lat, 'lon': data.lon})
+        qa = ds[qa_name]
+        valid = (data >= 0) & (data <= 100) & qa.isin(list(range(max_qa + 1)))
+        dims = ('lat', 'lon')
+        valid_weight = weights.where(valid, 0).sum(dims)
+        coverage = valid_weight / weights.sum()
+        count = (valid & (weights > 0)).sum(dims)
+        fraction = weights.where(valid & (data > threshold), 0).sum(dims) / valid_weight.where(valid_weight > 0)
+        min_ratio = self._get_config_value(lambda: None, default=0.1, dict_key='MODIS_SCA_MIN_VALID_RATIO')
+        min_pixels = self._get_config_value(lambda: None, default=100, dict_key='MODIS_MIN_PIXELS')
+        fraction = fraction.where((coverage >= min_ratio) & (count >= min_pixels))
+        return pd.DataFrame({'sca': fraction.values, 'valid_pixels': count.values,
+                             'valid_ratio': coverage.values},
+                            index=pd.Index(self._convert_time_to_datetime(data.time.values), name='date'))
 
     def _find_snow_variable(self, ds: xr.Dataset) -> str:
         """Find the snow cover variable in the dataset."""
@@ -306,7 +357,7 @@ class MODISSnowHandler(BaseObservationHandler):
         self.logger.info(f"MODIS snow processing complete: {output_file}")
         self.logger.info(f"  Date range: {df.index.min()} to {df.index.max()}")
         self.logger.info(f"  SCA range: {df['sca'].min():.3f} to {df['sca'].max():.3f}")
-        self.logger.info(f"  Valid observations: {len(df)}")
+        self.logger.info(f"  Valid observations: {df['sca'].notna().sum()}")
 
         return output_file
 

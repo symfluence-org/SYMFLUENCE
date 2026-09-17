@@ -87,3 +87,31 @@ def test_partial_record_resumes_at_the_gap(acquirer, tmp_path):
 
     assert cached == list(range(1, 9))
     assert missing == list(range(9, 13))
+
+
+@pytest.mark.parametrize('defect', [None, 'missing_hour', 'wrong_grid', 'missing_variable'])
+def test_extended_record_reuses_only_complete_matching_month(acquirer, tmp_path, defect):
+    acquirer.start_date = pd.Timestamp('2023-01-01')
+    acquirer.end_date = pd.Timestamp('2024-12-31 23:00')
+    acquirer.bbox_to_cds_area = lambda **kw: [32.5, 77., 32.25, 77.5]
+    times = pd.date_range('2023-02-01', '2023-02-28 23:00', freq='h')
+    if defect == 'missing_hour':
+        times = times.delete(10)
+    variables = ['air_temperature', 'surface_air_pressure', 'wind_speed',
+                 'specific_humidity', 'precipitation_flux',
+                 'surface_downwelling_shortwave_flux', 'surface_downwelling_longwave_flux']
+    if defect == 'missing_variable':
+        variables.pop()
+    lat = [32.5, 32.25] if defect != 'wrong_grid' else [31.5, 31.25]
+    ds = xr.Dataset({v: (('time', 'latitude', 'longitude'), np.ones((len(times), 2, 3))) for v in variables},
+                    coords={'time': times, 'latitude': lat, 'longitude': [77., 77.25, 77.5]})
+    source = tmp_path / 'domain_TestDomain_ERA5_CDS_2023_2023.nc'
+    ds.to_netcdf(source)
+    before = source.read_bytes()
+    result = acquirer._month_from_merged_record(2023, 2, tmp_path)
+    assert source.read_bytes() == before
+    if defect:
+        assert result is None
+    else:
+        with xr.open_dataset(result) as recovered:
+            xr.testing.assert_equal(recovered, ds)

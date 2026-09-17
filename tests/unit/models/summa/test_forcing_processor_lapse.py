@@ -80,3 +80,11 @@ def test_mixed_cells_guard_only_the_invalid_one(tmp_path):
     lapse_values, _ = proc._precalculate_lapse_corrections(topo)
     # Only the valid half-weight cell contributes: 0.5 * 0.0065 * (1350 - 1450).
     assert lapse_values.loc[1, "lapse_values"] == pytest.approx(0.5 * LAPSE_RATE * (1350.0 - 1450.0))
+
+
+def test_hru_filter_uses_configured_id_column(tmp_path, monkeypatch):
+    processor = _make_processor(tmp_path)
+    processor.catchment_name = 'catchment.shp'
+    monkeypatch.setattr('symfluence.models.summa.forcing_processor.gpd.read_file',
+                        lambda path: pd.DataFrame({'HRU_ID': [1, 2]}))
+    assert processor._filter_forcing_hru_ids([1, 3]) == [1]

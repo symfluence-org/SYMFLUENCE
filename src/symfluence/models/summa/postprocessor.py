@@ -48,7 +48,13 @@ class SUMMAPostProcessor(RoutedModelPostProcessor):
             self.project_dir / 'simulations' / self.experiment_id / 'SUMMA'
         )
         candidates = sorted(summa_dir.glob(f"{self.experiment_id}*.nc"))
-        candidates = [p for p in candidates if 'day' not in p.stem]
+        # Restart files contain state snapshots, not runoff time series, and
+        # sort before the timestep output in ordinary experiment directories.
+        candidates = [
+            p for p in candidates
+            if 'day' not in p.stem
+            and not p.stem[len(self.experiment_id):].lower().startswith('_restart')
+        ]
 
         if not candidates:
             self.logger.error(f"No SUMMA output files found in {summa_dir}")

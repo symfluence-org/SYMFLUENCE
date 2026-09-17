@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PositiveInt
 
 from symfluence.core.config.models.base import FROZEN_CONFIG
 
@@ -30,6 +30,9 @@ class SUMMAConfig(BaseModel):
     trialparams: str = Field(default='trialParams.nc', alias='SETTINGS_SUMMA_TRIALPARAMS')
     attributes: str = Field(default='attributes.nc', alias='SETTINGS_SUMMA_ATTRIBUTES')
     output: str = Field(default='outputControl.txt', alias='SETTINGS_SUMMA_OUTPUT')
+    additional_outputs: Dict[str, PositiveInt] = Field(
+        default_factory=dict, alias='SUMMA_ADDITIONAL_OUTPUTS',
+        description='Additional SUMMA output variables mapped to output frequency codes (1 = timestep, 24 = daily).')
     basin_params_file: str = Field(default='basinParamInfo.txt', alias='SETTINGS_SUMMA_BASIN_PARAMS_FILE')
     local_params_file: str = Field(default='localParamInfo.txt', alias='SETTINGS_SUMMA_LOCAL_PARAMS_FILE')
     connect_hrus: bool = Field(default=True, alias='SETTINGS_SUMMA_CONNECT_HRUS')

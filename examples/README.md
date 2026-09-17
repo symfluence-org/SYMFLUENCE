@@ -44,6 +44,7 @@ Hands-on workshop exercises for guided learning:
 - **04a** – Logan River watershed
 - **04b** – Provo River watershed
 - **04c** – Logan River from the command line (shell-only SUMMA workflow, no Python)
+- **04d** – [Intelligent Rivers: Himalayan snow](04_workshop_notebooks/04d_intelligent_rivers_snow.ipynb), using the shared [Rohtang config](04_workshop_notebooks/config_rohtang_snow.yaml) for native data acquisition and SUMMA, followed by forcing, snow-storage, MODIS coverage, timing, and native DE calibration exercises with before/after and a second-season holdout comparison and forcing-grid/elevation diagnostics. The notebook runs the full workflow by default; set `RUN_STEPS = False` to inspect prepared outputs during class.
 
 Designed for classroom and workshop settings with step-by-step guidance.
 

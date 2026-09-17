@@ -1696,20 +1696,11 @@ class SummaForcingProcessor(BaseForcingProcessor):
                 f"No {forcing_dataset} forcing files found in {forcing_path}"
             )
 
-        # Sort and deduplicate (prefer files with longer names which usually contain full timestamps)
-        forcing_files.sort(key=lambda x: (self._extract_forcing_date(x) or datetime(1900, 1, 1), -len(x)))
-
-        unique_files = []
-        seen_dates = set()
-        for f in forcing_files:
-            date = self._extract_forcing_date(f) or datetime(1900, 1, 1)
-            if date not in seen_dates:
-                unique_files.append(f)
-                seen_dates.add(date)
-            else:
-                self.logger.warning(f"Skipping duplicate forcing file for date {date}: {f}")
-
-        forcing_files = unique_files
+        from symfluence.core.modeling.forcing_naming import select_forcing_files
+        candidates = select_forcing_files(
+            [forcing_path / name for name in forcing_files],
+            self._get_config_value(lambda: self.config.domain.discretization))
+        forcing_files = [path.name for path in self._select_forcing_by_time(candidates)]
 
         self.logger.info(
             "Found %d unique %s forcing files for SUMMA",
@@ -1727,6 +1718,36 @@ class SummaForcingProcessor(BaseForcingProcessor):
             len(forcing_files),
         )
 
+    def _select_forcing_by_time(self, paths):
+        """Prefer complete records over contained cache copies using NetCDF time.
+
+        Consolidated CDS files and cache-hash filenames do not carry a single
+        parseable date. Filename deduplication can therefore discard the newly
+        extended record and silently leave a simulation without its later year.
+        """
+        records = []
+        for path in paths:
+            with xr.open_dataset(path) as ds:
+                if 'time' not in ds or ds.sizes.get('time', 0) == 0:
+                    raise FileOperationError(f'Forcing has no time records: {path}')
+                times = pd.DatetimeIndex(ds.time.values)
+                first, last = times[0], times[-1]
+                if not times.is_monotonic_increasing or not times.is_unique:
+                    raise FileOperationError(f'Forcing time is not strictly increasing: {path}')
+            records.append((first, last, path, times))
+        records.sort(key=lambda item: (item[0], -item[1].value, -len(item[2].name), item[2].name))
+        selected = []
+        for first, last, path, times in records:
+            if selected and last <= selected[-1][1] and times.isin(selected[-1][3]).all():
+                self.logger.debug(f'Skipping contained forcing record: {path.name}')
+                continue
+            if selected and first < selected[-1][1]:
+                raise FileOperationError(
+                    f'Partially overlapping forcing records: {selected[-1][2].name} and {path.name}. '
+                    'Consolidate the overlap before creating the SUMMA forcing list.')
+            selected.append((first, last, path, times))
+        return [item[2] for item in selected]
+
     def _filter_forcing_hru_ids(self, forcing_hru_ids):
         """
         Filter forcing HRU IDs against catchment shapefile to ensure consistency.
@@ -1740,7 +1761,7 @@ class SummaForcingProcessor(BaseForcingProcessor):
         forcing_hru_ids = list(forcing_hru_ids)
         try:
             shp = gpd.read_file(self.catchment_path / self.catchment_name)
-            shp = shp.set_index(self._get_config_value(lambda: self.config.domain.catchment_shp_hruid))
+            shp = shp.set_index(self.hruId)
             shp.index = shp.index.astype(int)
             available_hru_ids = set(shp.index.astype(int))
         except Exception as exc:  # noqa: BLE001 — model execution resilience

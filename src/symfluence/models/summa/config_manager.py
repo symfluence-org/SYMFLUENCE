@@ -172,6 +172,18 @@ class SummaConfigManager(PathResolverMixin):
                 copyfile(source_file, dest_file)
                 self.logger.debug(f"Copied {source_file} to {dest_file}")
 
+            additional_outputs = self._get_config_value(
+                lambda: self.config.model.summa.additional_outputs, default={},
+                dict_key='SUMMA_ADDITIONAL_OUTPUTS')
+            if additional_outputs:
+                output_path = settings_path / self._get_config_value(
+                    lambda: self.config.model.summa.output, default='outputControl.txt')
+                lines = output_path.read_text().splitlines()
+                # Replace configured variables, retaining the rest of the template.
+                lines = [line for line in lines if line.split('|')[0].strip() not in additional_outputs]
+                lines.extend(f'{name} | {frequency}' for name, frequency in additional_outputs.items())
+                output_path.write_text('\n'.join(lines) + '\n')
+
             # Ensure TWS variables are in outputControl if doing TWS optimization
             # Check both primary and secondary targets for multi-objective calibration
             target = (self._get_config_value(lambda: self.config.optimization.target, default='', dict_key='OPTIMIZATION_TARGET') or '').lower()

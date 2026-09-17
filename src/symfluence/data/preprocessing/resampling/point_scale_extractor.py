@@ -131,14 +131,22 @@ class PointScaleForcingExtractor(ConfigMixin):
         case_name = f"{self._get_config_value(lambda: self.config.domain.name, dict_key='DOMAIN_NAME')}_{self._get_config_value(lambda: self.config.forcing.dataset, dict_key='FORCING_DATASET')}"
         intersect_csv = intersect_path / f"{case_name}_intersected_shapefile.csv"
 
-        if not intersect_csv.exists():
-            self._create_intersection_csv(intersect_csv, catchment_file_path, forcing_files, dem_path)
+        # Recompute the elevation metadata for the same cell selected below.
+        # Older intersection files used the grid centre, even though extraction
+        # selected the first cell. Do not carry those corrections forward.
+        self._create_intersection_csv(intersect_csv, catchment_file_path, forcing_files, dem_path)
 
         # Process each file
         for file in forcing_files:
             output_file = output_filename_func(file)
             if output_file.exists() and not self._get_config_value(lambda: self.config.system.force_run_all_steps, default=False, dict_key='FORCE_RUN_ALL_STEPS'):
-                continue
+                with xr.open_dataset(output_file) as existing:
+                    target = self._target_coordinates()
+                    if (existing.attrs.get('point_extraction_method') == 'nearest_coordinate_v1'
+                            and existing.attrs.get('point_target_latitude') == target[0]
+                            and existing.attrs.get('point_target_longitude') == target[1]
+                            and output_file.stat().st_mtime >= file.stat().st_mtime):
+                        continue
 
             self._process_single_file(file, output_file, intersect_csv)
 
@@ -202,8 +210,9 @@ class PointScaleForcingExtractor(ConfigMixin):
     ) -> Optional[float]:
         """Sample the DEM at the forcing grid cell centre to get forcing elevation.
 
-        Returns the mean DEM elevation under the forcing grid cell, or None if
-        the DEM or forcing files are unavailable.
+        Returns the DEM sample at the selected forcing-cell centre, or None
+        when that centre is outside the DEM or inputs are unavailable. This
+        terrain sample is not the atmospheric model's orography.
         """
         if dem_path is None or not Path(dem_path).exists():
             return None
@@ -214,16 +223,9 @@ class PointScaleForcingExtractor(ConfigMixin):
             # Get forcing grid cell coordinates from first file
             var_lat, var_lon = self.dataset_handler.get_coordinate_names()
             with xr.open_dataset(forcing_files[0], engine="h5netcdf") as ds:
-                lats = ds[var_lat].values
-                lons = ds[var_lon].values
-
-                # Get centre of the forcing grid
-                if lats.ndim >= 1:
-                    lat_center = float(np.mean(lats))
-                    lon_center = float(np.mean(lons))
-                else:
-                    lat_center = float(lats)
-                    lon_center = float(lons)
+                selected = ds.isel(self._point_indexers(ds))
+                lat_center = float(selected[var_lat])
+                lon_center = float(selected[var_lon])
 
             # Sample DEM at the forcing grid centre
             with rasterio.open(dem_path) as src:
@@ -326,8 +328,9 @@ class PointScaleForcingExtractor(ConfigMixin):
             # carries CF names + correct units.
             ds = self._standardize_if_raw(ds, file)
 
-            # Pick the first cell if it's a grid
+            # Select the closest geographic cell, independent of grid ordering.
             spatial_dims = {d: 0 for d in ds.dims if d not in ['time', 'hru']}
+            spatial_dims.update(self._point_indexers(ds))
 
             # Check for empty spatial dimensions
             for dim_name, idx in spatial_dims.items():
@@ -338,6 +341,14 @@ class PointScaleForcingExtractor(ConfigMixin):
                     )
 
             ds_point = ds.isel(spatial_dims)
+            lat_name, lon_name = self.dataset_handler.get_coordinate_names()
+            target_lat, target_lon = self._target_coordinates()
+            ds_point.attrs.update(point_extraction_method='nearest_coordinate_v1',
+                                  point_target_latitude=target_lat,
+                                  point_target_longitude=target_lon)
+            if lat_name in ds and lon_name in ds:
+                ds_point.attrs.update(point_forcing_latitude=float(ds_point[lat_name]),
+                                      point_forcing_longitude=float(ds_point[lon_name]))
 
             # Determine HRU IDs
             hru_ids = [1]
@@ -378,3 +389,30 @@ class PointScaleForcingExtractor(ConfigMixin):
 
             ds_point.to_netcdf(output_file, engine="h5netcdf")
             self.logger.info(f"Created point forcing: {output_file.name}")
+
+    def _target_coordinates(self):
+        """Get the requested point, or the centre of a small-domain bbox."""
+        point = self._get_config_value(lambda: self.config.domain.pour_point_coords, dict_key='POUR_POINT_COORDS')
+        if point:
+            return tuple(float(v) for v in point.split('/'))
+        bbox = self._get_config_value(lambda: self.config.domain.bounding_box_coords, dict_key='BOUNDING_BOX_COORDS')
+        if bbox:
+            north, west, south, east = (float(v) for v in bbox.split('/'))
+            return (north + south) / 2, (west + east) / 2
+        raise ValueError('Point forcing extraction requires POUR_POINT_COORDS or BOUNDING_BOX_COORDS')
+
+    def _point_indexers(self, ds):
+        """Nearest cell on regular or curvilinear geographic grids."""
+        lat_name, lon_name = self.dataset_handler.get_coordinate_names()
+        if lat_name not in ds or lon_name not in ds:
+            if all(size == 1 for dim, size in ds.sizes.items() if dim not in {'time', 'hru'}):
+                return {}
+            raise ValueError('Cannot locate point forcing without geographic coordinates')
+        lat, lon = xr.broadcast(ds[lat_name], ds[lon_name])
+        target_lat, target_lon = self._target_coordinates()
+        # Great-circle distance, including longitude wrap and descending axes.
+        dlat = np.deg2rad(lat.values - target_lat)
+        dlon = np.deg2rad((lon.values - target_lon + 180) % 360 - 180)
+        distance = np.sin(dlat / 2)**2 + np.cos(np.deg2rad(target_lat)) * np.cos(np.deg2rad(lat.values)) * np.sin(dlon / 2)**2
+        index = np.unravel_index(np.nanargmin(distance), distance.shape)
+        return dict(zip(lat.dims, index))
