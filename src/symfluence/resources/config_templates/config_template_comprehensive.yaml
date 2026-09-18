@@ -2594,6 +2594,34 @@ MODIS_SCA_NORMALIZE: true
 #   Usage:      Whether to mask SCA to catchment boundary
 MODIS_SCA_USE_CATCHMENT_MASK: false
 
+# MODIS_SCA_USE_APPEEARS
+#   Type:        bool
+#   Default:     false
+#   Source:      MODISSnowConfig (evaluation.py)
+#   Usage:       Acquire spatially subsetted NetCDF through NASA AppEEARS
+MODIS_SCA_USE_APPEEARS: false
+
+# MODIS_SCA_OBSERVATION_MODE
+#   Type:        str
+#   Default:     mean_ndsi
+#   Source:      MODISSnowConfig (evaluation.py)
+#   Usage:       mean_ndsi or snow_fraction (fraction of valid pixels above the NDSI threshold)
+MODIS_SCA_OBSERVATION_MODE: mean_ndsi
+
+# MODIS_SCA_NDSI_THRESHOLD
+#   Type:        float
+#   Default:     0.0
+#   Source:      MODISSnowConfig (evaluation.py)
+#   Usage:       Encoded NDSI threshold (0-100); snow_fraction counts pixels strictly above it
+MODIS_SCA_NDSI_THRESHOLD: 0.0
+
+# MODIS_SCA_MAX_BASIC_QA
+#   Type:        int
+#   Default:     1
+#   Source:      MODISSnowConfig (evaluation.py)
+#   Usage:       Highest accepted Basic QA code (0-3) for snow_fraction; 0=best, 1=good
+MODIS_SCA_MAX_BASIC_QA: 1
+
 # ========================================
 # MODIS Evapotranspiration (MOD16)
 # ========================================

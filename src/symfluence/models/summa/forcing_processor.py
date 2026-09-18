@@ -1736,7 +1736,7 @@ class SummaForcingProcessor(BaseForcingProcessor):
                     raise FileOperationError(f'Forcing time is not strictly increasing: {path}')
             records.append((first, last, path, times))
         records.sort(key=lambda item: (item[0], -item[1].value, -len(item[2].name), item[2].name))
-        selected = []
+        selected: list[tuple[pd.Timestamp, pd.Timestamp, Path, pd.DatetimeIndex]] = []
         for first, last, path, times in records:
             if selected and last <= selected[-1][1] and times.isin(selected[-1][3]).all():
                 self.logger.debug(f'Skipping contained forcing record: {path.name}')
