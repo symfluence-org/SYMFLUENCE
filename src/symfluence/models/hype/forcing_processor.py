@@ -22,6 +22,7 @@ import pandas as pd
 import xarray as xr
 from tqdm import tqdm
 
+from symfluence.core.exceptions import ValidationError
 from symfluence.core.modeling.utilities import BaseForcingProcessor
 
 
@@ -350,6 +351,61 @@ class HYPEForcingProcessor(BaseForcingProcessor):
             output_file_name_txt=self.output_path / 'Pobs.txt',
             unit_conversion=precip_units  # Pass units for conversion
         )
+
+        if self.config.get('HYPE_SNOW_MELT_MODEL', 0) == 2:
+            self.write_shortwave_obs([merged_forcing_path])
+
+    def write_shortwave_obs(self, files: List[Path]) -> Path:
+        """Integrate complete, regular flux records to HYPE MJ/m2/day.
+
+        Reads only radiation, avoiding a second full forcing merge. No radiation
+        is synthesized when coverage, units or subbasin IDs are ambiguous.
+        """
+        chunks = []
+        for path in files:
+            with xr.open_dataset(path) as ds:
+                variable = 'surface_downwelling_shortwave_flux'
+                if variable not in ds:
+                    raise ValidationError(f'Missing {variable} in {path}')
+                da = ds[variable].load()
+                units = str(da.attrs.get('units', '')).lower().replace(' ', '')
+                if units not in ('wm-2', 'w/m2', 'wm^-2', 'w/m^2', 'wm**-2'):
+                    raise ValidationError(f'Expected shortwave flux in W/m2, got {units!r}')
+                frame = da.to_pandas()
+                if isinstance(frame, pd.Series):
+                    frame = frame.to_frame(name=1)
+                if not isinstance(frame.index, pd.DatetimeIndex):
+                    frame = frame.T
+                if 'hruId' in ds:
+                    ids = ds['hruId']
+                    if 'time' in ids.dims:
+                        ids = ids.isel(time=0)
+                    frame.columns = ids.values.astype(int).ravel()
+                frame.columns = frame.columns.astype(int)
+                if 0 in frame.columns:
+                    frame.columns = frame.columns + 1
+                chunks.append(frame)
+        if not chunks:
+            raise ValidationError('No shortwave forcing files')
+        frame = pd.concat(chunks).sort_index()
+        if frame.index.has_duplicates or frame.columns.has_duplicates:
+            raise ValidationError('Duplicate shortwave timestamps or IDs')
+        dt = np.diff(frame.index.asi8) / 1e9
+        if not len(dt) or dt[0] <= 0 or not np.all(dt == dt[0]) or 86400 % dt[0] != 0:
+            raise ValidationError('Shortwave forcing must have a regular timestep dividing one day')
+        if not np.isfinite(frame.to_numpy()).all() or (frame.to_numpy() < 0).any():
+            raise ValidationError('Missing or negative shortwave forcing')
+        count = frame.resample('D').size()
+        if not (count == int(86400/dt[0])).all():
+            raise ValidationError('Incomplete shortwave forcing day')
+        daily = (frame * dt[0] / 1e6).resample('D').sum()
+        if self._elevation_bands and len(daily.columns) == 1:
+            daily = self._expand_columns_to_bands(daily, 'SWobs')
+        daily.index.name = 'time'
+        daily.columns.name = None
+        target = self.output_path / 'SWobs.txt'
+        daily.to_csv(target, sep='\t', float_format='%.6f')
+        return target
 
     def _convert_hourly_to_daily(
         self,

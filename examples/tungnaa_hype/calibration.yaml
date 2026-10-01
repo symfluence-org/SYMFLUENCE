@@ -1,0 +1,128 @@
+# Fresh full workflow; see README.md. Requires develop including the HYPE/Belgingur handoff changes.
+system:
+  data_dir: default
+  code_dir: default
+  num_processes: 1
+  workflow_steps:
+  - setup_project
+  - create_pour_point
+  - acquire_attributes
+  - define_domain
+  - discretize_domain
+  - process_observed_data
+  - acquire_forcings
+  - model_agnostic_preprocessing
+  - build_model_ready_store
+  - model_specific_preprocessing
+  - run_model
+  - calibrate_model
+  force_run_all_steps: false
+  random_seed: 42
+domain:
+  name: Tungnaa_Mariufossar_HYPE_shared
+  definition_method: lumped
+  discretization: elevation
+  elevation_band_size: 200
+  min_hru_size: 1.0
+  pour_point_coords: 64.09962985850969/-19.05375184627928
+  bounding_box_coords: 64.46021643126136/-19.218032126448097/63.85267415916148/-17.73549331685404
+  time_start: 2009-01-01 00:00
+  time_end: 2023-09-30 21:00
+  experiment_id: hype_belgingur_wy2013_2023_fresh
+  download_dem: true
+  download_soil: true
+  download_landcover: true
+  dem_source: copdem90
+  land_class_source: modis
+  delineation:
+    routing: lumped
+    lumped_watershed_method: TauDEM
+    stream_threshold: 5000
+  spinup_period: 2009-01-01, 2012-09-30
+  calibration_period: 2012-10-01, 2016-09-30
+  evaluation_period: 2016-10-01, 2021-09-30
+forcing:
+  dataset: CARRA
+  carra_domain: west_domain
+  time_step_size: 10800
+  apply_lapse_rate: true
+  missing_data_strategy: error
+  carra_source: belgingur
+model:
+  hydrological_model: HYPE
+  routing_model: none
+  hype:
+    install_path: default
+    exe: hype
+    spinup_days: 1369
+    glacier_fraction: 0.11304
+    glacier_type: 1
+    glacier_melt_factor: 5.0
+    glacier_melt_threshold: 0.0
+    params_to_calibrate: ttmp,cmlt,cevp,lp,epotdist,rrcs1,rrcs2,rivvel,damp,wcwp,wcfc,wcep,srrcs,glaccmlt,glacttmp,fscdist0,ttpi,fsceff
+    param_bounds:
+      glaccmlt:
+      - 2.0
+      - 12.0
+      glacttmp:
+      - -2.0
+      - 2.0
+      fscdist0:
+      - 0.3
+      - 0.8
+      rrcs1:
+        min: 0.001
+        max: 1.0
+        transform: log
+      rrcs2:
+        min: 0.0001
+        max: 0.5
+        transform: log
+      srrcs:
+        min: 0.001
+        max: 1.0
+        transform: log
+      ttpi:
+      - 0.5
+      - 4.0
+      fsceff:
+      - 0.5
+      - 1.0
+      wcwp:
+      - 0.01
+      - 0.1
+      wcfc:
+      - 0.1
+      - 0.2
+      wcep:
+      - 0.2
+      - 0.7
+    preserve_icecap_volume: true
+    cryosphere_constraints: true
+    snow_cover_error_scale: 0.2
+    glacier_mb_error_scale: 1.0
+    fractional_snow_cover: true
+    water_balance_diagnostics: true
+data:
+  streamflow_data_provider: LAMAH_ICE
+  streamflow_station_id: '86'
+evaluation:
+  lamah_ice:
+    domain_id: 86
+    download: true
+optimization:
+  methods:
+  - iteration
+  metric: COMPOSITE
+  algorithm: DDS
+  iterations: 3000
+  calibration_variable: streamflow
+  calibration_timestep: daily
+  dds:
+    r: 0.1
+  skip_warm_start: true
+  checkpoint_interval: 10
+  composite_metric:
+    KGE: 0.6
+    SNOW_SCORE: 0.2
+    GLACIER_SCORE: 0.2

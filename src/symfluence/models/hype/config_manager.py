@@ -19,6 +19,7 @@ Example usage:
 from __future__ import annotations
 
 import logging
+import math
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Match
@@ -26,6 +27,7 @@ from typing import TYPE_CHECKING, Any, Match
 import numpy as np
 import pandas as pd
 
+from symfluence.core.exceptions import ValidationError
 from symfluence.core.mixins import ConfigMixin
 
 if TYPE_CHECKING:
@@ -189,10 +191,10 @@ class HYPEConfigManager(ConfigMixin):
         if forcing_start is not None and start_date < forcing_start:
             start_date = forcing_start
 
-        # Ensure end_date is not after forcing ends
-        # HYPE sometimes tries to read the next day if edate is the last day
-        if forcing_end is not None and end_date >= forcing_end:
-            end_date = forcing_end - pd.Timedelta(days=1)
+        # Daily observation dates are inclusive. Dropping a day here silently
+        # shortens every run, including a complete calendar-month smoke test.
+        if forcing_end is not None:
+            end_date = min(end_date.normalize(), forcing_end.normalize())
 
         spinup_date = start_date + pd.Timedelta(days=spinup_days)
 
@@ -252,6 +254,13 @@ class HYPEConfigManager(ConfigMixin):
         ) else 'n'
 
         # Build info.txt content
+        glacier_outputs = '\tGLCV\tGLCA\tGMLT' if self.config.get('HYPE_GLACIER_FRACTION') is not None else ''
+        if self.config.get('HYPE_CRYOSPHERE_CONSTRAINTS', False):
+            glacier_outputs = '\tGLCV\tGLCA\tGMLT\tCFSC'
+        if self.config.get('HYPE_WATER_BALANCE_DIAGNOSTICS', False):
+            glacier_outputs += '\tSOIM\tSML1\tSML2\tSML3\tCLRV\tCMRV\tCPRC'
+        snow_melt_model = self.config.get('HYPE_SNOW_MELT_MODEL', 0)
+        read_sw = 'y' if snow_melt_model == 2 else 'n'
         info_content = f"""!! ----------------------------------------------------------------------------
 !!
 !! HYPE - Model Agnostic Framework
@@ -284,7 +293,7 @@ steplength\t1d
 !!
 !! -----------------
 readsfobs\tn
-readswobs\tn
+readswobs\t{read_sw}
 readuobs\tn
 readrhobs\tn
 readtminobs\ty
@@ -300,7 +309,7 @@ modeloption snowfallmodel\t0
 modeloption snowdensity\t0
 modeloption snowfalldist\t2
 modeloption snowheat\t0
-modeloption snowmeltmodel\t0
+modeloption snowmeltmodel\t{snow_melt_model}
 modeloption snowevaporation\t{snowevap_opt}
 modeloption lakeriverice\t0
 modeloption deepground\t{deepground_opt}
@@ -317,7 +326,7 @@ modeloption connectivity\t0
 !! Define outputs
 !!
 !! -----------------
-timeoutput variable COUT\tEVAP\tSNOW
+timeoutput variable COUT\tEVAP\tSNOW{glacier_outputs}
 timeoutput meanperiod\t1
 timeoutput decimals\t3
 !! ------------------------------------------------------------------------------------
@@ -421,7 +430,48 @@ timeoutput decimals\t3
                 lu_params, lu_header, soil_header, max_lu, num_soil
             )
 
+        # Glacier melt uses general parameters, not the land-use snow cmlt.
+        # Keep these explicit so an active glacier class cannot silently have zero melt.
+        if land_uses is not None and 15 in land_uses and not template_file:
+            melt = self.config.get('HYPE_GLACIER_MELT_FACTOR', 5.0)
+            threshold = self.config.get('HYPE_GLACIER_MELT_THRESHOLD', 0.0)
+            par_content += f'\n!! Glacier degree-day melt; initial volume uses HYPE area-volume defaults\nglaccmlt\t{melt}\nglacttmp\t{threshold}\nglacdens\t0.85\n'
+
         # Apply parameter substitutions
+        percolation = self.config.get('HYPE_SOIL_PERCOLATION')
+        if percolation is not None:
+            if template_file or len(percolation) != 2 or any(not math.isfinite(v) or v < 0 for v in percolation):
+                raise ValidationError('Soil percolation requires two finite nonnegative values and no custom template')
+            for name, value in zip(('mperc1', 'mperc2'), percolation):
+                par_content += '\n' + name + '\t' + '\t'.join([str(value)] * num_soil) + '\n'
+        if self.config.get('HYPE_SNOW_MELT_MODEL', 0) == 2:
+            if template_file:
+                raise ValidationError('Set radiation melt parameters directly in a custom HYPE template')
+            par_content += '\n!! Temperature and radiation melt (SWobs in MJ/m2/day)\n'
+            # Keep the snow radiation term zero initially so this candidate
+            # tests glacier radiation first. Both radiation coefficients can
+            # subsequently be calibrated explicitly.
+            for name, value in {'cmrad': 0.0, 'snalbmin': 0.5, 'snalbmax': 0.85,
+                                'snalbkexp': 0.05}.items():
+                par_content += name + '\t' + '\t'.join([str(value)] * max_lu) + '\n'
+            par_content += f"glaccmrad\t{self.config.get('HYPE_GLACIER_RADIATION_MELT_FACTOR', 0.5)}\n"
+            par_content += f"glacalb\t{self.config.get('HYPE_GLACIER_ALBEDO', 0.35)}\n"
+            par_content += 'glaccmrefr\t0.2\n'
+        if self.config.get('HYPE_FRACTIONAL_SNOW_COVER', False):
+            if template_file:
+                raise ValidationError('Set fractional snow-cover parameters directly in a custom HYPE template')
+            # HYPE model_hype.f90 reference values. Without fscmax the model
+            # treats any nonzero snow pack as 100% covered within each class.
+            par_content += '\n!! Fractional snow cover: accumulation and depletion\n'
+            for name, value in {'fscmax': 0.95, 'fscmin': 0.001, 'fsclim': 0.001,
+                                'fsck1': 0.2, 'fsckexp': 1e-6}.items():
+                par_content += f'{name}\t{value}\n'
+            for name, value in {'fscdistmax': 0.8, 'fscdist0': 0.6, 'fscdist1': 0.001}.items():
+                par_content += name + '\t' + '\t'.join([str(value)] * max_lu) + '\n'
+        if self.config.get('HYPE_PRESERVE_ICECAP_VOLUME', False):
+            if template_file or any(k in (params or {}) for k in ('glacvcoef1', 'glacvexp1')):
+                raise ValidationError('Ice-cap volume preservation requires the default area-volume relation')
+            par_content += '\n!! Relation used to preserve parent ice-cap volume across bands\nglacvcoef1\t1.701\nglacvexp1\t1.25\n'
         if params:
             par_content = self._apply_param_substitutions(par_content, params)
 

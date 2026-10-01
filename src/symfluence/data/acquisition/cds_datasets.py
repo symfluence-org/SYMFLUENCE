@@ -764,7 +764,9 @@ class CDSRegionalReanalysisHandler(BaseAcquisitionHandler, ABC):
         e = (RH / 100.0) * es
 
         # Specific humidity
-        return (0.622 * e) / (P - 0.378 * e)
+        q = (0.622 * e) / (P - 0.378 * e)
+        q.attrs = {'units': 'kg kg-1', 'standard_name': 'specific_humidity'}
+        return q
 
     def _detect_temporal_resolution_seconds(self, ds: xr.Dataset) -> Optional[float]:
         """
@@ -816,9 +818,11 @@ class CDSRegionalReanalysisHandler(BaseAcquisitionHandler, ABC):
         # Radiation: J/m2 per leadtime -> W/m2
         if 'surface_downwelling_shortwave_flux' in ds:
             ds['surface_downwelling_shortwave_flux'] = ds['surface_downwelling_shortwave_flux'] / accumulation_seconds
+            ds['surface_downwelling_shortwave_flux'].attrs['units'] = 'W m-2'
 
         if 'surface_downwelling_longwave_flux' in ds:
             ds['surface_downwelling_longwave_flux'] = ds['surface_downwelling_longwave_flux'] / accumulation_seconds
+            ds['surface_downwelling_longwave_flux'].attrs['units'] = 'W m-2'
 
         return ds
 
@@ -1078,6 +1082,12 @@ class CARRAAcquirer(CDSRegionalReanalysisHandler):
         CARRA_DOMAIN: 'west_domain'  # or 'east_domain'
         AGGREGATE_FORCING_FILES: True  # Merge monthly chunks
     """
+
+    def download(self, output_dir: Path) -> Path:
+        if self._get_config_value(lambda: self.config.forcing.carra_source, default='cds', dict_key='CARRA_SOURCE') == 'belgingur':
+            from .belgingur_carra import BelgingurCARRAAcquirer
+            return BelgingurCARRAAcquirer(self.config, self.logger, self.reporting_manager).download(output_dir)
+        return super().download(output_dir)
 
     def _get_dataset_name(self) -> str:
         return "reanalysis-carra-single-levels"

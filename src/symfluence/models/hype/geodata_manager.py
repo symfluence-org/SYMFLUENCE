@@ -37,6 +37,8 @@ import numpy as np
 import pandas as pd
 import pint
 
+from symfluence.core.exceptions import ValidationError
+
 if TYPE_CHECKING:
     pass
 
@@ -241,7 +243,34 @@ class HYPEGeoDataManager:
             gistool_output, intersect_base_path, basin_id_col
         )
 
+        # Canonical statistics may be keyed by elevation HRU while topology
+        # still contains parent basins. Aggregate before building parent SLCs.
+        if elevation_band_shapefile is not None:
+            parent_bands = self._load_elevation_bands(Path(elevation_band_shapefile), base_df)
+            soil_data, landcover_data, elevation_data = (
+                self._aggregate_band_stats(frame, parent_bands)
+                for frame in (soil_data, landcover_data, elevation_data)
+            )
+
         # 5. SLC processing
+        glacier_fraction = self.config.get('HYPE_GLACIER_FRACTION')
+        if glacier_fraction is not None:
+            if len(base_df) != 1:
+                raise ValidationError('HYPE_GLACIER_FRACTION currently requires one parent basin')
+            landcover_data = landcover_data.copy()
+            lc_cols = [c for c in landcover_data if isinstance(c, str) and c.startswith('IGBP_') and c[5:].isdigit()]
+            if not lc_cols:
+                lc_cols = [c for c in landcover_data if isinstance(c, str) and c.startswith('frac_') and c[5:].isdigit()]
+            if not lc_cols:
+                raise ValidationError('Cannot apply glacier fraction without land-cover class fractions')
+            ice_col = ('IGBP_' if lc_cols[0].startswith('IGBP_') else 'frac_') + '15'
+            other_cols = [c for c in lc_cols if c != ice_col]
+            total = landcover_data[other_cols].sum(axis=1)
+            if (total <= 0).any() and glacier_fraction < 1:
+                raise ValidationError('No non-glacier land cover available for fraction override')
+            landcover_data[other_cols] = landcover_data[other_cols].div(total.replace(0, 1), axis=0) * (1 - glacier_fraction)
+            landcover_data[ice_col] = glacier_fraction
+            frac_threshold = 0.0  # Retain measured fractions without renormalizing away small classes.
         slc_df, base_df = self._process_slc(base_df, landcover_data, soil_data, frac_threshold)
 
         # 6. Final merging
@@ -312,6 +341,10 @@ class HYPEGeoDataManager:
         if slc_cols:
             base_df[slc_cols] = base_df[slc_cols].div(base_df[slc_cols].sum(axis=1), axis=0).fillna(0)
 
+        # Keep glacier metadata consistent with the classes actually simulated.
+        glacier_slc_cols = [f'SLC_{int(r.SLC)}' for r in slc_df.itertuples() if r.landcover == 15]
+        base_df['glacier_fraction'] = base_df[glacier_slc_cols].sum(axis=1)
+
         # 7. Drop sub-basins with missing geometry (no area/lat/lon from join)
         required_cols = ['area', 'latitude', 'longitude']
         missing_mask = base_df[required_cols].isna().any(axis=1)
@@ -334,7 +367,7 @@ class HYPEGeoDataManager:
             )
             if bands_by_parent:
                 n_before = len(base_df)
-                base_df = self._build_banded_geodata(base_df, bands_by_parent)
+                base_df = self._build_banded_geodata(base_df, bands_by_parent, glacier_slc_cols)
                 self.logger.info(
                     "Elevation banding: expanded %d sub-basin(s) into %d "
                     "elevation-band sub-basins (elev range %.0f-%.0f m).",
@@ -347,6 +380,8 @@ class HYPEGeoDataManager:
 
         # 9. Sort and save
         sorted_df = self.sort_geodata(base_df)
+        sorted_df = self.apply_river_length_overrides(sorted_df)
+        volume_correction = sorted_df.pop('_glacier_logvolcor') if '_glacier_logvolcor' in sorted_df else None
         sorted_df.to_csv(self.output_path / 'GeoData.txt', sep='\t', index=False)
 
         # 9. Write ForcKey.txt (required for readobsid=y)
@@ -354,6 +389,15 @@ class HYPEGeoDataManager:
 
         # 10. Write GeoClass.txt
         self._write_geoclass(slc_df)
+
+        glacier_type = self.config.get('HYPE_GLACIER_TYPE')
+        if glacier_type is not None:
+            glacier_cols = [f'SLC_{int(r.SLC)}' for r in slc_df.itertuples() if r.landcover == 15]
+            glacier_rows = sorted_df.loc[sorted_df[glacier_cols].sum(axis=1) > 0, ['subid']].copy()
+            glacier_rows['glactype'] = glacier_type
+            if volume_correction is not None:
+                glacier_rows['logvolcor'] = volume_correction.loc[glacier_rows.index]
+            glacier_rows.to_csv(self.output_path / 'GlacierData.txt', sep='\t', index=False)
 
         self.logger.debug("GeoData.txt, GeoClass.txt, and ForcKey.txt created successfully")
 
@@ -550,6 +594,29 @@ class HYPEGeoDataManager:
                 f"Could not load GIS stats from attributes store: {e}", exc_info=True)
             return None
 
+    @staticmethod
+    def _aggregate_band_stats(frame: pd.DataFrame, bands_by_parent: dict) -> pd.DataFrame:
+        """Area-weight HRU statistics to parents; preserve categorical soil IDs."""
+        ids = [int(b['hru_id']) for bands in bands_by_parent.values() for b in bands]
+        if not ids or set(frame.index) != set(ids):
+            return frame
+        rows = {}
+        for parent, bands in bands_by_parent.items():
+            selected = frame.loc[[int(b['hru_id']) for b in bands]]
+            weights = np.asarray([b['area_frac'] for b in bands], dtype=float)
+            if not np.isfinite(weights).all() or weights.sum() <= 0:
+                raise ValidationError('Invalid elevation-band areas for GIS aggregation')
+            weights /= weights.sum()
+            values = selected.select_dtypes(include=np.number)
+            row = values.mul(weights, axis=0).sum().to_dict()
+            if 'majority' in selected:
+                vote = pd.Series(weights).groupby(selected['majority'].to_numpy()).sum()
+                row['majority'] = vote.idxmax()
+            rows[parent] = row
+        result = pd.DataFrame.from_dict(rows, orient='index')
+        result.index.name = frame.index.name
+        return result
+
     def _process_slc(
         self,
         base_df: pd.DataFrame,
@@ -723,6 +790,7 @@ class HYPEGeoDataManager:
         self,
         base_df: pd.DataFrame,
         bands_by_parent: dict[int, list[dict[str, float]]],
+        glacier_slc_cols: list[str] | None = None,
     ) -> pd.DataFrame:
         """Expand each sub-basin into a vertical cascade of elevation bands.
 
@@ -737,8 +805,9 @@ class HYPEGeoDataManager:
           temperature/precipitation lapse — the point of banding).
         - ``glacier_fraction``: the parent's glacier *area* concentrated into the
           highest band(s), which is where alpine ice actually sits.
-        - SLC fractions are inherited from the parent (land partitioning is
-          unchanged; banding adds the elevation/routing dimension HYPE needs).
+        - With glacier SLC columns supplied, actual glacier classes follow the
+          redistributed ice area; non-glacier classes retain their relative shares.
+          Otherwise SLC fractions are inherited for backward compatibility.
         """
         mult = self._BAND_ID_MULTIPLIER
         # Use real HRU ids as sub-basin ids only when every band carries one.
@@ -779,7 +848,10 @@ class HYPEGeoDataManager:
             subids = [band_subid(pid, k + 1, b) for k, b in enumerate(bands_sorted)]
 
             # Distribute the parent's glacier area from the top band downward.
-            remaining_glac = float(prow.get('glacier_fraction', 0.0)) * parent_area
+            parent_glacier_fraction = (float(prow[glacier_slc_cols].sum())
+                                       if glacier_slc_cols is not None
+                                       else float(prow.get('glacier_fraction', 0.0)))
+            remaining_glac = parent_glacier_fraction * parent_area
             band_glac = [0.0] * n
             for j in range(n - 1, -1, -1):
                 take = min(band_areas[j], remaining_glac)
@@ -803,6 +875,27 @@ class HYPEGeoDataManager:
                 row['elev_mean'] = band['elev_mean']
                 row['glacier_fraction'] = (
                     band_glac[k] / band_areas[k] if band_areas[k] > 0 else 0.0)
+                if self.config.get('HYPE_PRESERVE_ICECAP_VOLUME', False):
+                    if self.config.get('HYPE_GLACIER_TYPE') != 1:
+                        raise ValidationError('HYPE_PRESERVE_ICECAP_VOLUME requires glacier type 1')
+                    # HYPE defaults: V = exp(logvolcor) * 1.701 * A**1.25.
+                    # Each band retains the parent's mean ice thickness; the
+                    # inverse area relationship consequently retains its area.
+                    row['_glacier_logvolcor'] = (
+                        0.25 * np.log(parent_glacier_fraction * parent_area / band_glac[k])
+                        if band_glac[k] > 0 else 0.0)
+                # HYPE consumes SLC fractions, not the glacier_fraction metadata.
+                # Redistribute actual glacier classes and preserve the relative
+                # shares of non-glacier classes, conserving every class's area.
+                if glacier_slc_cols:
+                    target = row['glacier_fraction']
+                    for col in (c for c in base_df.columns if c.startswith('SLC_')):
+                        if col in glacier_slc_cols:
+                            row[col] = (float(prow[col]) * target / parent_glacier_fraction
+                                        if parent_glacier_fraction > 0 else 0.0)
+                        else:
+                            row[col] = (float(prow[col]) * (1 - target) / (1 - parent_glacier_fraction)
+                                        if parent_glacier_fraction < 1 else 0.0)
                 # Full channel length only for the valley (outlet) band; internal
                 # band-to-band links are vertical, not channel reaches.
                 if k > 0:
@@ -946,6 +1039,19 @@ class HYPEGeoDataManager:
             self.logger.error(f"Error during topological sorting: {str(e)}", exc_info=True)
             return geodata
 
+    def apply_river_length_overrides(self, geodata: pd.DataFrame) -> pd.DataFrame:
+        """Apply explicit, validated reach lengths to final model subbasin IDs."""
+        overrides = self.config.get('HYPE_RIVER_LENGTH_OVERRIDES') or {}
+        result = geodata.copy()
+        for subid, length in overrides.items():
+            if not np.isfinite(length) or length <= 0:
+                raise ValidationError('HYPE river length overrides must be finite and positive')
+            mask = result.subid == int(subid)
+            if mask.sum() != 1:
+                raise ValidationError(f'River length override subid {subid} does not identify one subbasin')
+            result.loc[mask, 'rivlen'] = float(length)
+        return result
+
     def _write_geoclass(self, slc_df: pd.DataFrame) -> None:
         """Write GeoClass.txt file with full metadata and specific formatting."""
         combination = slc_df.copy()
@@ -956,8 +1062,8 @@ class HYPEGeoDataManager:
         combination['Second crop cropid'] = 0
         combination['Crop rotation group'] = 0
         combination['Vegetation type'] = 1
-        # IGBP 15 (Snow/Ice) → HYPE glacier class (special code 2)
-        combination['Special class code'] = combination['LULC'].apply(lambda x: 2 if x == 15 else 0)
+        # HYPE's glacier_model is 3; code 2 is an internal lake.
+        combination['Special class code'] = combination['LULC'].apply(lambda x: 3 if x == 15 else 0)
         soil_depths = self.config.get('HYPE_SOIL_LAYER_DEPTHS')
         if soil_depths and len(soil_depths) == 3:
             d1, d2, d3 = [float(d) for d in soil_depths]
