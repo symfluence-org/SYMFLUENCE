@@ -1017,13 +1017,18 @@ class AcquisitionService(ConfigurableMixin):
             if variables is None:
                 variables = self._get_config_value(lambda: self.config.forcing.variables, dict_key='FORCING_VARIABLES')
 
+            cache_backend = data_access
+            if forcing_dataset == 'CARRA':
+                source = self._get_config_value(lambda: self.config.forcing.carra_source, default='cds', dict_key='CARRA_SOURCE')
+                if source != 'cds':
+                    cache_backend = f'{data_access}:{source}'
             cache_key = cache.generate_cache_key(
                 dataset=forcing_dataset,
                 bbox=bbox,
                 time_start=time_start,
                 time_end=time_end,
                 variables=variables if isinstance(variables, list) else None,
-                backend=data_access,
+                backend=cache_backend,
             )
 
             # Check cache first

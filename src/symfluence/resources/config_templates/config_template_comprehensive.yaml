@@ -4401,6 +4401,13 @@ RDRS_ACQUISITION_METHOD: null
 #   Description: Permit the full-domain daily CaSR fallback past its file-count guard (downloads the whole CaSR domain per day, ~700 MB/file).
 RDRS_ALLOW_FULL_DOMAIN_DAILY: false
 
+# CARRA_SOURCE
+#   Type:        str
+#   Default:     cds
+#   Source:      ForcingConfig (forcing.py)
+#   Description: CARRA forcing provider: 'cds' or public Belgingur archive 'belgingur'
+CARRA_SOURCE: cds
+
 # CARRA_DOMAIN
 #   Type:        Optional
 #   Default:     None

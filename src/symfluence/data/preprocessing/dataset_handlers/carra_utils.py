@@ -111,7 +111,7 @@ class CARRAHandler(BaseDatasetHandler):
             lons = ds.longitude.values
             lats = ds.latitude.values
             needs_lon_fix = lons.max() > 180
-            needs_lat_sort = len(lats) > 1 and lats[0] > lats[-1]
+            needs_lat_sort = lats.ndim == 1 and len(lats) > 1 and lats[0] > lats[-1]
 
         if not needs_lon_fix and not needs_lat_sort:
             self.logger.info("CARRA coordinates already normalized (lon -180/180, lat ascending)")
@@ -134,8 +134,9 @@ class CARRAHandler(BaseDatasetHandler):
             if needs_lon_fix:
                 new_lons = ds_loaded.longitude.values.copy()
                 new_lons[new_lons > 180] -= 360
-                ds_loaded = ds_loaded.assign_coords(longitude=new_lons)
-                ds_loaded = ds_loaded.sortby('longitude')
+                ds_loaded = ds_loaded.assign_coords(longitude=(ds_loaded.longitude.dims, new_lons))
+                if new_lons.ndim == 1:
+                    ds_loaded = ds_loaded.sortby('longitude')
                 modified = True
 
             if needs_lat_sort:
@@ -190,6 +191,9 @@ class CARRAHandler(BaseDatasetHandler):
             with self.open_dataset(carra_file) as ds:
                 lats = ds.latitude.values
                 lons = ds.longitude.values
+                grid_projection = ds.attrs.get('MAP_PROJ4_STR')
+                grid_dx = float(ds.attrs.get('DX', 2500))
+                grid_dy = float(ds.attrs.get('DY', 2500))
 
             self.logger.debug(f"CARRA dimensions: lat={lats.shape}, lon={lons.shape}")
             self.logger.info(f"CARRA lat range: {lats.min():.4f} to {lats.max():.4f}")
@@ -298,7 +302,7 @@ class CARRAHandler(BaseDatasetHandler):
             else:
                 # Curvilinear grid - use stereographic projection
                 # Define CARRA projection (polar stereographic)
-                carra_proj = CRS('+proj=stere +lat_0=90 +lat_ts=90 +lon_0=-45 +k=1 +x_0=0 +y_0=0 +a=6378137 +b=6356752.3142 +units=m +no_defs')
+                carra_proj = CRS(grid_projection or '+proj=stere +lat_0=90 +lat_ts=90 +lon_0=-45 +k=1 +x_0=0 +y_0=0 +a=6378137 +b=6356752.3142 +units=m +no_defs')
                 wgs84 = CRS('EPSG:4326')
 
                 transformer = Transformer.from_crs(carra_proj, wgs84, always_xy=True)
@@ -344,8 +348,8 @@ class CARRAHandler(BaseDatasetHandler):
                         x, y = transformer_to_carra.transform(center_lon_normalized, center_lat_raw)
 
                         # Define grid cell (assuming 2.5 km resolution)
-                        half_dx = 1250  # meters
-                        half_dy = 1250  # meters
+                        half_dx = grid_dx / 2
+                        half_dy = grid_dy / 2
 
                         vertices = [
                             (x - half_dx, y - half_dy),

@@ -171,6 +171,10 @@ class ForcingConfig(BaseModel):
     )
 
     # CARRA-specific settings
+    carra_source: Literal['cds', 'belgingur'] = Field(
+        default='cds', alias='CARRA_SOURCE',
+        description='CARRA provider; Belgingur is the three-hourly Iceland forecast archive'
+    )
     carra_domain: Optional[str] = Field(
         default=None, alias='CARRA_DOMAIN',
         description="CARRA regional domain: 'west_domain' or 'east_domain'"

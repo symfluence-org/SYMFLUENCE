@@ -155,10 +155,42 @@ def _extract_d_gauges(zip_path: Path, lamah_path: Path,
         ) from e
 
 
+FILES = {
+    'glacier_timeseries.csv': 'annual/glacier_timeseries',
+    'modis_fractional_snow_cover_and_glacier_albedo.csv':
+        'daily/modis_fractional_snow_cover_and_glacier_albedo',
+}
+
+
+def ensure_lamah_ice_cryosphere(project_dir, station_id, logger):
+    """Fetch exactly this watershed's auxiliary series from the official archive."""
+    target = Path(project_dir) / 'data/observations/cryosphere'
+    target.mkdir(parents=True, exist_ok=True)
+    if all((target / name).exists() for name in FILES):
+        return target
+    archive = target / 'lamah_ice.zip'
+    if not archive.exists():
+        _download_lamah_ice_zip(archive, logger)
+    with zipfile.ZipFile(archive) as z:
+        for name, subtree in FILES.items():
+            member = f'lamah_ice/A_basins_total_upstrm/2_timeseries/{subtree}/ID_{int(station_id)}.csv'
+            with z.open(member) as src, (target / name).open('wb') as dst:
+                shutil.copyfileobj(src, dst)
+    archive.unlink()
+    return target
+
+
+
 @R.observation_handlers.add('lamah_ice_streamflow')
 class LamahIceStreamflowHandler(BaseObservationHandler):
     """Handles LamaH-ICE streamflow data processing, with auto-download
     from HydroShare when the local dataset is missing."""
+
+    @staticmethod
+    def ensure_cryosphere(project_dir, station_id, logger):
+        """Acquire this basin's LamaH-Ice snow and glacier observations."""
+        return ensure_lamah_ice_cryosphere(project_dir, station_id, logger)
+
 
     # Registry-facing alias: callers resolve the class via
     # R.observation_handlers.get('lamah_ice_streamflow') and call this,
@@ -308,10 +340,11 @@ class LamahIceStreamflowHandler(BaseObservationHandler):
         # We'll keep all for now but log if many are missing
         df = df.dropna(subset=['discharge_cms'])
 
-        # Resample to target timestep
-        resample_freq = self._get_resample_freq()
-        resampled = df['discharge_cms'].resample(resample_freq).mean()
-        resampled = resampled.interpolate(method='time', limit_direction='both', limit=30)
+        # This archive contains daily means. Upsampling and interpolating to
+        # the meteorological timestep changes the daily calibration target
+        # when it is averaged back to daily, and invents observations in gaps.
+        # Keep the native daily series; evaluators align model output to it.
+        resampled = df['discharge_cms'].resample('D').mean()
 
         # Save processed data
         output_dir = self.project_observations_dir / "streamflow" / "preprocessed"

@@ -547,7 +547,14 @@ class HYPEWorker(BaseWorker):
             if pd.isna(nse_val):
                 nse_val = self.penalty_score
 
-            return {'kge': float(kge_val), 'nse': float(nse_val)}
+            metrics = {'kge': float(kge_val), 'nse': float(nse_val)}
+            if self._resolve_config_value('HYPE_CRYOSPHERE_CONSTRAINTS', config, False):
+                from ..cryosphere import calculate_constraints
+                metrics.update(calculate_constraints(
+                    output_dir, project_dir, calib_period,
+                    self._resolve_config_value('HYPE_SNOW_COVER_ERROR_SCALE', config, 0.2),
+                    self._resolve_config_value('HYPE_GLACIER_MB_ERROR_SCALE', config, 1.0)))
+            return metrics
 
         except Exception as e:  # noqa: BLE001 — calibration resilience
             self.logger.error(f"Error calculating HYPE metrics: {e}", exc_info=True)
