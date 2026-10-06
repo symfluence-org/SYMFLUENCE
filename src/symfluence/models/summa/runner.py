@@ -171,6 +171,19 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
         if not result.success:
             return run_result
 
+        from symfluence.core.exceptions import ValidationError
+
+        from .output_validation import validate_output_coverage
+        try:
+            validate_output_coverage(self.file_manager, self.output_dir,
+                                     self._get_config_value(
+                                         lambda: self.config.forcing.time_step_size, default=None))
+        except (ValidationError, ValueError) as exc:
+            run_result.success = False
+            run_result.error = str(exc)
+            self.logger.error(str(exc))
+            return run_result
+
         # Check if we need to convert lumped output for distributed routing
         domain_method = self.domain_definition_method
         routing_delineation = self._get_config_value(
@@ -269,17 +282,26 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
         """
         # Check for point mode
         if self.domain_definition_method == 'point':
-            return self.run_summa_point()
-
-        use_parallel = self._get_config_value(
-            lambda: self.config.model.summa.use_parallel, default=False
-        )
-
-        if use_parallel:
-            return self.run_parallel_summa()
+            output = self.run_summa_point()
         else:
-            # Serial execution handled by base class run() method via _build_command
-            return self.run()
+            use_parallel = self._get_config_value(
+                lambda: self.config.model.summa.use_parallel, default=False
+            )
+            if use_parallel:
+                output = self.run_parallel_summa()
+            else:
+                # Serial execution handled by the base class.
+                output = self.run()
+
+        # The sequential manager ignores return values. A failed upstream run
+        # must raise so downstream routing never consumes unfinished output.
+        if output is None:
+            from symfluence.core.exceptions import ModelExecutionError
+            raise ModelExecutionError(
+                'SUMMA did not complete successfully; downstream routing is blocked. '
+                'See the SUMMA execution log for the underlying failure.'
+            )
+        return output
 
     def run_parallel_summa(self) -> Optional[Path]:
         """
@@ -391,6 +413,15 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
             self.logger.error("Local parallel SUMMA failed")
             return None
 
+        from symfluence.core.exceptions import ValidationError
+
+        from .output_validation import validate_output_coverage
+        try:
+            validate_output_coverage(self.file_manager, self.output_dir)
+        except (ValidationError, ValueError) as exc:
+            self.logger.error(str(exc))
+            return None
+
         self.logger.info("Local parallel SUMMA completed")
         return self.output_dir
 
@@ -431,6 +462,8 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
                 self._merge_files(pattern, output_file)
 
             self.logger.info("SUMMA output merging completed")
+            from .output_validation import validate_output_coverage
+            validate_output_coverage(self.file_manager, self.output_dir)
             return self.output_dir
 
         except Exception as e:  # noqa: BLE001 — model execution resilience
