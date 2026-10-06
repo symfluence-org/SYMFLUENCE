@@ -8,6 +8,9 @@ import logging
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pandas as pd
+import xarray as xr
+
 import symfluence.models.summa.runner as summa_runner
 from symfluence.core.config.models import SymfluenceConfig
 from symfluence.models.summa.runner import SummaRunner
@@ -31,7 +34,12 @@ def make_summa_runner(
     summa_exe = install_dir / 'summa_sundials.exe'
     summa_exe.write_text('#!/bin/sh\n', encoding='utf-8')
     summa_exe.chmod(0o755)
-    (settings_dir / 'fileManager.txt').write_text('', encoding='utf-8')
+    (settings_dir / 'fileManager.txt').write_text(
+        "simStartTime '2020-01-01 00:00'\n"
+        "simEndTime '2020-01-02 00:00'\n"
+        "outFilePrefix 'test_run'\n",
+        encoding='utf-8',
+    )
 
     config = SymfluenceConfig(
         SYMFLUENCE_DATA_DIR=str(data_dir),
@@ -71,6 +79,10 @@ def test_local_parallel_summa_calls_gru_split_helper(monkeypatch, tmp_path):
 
     def fake_run_summa_gru_parallel(**kwargs):
         calls.append(kwargs)
+        times = pd.date_range('2020-01-01', '2020-01-02', freq='h')
+        xr.Dataset(coords={'time': times}).to_netcdf(
+            kwargs['summa_dir'] / 'test_run_timestep.nc'
+        )
         return True
 
     monkeypatch.setattr(

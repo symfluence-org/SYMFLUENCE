@@ -16,7 +16,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
-from symfluence.core.exceptions import OptionalDependencyError
+from symfluence.core.exceptions import OptionalDependencyError, ValidationError
 
 try:
     import torch
@@ -181,7 +181,8 @@ class GNNPreProcessor(LSTMPreProcessor):
         streamflow_df: pd.DataFrame,
         snow_df: Optional[pd.DataFrame] = None,
         fit_scalers: bool = True,
-        train_end_idx: Optional[int] = None
+        train_end_idx: Optional[int] = None,
+        scaler_fit_dates: Optional[pd.DatetimeIndex] = None
     ) -> Tuple[torch.Tensor, torch.Tensor, pd.DatetimeIndex, pd.DataFrame, List[int]]:
         """
         Preprocess data and align it with the graph nodes.
@@ -200,6 +201,9 @@ class GNNPreProcessor(LSTMPreProcessor):
                 only on data up to this index to prevent data leakage from
                 validation/test data. This should be the number of unique
                 timesteps in the training set.
+
+            scaler_fit_dates: Explicit training dates for both scalers; takes
+                precedence over train_end_idx.
 
         Returns:
             Tuple containing:
@@ -262,7 +266,12 @@ class GNNPreProcessor(LSTMPreProcessor):
 
         # Scale features
         if fit_scalers:
-            if train_end_idx is not None:
+            if scaler_fit_dates is not None:
+                fit_mask = forcing_df['time'].isin(scaler_fit_dates)
+                if not fit_mask.any():
+                    raise ValidationError('No GNN feature samples within scaler training dates')
+                self.feature_scaler.fit(features_to_scale.loc[fit_mask])
+            elif train_end_idx is not None:
                 # Fit scaler only on training data to prevent data leakage
                 # For GNN, features_to_scale is (n_timesteps * n_nodes, n_features)
                 n_nodes = len(self.ordered_hru_ids)
@@ -318,7 +327,10 @@ class GNNPreProcessor(LSTMPreProcessor):
         # streamflow_df is (Time, 1) or Series
         q_vals = streamflow_df['streamflow'].values
         if fit_scalers:
-            if train_end_idx is not None:
+            if scaler_fit_dates is not None:
+                target_fit_mask = np.asarray(common_dates.isin(scaler_fit_dates), dtype=bool)
+                self.target_scaler.fit(q_vals[target_fit_mask].reshape(-1, 1))
+            elif train_end_idx is not None:
                 # Fit scaler only on training data to prevent data leakage
                 self.target_scaler.fit(q_vals[:train_end_idx].reshape(-1, 1))
             else:
