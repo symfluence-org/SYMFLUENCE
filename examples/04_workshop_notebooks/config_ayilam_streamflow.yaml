@@ -1,0 +1,81 @@
+# Intelligent Rivers 04e: Vamanapuram at Ayilam, CAMELS-IND gauge 15007.
+# The notebook imports the bundled observed flow and boundary before this workflow.
+# SUMMA uses hourly ERA5. The notebook gives its daily means to the native LSTM.
+DOMAIN_NAME: ayilam_camels_ind
+EXPERIMENT_ID: intelligent_rivers_streamflow_summa
+SYMFLUENCE_CODE_DIR: .
+SYMFLUENCE_DATA_DIR: ../SYMFLUENCE_data
+DOMAIN_DEFINITION_METHOD: lumped
+SUB_GRID_DISCRETIZATION: GRUs
+POUR_POINT_COORDS: '8.71458/76.84792'
+BOUNDING_BOX_COORDS: '8.90/76.75/8.57/77.27'
+EXPERIMENT_TIME_START: '2000-01-01 00:00'
+EXPERIMENT_TIME_END: '2015-12-31 23:00'
+SPINUP_PERIOD: '2000-01-01,2000-12-31'
+CALIBRATION_PERIOD: '2001-01-01,2010-12-31'
+EVALUATION_PERIOD: '2011-01-01,2015-12-31'
+DATA_ACCESS: cloud
+DEM_SOURCE: copdem90
+LAND_CLASS_SOURCE: modis
+DOWNLOAD_DEM: true
+DOWNLOAD_SOIL: true
+DOWNLOAD_LAND_COVER: true
+FORCING_DATASET: ERA5
+ERA5_USE_CDS: true
+FORCING_TIME_STEP_SIZE: 3600
+FORCING_MEASUREMENT_HEIGHT: 2
+APPLY_LAPSE_RATE: true
+LAPSE_RATE: 0.0065
+STATION_ID: '15007'
+EVALUATION_DATA: [streamflow]
+# The notebook imports the real local observations; no online gauge handler.
+STREAMFLOW_DATA_PROVIDER: null
+DOWNLOAD_USGS_DATA: false
+DOWNLOAD_WSC_DATA: false
+HYDROLOGICAL_MODEL: SUMMA
+ROUTING_MODEL: none
+SUMMA_EXE: summa_sundials.exe
+SETTINGS_SUMMA_USE_PARALLEL_SUMMA: false
+SETTINGS_SUMMA_CONNECT_HRUS: false
+SUMMA_DECISION_OPTIONS:
+  subRouting: [timeDlay]
+SUMMA_ADDITIONAL_OUTPUTS:
+  averageRoutedRunoff: 1
+# Native lumped SUMMA includes sub-grid time-delay routing; no channel network.
+OPTIMIZATION_METHODS: [iteration]
+OPTIMIZATION_TARGET: streamflow
+CALIBRATION_VARIABLE: streamflow
+CALIBRATION_TIMESTEP: daily
+OPTIMIZATION_METRIC: KGE
+ITERATIVE_OPTIMIZATION_ALGORITHM: DDS
+NUMBER_OF_ITERATIONS: 50
+NUM_PROCESSES: 1
+RANDOM_SEED: 42
+SKIP_WARM_START: true
+PARAMS_TO_CALIBRATE: k_soil,aquiferBaseflowRate
+BASIN_PARAMS_TO_CALIBRATE: routingGammaShape,routingGammaScale
+# Daily LSTM: lookback counts days. Native training splits fitting targets 80/20.
+LSTM_LOAD: false
+LSTM_HIDDEN_SIZE: 32
+LSTM_NUM_LAYERS: 1
+LSTM_LOOKBACK: 90
+LSTM_EPOCHS: 30
+LSTM_BATCH_SIZE: 64
+LSTM_LEARNING_RATE: 0.001
+LSTM_LEARNING_PATIENCE: 8
+LSTM_DROPOUT: 0.0
+LSTM_USE_SNOW: false
+LSTM_TRAIN_THROUGH_ROUTING: false
+ANALYSES: []
+# Domain definition and observations are imported by the notebook, not delineated.
+WORKFLOW_STEPS:
+  - setup_project
+  - create_pour_point
+  - acquire_attributes
+  - discretize_domain
+  - acquire_forcings
+  - model_agnostic_preprocessing
+  - model_specific_preprocessing
+  - run_model
+  - postprocess_results
+  - calibrate_model
