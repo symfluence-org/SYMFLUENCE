@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 import psutil
 
-from symfluence.core.exceptions import OptionalDependencyError
+from symfluence.core.exceptions import OptionalDependencyError, ValidationError
 
 try:
     import torch
@@ -212,7 +212,7 @@ class LSTMRunner(BaseModelRunner, SpatialOrchestrator, MizuRouteConfigMixin, Spa
                     target_dates = common_times[self.preprocessor.lookback:]
                     training_dates = target_dates[(target_dates >= start_date) & (target_dates < end_date + pd.Timedelta(days=1))]
                     if len(training_dates) < 10:
-                        raise ValueError("Insufficient LSTM target samples in calibration period")
+                        raise ValidationError("Insufficient LSTM target samples in calibration period")
                     scaler_dates = training_dates[:int(0.8 * len(training_dates))]
                     self.logger.info(
                         "LSTM calibration targets %s to %s (%d); scaler/gradient training ends %s; validation remains inside calibration",
@@ -402,7 +402,7 @@ class LSTMRunner(BaseModelRunner, SpatialOrchestrator, MizuRouteConfigMixin, Spa
                 self.logger.info(f'Epoch [{epoch + 1}/{epochs}], Train Loss: {total_loss / n_batches:.4f}, Val Loss: {val_loss:.4f}')
 
         if best_state is None:
-            raise ValueError("LSTM training produced no finite validation loss")
+            raise ValidationError("LSTM training produced no finite validation loss")
         self.model.load_state_dict(best_state)
         self.logger.info("LSTM model training completed; restored best validation weights")
 

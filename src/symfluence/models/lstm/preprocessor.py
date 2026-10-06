@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from symfluence.core.exceptions import OptionalDependencyError
+from symfluence.core.exceptions import OptionalDependencyError, ValidationError
 
 try:
     import torch
@@ -320,7 +320,7 @@ class LSTMPreProcessor(BaseModelPreProcessor):
                 fit_times = features_to_scale.index.get_level_values('time')
                 fit_mask = fit_times.isin(scaler_fit_dates)
                 if not fit_mask.any():
-                    raise ValueError('No feature samples within scaler training dates')
+                    raise ValidationError('No feature samples within scaler training dates')
                 self.feature_scaler.fit(features_to_scale.loc[fit_mask])
             elif train_end_idx is not None:
                 # Fit scaler only on training data to prevent data leakage
