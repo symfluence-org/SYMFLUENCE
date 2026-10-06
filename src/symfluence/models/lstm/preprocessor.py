@@ -258,7 +258,8 @@ class LSTMPreProcessor(BaseModelPreProcessor):
         streamflow_df: pd.DataFrame,
         snow_df: Optional[pd.DataFrame] = None,
         fit_scalers: bool = True,
-        train_end_idx: Optional[int] = None
+        train_end_idx: Optional[int] = None,
+        scaler_fit_dates: Optional[pd.DatetimeIndex] = None
     ) -> Tuple[torch.Tensor, torch.Tensor, pd.DatetimeIndex, pd.DataFrame, List[int]]:
         """
         Preprocess data for LSTM model (clean, scale, sequence).
@@ -300,8 +301,7 @@ class LSTMPreProcessor(BaseModelPreProcessor):
         # Prepare features (forcing data)
         features = forcing_df.reset_index()
         feature_columns = features.columns.drop(
-            ['time', 'hruId', 'hru', 'latitude', 'longitude']
-            if 'time' in features.columns and 'hruId' in features.columns else []
+            [c for c in ['time', 'hruId', 'hru', 'latitude', 'longitude'] if c in features.columns]
         )
 
         if self.spatial_mode == SpatialMode.LUMPED:
@@ -316,7 +316,13 @@ class LSTMPreProcessor(BaseModelPreProcessor):
 
         # Scale features
         if fit_scalers:
-            if train_end_idx is not None:
+            if scaler_fit_dates is not None:
+                fit_times = features_to_scale.index.get_level_values('time')
+                fit_mask = fit_times.isin(scaler_fit_dates)
+                if not fit_mask.any():
+                    raise ValueError('No feature samples within scaler training dates')
+                self.feature_scaler.fit(features_to_scale.loc[fit_mask])
+            elif train_end_idx is not None:
                 # Fit scaler only on training data to prevent data leakage
                 self.feature_scaler.fit(features_to_scale[:train_end_idx])
             else:
@@ -350,9 +356,14 @@ class LSTMPreProcessor(BaseModelPreProcessor):
         else:
             targets_to_scale = targets_raw.values
 
-        # Scale targets
+        # Scale targets using exactly the same training dates as the features.
         if fit_scalers:
-            if train_end_idx is not None:
+            if scaler_fit_dates is not None:
+                fit_mask = common_dates.isin(scaler_fit_dates)
+                if self.spatial_mode == SpatialMode.DISTRIBUTED:
+                    fit_mask = np.repeat(fit_mask, n_hrus)
+                self.target_scaler.fit(targets_to_scale[fit_mask])
+            elif train_end_idx is not None:
                 # Fit scaler only on training data to prevent data leakage
                 # For distributed mode, we need to account for n_hrus
                 if self.spatial_mode == SpatialMode.DISTRIBUTED:
