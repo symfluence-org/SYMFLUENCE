@@ -1,7 +1,7 @@
 SAC-SMA cryosphere research replay
 =================================
 
-This optional interface replays ``SACSMA_CRYOSPHERE_UNIFORM_HRU_V1`` with
+This optional interface replays ``SACSMA_CRYOSPHERE_UNIFORM_HRU_V2`` with
 jSACSMA and jSnow17 0.3.0. It is an explicit elevation/finite-ice extension,
 not standard lumped SAC-SMA or a physically validated glacier model. Install
 the corrected model packages before running this interface. The draft PRs must
@@ -64,9 +64,13 @@ Scientific qualification
 ------------------------
 
 The variant uses binary snow presence within uniform HRUs to gate exposed ice,
-separate from Snow17 effective melt area. Ice is finite and cannot melt in a
-substep that begins snow-covered. Meltout timing is conservative and requires
-substep sensitivity checks. Fixed area, no retreat/firn/redistribution, no frozen
+separate from Snow17 effective melt area. Ice is finite. V2 estimates covered versus bare time from Snow17 melt-energy
+and heat-deficit diagnostics within each computational substep; only the
+remaining bare time melts ice after snow exhaustion. Tiny transient snowfall
+cannot shield a whole interval. This constant-rate approximation requires
+substep sensitivity checks. V1 historical bundles remain readable under their
+original identity and fingerprints; replay requires their original source,
+and V2 requires recalibration. Fixed area, no retreat/firn/redistribution, no frozen
 ground and simplified Snow17 liquid drainage limit physical interpretation.
 
 Previous prototype parameters must use ``uncalibrated_replay`` after these

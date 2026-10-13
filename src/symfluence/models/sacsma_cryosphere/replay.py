@@ -33,7 +33,8 @@ class ReplayOutputExistsError(FileOperationError, FileExistsError):
     """Refuse to overwrite a scientific replay bundle."""
 
 
-MODEL_ID = "SACSMA_CRYOSPHERE_UNIFORM_HRU_V1"
+MODEL_ID = "SACSMA_CRYOSPHERE_UNIFORM_HRU_V2"
+SUPPORTED_MODEL_IDS = {"SACSMA_CRYOSPHERE_UNIFORM_HRU_V1", MODEL_ID}
 MODULES = (
     "jsacsma.cryosphere",
     "jsacsma.nws",
@@ -118,7 +119,7 @@ class SnowConstraint(StrictModel):
 
 class ReplaySpec(StrictModel):
     schema_version: Literal[1] = 1
-    model: Literal["SACSMA_CRYOSPHERE_UNIFORM_HRU_V1"] = MODEL_ID
+    model: Literal["SACSMA_CRYOSPHERE_UNIFORM_HRU_V1", "SACSMA_CRYOSPHERE_UNIFORM_HRU_V2"] = MODEL_ID
     family: Literal["SACSMA"] = "SACSMA"
     backend: Literal["numpy", "jax"] = "numpy"
     forcing: FileRef
@@ -234,7 +235,11 @@ def replay_bundle(spec_path, output_dir):
     hashes, versions = runtime_fingerprints()
     if hashes != spec.implementation_hashes or versions != spec.package_versions:
         raise ReplayValidationError("Model implementation/version differs from the frozen specification")
+    from jsacsma.cryosphere import MODEL_ID as engine_model_id
     from jsacsma.cryosphere import CryosphereConfig, simulate_cryosphere
+
+    if spec.model != engine_model_id:
+        raise ReplayValidationError("Model identity differs from replay engine")
 
     data = _frame(forcing_path)
     if len(data) > 1 and not np.all(
@@ -459,7 +464,7 @@ def load_audited_candidate(output_dir):
     """Load an immutable replay bundle as a typed SAC-SMA family candidate."""
     root = Path(output_dir).resolve()
     manifest = json.loads((root / "manifest.json").read_text())
-    if manifest.get("model") != MODEL_ID or manifest.get("family") != "SACSMA":
+    if manifest.get("model") not in SUPPORTED_MODEL_IDS or manifest.get("family") != "SACSMA":
         raise ReplayValidationError("Wrong model/family identity")
     required = {
         "replay_spec.json",
@@ -476,7 +481,8 @@ def load_audited_candidate(output_dir):
         _read_input(root, FileRef(path=name, sha256=digest))
     spec = ReplaySpec.model_validate_json((root / "replay_spec.json").read_text())
     if (
-        spec.implementation_hashes != manifest.get("implementation_hashes")
+        spec.model != manifest.get("model")
+        or spec.implementation_hashes != manifest.get("implementation_hashes")
         or spec.package_versions != manifest.get("package_versions")
         or spec.parameter_status != manifest.get("parameter_status")
         or list(spec.qualifications) != manifest.get("qualifications")
@@ -507,7 +513,7 @@ def load_audited_candidate(output_dir):
 
     with xr.open_dataset(root / "streamflow_output.nc") as ds:
         if (
-            ds.attrs.get("model") != MODEL_ID
+            ds.attrs.get("model") != spec.model
             or ds.attrs.get("family") != "SACSMA"
             or ds.streamflow.attrs.get("units") != "m3 s-1"
         ):

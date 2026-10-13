@@ -196,3 +196,12 @@ def test_native_replay_scores_complete_daily_means(tmp_path):
     expected = _metrics(q.reshape(3, 8).mean(axis=1), daily_obs)
     assert actual["KGE"] == pytest.approx(expected["KGE"])
     assert actual["observation_aggregation"] == "daily_mean"
+
+
+def test_v1_identity_cannot_be_replayed_with_v2_engine(tmp_path):
+    doc, path = prepare(tmp_path)
+    doc["model"] = "SACSMA_CRYOSPHERE_UNIFORM_HRU_V1"
+    path.write_text(json.dumps(doc))
+    with pytest.raises(ValueError, match="identity"):
+        replay_bundle(path, tmp_path / "out")
+    assert not (tmp_path / "out").exists()
