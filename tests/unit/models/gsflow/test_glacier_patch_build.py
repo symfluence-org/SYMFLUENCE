@@ -7,6 +7,10 @@ import subprocess
 
 import pytest
 
+# On Windows runners `bash` may be the WSL launcher (no distribution installed);
+# real Windows builds run these steps under the installer's MSYS bash.
+POSIX_BASH = os.name != 'nt' and shutil.which('bash') is not None
+
 from symfluence.models.gsflow import build_instructions as bi
 
 PATCHED_FILES = {
@@ -31,11 +35,11 @@ def test_patch_step_runs_before_the_build_and_pins_the_base_commit():
     step = bi._glacier_patch_command()
     assert step in commands and commands.index(step) == 1   # after the common environment
     assert bi.GLACIER_PATCH_BASE in step
-    assert 'git apply --check' in step and str(bi.GLACIER_PATCH) in step
+    assert 'git apply --check' in step and bi.GLACIER_PATCH.as_posix() in step
     assert 'SYMFLUENCE_PATCHED' in step
 
 
-@pytest.mark.skipif(shutil.which('bash') is None, reason='bash required')
+@pytest.mark.skipif(not POSIX_BASH, reason='POSIX bash required')
 def test_patch_step_is_a_no_op_for_ordinary_installs(tmp_path):
     env = {k: v for k, v in os.environ.items() if k != 'SYMFLUENCE_PATCHED'}
     r = subprocess.run(['bash', '-c', bi._glacier_patch_command()], cwd=tmp_path, env=env,
@@ -44,7 +48,7 @@ def test_patch_step_is_a_no_op_for_ordinary_installs(tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
-@pytest.mark.skipif(shutil.which('bash') is None or shutil.which('git') is None, reason='bash and git required')
+@pytest.mark.skipif(not POSIX_BASH or shutil.which('git') is None, reason='POSIX bash and git required')
 def test_patched_step_fails_loudly_outside_the_pinned_source(tmp_path):
     subprocess.run(['git', 'init', '-q'], cwd=tmp_path, check=True)
     r = subprocess.run(['bash', '-c', bi._glacier_patch_command()], cwd=tmp_path,

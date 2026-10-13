@@ -38,6 +38,7 @@ def _glacier_patch_command() -> str:
 
     A no-op for ordinary installs, which keep building the configured branch.
     """
+    patch = GLACIER_PATCH.as_posix()  # forward slashes also work for MSYS bash/git on Windows
     return f'''set -e
 if [ "${{SYMFLUENCE_PATCHED:-0}}" = "1" ]; then
     echo "Applying SYMFLUENCE glacier conservation patch (base {GLACIER_PATCH_BASE[:8]})"
@@ -45,10 +46,10 @@ if [ "${{SYMFLUENCE_PATCHED:-0}}" = "1" ]; then
         git fetch --depth 1 origin "{GLACIER_PATCH_BASE}"
     fi
     git checkout -q "{GLACIER_PATCH_BASE}"
-    git apply --check "{GLACIER_PATCH}"
-    git apply "{GLACIER_PATCH}"
+    git apply --check "{patch}"
+    git apply "{patch}"
     mkdir -p bin
-    cp "{GLACIER_PATCH}" bin/applied_glacier_conservation.patch
+    cp "{patch}" bin/applied_glacier_conservation.patch
 fi
 '''
 
