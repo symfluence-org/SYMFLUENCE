@@ -15,11 +15,43 @@ The upstream GSFLOW Makefiles have several issues that require patching:
   4. Incomplete .mod dependency lists for some .o targets
 
 Repository: https://github.com/rniswon/gsflow_v2
+
+``symfluence binary install gsflow --patched`` additionally checks out the
+pinned upstream commit and applies the SYMFLUENCE glacier conservation patch
+(``patches/gsflow240_glacier_conservation.patch``, see ``patches/README.md``).
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from symfluence.core.build import get_common_build_environment
 from symfluence.core.registries import R
+
+# Upstream gsflow_v2 commit the glacier conservation patch was written and
+# tested against. `--patched` builds check it out so the patch applies exactly.
+GLACIER_PATCH_BASE = 'cd71e820152c643a8dc6163639c2992ea225a4f2'
+GLACIER_PATCH = Path(__file__).with_name('patches') / 'gsflow240_glacier_conservation.patch'
+
+
+def _glacier_patch_command() -> str:
+    """Shell step applying the glacier conservation patch when --patched is set.
+
+    A no-op for ordinary installs, which keep building the configured branch.
+    """
+    patch = GLACIER_PATCH.as_posix()  # forward slashes also work for MSYS bash/git on Windows
+    return f'''set -e
+if [ "${{SYMFLUENCE_PATCHED:-0}}" = "1" ]; then
+    echo "Applying SYMFLUENCE glacier conservation patch (base {GLACIER_PATCH_BASE[:8]})"
+    if ! git cat-file -e "{GLACIER_PATCH_BASE}^{{commit}}" 2>/dev/null; then
+        git fetch --depth 1 origin "{GLACIER_PATCH_BASE}"
+    fi
+    git checkout -q "{GLACIER_PATCH_BASE}"
+    git apply --check "{patch}"
+    git apply "{patch}"
+    mkdir -p bin
+    cp "{patch}" bin/applied_glacier_conservation.patch
+fi
+'''
 
 
 @R.build_instructions.add('gsflow')
@@ -38,6 +70,7 @@ def get_gsflow_build_instructions():
         'install_dir': 'gsflow',
         'build_commands': [
             common_env,
+            _glacier_patch_command(),
             r'''
 set -e
 

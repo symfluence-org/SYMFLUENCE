@@ -483,7 +483,7 @@ For more help on a specific command:
         install_parser.add_argument('--force', action='store_true',
                                   help='Force reinstall even if already installed')
         install_parser.add_argument('--patched', action='store_true',
-                                  help='Apply SYMFLUENCE patches (currently: RHESSys GW recharge + NaN guards)')
+                                  help='Apply SYMFLUENCE patches (currently: RHESSys GW recharge + NaN guards; GSFLOW glacier conservation)')
         install_parser.add_argument('--branch', type=str, default=None,
                                   help='Override the default git branch for the tool(s) being installed')
         install_parser.add_argument('--git-hash', type=str, default=None,
