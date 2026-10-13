@@ -20,6 +20,18 @@ import numpy as np
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, PositiveFloat, StrictBool, model_validator
 
+from symfluence.core.exceptions import FileOperationError
+from symfluence.core.exceptions import ValidationError as SYMFLUENCEValidationError
+
+
+class ReplayValidationError(SYMFLUENCEValidationError, ValueError):
+    """Replay contract failure compatible with Pydantic validator handling."""
+
+
+class ReplayOutputExistsError(FileOperationError, FileExistsError):
+    """Refuse to overwrite a scientific replay bundle."""
+
+
 MODEL_ID = "SACSMA_CRYOSPHERE_UNIFORM_HRU_V1"
 MODULES = (
     "jsacsma.cryosphere",
@@ -44,7 +56,7 @@ class FileRef(StrictModel):
     @model_validator(mode="after")
     def relative(self):
         if Path(self.path).is_absolute() or ".." in Path(self.path).parts:
-            raise ValueError("Bundle input paths must be relative and remain inside the bundle")
+            raise ReplayValidationError("Bundle input paths must be relative and remain inside the bundle")
         return self
 
 
@@ -67,14 +79,14 @@ class CryosphereSettings(StrictModel):
     def geometry(self):
         n = len(self.weights)
         if not n or any(len(v) != n for v in [self.glacier, self.latitudes, self.elevations_m]):
-            raise ValueError("Geometry vector lengths differ")
+            raise ReplayValidationError("Geometry vector lengths differ")
         if not np.isclose(sum(self.weights), 1.0, atol=1e-10, rtol=0):
-            raise ValueError("Weights must sum to one")
+            raise ReplayValidationError("Weights must sum to one")
         if any(abs(v) > 90 for v in self.latitudes) or any(v < -500 or v > 9000 for v in self.elevations_m):
-            raise ValueError("Invalid latitude/elevation")
+            raise ReplayValidationError("Invalid latitude/elevation")
         ice = np.asarray(self.initial_ice_mm)
         if (ice < 0).any() or (ice.ndim and ice.shape != (n,)):
-            raise ValueError("Invalid initial ice inventory")
+            raise ReplayValidationError("Invalid initial ice inventory")
         return self
 
 
@@ -86,7 +98,7 @@ class Period(StrictModel):
     @model_validator(mode="after")
     def order(self):
         if pd.Timestamp(self.start) > pd.Timestamp(self.end):
-            raise ValueError("Period ends before it starts")
+            raise ReplayValidationError("Period ends before it starts")
         return self
 
 
@@ -130,17 +142,17 @@ class ReplaySpec(StrictModel):
     @model_validator(mode="after")
     def contract(self):
         if len(self.hru_ids) != len(self.config.weights) or len(set(self.hru_ids)) != len(self.hru_ids):
-            raise ValueError("HRU IDs must be unique and match geometry")
+            raise ReplayValidationError("HRU IDs must be unique and match geometry")
         if set(self.implementation_hashes) != set(MODULES):
-            raise ValueError("All model source fingerprints are required")
+            raise ReplayValidationError("All model source fingerprints are required")
         if any(
             len(v) != 64 or any(c not in "0123456789abcdef" for c in v) for v in self.implementation_hashes.values()
         ):
-            raise ValueError("Invalid implementation SHA256")
+            raise ReplayValidationError("Invalid implementation SHA256")
         if set(self.package_versions) != {"jsacsma", "jsnow17"}:
-            raise ValueError("Both model package versions are required")
+            raise ReplayValidationError("Both model package versions are required")
         if any(not name or any(c in name for c in "/\\") for name in self.hru_ids):
-            raise ValueError("Invalid HRU ID")
+            raise ReplayValidationError("Invalid HRU ID")
         return self
 
 
@@ -157,19 +169,19 @@ def runtime_fingerprints():
 def _read_input(root, ref):
     path = (root / ref.path).resolve()
     if not path.is_relative_to(root.resolve()):
-        raise ValueError("Input symlink escapes bundle")
+        raise ReplayValidationError("Input symlink escapes bundle")
     if sha(path) != ref.sha256:
-        raise ValueError(f"Input checksum mismatch: {ref.path}")
+        raise ReplayValidationError(f"Input checksum mismatch: {ref.path}")
     return path
 
 
 def _frame(path):
     df = pd.read_csv(path, float_precision="round_trip")
     if "datetime" not in df:
-        raise ValueError("Input must contain datetime")
+        raise ReplayValidationError("Input must contain datetime")
     index = pd.DatetimeIndex(pd.to_datetime(df.pop("datetime"), utc=True)).tz_localize(None)
     if index.has_duplicates or not index.is_monotonic_increasing or len(index) == 0:
-        raise ValueError("Time axis must be nonempty, unique and increasing")
+        raise ReplayValidationError("Time axis must be nonempty, unique and increasing")
     df.index = index
     return df
 
@@ -201,7 +213,7 @@ def replay_bundle(spec_path, output_dir):
     """
     output = Path(output_dir).resolve()
     if output.exists() and (not output.is_dir() or any(output.iterdir())):
-        raise FileExistsError("Replay output directory must be empty")
+        raise ReplayOutputExistsError("Replay output directory must be empty")
     spec_path = Path(spec_path).resolve()
     root = spec_path.parent
     spec = ReplaySpec.model_validate_json(spec_path.read_text())
@@ -211,54 +223,54 @@ def replay_bundle(spec_path, output_dir):
     snow_path = _read_input(root, spec.snow_constraint.targets) if spec.snow_constraint else None
     hashes, versions = runtime_fingerprints()
     if hashes != spec.implementation_hashes or versions != spec.package_versions:
-        raise ValueError("Model implementation/version differs from the frozen specification")
+        raise ReplayValidationError("Model implementation/version differs from the frozen specification")
     from jsacsma.cryosphere import CryosphereConfig, simulate_cryosphere
 
     data = _frame(forcing_path)
     if len(data) > 1 and not np.all(
         np.diff(data.index.values) == np.timedelta64(round(spec.config.timestep_days * 86400 * 1e9), "ns")
     ):
-        raise ValueError("Forcing time axis does not match declared timestep")
+        raise ReplayValidationError("Forcing time axis does not match declared timestep")
     values = []
     for prefix in ["precip", "temp", "pet"]:
         columns = [f"{prefix}_{hru}" for hru in spec.hru_ids]
         if any(c not in data for c in columns):
-            raise ValueError(f"Missing forcing columns: {columns}")
+            raise ReplayValidationError(f"Missing forcing columns: {columns}")
         values.append(data[columns].to_numpy(float))
     obs = None
     if observation_path:
         observation = _frame(observation_path)
         if "discharge_cms" not in observation:
-            raise ValueError("Observation file requires discharge_cms")
+            raise ReplayValidationError("Observation file requires discharge_cms")
         obs = observation.discharge_cms.reindex(data.index).to_numpy(float)
         if (obs[np.isfinite(obs)] < 0).any():
-            raise ValueError("Observed discharge must be nonnegative")
+            raise ReplayValidationError("Observed discharge must be nonnegative")
     for name, period in spec.periods.items():
         if pd.Timestamp(period.start) < data.index[0] or pd.Timestamp(period.end) > data.index[-1]:
-            raise ValueError(f"Period outside replay: {name}")
+            raise ReplayValidationError(f"Period outside replay: {name}")
     glacier_targets = pd.read_csv(glacier_path) if glacier_path else None
     if glacier_targets is not None:
         if not {"start_label", "end_label", "observed_mb_mwe"}.issubset(glacier_targets):
-            raise ValueError("Glacier targets require start_label, end_label, observed_mb_mwe")
+            raise ReplayValidationError("Glacier targets require start_label, end_label, observed_mb_mwe")
         glacier_targets["start_label"] = pd.to_datetime(glacier_targets.start_label)
         glacier_targets["end_label"] = pd.to_datetime(glacier_targets.end_label)
         if (glacier_targets.start_label >= glacier_targets.end_label).any() or not np.isfinite(
             glacier_targets.observed_mb_mwe
         ).all():
-            raise ValueError("Invalid glacier balance targets")
+            raise ReplayValidationError("Invalid glacier balance targets")
         if not any(spec.config.glacier):
-            raise ValueError("Glacier targets require glacier HRUs")
+            raise ReplayValidationError("Glacier targets require glacier HRUs")
         if any(stamp not in data.index for stamp in [*glacier_targets.start_label, *glacier_targets.end_label]):
-            raise ValueError("Glacier target endpoints must match model state labels")
+            raise ReplayValidationError("Glacier target endpoints must match model state labels")
     snow_targets = _frame(snow_path) if snow_path else None
     if snow_targets is not None:
         if "observed_snow_fraction" not in snow_targets:
-            raise ValueError("Snow targets require observed_snow_fraction")
+            raise ReplayValidationError("Snow targets require observed_snow_fraction")
         finite = snow_targets.observed_snow_fraction.dropna()
         if not np.isfinite(finite).all() or ((finite < 0) | (finite > 1)).any():
-            raise ValueError("Snow fractions must be in [0,1] or missing")
+            raise ReplayValidationError("Snow fractions must be in [0,1] or missing")
         if all(spec.config.glacier):
-            raise ValueError("Land-snow targets require land HRUs")
+            raise ReplayValidationError("Land-snow targets require land HRUs")
     offsets = np.asarray(spec.monthly_temperature_offsets_c)[data.index.month - 1]
     values[1] = values[1] + offsets[:, None]
     if spec.backend == "jax":
@@ -273,13 +285,13 @@ def replay_bundle(spec_path, output_dir):
         spec.backend == "jax",
     )
     if any(not np.isfinite(v).all() for v in records.values()) or (records["runoff_mm"] < -1e-10).any():
-        raise ValueError("Replay produced invalid outputs")
+        raise ReplayValidationError("Replay produced invalid outputs")
     residual = records["balance_residual_mm"]
     if np.max(np.abs(residual)) > 1e-6 or np.max(np.abs(np.cumsum(residual))) > 1e-5:
-        raise ValueError("Water-balance gate failed")
+        raise ReplayValidationError("Water-balance gate failed")
     output = Path(output_dir).resolve()
     if output.exists() and any(output.iterdir()):
-        raise FileExistsError("Replay output directory must be empty")
+        raise ReplayOutputExistsError("Replay output directory must be empty")
     output.mkdir(parents=True, exist_ok=True)
     (output / "inputs").mkdir()
     archived = spec.model_copy(deep=True)
@@ -324,7 +336,7 @@ def replay_bundle(spec_path, output_dir):
     for name, period in spec.periods.items():
         mask = (data.index >= pd.Timestamp(period.start)) & (data.index <= pd.Timestamp(period.end))
         if not mask.any() or pd.Timestamp(period.start) < data.index[0] or pd.Timestamp(period.end) > data.index[-1]:
-            raise ValueError(f"Period outside replay: {name}")
+            raise ReplayValidationError(f"Period outside replay: {name}")
         metrics[name] = {
             "role": period.role,
             **(_metrics(flow[mask], obs[mask]) if obs is not None else {"samples": 0, "KGE": None, "NSE": None}),
@@ -407,7 +419,7 @@ def load_audited_candidate(output_dir):
     root = Path(output_dir).resolve()
     manifest = json.loads((root / "manifest.json").read_text())
     if manifest.get("model") != MODEL_ID or manifest.get("family") != "SACSMA":
-        raise ValueError("Wrong model/family identity")
+        raise ReplayValidationError("Wrong model/family identity")
     required = {
         "replay_spec.json",
         "streamflow.csv",
@@ -418,7 +430,7 @@ def load_audited_candidate(output_dir):
         "inputs/forcing.csv",
     }
     if not required.issubset(manifest.get("artifacts_sha256", {})):
-        raise ValueError("Incomplete replay manifest")
+        raise ReplayValidationError("Incomplete replay manifest")
     for name, digest in manifest["artifacts_sha256"].items():
         _read_input(root, FileRef(path=name, sha256=digest))
     spec = ReplaySpec.model_validate_json((root / "replay_spec.json").read_text())
@@ -428,7 +440,7 @@ def load_audited_candidate(output_dir):
         or spec.parameter_status != manifest.get("parameter_status")
         or list(spec.qualifications) != manifest.get("qualifications")
     ):
-        raise ValueError("Manifest/spec identity mismatch")
+        raise ReplayValidationError("Manifest/spec identity mismatch")
     _read_input(root, spec.forcing)
     if spec.observations:
         _read_input(root, spec.observations)
@@ -440,16 +452,16 @@ def load_audited_candidate(output_dir):
     balance = _frame(root / "water_balance.csv")
     flow = frame.streamflow_cms
     if not np.isfinite(flow).all() or (flow < 0).any() or not frame.index.equals(balance.index):
-        raise ValueError("Invalid audited series/time axis")
+        raise ReplayValidationError("Invalid audited series/time axis")
     residual = balance.balance_residual_mm.to_numpy(float)
     if not np.isfinite(residual).all() or np.max(np.abs(residual)) > 1e-6 or np.max(np.abs(np.cumsum(residual))) > 1e-5:
-        raise ValueError("Audited balance gate failed")
+        raise ReplayValidationError("Audited balance gate failed")
     forcing = _frame(_read_input(root, spec.forcing))
     if not forcing.index.equals(frame.index):
-        raise ValueError("Replay/forcing time axes differ")
+        raise ReplayValidationError("Replay/forcing time axes differ")
     expected_flow = balance.runoff_mm * spec.config.area_km2 * 1000 / (spec.config.timestep_days * 86400)
     if not np.allclose(flow, expected_flow, rtol=1e-12, atol=1e-10):
-        raise ValueError("Discharge/depth conversion mismatch")
+        raise ReplayValidationError("Discharge/depth conversion mismatch")
     import xarray as xr
 
     with xr.open_dataset(root / "streamflow_output.nc") as ds:
@@ -458,10 +470,10 @@ def load_audited_candidate(output_dir):
             or ds.attrs.get("family") != "SACSMA"
             or ds.streamflow.attrs.get("units") != "m3 s-1"
         ):
-            raise ValueError("NetCDF model/family/units mismatch")
+            raise ReplayValidationError("NetCDF model/family/units mismatch")
         nc = ds.streamflow.to_series()
         if not nc.index.equals(frame.index) or not np.allclose(nc, flow, rtol=1e-12, atol=1e-10):
-            raise ValueError("NetCDF/CSV discharge mismatch")
+            raise ReplayValidationError("NetCDF/CSV discharge mismatch")
     return flow, manifest
 
 
@@ -478,15 +490,15 @@ def audit_candidate(output_dir, observations, expected_periods):
     spec = ReplaySpec.model_validate_json((root / "replay_spec.json").read_text())
     actual = {name: (p.start, p.end, p.role) for name, p in spec.periods.items()}
     if actual != expected_periods:
-        raise ValueError("Candidate/ensemble scoring periods differ")
+        raise ReplayValidationError("Candidate/ensemble scoring periods differ")
     if spec.observations is None:
-        raise ValueError("Ensemble audit requires recorded observations")
+        raise ReplayValidationError("Ensemble audit requires recorded observations")
     recorded = _frame(_read_input(root, spec.observations)).discharge_cms
     if not isinstance(observations.index, pd.DatetimeIndex) or not observations.index.is_unique:
-        raise ValueError("Ensemble observations require a unique datetime axis")
+        raise ReplayValidationError("Ensemble observations require a unique datetime axis")
     aligned = recorded.reindex(observations.index)
     if aligned.isna().any() or not np.array_equal(aligned.to_numpy(), observations.to_numpy()):
-        raise ValueError("Candidate/ensemble observations differ")
+        raise ReplayValidationError("Candidate/ensemble observations differ")
     return flow, manifest
 
 
