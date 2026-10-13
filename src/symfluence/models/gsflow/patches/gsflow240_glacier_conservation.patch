@@ -1,0 +1,134 @@
+diff --git a/GSFLOW/src/gsflow/gsflow_module.f90 b/GSFLOW/src/gsflow/gsflow_module.f90
+index 5a4027f..ec1a52e 100644
+--- a/GSFLOW/src/gsflow/gsflow_module.f90
++++ b/GSFLOW/src/gsflow/gsflow_module.f90
+@@ -66,6 +66,8 @@
+       INTEGER, SAVE :: Stream_temp_flag, Strmtemp_humidity_flag, Stream_temp_shade_flag
+       INTEGER, SAVE :: Prms_warmup, statsON_OFF, gw2dprst_swale_flag
+       INTEGER, SAVE :: Frozen_flag, Glacier_flag, one_subbasin_flag
++      ! SYMFLUENCE: 1 = native dynamic glacier geometry, 0 = fixed geometry
++      INTEGER, SAVE :: Glacier_dynamics
+       INTEGER, SAVE :: PRMS_land_iteration_flag, Iter_aet_flag, text_restart_flag
+       INTEGER, SAVE :: irrigation_apply_flag, Dyn_ag_frac_flag, Dyn_ag_soil_flag, activeHRU_inactiveCELL_flag
+       INTEGER, SAVE :: Dprst_add_water_use, Dprst_transfer_water_use
+diff --git a/GSFLOW/src/prms/glacr_melt.f90 b/GSFLOW/src/prms/glacr_melt.f90
+index aa211bc..14e2f1e 100644
+--- a/GSFLOW/src/prms/glacr_melt.f90
++++ b/GSFLOW/src/prms/glacr_melt.f90
+@@ -135,6 +135,7 @@
+ !***********************************************************************
+       INTEGER FUNCTION glacrsetdims()
+       USE PRMS_GLACR, ONLY: Nglres, Seven, Four, MbInit_flag
++      USE PRMS_MODULE, ONLY: Glacier_dynamics
+       use PRMS_READ_PARAM_FILE, only: declfix
+       use PRMS_CONTROL_FILE, only: control_integer
+       use prms_utils, only: read_error
+@@ -150,6 +151,7 @@
+       Four = 4
+ 
+       IF ( control_integer(MbInit_flag, 'mbInit_flag')/=0 ) MbInit_flag = 0
++      IF ( control_integer(Glacier_dynamics, 'glacier_dynamics')/=0 ) Glacier_dynamics = 1
+ 
+       END FUNCTION glacrsetdims
+ 
+@@ -907,6 +909,7 @@
+      &    Glrette_frac_init, Basin_snowicecov, Glacr_evap, Basin_glacrb_melt
+       USE PRMS_FLOWVARS, ONLY: Glacier_frac, Alt_above_ela, Glrette_frac, Snowcov_area, Snowmelt, Snow_evap
+       use prms_utils, only: get_ftnunit
++      USE PRMS_MODULE, ONLY: Glacier_dynamics
+       IMPLICIT NONE
+ ! Functions
+       INTEGER, EXTERNAL :: compute_ela_mb, compute_ela_aar, recompute_soltab
+@@ -963,7 +966,8 @@
+       gl_gain = 0.D0
+ !
+ ! Start of year calculations after have a year of data
+-      IF ( Julwater==1 .AND. Nowyear>=Start_year+1) THEN
++! SYMFLUENCE: glacier_dynamics=0 keeps fixed glacier geometry (no annual update).
++      IF ( Julwater==1 .AND. Nowyear>=Start_year+1 .AND. Glacier_dynamics==1 ) THEN
+         IF (glacr_exist==1 ) THEN !have glaciers
+ ! Save year ending values from previous year
+           DO jj = 1, Active_hrus
+diff --git a/GSFLOW/src/prms/sm_read_control_file.f90 b/GSFLOW/src/prms/sm_read_control_file.f90
+index 8b7f430..834c8af 100644
+--- a/GSFLOW/src/prms/sm_read_control_file.f90
++++ b/GSFLOW/src/prms/sm_read_control_file.f90
+@@ -972,6 +972,10 @@ contains
+     i = i + 1
+     Control_parameter_data(i) % name = 'Mbinit_flag'
+     Mbinit_flag = OFF
++    i = i + 1
++    Control_parameter_data(i) % name = 'glacier_dynamics'
++    Glacier_dynamics = 1
++    Control_parameter_data(i) % values_int(1) = Glacier_dynamics
+ 
+     Num_control_parameters = i
+ 
+diff --git a/GSFLOW/src/prms/snowcomp.f90 b/GSFLOW/src/prms/snowcomp.f90
+index 5b3c04a..65eeddf 100644
+--- a/GSFLOW/src/prms/snowcomp.f90
++++ b/GSFLOW/src/prms/snowcomp.f90
+@@ -912,7 +912,7 @@
+       INTEGER FUNCTION snorun()
+       USE PRMS_CONSTANTS, ONLY: LAKE, LAND, GLACIER, SHRUBS, FEET, &
+      &    INCH2M, FEET2METERS, ACTIVE, OFF, DEBUG_less, DAYS_YR, DEBUG_minimum, CANOPY
+-      USE PRMS_MODULE, ONLY: Nhru, Print_debug, Glacier_flag, Start_year, &
++      USE PRMS_MODULE, ONLY: Nhru, Print_debug, Glacier_flag, Start_year, Glacier_dynamics, &
+      &    Nowyear, Nowmonth, Albedo_cbh_flag, snow_cloudcover_flag, bias_adjust_flag, &
+      &    Hru_type, Nowday, PRMS_land_iteration_flag, Kkiter
+       USE PRMS_SNOW
+@@ -1099,7 +1099,9 @@
+ ! correct the snowpack will deplete quick because there is a lot of lower elevation than the glacierette included in the HRU.
+ ! Choice does not effect runoff much, but will effect Basin_pweqv and things like that
+               ! if terminus glacier, and has snow will disappear off glacier but that is likely anyhow
+-              IF ( Pkwater_equiv(i) > 0.0D0 ) Snow_evap(i) = Snow_evap(i) + SNGL( Pkwater_equiv(i) ) ! [inches]
++! SYMFLUENCE: with fixed geometry the snow on ice becomes firn and is already in
++! glacier storage; booking it as snow evaporation removed it twice.
++              IF ( Pkwater_equiv(i) > 0.0D0 .AND. Glacier_dynamics==1 ) Snow_evap(i) = Snow_evap(i) + SNGL( Pkwater_equiv(i) ) ! [inches]
+               CALL snow_states_to_zero()
+               IF ( Elev_units==FEET ) THEN !from Oerlemans 1992
+                 Glacr_albedo(i) = Albedo_ice(i) +(Albedo_coef(i)/PI)*ATAN( (Alt_above_ela(i)*FEET2METERS+300.0)/200.0 )
+diff --git a/GSFLOW/src/prms/srunoff.f90 b/GSFLOW/src/prms/srunoff.f90
+index 5d2fcf5..8be6281 100644
+--- a/GSFLOW/src/prms/srunoff.f90
++++ b/GSFLOW/src/prms/srunoff.f90
+@@ -653,7 +653,7 @@
+       IMPLICIT NONE
+ ! Functions
+       INTRINSIC :: SNGL, DBLE
+-      EXTERNAL :: imperv_et, compute_infil, run_cascade_sroff, dprst_comp, compute_infil_ag_glcr
++      EXTERNAL :: imperv_et, compute_infil, run_cascade_sroff, dprst_comp, compute_infil_ag_glcr, check_capacity
+ ! Local Variables
+       INTEGER :: i, k, dprst_chk, frzen, active_glacier, lateral_flow_flag, perv_on, ag_on
+       REAL :: srunoff, avail_et, perv_area, availh2o_total, waterin, glacier_free
+@@ -865,10 +865,18 @@
+             CALL compute_infil(Net_rain(i), Net_ppt(i), Snowmelt(i), Pk_precip(i), Net_apply(i), &
+      &                         Snowinfil_max(i), Net_snow(i), Pkwater_equiv(i), Infil(i), lateral_flow_flag)
+           ELSE ! glacier and/or with AG
+-            temp = Snowmelt(i) + glcrmltb !Snowmelt or 0.0
++! SYMFLUENCE: basal ice melt is not snowmelt. Using it as the snowmelt flag
++! skipped rain on the snow-free part of glacier HRUs.
++            temp = Snowmelt(i)
+             CALL compute_infil_ag_glcr(Net_rain(i), Net_ppt(i), temp, Pk_precip(i), Net_apply(i), &
+      &                         Snowinfil_max(i), Net_snow(i), Pkwater_equiv(i), Infil(i), lateral_flow_flag, &
+      &                         glacier_free, perv_on, ag_on, Infil_ag(i))
++! Basal melt arrives below the ice, independently of snow/rain state and of the
++! ice-free fraction (impervious storage already receives it through waterin).
++            IF ( glcrmltb>0.0 .AND. perv_on==ACTIVE ) THEN
++              Infil(i) = Infil(i) + glcrmltb
++              CALL check_capacity(Snowinfil_max(i), Infil(i))
++            ENDIF
+           ENDIF
+         ELSE ! frozen ground
+           IF ( lateral_flow_flag == ACTIVE ) THEN
+@@ -903,7 +911,9 @@
+ !       **********************************************************
+ 
+         srunoff = 0.0
+-        IF ( lateral_flow_flag==ACTIVE .AND. active_glacier==OFF ) THEN ! could be a glacier-capable HRU with no ice
++! SYMFLUENCE: surface runoff from the ice-free part of an active glacier HRU
++! was computed by perv_comp but never added to runoff.
++        IF ( lateral_flow_flag==ACTIVE ) THEN
+           ! Srp, Sri, and Sroff_ag can be reduced in dprst_comp, so compute here
+           ! Sroff_ag, Sri and Srp = 0 for swales
+           runoff = runoff + DBLE( Srp*perv_area + Sri*Hruarea_imperv )
