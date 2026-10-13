@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import importlib
 import json
+import re
 from pathlib import Path
 from typing import Literal
 
@@ -122,6 +123,7 @@ class ReplaySpec(StrictModel):
     backend: Literal["numpy", "jax"] = "numpy"
     forcing: FileRef
     observations: FileRef | None = None
+    observation_aggregation: Literal["native", "daily_mean"] = "native"
     glacier_constraint: GlacierConstraint | None = None
     snow_constraint: SnowConstraint | None = None
     forcing_units: Literal["mm_per_input_timestep_and_degC"] = "mm_per_input_timestep_and_degC"
@@ -186,6 +188,14 @@ def _frame(path):
     return df
 
 
+def _period_end(period):
+    # Date-only endpoints include the complete calendar day at subdaily dt.
+    end = pd.Timestamp(period.end)
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", period.end):
+        end += pd.Timedelta(days=1) - pd.Timedelta(nanoseconds=1)
+    return end
+
+
 def _metrics(s, o):
     valid = np.isfinite(o)
     s = s[valid]
@@ -243,10 +253,12 @@ def replay_bundle(spec_path, output_dir):
         if "discharge_cms" not in observation:
             raise ReplayValidationError("Observation file requires discharge_cms")
         obs = observation.discharge_cms.reindex(data.index).to_numpy(float)
-        if (obs[np.isfinite(obs)] < 0).any():
+        if np.isinf(obs).any() or (obs[np.isfinite(obs)] < 0).any():
             raise ReplayValidationError("Observed discharge must be nonnegative")
     for name, period in spec.periods.items():
-        if pd.Timestamp(period.start) < data.index[0] or pd.Timestamp(period.end) > data.index[-1]:
+        if pd.Timestamp(period.start) < data.index[0] or _period_end(period) >= data.index[-1] + pd.Timedelta(
+            days=spec.config.timestep_days
+        ):
             raise ReplayValidationError(f"Period outside replay: {name}")
     glacier_targets = pd.read_csv(glacier_path) if glacier_path else None
     if glacier_targets is not None:
@@ -271,6 +283,15 @@ def replay_bundle(spec_path, output_dir):
             raise ReplayValidationError("Snow fractions must be in [0,1] or missing")
         if all(spec.config.glacier):
             raise ReplayValidationError("Land-snow targets require land HRUs")
+    if spec.observation_aggregation == "daily_mean":
+        steps = 1 / spec.config.timestep_days
+        if not np.isclose(steps, round(steps)):
+            raise ReplayValidationError("Daily aggregation requires an interval dividing a day")
+        counts = pd.Series(1, index=data.index).resample("D").sum()
+        if not (counts == round(steps)).all():
+            raise ReplayValidationError("Daily aggregation requires complete days")
+        if observation_path and not observation.index.equals(observation.index.normalize()):
+            raise ReplayValidationError("Daily observations must be labelled at midnight")
     offsets = np.asarray(spec.monthly_temperature_offsets_c)[data.index.month - 1]
     values[1] = values[1] + offsets[:, None]
     if spec.backend == "jax":
@@ -332,14 +353,34 @@ def replay_bundle(spec_path, output_dir):
         "routing_mm": float(routing),
     }
     (output / "final_state.json").write_text(json.dumps(final, indent=2) + "\n")
+    metric_index = data.index
+    metric_flow = flow
+    metric_obs = obs
+    if spec.observation_aggregation == "daily_mean":
+        grouped = pd.Series(flow, index=data.index).resample("D")
+        averaged = grouped.mean()
+        metric_index = averaged.index
+        metric_flow = averaged.to_numpy()
+        if observation_path:
+            metric_obs = observation.discharge_cms.reindex(metric_index).to_numpy(float)
     metrics = {}
     for name, period in spec.periods.items():
-        mask = (data.index >= pd.Timestamp(period.start)) & (data.index <= pd.Timestamp(period.end))
-        if not mask.any() or pd.Timestamp(period.start) < data.index[0] or pd.Timestamp(period.end) > data.index[-1]:
+        mask = (data.index >= pd.Timestamp(period.start)) & (data.index <= _period_end(period))
+        metric_mask = (metric_index >= pd.Timestamp(period.start)) & (metric_index <= _period_end(period))
+        if (
+            not mask.any()
+            or pd.Timestamp(period.start) < data.index[0]
+            or _period_end(period) >= data.index[-1] + pd.Timedelta(days=spec.config.timestep_days)
+        ):
             raise ReplayValidationError(f"Period outside replay: {name}")
         metrics[name] = {
             "role": period.role,
-            **(_metrics(flow[mask], obs[mask]) if obs is not None else {"samples": 0, "KGE": None, "NSE": None}),
+            "observation_aggregation": spec.observation_aggregation,
+            **(
+                _metrics(metric_flow[metric_mask], metric_obs[metric_mask])
+                if metric_obs is not None
+                else {"samples": 0, "KGE": None, "NSE": None}
+            ),
         }
         score = metrics[name]["KGE"]
         if glacier_targets is not None:
@@ -348,7 +389,7 @@ def replay_bundle(spec_path, output_dir):
                     glacier_targets.start_label
                     >= pd.Timestamp(period.start) - pd.Timedelta(days=spec.config.timestep_days)
                 )
-                & (glacier_targets.end_label <= pd.Timestamp(period.end))
+                & (glacier_targets.end_label <= _period_end(period))
             ]
             deltas = []
             cryo = pd.Series(records["glacier_cryo_storage_mm"], index=data.index)

@@ -20,7 +20,12 @@ temperature degrees C. Spacing must equal ``config.timestep_days``. Native
 subdaily forcing is preferable to repeated daily means. Geometry, initial ice
 in water-equivalent mm, maximum substep, corrections and routing are explicit.
 The required geometry reference and qualifications describe their provenance.
-Observations use ``datetime,discharge_cms``. Monthly temperature corrections
+Observations use ``datetime,discharge_cms``. Set
+``observation_aggregation="daily_mean"`` to compare native subdaily simulations
+with daily observations. Complete days are required and observations are labelled
+at midnight; metrics use daily averaged discharge, not midnight samples.
+Date-only period endpoints include the full calendar day, including glacier
+storage endpoints at its last subdaily forcing label. Monthly temperature corrections
 are recorded separately from the global model offset. PET is an explicit input;
 its derivation belongs in the bundle's qualifications/provenance.
 

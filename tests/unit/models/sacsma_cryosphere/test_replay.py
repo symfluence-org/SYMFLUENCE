@@ -164,3 +164,35 @@ def test_ensemble_adapter_rejects_changed_observations_and_periods(tmp_path):
         audit_candidate(tmp_path / "out", observations * 1.01, periods)
     with pytest.raises(ValueError, match="periods differ"):
         audit_candidate(tmp_path / "out", observations, {})
+
+
+def test_native_replay_scores_complete_daily_means(tmp_path):
+    from symfluence.models.sacsma_cryosphere.replay import _metrics
+
+    doc, path = prepare(tmp_path)
+    times = pd.date_range("2012-10-01", periods=24, freq="3h")
+    pd.DataFrame(
+        {"datetime": times, "precip_1": [0.0] * 24, "temp_1": np.repeat([1.0, 5.0, 10.0], 8), "pet_1": [0.0] * 24}
+    ).to_csv(tmp_path / "forcing.csv", index=False)
+    daily_obs = np.array([1.0, 2.0, 4.0])
+    pd.DataFrame({"datetime": pd.date_range("2012-10-01", periods=3), "discharge_cms": daily_obs}).to_csv(
+        tmp_path / "obs.csv", index=False
+    )
+    doc["forcing"]["sha256"] = sha(tmp_path / "forcing.csv")
+    doc["observations"] = {"path": "obs.csv", "sha256": sha(tmp_path / "obs.csv")}
+    doc["config"].update(timestep_days=0.125, initial_ice_mm=1000.0)
+    pd.DataFrame(
+        {"start_label": ["2012-10-01 21:00:00"], "end_label": ["2012-10-03 21:00:00"], "observed_mb_mwe": [-0.01]}
+    ).to_csv(tmp_path / "glacier.csv", index=False)
+    doc["glacier_constraint"] = {"targets": {"path": "glacier.csv", "sha256": sha(tmp_path / "glacier.csv")}}
+    doc["observation_aggregation"] = "daily_mean"
+    doc["periods"] = {"Cal": {"start": "2012-10-01", "end": "2012-10-03", "role": "calibration"}}
+    path.write_text(json.dumps(doc))
+    replay_bundle(path, tmp_path / "out")
+    q = pd.read_csv(tmp_path / "out/streamflow.csv").streamflow_cms.to_numpy()
+    actual = json.loads((tmp_path / "out/metrics.json").read_text())["Cal"]
+    assert actual["samples"] == 3
+    assert actual["glacier_balance_samples"] == 1
+    expected = _metrics(q.reshape(3, 8).mean(axis=1), daily_obs)
+    assert actual["KGE"] == pytest.approx(expected["KGE"])
+    assert actual["observation_aggregation"] == "daily_mean"
