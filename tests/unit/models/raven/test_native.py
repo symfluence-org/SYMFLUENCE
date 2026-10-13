@@ -8,9 +8,9 @@ import pandas as pd
 import pytest
 
 from symfluence.core.exceptions import ValidationError
+from symfluence.core.modeling.utilities.elevation_forcing import upper_ice_fractions
 from symfluence.models.raven.adapter import discharge
 from symfluence.models.raven.balance import check
-from symfluence.models.utilities.elevation_forcing import upper_ice_fractions
 
 
 def test_ice_allocation_conserves_area():

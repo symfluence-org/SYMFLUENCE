@@ -15,7 +15,7 @@ from symfluence.core.calibration.workers.base_worker import BaseWorker
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.modeling.base import BaseModelRunner
 from symfluence.core.modeling.base.base_preprocessor import BaseModelPreProcessor
-from symfluence.models.utilities.elevation_forcing import daily_bands, upper_ice_fractions
+from symfluence.core.modeling.utilities.elevation_forcing import daily_bands, upper_ice_fractions
 
 from . import native
 
