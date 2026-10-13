@@ -25,6 +25,27 @@ from tqdm import tqdm
 from symfluence.core.exceptions import ValidationError
 from symfluence.core.modeling.utilities import BaseForcingProcessor
 
+_FLUX_UNITS = ('wm-2', 'w/m2', 'wm^-2', 'w/m^2', 'wm**-2')
+
+
+def required_extra_obs(config: Dict[str, Any]) -> List[str]:
+    """Optional HYPE observation files the configured model options read."""
+    pet_model = config.get('HYPE_PET_MODEL')
+    names = []
+    if config.get('HYPE_SNOWFALL_FRACTION'):
+        names.append('SFobs')
+    if config.get('HYPE_SNOW_MELT_MODEL', 0) == 2 or pet_model == 5:
+        names.append('SWobs')
+    if pet_model == 5:
+        names += ['RHobs', 'Uobs']
+    return names
+
+
+def wet_bulb_temperature(t: Any, rh: Any) -> Any:
+    """Stull (2011) wet-bulb temperature (C) from air temperature (C) and relative humidity (%)."""
+    return (t * np.arctan(0.151977 * np.sqrt(rh + 8.313659)) + np.arctan(t + rh) - np.arctan(rh - 1.676331)
+            + 0.00391838 * rh ** 1.5 * np.arctan(0.023101 * rh) - 4.686035)
+
 
 class HYPEForcingProcessor(BaseForcingProcessor):
     """
@@ -352,25 +373,27 @@ class HYPEForcingProcessor(BaseForcingProcessor):
             unit_conversion=precip_units  # Pass units for conversion
         )
 
-        if self.config.get('HYPE_SNOW_MELT_MODEL', 0) == 2:
-            self.write_shortwave_obs([merged_forcing_path])
+        extra = required_extra_obs(self.config)
+        writers = {'SWobs': self.write_shortwave_obs, 'RHobs': self.write_humidity_obs,
+                   'Uobs': self.write_wind_obs, 'SFobs': self.write_snowfall_fraction_obs}
+        for name in extra:
+            writers[name]([merged_forcing_path])
 
-    def write_shortwave_obs(self, files: List[Path]) -> Path:
-        """Integrate complete, regular flux records to HYPE MJ/m2/day.
+    def _read_steps(self, files: List[Path], variable: str, units: tuple[str, ...]) -> pd.DataFrame:
+        """Read one forcing variable as a complete, regular time x subid frame.
 
-        Reads only radiation, avoiding a second full forcing merge. No radiation
-        is synthesized when coverage, units or subbasin IDs are ambiguous.
+        Reads only that variable, avoiding a second full forcing merge. Nothing is
+        synthesized when coverage, units or subbasin IDs are ambiguous.
         """
         chunks = []
         for path in files:
             with xr.open_dataset(path) as ds:
-                variable = 'surface_downwelling_shortwave_flux'
                 if variable not in ds:
                     raise ValidationError(f'Missing {variable} in {path}')
                 da = ds[variable].load()
-                units = str(da.attrs.get('units', '')).lower().replace(' ', '')
-                if units not in ('wm-2', 'w/m2', 'wm^-2', 'w/m^2', 'wm**-2'):
-                    raise ValidationError(f'Expected shortwave flux in W/m2, got {units!r}')
+                unit = str(da.attrs.get('units', '')).lower().replace(' ', '')
+                if unit not in units:
+                    raise ValidationError(f'Expected {variable} in one of {units}, got {unit!r}')
                 frame = da.to_pandas()
                 if isinstance(frame, pd.Series):
                     frame = frame.to_frame(name=1)
@@ -386,26 +409,92 @@ class HYPEForcingProcessor(BaseForcingProcessor):
                     frame.columns = frame.columns + 1
                 chunks.append(frame)
         if not chunks:
-            raise ValidationError('No shortwave forcing files')
+            raise ValidationError(f'No {variable} forcing files')
         frame = pd.concat(chunks).sort_index()
         if frame.index.has_duplicates or frame.columns.has_duplicates:
-            raise ValidationError('Duplicate shortwave timestamps or IDs')
+            raise ValidationError(f'Duplicate {variable} timestamps or IDs')
         dt = np.diff(frame.index.asi8) / 1e9
         if not len(dt) or dt[0] <= 0 or not np.all(dt == dt[0]) or 86400 % dt[0] != 0:
-            raise ValidationError('Shortwave forcing must have a regular timestep dividing one day')
-        if not np.isfinite(frame.to_numpy()).all() or (frame.to_numpy() < 0).any():
-            raise ValidationError('Missing or negative shortwave forcing')
+            raise ValidationError(f'{variable} forcing must have a regular timestep dividing one day')
+        if not np.isfinite(frame.to_numpy()).all():
+            raise ValidationError(f'Missing {variable} forcing')
         count = frame.resample('D').size()
-        if not (count == int(86400/dt[0])).all():
-            raise ValidationError('Incomplete shortwave forcing day')
-        daily = (frame * dt[0] / 1e6).resample('D').sum()
+        if not (count == int(86400 / dt[0])).all():
+            raise ValidationError(f'Incomplete {variable} forcing day')
+        frame.attrs['step_seconds'] = float(dt[0])
+        return frame
+
+    def _write_daily(self, daily: pd.DataFrame, name: str, float_format: str = '%.6f') -> Path:
         if self._elevation_bands and len(daily.columns) == 1:
-            daily = self._expand_columns_to_bands(daily, 'SWobs')
+            daily = self._expand_columns_to_bands(daily, name)
         daily.index.name = 'time'
         daily.columns.name = None
-        target = self.output_path / 'SWobs.txt'
-        daily.to_csv(target, sep='\t', float_format='%.6f')
+        target = self.output_path / f'{name}.txt'
+        daily.to_csv(target, sep='\t', float_format=float_format)
         return target
+
+    def write_shortwave_obs(self, files: List[Path]) -> Path:
+        """Integrate downward shortwave flux to HYPE SWobs (MJ/m2/day)."""
+        frame = self._read_steps(files, 'surface_downwelling_shortwave_flux', _FLUX_UNITS)
+        if (frame.to_numpy() < 0).any():
+            raise ValidationError('Negative shortwave forcing')
+        return self._write_daily((frame * frame.attrs['step_seconds'] / 1e6).resample('D').sum(), 'SWobs')
+
+    def _relative_humidity(self, files: List[Path]) -> pd.DataFrame:
+        """Relative humidity in percent: read directly, else from specific humidity, pressure and temperature."""
+        try:
+            return self._read_steps(files, 'relative_humidity', ('%', 'percent'))
+        except ValidationError as direct:
+            try:
+                q = self._read_steps(files, 'specific_humidity', ('kgkg-1', 'kg/kg', '1', '-'))
+                p = self._read_steps(files, 'surface_air_pressure', ('pa',))
+                t = self._read_steps(files, 'air_temperature', ('k',)) - 273.15
+            except ValidationError:
+                raise direct from None
+            vapour = q * p / (0.622 + 0.378 * q)
+            saturation = 610.94 * np.exp(17.625 * t / (t + 243.04))  # Alduchov & Eskridge (1996), Pa
+            return 100 * vapour / saturation
+
+    def write_humidity_obs(self, files: List[Path]) -> Path:
+        """Daily mean relative humidity as HYPE RHobs (fraction, clipped to 0.01-1)."""
+        rh = self._relative_humidity(files)
+        return self._write_daily((rh.resample('D').mean() / 100).clip(0.01, 1.0), 'RHobs')
+
+    def write_wind_obs(self, files: List[Path]) -> Path:
+        """Daily mean wind speed at 2 m (FAO-56 eq. 47 log profile) as HYPE Uobs (m/s)."""
+        height = float(self.config.get('HYPE_WIND_MEASUREMENT_HEIGHT', 10.0))
+        wind = self._read_steps(files, 'wind_speed', ('ms-1', 'm/s'))
+        if (wind.to_numpy() < 0).any():
+            raise ValidationError('Negative wind forcing')
+        factor = 4.87 / np.log(67.8 * height - 5.42)
+        return self._write_daily(wind.resample('D').mean() * factor, 'Uobs')
+
+    def write_snowfall_fraction_obs(self, files: List[Path]) -> Path:
+        """Daily snowfall fraction (HYPE SFobs) from phase decided on every forcing step.
+
+        Snow fraction is 1 at or below the all-snow wet-bulb temperature, 0 at or
+        above the all-rain one, linear between (HYPE_WET_BULB_SNOW_RANGE). Wet-bulb
+        temperature is Stull (2011). The daily value is precipitation-weighted;
+        dry days get the unweighted mean so a later precipitation correction never
+        meets an undefined fraction.
+        """
+        snow_tw, rain_tw = (float(v) for v in self.config.get('HYPE_WET_BULB_SNOW_RANGE', [0.0, 2.0]))
+        if not rain_tw > snow_tw:
+            raise ValidationError('HYPE_WET_BULB_SNOW_RANGE must be increasing')
+        t = self._read_steps(files, 'air_temperature', ('k',)) - 273.15
+        rh = self._relative_humidity(files).clip(1, 100)
+        p = self._read_steps(files, 'precipitation_flux', ('kgm-2s-1', 'mm/s', 'mms-1', 'kg/m2/s'))
+        if not (t.columns.equals(rh.columns) and t.columns.equals(p.columns) and t.index.equals(p.index)):
+            raise ValidationError('Temperature, humidity and precipitation forcing do not align')
+        if self._elevation_bands and len(t.columns) == 1:
+            # Phase depends on band temperature: lapse the step temperature before deciding it.
+            t, rh, p = (self._expand_columns_to_bands(f, name) for f, name in ((t, 'Tobs'), (rh, 'RHobs'), (p, 'Pobs')))
+        tw = wet_bulb_temperature(t, rh)
+        snow = ((rain_tw - tw) / (rain_tw - snow_tw)).clip(0, 1)
+        amount = p.clip(lower=0)
+        total = amount.resample('D').sum()
+        fraction = ((amount * snow).resample('D').sum() / total.where(total > 0)).fillna(snow.resample('D').mean())
+        return self._write_daily(fraction.clip(0, 1), 'SFobs', '%.4f')
 
     def _convert_hourly_to_daily(
         self,

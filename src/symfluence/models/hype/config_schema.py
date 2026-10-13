@@ -63,6 +63,24 @@ class HYPEConfig(BaseModel):
         default=None, alias='HYPE_RIVER_LENGTH_OVERRIDES',
         description='Explicit river lengths in metres by final HYPE subid; requires supporting geometry'
     )
+    snowfall_fraction: Optional[Literal['wet_bulb']] = Field(
+        default=None, alias='HYPE_SNOWFALL_FRACTION',
+        description=('Write SFobs.txt and use snowfallmodel 1. wet_bulb decides phase on each forcing step '
+                     'from wet-bulb temperature (Stull 2011) and precipitation-weights it to a daily fraction')
+    )
+    wet_bulb_snow_range: List[float] = Field(
+        default=[0.0, 2.0], min_length=2, max_length=2, alias='HYPE_WET_BULB_SNOW_RANGE',
+        description='Wet-bulb temperatures (C) of all-snow and all-rain; snow fraction is linear between'
+    )
+    wind_measurement_height: float = Field(
+        default=10.0, gt=2.0, alias='HYPE_WIND_MEASUREMENT_HEIGHT',
+        description='Height (m) of forcing wind speed; converted to 2 m (FAO-56 eq. 47) for Uobs'
+    )
+    extra_parameters: Optional[Dict[str, Any]] = Field(
+        default=None, alias='HYPE_EXTRA_PARAMETERS',
+        description=('par.txt entries added or replaced after generation (e.g. pcusnow, pcelevth). '
+                     'A scalar for a land-use or soil parameter is replicated to every class')
+    )
     # Process options written to info.txt (None = config_manager defaults apply)
     infiltration_model: Optional[int] = Field(
         default=None, alias='HYPE_INFILTRATION_MODEL',

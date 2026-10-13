@@ -437,6 +437,41 @@ For snow-dominated regions:
    # sfrost: Frost depth parameter
    # cmrad:  Radiation melt factor
 
+Glacierised HYPE with Radiation-Driven Processes
+------------------------------------------------
+
+For an elevation-banded glacier catchment forced by sub-daily reanalysis that
+includes shortwave radiation, humidity and wind (e.g. CARRA):
+
+.. code-block:: yaml
+
+   model:
+     hype:
+       pet_model: 5                  # FAO Penman-Monteith; writes SWobs, RHobs, Uobs
+       snow_melt_model: 2            # temperature + radiation melt (snow and glacier ice)
+       snowfall_fraction: wet_bulb   # SFobs from phase on every forcing step; snowfallmodel 1
+       wet_bulb_snow_range: [0.0, 2.0]
+       wind_measurement_height: 10.0 # forcing wind height; Uobs is reduced to 2 m (FAO-56 eq. 47)
+       river_length_overrides: {1: 54485, 2: 26801, 3: 12486, 4: 26569, 5: 19023}
+       extra_parameters:
+         pcusnow: 0.0                # add a par.txt entry so it can be calibrated
+       params_to_calibrate: ttmp,cmlt,cmrad,glaccmlt,glaccmrad,pcusnow,rivvel
+
+- **SWobs** (MJ/m²/day) integrates downward shortwave flux over complete days.
+- **RHobs** is the daily mean relative humidity as a fraction. It is read
+  directly when the forcing has ``relative_humidity``; otherwise it is derived
+  from specific humidity, pressure and temperature.
+- **Uobs** is the daily mean wind speed at 2 m.
+- **SFobs** is the daily snowfall fraction. Phase is decided on each forcing
+  step, linear in wet-bulb temperature (Stull 2011) between the two thresholds,
+  and precipitation-weighted. Dry days get the unweighted mean. With a single
+  lumped forcing column, band temperatures are lapse-corrected before phase is
+  decided.
+- ``extra_parameters`` adds or replaces ``par.txt`` entries after generation. A
+  scalar for a land-use or soil parameter is replicated to every class.
+- A calibrated parameter that is missing from ``par.txt`` is an error, not a
+  silent no-op.
+
 Large-Scale HYPE (Continental)
 ------------------------------
 

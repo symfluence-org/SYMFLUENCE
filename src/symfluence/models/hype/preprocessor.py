@@ -23,7 +23,7 @@ from symfluence.core.modeling.base import BaseModelPreProcessor
 from symfluence.core.modeling.variable_utils import VariableHandler
 from symfluence.core.registries import R
 from symfluence.models.hype.config_manager import HYPEConfigManager
-from symfluence.models.hype.forcing_processor import HYPEForcingProcessor
+from symfluence.models.hype.forcing_processor import HYPEForcingProcessor, required_extra_obs
 from symfluence.models.hype.geodata_manager import (
     HYPEGeoDataManager,
     load_elevation_band_table,
@@ -381,8 +381,7 @@ class HYPEPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         """
 
         forcing_files = ['Pobs.txt', 'Tobs.txt', 'TMAXobs.txt', 'TMINobs.txt', 'Qobs.txt']
-        if self.config_dict.get('HYPE_SNOW_MELT_MODEL', 0) == 2:
-            forcing_files.append('SWobs.txt')
+        forcing_files += [f'{name}.txt' for name in required_extra_obs(self.config_dict)]
         for fname in forcing_files:
             src = self.forcing_data_dir / fname
             dst = self.hype_setup_dir / fname

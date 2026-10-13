@@ -296,6 +296,10 @@
    "max": 20.0,
    "min": 0.5
   },
+  "cmrad": {
+   "max": 1.5,
+   "min": 0.0
+  },
   "cmrefr": {
    "max": 0.5,
    "min": 0.0
@@ -324,9 +328,25 @@
    "max": 1.0,
    "min": 0.0
   },
+  "fscdist0": {
+   "max": 0.8,
+   "min": 0.3
+  },
   "fsceff": {
    "max": 1.0,
    "min": 0.5
+  },
+  "glaccmlt": {
+   "max": 12.0,
+   "min": 2.0
+  },
+  "glaccmrad": {
+   "max": 1.5,
+   "min": 0.0
+  },
+  "glacttmp": {
+   "max": 2.0,
+   "min": -2.0
   },
   "illdepth": {
    "max": 2.0,
@@ -347,6 +367,26 @@
   "lp": {
    "max": 1.0,
    "min": 0.3
+  },
+  "mperc1": {
+   "max": 20.0,
+   "min": 0.1
+  },
+  "mperc2": {
+   "max": 20.0,
+   "min": 0.1
+  },
+  "pcelevadd": {
+   "max": 0.15,
+   "min": 0.0
+  },
+  "pcurain": {
+   "max": 0.3,
+   "min": 0.0
+  },
+  "pcusnow": {
+   "max": 0.6,
+   "min": 0.0
   },
   "qmean": {
    "max": 1000.0,
