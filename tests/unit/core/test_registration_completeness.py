@@ -159,7 +159,7 @@ def test_validate_model_agrees_the_registrations_are_complete():
 _CALIBRATABLE_MODELS = {
     "CLM", "CLMPARFLOW", "CRHM", "CWATM", "FUSE", "GR", "GSFLOW", "HYPE",
     "IGNACIO", "LISFLOOD", "MESH", "MHM", "NGEN", "NOAHMP", "PARFLOW",
-    "PCRGLOBWB", "PIHM", "PRMS", "RHESSYS", "SUMMA", "SWAT", "VIC",
+    "PCRGLOBWB", "PIHM", "PRMS", "RAVEN", "RHESSYS", "SUMMA", "SWAT", "VIC",
     "WATFLOOD", "WFLOW", "WRFHYDRO",
 }
 

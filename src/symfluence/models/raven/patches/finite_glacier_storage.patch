@@ -1,0 +1,20 @@
+diff --git a/src/ParseInput.cpp b/src/ParseInput.cpp
+index b5fb123..e1d4813 100644
+--- a/src/ParseInput.cpp
++++ b/src/ParseInput.cpp
+@@ -446,6 +446,7 @@ bool ParseMainInputFile (CModel     *&pModel,
+     else if  (!strcmp(s[0],":SuppressCompetitiveET"     )){code=48; }
+     else if  (!strcmp(s[0],":SnowSuppressesPET"         )){code=49; }
+     else if  (!strcmp(s[0],":AllowSoilOverfill"         )){code=491;}
++    else if  (!strcmp(s[0],":FiniteGlacierStorage"       )){code=493;}
+     else if  (!strcmp(s[0],":ForcingSlider"             )){code=492;}
+ 	//---I/O------------------------------------------------------
+     else if  (!strcmp(s[0],":DebugMode"                 )){code=50; }
+@@ -1519,6 +1520,7 @@ bool ParseMainInputFile (CModel     *&pModel,
+       Options.noisy=true;
+       break;
+     }
++    case(493): { Options.glacier_model_on=true; break; }
+     case(58):  //--------------------------------------------
+     {/*:SilentMode */
+       Options.noisy=false;Options.silent=true;
