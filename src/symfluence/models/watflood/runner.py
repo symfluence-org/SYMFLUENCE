@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
 from typing import Optional
 
 from symfluence.core.modeling.base import BaseModelRunner
+from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.process_exec import run as run_subprocess
 
 logger = logging.getLogger(__name__)
@@ -40,8 +42,7 @@ class WATFLOODRunner(BaseModelRunner):
             # Get executable
             watflood_exe = self._get_executable()
             if not watflood_exe.exists():
-                logger.error(f"WATFLOOD executable not found: {watflood_exe}")
-                return None
+                raise ModelExecutionError(f"WATFLOOD executable not found: {watflood_exe}")
 
             # Copy executable to working directory (MESH pattern)
             work_exe = settings_dir / watflood_exe.name
@@ -78,22 +79,32 @@ class WATFLOODRunner(BaseModelRunner):
                 )
 
             if result.returncode != 0:
-                logger.error(f"WATFLOOD failed with return code {result.returncode}")
-                return None
+                raise ModelExecutionError(f"WATFLOOD failed with return code {result.returncode}")
+
+            self._check_native_logs(stdout_file, stderr_file)
 
             # Copy outputs to output directory
             self._collect_outputs(settings_dir, output_dir)
 
             if self._verify_output(output_dir):
                 return output_dir
-            return None
+            raise ModelExecutionError("WATFLOOD did not produce verified output")
 
         except subprocess.TimeoutExpired:
-            logger.warning(f"WATFLOOD timed out after {timeout}s")
-            return None
+            raise ModelExecutionError(f"WATFLOOD timed out after {timeout}s")
+        except ModelExecutionError:
+            raise
         except Exception as e:  # noqa: BLE001 — model execution resilience
-            logger.error(f"Error running WATFLOOD: {e}", exc_info=True)
-            return None
+            raise ModelExecutionError(f"Error running WATFLOOD: {e}") from e
+
+    @staticmethod
+    def _check_native_logs(*paths: Path) -> None:
+        """Fortran STOP can return zero even when CHARM aborts its run."""
+        for path in paths:
+            text = path.read_text(errors='replace')
+            text = re.sub(r'(?im)^\s*STOP CHARM: normal ending\s*$', '', text)
+            if re.search(r'(?im)^\s*(?:STOP\b|PAUSE\b|.*\bprogram aborted\b|Fortran runtime error:)', text):
+                raise ModelExecutionError(f"WATFLOOD native failure reported in {path}")
 
     def _get_executable(self) -> Path:
         """Get WATFLOOD executable path."""

@@ -169,6 +169,11 @@ class DomainConfig(BaseModel):
     # Catchment area (km2) - used for unit conversions (e.g., CLM QRUNOFF mm/s -> m3/s)
     catchment_area: Optional[float] = Field(default=None, alias='CATCHMENT_AREA')
 
+    @property
+    def catchment_area_km2(self) -> Optional[float]:
+        """Compatibility accessor for model plugins using explicit area units."""
+        return self.catchment_area
+
     # Data access
     data_access: str = Field(default='cloud', alias='DATA_ACCESS')
     download_dem: bool = Field(default=True, alias='DOWNLOAD_DEM')

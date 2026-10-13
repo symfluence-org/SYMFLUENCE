@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import numpy as np
 import pandas as pd
 
 from symfluence.core.calibration.workers.base_worker import BaseWorker, WorkerTask
@@ -77,7 +78,8 @@ class GSFLOWWorker(BaseWorker):
                 modflow_dir = settings_dir / 'modflow'
                 if not modflow_dir.exists():
                     modflow_dir = settings_dir  # fallback
-                self._update_upw_parameters(modflow_dir, modflow_params)
+                if not self._update_upw_parameters(modflow_dir, modflow_params):
+                    return False
 
             return True
         except Exception as e:  # noqa: BLE001 — calibration resilience
@@ -101,6 +103,14 @@ class GSFLOWWorker(BaseWorker):
             return True
 
         try:
+            if 'SY' in params:
+                uzf_files = list(search_dir.glob('*.uzf'))
+                if uzf_files and uzf_files[0].read_text().startswith('# GSFLOW UZF Package'):
+                    # Generated UZF: IUZFBND, IRUNBND, VKS, EPS, THTS.
+                    constants = [float(line.split()[1]) for line in uzf_files[0].read_text().splitlines()
+                                 if line.strip().upper().startswith('CONSTANT')]
+                    if len(constants) >= 5 and not 0 < params['SY'] < constants[4]:
+                        raise ValueError('Specific yield must be positive and below UZF saturated water content')
             upw_file = upw_files[0]
             lines = upw_file.read_text(encoding='utf-8').split('\n')
 
@@ -262,6 +272,18 @@ class GSFLOWWorker(BaseWorker):
                 self._last_error = "No GSFLOW output files produced"
                 self.logger.error(self._last_error)
                 return False
+            budget_file = sim_dir / 'gsflow.csv'
+            if budget_file.exists() and self._extract_streamflow_from_csv(budget_file) is None:
+                self._last_error = "Invalid GSFLOW coupled budget; refusing to score finite outlet flow alone"
+                self.logger.error(self._last_error)
+                return False
+            budget_log = sim_dir / 'gsflow.out'
+            if budget_log.exists():
+                import re
+                failures = re.findall(r'Number of non-convergence:\s*(\d+)', budget_log.read_text())
+                if any(int(n) > 0 for n in failures):
+                    self._last_error = 'GSFLOW reported non-converged time steps'
+                    return False
             return True
         except Exception as e:  # noqa: BLE001 — calibration resilience
             self._last_error = str(e)
@@ -360,6 +382,8 @@ class GSFLOWWorker(BaseWorker):
                          or list(sim_dir.glob('*.csv')))
             if csv_files:
                 sim_series = self._extract_streamflow_from_csv(csv_files[0])
+                if sim_series is None or len(sim_series) == 0:
+                    return {'kge': self.penalty_score, 'error': 'Invalid coupled streamflow/budget CSV'}
 
             if sim_series is None or len(sim_series) == 0:
                 output_files = list(sim_dir.glob('statvar*'))
@@ -415,6 +439,10 @@ class GSFLOWWorker(BaseWorker):
                                               'basinstreamflow_q')), None)
             if flow_col is None:
                 return None
+            for column in [c for c in df if c == flow_col or c.endswith(('_S', '_Q'))]:
+                if column in df and not np.isfinite(pd.to_numeric(df[column], errors='coerce')).all():
+                    self.logger.error(f"Non-finite GSFLOW budget variable {column} in {csv_file}")
+                    return None
             idx = pd.to_datetime(df[date_col])
             series = pd.Series(pd.to_numeric(df[flow_col], errors='coerce').values,
                                index=idx, name='GSFLOW_discharge_cms') / 86400.0

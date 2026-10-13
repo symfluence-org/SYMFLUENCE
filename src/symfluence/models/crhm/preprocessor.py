@@ -149,7 +149,7 @@ class CRHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             Dict with centroid lat/lon, area, and elevation
         """
         try:
-            catchment_path = self.get_catchment_path()
+            catchment_path = self._find_basin_shapefile(required=True)
             if catchment_path.exists():
                 gdf = gpd.read_file(catchment_path)
                 if gdf.crs is None:
@@ -173,6 +173,11 @@ class CRHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                 utm_zone = int((lon + 180) / 6) + 1
                 utm_crs = f"EPSG:{(32600 if lat >= 0 else 32700) + utm_zone}"
                 area_m2 = gdf.to_crs(utm_crs).geometry.area.sum()
+                if not np.isfinite(area_m2) or area_m2 <= 0:
+                    raise ValueError('Catchment area must be finite and positive')
+                expected = self._get_config_value(lambda: self.config.domain.catchment_area, default=None)
+                if expected is not None and not np.isclose(area_m2 / 1e6, expected, rtol=0.02):
+                    raise ValueError(f'Geometry area {area_m2 / 1e6:g} km2 disagrees with CATCHMENT_AREA={expected}')
 
                 # Get elevation if available
                 elev = float(gdf.get('elev_mean', [1000])[0]) if 'elev_mean' in gdf.columns else 1000.0
@@ -184,24 +189,16 @@ class CRHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                     'area_km2': area_m2 / 1e6,
                     'elev': elev
                 }
-        except Exception as e:  # noqa: BLE001 — model execution resilience
-            logger.warning(f"Could not read catchment properties: {e}", exc_info=True)
-
-        # Defaults for cold-region catchment
-        return {
-            'lat': 51.0,
-            'lon': -115.0,
-            'area_m2': 1e8,
-            'area_km2': 100.0,
-            'elev': 1000.0
-        }
+        except Exception as e:
+            raise ValueError('CRHM requires readable catchment geometry; refusing default basin area/location') from e
+        raise ValueError('CRHM catchment geometry does not exist')
 
     def _find_dem_path(self) -> Optional[Path]:
         """Locate the catchment DEM raster (domain_<name>_elv.tif)."""
-        dem_dir = self.project_dir / 'attributes' / 'elevation' / 'dem'
+        dem_dir = self.project_attributes_dir / 'elevation' / 'dem'
         cands = sorted(dem_dir.glob('*_elv.tif')) if dem_dir.exists() else []
         if not cands:
-            cands = sorted(self.project_dir.glob('attributes/**/*elv*.tif'))
+            cands = sorted(self.project_attributes_dir.glob('**/*elv*.tif'))
         return cands[0] if cands else None
 
     def _get_elevation_bands(self, total_area_km2: float):
@@ -216,6 +213,18 @@ class CRHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         Returns (bands, ref_elev) or (None, None) when bands cannot be built
         (no DEM, <2 populated bands) so the caller can fall back to lumped.
         """
+        if not self.use_terrain_radiation:
+            import geopandas as gpd
+            for path in sorted((self.project_dir / 'shapefiles' / 'catchment').rglob('*HRUs_elevation.shp')):
+                hrus = gpd.read_file(path).sort_values('elev_mean')
+                if len(hrus) > 1 and {'HRU_area', 'elev_mean'}.issubset(hrus.columns):
+                    areas = hrus.HRU_area.to_numpy(dtype=float)
+                    elevations = hrus.elev_mean.to_numpy(dtype=float)
+                    if np.all(areas > 0) and np.isfinite(elevations).all():
+                        bands = [{'elev': float(e), 'area_km2': float(a / areas.sum() * total_area_km2)}
+                                 for e, a in zip(elevations, areas)]
+                        return bands, float(np.average(elevations, weights=areas))
+
         try:
             import rasterio  # local import: only needed when bands are enabled
         except ImportError:
@@ -466,6 +475,8 @@ class CRHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                                 es = 610.8 * np.exp(17.27 * temp_c / (temp_c + 237.3))
                                 # Approximate pressure
                                 p_pa = 101325.0 * np.exp(-1000.0 / 8500.0)
+                                if 'surface_air_pressure' in forcing_ds:
+                                    p_pa = forcing_ds['surface_air_pressure'].values.reshape(n, -1).mean(axis=1)
                                 e = q_data * p_pa / (0.622 + 0.378 * q_data)
                                 rh = np.clip(e / es * 100.0, 0, 100)
                                 data_columns[crhm_var] = rh
@@ -481,10 +492,11 @@ class CRHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                     data_columns[crhm_var] = np.maximum(
                         0, 200 + 150 * np.sin(2 * np.pi * (day_frac - 80) / 365)
                     )
-                logger.warning(f"Variable {crhm_var} not found in forcing, using synthetic")
+                if crhm_var != 'rh' or not derived:
+                    logger.warning(f"Variable {crhm_var} not found in forcing, using synthetic")
 
         # Write the .obs file
-        self._write_obs_text(obs_path, time_index, data_columns)
+        self._write_obs_text(obs_path, time_index + pd.Timedelta(seconds=dt_seconds), data_columns)
 
     def _write_obs_text(
         self,
@@ -732,6 +744,18 @@ class CRHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         """
         logger.info("Generating CRHM project file...")
 
+        calibrated = {
+            name.strip() for name in self.config.model.crhm.params_to_calibrate.split(',')
+        }
+        if 'nfactor' in calibrated:
+            raise ValueError(
+                "The generated CRHM forcing has no daily net-radiation observation QnD. "
+                "Remove nfactor from params_to_calibrate and leave it at zero; "
+                "nonzero nfactor makes native ebsm initialization fail."
+            )
+        if 'Qe_subl_from_SWE' in calibrated:
+            raise ValueError('Qe_subl_from_SWE is a native integer switch; use sublimation_from_swe instead of continuous calibration.')
+
         prj_file = self._get_config_value(
             lambda: self.config.model.crhm.project_file,
             default='model.prj'
@@ -807,7 +831,7 @@ class CRHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         lines.append("Dates:")
         lines.append("######")
         lines.append(start_date.strftime("%Y %m %d"))
-        lines.append(end_date.strftime("%Y %m %d"))
+        lines.append((pd.Timestamp(end_date).normalize() + pd.Timedelta(days=1)).strftime("%Y %m %d"))
         lines.append("######")
 
         # -- Modules ----------------------------------------------------------
@@ -911,7 +935,9 @@ class CRHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # ---- ebsm (energy-balance snowmelt) ----
         _write_param('ebsm', 'delay_melt', _hru_val(0))
         _write_param('ebsm', 'nfactor', _hru_val(0))
-        _write_param('ebsm', 'Qe_subl_from_SWE', _hru_val(0))
+        explicit_sublimation = self._get_config_value(
+            lambda: self.config.model.crhm.sublimation_from_swe, default=False)
+        _write_param('ebsm', 'Qe_subl_from_SWE', _hru_val(int(explicit_sublimation)))
         _write_param('ebsm', 'tfactor', _hru_val(0))
         _write_param('ebsm', 'Use_QnD', _hru_val(0))
 
@@ -929,7 +955,7 @@ class CRHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # For nhru=1: order=1, whereto=0 (outlet), gwwhereto=0 (outlet)
         _write_param('Netroute', 'gwKstorage', _hru_val(0))
         _write_param('Netroute', 'gwLag', _hru_val(0))
-        _write_param('Netroute', 'gwwhereto', _hru_val(0))
+        _write_param('Netroute', 'gwwhereto', _hru_val(nhru + 1 if self.config.model.crhm.route_groundwater_to_stream else 0))
         _write_param('Netroute', 'Kstorage', _hru_val(1))
         _write_param('Netroute', 'Lag', _hru_val(8))
         _write_param('Netroute', 'order',
@@ -972,8 +998,9 @@ class CRHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # Write it directly to avoid collision with the Shared fetch key.
         lines.append("pbsm fetch <300 to 10000.0>")
         lines.append(_hru_val(1500))
-        _write_param('pbsm', 'inhibit_bs', _hru_val(0))
-        _write_param('pbsm', 'inhibit_subl', _hru_val(0))
+        blowing_snow = self._get_config_value(lambda: self.config.model.crhm.blowing_snow, default=True)
+        _write_param('pbsm', 'inhibit_bs', _hru_val(int(not blowing_snow)))
+        _write_param('pbsm', 'inhibit_subl', _hru_val(int(not blowing_snow)))
         _write_param('pbsm', 'N_S', _hru_val(320))
 
         # ---- Soil ----
@@ -1050,7 +1077,8 @@ class CRHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         ]
         for module, var in display_vars:
             if module in self._DEFAULT_MODULES or module in ('obs',):
-                lines.append(f"{module} {var} {hru_indices}")
+                indices = "1" if var in ("basinflow", "basingw") else hru_indices
+                lines.append(f"{module} {var} {indices}")
 
         lines.append("######")
 

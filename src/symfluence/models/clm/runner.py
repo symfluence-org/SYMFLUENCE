@@ -24,6 +24,14 @@ class CLMRunner(BaseModelRunner):
 
     MODEL_NAME = "CLM"
 
+    def run(self, **kwargs) -> Optional[Path]:
+        """Propagate native execution failure instead of reporting an empty success."""
+        result = super().run(**kwargs)
+        if result is None:
+            from symfluence.core.exceptions import ModelExecutionError
+            raise ModelExecutionError("CLM did not produce a successful native run; inspect its log")
+        return result
+
     def _setup_model_specific_paths(self) -> None:
         """Set up CLM-specific paths."""
         self.setup_dir = self.project_dir / "settings" / self.model_name

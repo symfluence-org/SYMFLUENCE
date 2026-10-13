@@ -124,7 +124,7 @@ class SUMMAModelOptimizer(BaseModelOptimizer):
     def _run_model_for_final_evaluation(self, output_dir: Path) -> bool:
         """Run SUMMA for final evaluation."""
         return self.worker.run_model(
-            self.config,
+            self.config_dict,
             self.project_dir / 'settings' / 'SUMMA',
             output_dir,
             mode='run_def',

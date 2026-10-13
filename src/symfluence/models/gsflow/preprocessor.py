@@ -77,7 +77,7 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         try:
             import rasterio
             from rasterio.enums import Resampling
-            dd = self.project_dir / 'attributes' / 'elevation' / 'dem'
+            dd = self.project_attributes_dir / 'elevation' / 'dem'
             dems = sorted(dd.glob('*_elv.tif')) if dd.exists() else []
             if not dems:
                 return None
@@ -158,13 +158,12 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
     def _get_catchment_properties(self) -> dict:
         """Catchment lat/lon/area (shapefile) and mean elev/slope/aspect (DEM).
 
-        Projection-safe (mirrors the CRHM/PRMS approach); falls back to
-        physically reasonable Icelandic defaults if the datastore is absent.
+        Resolve existing geometry independently of the output experiment ID.
+        Missing geometry must not silently create a fictitious 100 km2 basin.
         """
-        props = {'lat': 65.0, 'lon': -19.0, 'area_km2': 100.0,
-                 'elev': 500.0, 'slope': 5.0, 'aspect': 180.0}
+        props = {'elev': 500.0, 'slope': 5.0, 'aspect': 180.0}
         try:
-            cp = self.get_catchment_path()
+            cp = self._find_basin_shapefile(required=True)
             if cp and cp.exists():
                 gdf = gpd.read_file(cp)
                 if gdf.crs is None:
@@ -176,12 +175,19 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                 lon, lat = pt.x, pt.y
                 utm = int((lon + 180) / 6) + 1
                 area_m2 = gdf.to_crs(f"EPSG:{(32600 if lat >= 0 else 32700)+utm}").geometry.area.sum()
+                if not np.isfinite(area_m2) or area_m2 <= 0:
+                    raise ValueError('Catchment area must be finite and positive')
+                expected = self._get_config_value(lambda: self.config.domain.catchment_area, default=None)
+                if expected is not None and not np.isclose(area_m2 / 1e6, expected, rtol=0.02):
+                    raise ValueError(f'Geometry area {area_m2 / 1e6:g} km2 disagrees with CATCHMENT_AREA={expected}')
                 props.update({'lat': lat, 'lon': lon, 'area_km2': area_m2 / 1e6})
-        except Exception as e:  # noqa: BLE001 — model execution resilience
-            logger.warning(f"Could not read catchment shapefile: {e}; defaults", exc_info=True)
+            else:
+                raise FileNotFoundError(f'Catchment geometry not found: {cp}')
+        except Exception as e:
+            raise ValueError('GSFLOW requires readable catchment geometry; refusing default basin area/location') from e
         try:
             import rasterio
-            dd = self.project_dir / 'attributes' / 'elevation' / 'dem'
+            dd = self.project_attributes_dir / 'elevation' / 'dem'
             dems = sorted(dd.glob('*_elv.tif')) if dd.exists() else []
             if dems:
                 with rasterio.open(dems[0]) as src:
@@ -400,9 +406,10 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
             # -- Soil zone --
             wp("soil_moist_max", 1, "nhru", nhru, 2, [6.0] * nhru)
-            wp("soil_rechr_max", 1, "nhru", nhru, 2, [2.0] * nhru)
-            wp("soil_moist_init", 1, "nhru", nhru, 2, [3.0] * nhru)
-            wp("soil_rechr_init", 1, "nhru", nhru, 2, [1.0] * nhru)
+            # GSFLOW5 uses fractions of capacity, not PRMS4 depths.
+            wp("soil_rechr_max_frac", 1, "nhru", nhru, 2, [1.0 / 3.0] * nhru)
+            wp("soil_moist_init_frac", 1, "nhru", nhru, 2, [0.5] * nhru)
+            wp("soil_rechr_init_frac", 1, "nhru", nhru, 2, [0.5] * nhru)
             wp("soil2gw_max", 1, "nhru", nhru, 2, [0.5] * nhru)
             wp("ssr2gw_rate", 1, "nssr", nhru, 2, [0.1] * nhru)
             wp("ssr2gw_exp", 1, "nssr", nhru, 2, [1.0] * nhru)
@@ -446,13 +453,18 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
             # -- GVR mapping --
             if self.distributed_gw:
-                # Lumped surface: every cell's GVR belongs to the single HRU,
-                # each carrying 1/ncells of the HRU area.
+                # Every cell is fully covered by the single surface HRU.
+                # gvr_cell_pct is a fraction of CELL area, not HRU area.
                 wp("gvr_hru_id", 1, "nhrucell", nhrucell, 1, [1] * nhrucell)
                 wp("gvr_cell_id", 1, "nhrucell", nhrucell, 1,
                    list(range(1, ncells + 1)))
                 wp("gvr_cell_pct", 1, "nhrucell", nhrucell, 2,
-                   [f"{1.0 / ncells:.8f}"] * nhrucell)
+                   ["1.00000000"] * nhrucell)
+                # The complementary mapping partitions the HRU across cells.
+                # Omitting it gives all-zero defaults and a 0/0 normalization
+                # in native prms2mfinit, contaminating storage and exchange.
+                wp("gvr_hru_pct", 1, "nhrucell", nhrucell, 2,
+                   [1.0 / ncells] * nhrucell)
             else:
                 # 1:1 — each HRU maps to one cell.
                 wp("gvr_hru_id", 1, "nhrucell", nhrucell, 1,
@@ -604,9 +616,10 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             f.write("# GSFLOW NWT Solver\n")
             # HEADTOL FLUXTOL MAXITEROUT THICKFACT LINMETH IPRNWT
             # IBOTAV OPTIONS
-            f.write("1.0E-3  100.0  500  1.0E-5  2  1  1  SPECIFIED\n")
-            # XMD solver line
-            f.write("2  1  3  3  1  0.0  1  5.0E-4  5.0E-4  200  XMD\n")
+            # SPECIFIED requires nonlinear damping/backtracking coefficients
+            # on the first record. Omitting them silently disables safeguards
+            # and can produce NaN heads during steady-state initialization.
+            f.write("1.0E-4  1.0  500  1.0E-5  1  0  1  COMPLEX\n")
 
         # -- UZF  (unsaturated zone flow — required for GSFLOW coupling) --
         uzf = mf / 'bow.uzf'
@@ -628,11 +641,17 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             # EPS (Brooks-Corey epsilon)
             f.write("  CONSTANT  3.5\n")
             # THTS (saturated water content)
-            f.write("  CONSTANT  0.30\n")
+            thts = self._get_config_value(
+                lambda: self.config.model.gsflow.uzf_saturated_water_content, default=0.30)
+            if thts <= sy:
+                raise ValueError('GSFLOW saturated water content must exceed specific yield')
+            f.write(f"  CONSTANT  {thts:.8g}\n")
             # Stress period 1 (SS)
             ncells = nrow * ncol
             f.write(f"  {ncells}\n")               # NUZF1 (read FINF)
-            f.write("  CONSTANT  1.0E-8\n")        # FINF array
+            recharge = self._get_config_value(
+                lambda: self.config.model.gsflow.initial_recharge, default=1.e-8)
+            f.write(f"  CONSTANT  {recharge:.10g}\n")  # FINF, m/day
             # Stress period 2 (TR) — reuse previous
             f.write("  -1\n")                       # NUZF1 < 0 = reuse
         logger.info(f"  UZF: {uzf}")

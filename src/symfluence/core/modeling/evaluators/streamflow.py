@@ -113,8 +113,22 @@ class StreamflowEvaluator(ModelEvaluator):
         Returns:
             List[Path]: Paths to streamflow output files
         """
+        if self._uses_native_wflow_discharge():
+            # cryosphere.nc contains states, not outlet discharge. Do not let
+            # the generic NetCDF locator select it ahead of the native CSV.
+            output = sim_dir / 'output.csv'
+            return [output] if output.is_file() else []
         locator = OutputFileLocator(self.logger)
         return locator.find_streamflow_files(sim_dir)
+
+    def _uses_native_wflow_discharge(self) -> bool:
+        model = self._get_config_value(
+            lambda: self.config.model.hydrological_model,
+            default='', dict_key='HYDROLOGICAL_MODEL')
+        spatial_mode = self._get_config_value(
+            lambda: self.config.model.wflow.spatial_mode,
+            default='', dict_key='WFLOW_SPATIAL_MODE')
+        return str(model).upper() == 'WFLOW' and spatial_mode == 'distributed'
 
     def extract_simulated_data(self, sim_files: List[Path], **kwargs) -> pd.Series:
         """Extract streamflow data from simulation files with unit conversion.
@@ -141,6 +155,12 @@ class StreamflowEvaluator(ModelEvaluator):
         """
         sim_file = sim_files[0]
         try:
+            if self._uses_native_wflow_discharge():
+                from symfluence.models.wflow.extractor import WflowResultExtractor
+                # Native daily Q is already m3/s and is labelled by interval
+                # end. The Wflow reader shifts it to the same day as the
+                # calibration worker; no area conversion or extra routing.
+                return WflowResultExtractor('WFLOW').extract_variable(sim_file, 'streamflow')
             if self._is_mizuroute_output(sim_file):
                 return self._extract_mizuroute_streamflow(sim_file)
             elif self._is_troute_output(sim_file):
@@ -418,9 +438,21 @@ class StreamflowEvaluator(ModelEvaluator):
         """
         with xr.open_dataset(sim_file) as ds:
             streamflow_vars = ['IRFroutedRunoff', 'KWTroutedRunoff', 'averageRoutedRunoff', 'dlayRunoff']
+            requested_reach = self._get_config_value(
+                lambda: self.config.evaluation.sim_reach_id,
+                default=None, dict_key='SIM_REACH_ID',
+            )
             for var_name in streamflow_vars:
                 if var_name in ds.variables:
                     var = ds[var_name]
+                    if requested_reach is not None:
+                        for id_name in ('reachID', 'segId'):
+                            if id_name in ds and ds[id_name].ndim == 1 and ds[id_name].dims[0] in var.dims:
+                                matches = np.flatnonzero(ds[id_name].values == requested_reach)
+                                if len(matches) != 1:
+                                    raise ValueError(f'Requested routing reach {requested_reach} is missing or duplicated')
+                                return cast(pd.Series, var.isel({ds[id_name].dims[0]: int(matches[0])}).to_pandas())
+                        raise ValueError('Explicit routing reach requires a reachID or segId coordinate')
                     if 'seg' in var.dims:
                         segment_means = var.mean(dim='time').values
                         outlet_seg_idx = np.argmax(segment_means)

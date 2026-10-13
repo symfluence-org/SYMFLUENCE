@@ -17,7 +17,7 @@ class WflowResultExtractor(ModelResultExtractor):
 
     def get_output_file_patterns(self) -> Dict[str, List[str]]:
         return {
-            'streamflow': ['output*.nc', '*output*.nc'],
+            'streamflow': ['output.csv', 'output*.nc', '*output*.nc'],
             'et': ['output*.nc'],
             'snow': ['output*.nc'],
             'soil_moisture': ['output*.nc'],
@@ -33,6 +33,12 @@ class WflowResultExtractor(ModelResultExtractor):
         return variable_mapping.get(variable_type, [variable_type])
 
     def extract_variable(self, output_file: Path, variable_type: str, **kwargs) -> pd.Series:
+        if output_file.suffix == '.csv':
+            df = pd.read_csv(output_file, parse_dates=['time'])
+            # New native-routing distributed output is daily, end-labelled.
+            if 'WB_max' in df:
+                return pd.Series(df.Q.values, index=pd.DatetimeIndex(df.time)-pd.Timedelta(days=1))
+            raise ValueError('Legacy lumped CSV requires its area-aware worker extractor')
         import xarray as xr
         var_names = self.get_variable_names(variable_type)
         try:

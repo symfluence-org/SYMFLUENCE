@@ -10,7 +10,7 @@ config system through ``R.config_schemas`` (via the model manifest /
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -30,6 +30,39 @@ class HYPEConfig(BaseModel):
         alias='HYPE_PARAMS_TO_CALIBRATE'
     )
     spinup_days: int = Field(default=365, alias='HYPE_SPINUP_DAYS')
+    glacier_fraction: Optional[float] = Field(
+        default=None, ge=0, le=1, alias='HYPE_GLACIER_FRACTION',
+        description='Observed glacier area fraction override for a single lumped basin'
+    )
+    glacier_type: Optional[int] = Field(
+        default=None, ge=0, le=3, alias='HYPE_GLACIER_TYPE',
+        description='HYPE glacier type: 0 mountain, 1 ice cap, 2 ice sheet, 3 infinite'
+    )
+    glacier_melt_factor: float = Field(default=5.0, gt=0, alias='HYPE_GLACIER_MELT_FACTOR')
+    glacier_melt_threshold: float = Field(default=0.0, alias='HYPE_GLACIER_MELT_THRESHOLD')
+    preserve_icecap_volume: bool = Field(
+        default=False, alias='HYPE_PRESERVE_ICECAP_VOLUME',
+        description='Preserve parent ice-cap area-volume scaling across elevation bands (type 1, exponent 1.25)'
+    )
+    cryosphere_constraints: bool = Field(default=False, alias='HYPE_CRYOSPHERE_CONSTRAINTS')
+    snow_cover_error_scale: float = Field(default=0.2, gt=0, alias='HYPE_SNOW_COVER_ERROR_SCALE')
+    glacier_mb_error_scale: float = Field(default=1.0, gt=0, alias='HYPE_GLACIER_MB_ERROR_SCALE')
+    fractional_snow_cover: bool = Field(
+        default=False, alias='HYPE_FRACTIONAL_SNOW_COVER',
+        description='Enable HYPE snow-cover depletion using the reference snow-distribution parameters'
+    )
+    snow_melt_model: Literal[0, 2] = Field(default=0, alias='HYPE_SNOW_MELT_MODEL')
+    glacier_albedo: float = Field(default=0.35, ge=0, le=1, alias='HYPE_GLACIER_ALBEDO')
+    glacier_radiation_melt_factor: float = Field(default=0.5, ge=0, alias='HYPE_GLACIER_RADIATION_MELT_FACTOR')
+    water_balance_diagnostics: bool = Field(default=False, alias='HYPE_WATER_BALANCE_DIAGNOSTICS')
+    soil_percolation: Optional[List[float]] = Field(
+        default=None, min_length=2, max_length=2, alias='HYPE_SOIL_PERCOLATION',
+        description='Maximum percolation between soil layers, mperc1/mperc2 in mm/day; omitted retains HYPE defaults'
+    )
+    river_length_overrides: Optional[Dict[int, float]] = Field(
+        default=None, alias='HYPE_RIVER_LENGTH_OVERRIDES',
+        description='Explicit river lengths in metres by final HYPE subid; requires supporting geometry'
+    )
     # Process options written to info.txt (None = config_manager defaults apply)
     infiltration_model: Optional[int] = Field(
         default=None, alias='HYPE_INFILTRATION_MODEL',

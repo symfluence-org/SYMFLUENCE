@@ -41,12 +41,16 @@ class GSFLOWConfig(BaseModel):
     spatial_mode: SpatialModeType = Field(default='semi_distributed', alias='GSFLOW_SPATIAL_MODE')
     experiment_output: str = Field(default='default', alias='EXPERIMENT_OUTPUT_GSFLOW')
     params_to_calibrate: str = Field(
-        default='soil_moist_max,soil_rechr_max,ssr2gw_rate,gwflow_coef,gw_seep_coef,K,SY,slowcoef_lin,carea_max,smidx_coef',
+        default='soil_moist_max,ssr2gw_rate,K,SY,slowcoef_lin,carea_max,smidx_coef,jh_coef,tmax_allsnow,rain_adj,snow_adj',
         alias='GSFLOW_PARAMS_TO_CALIBRATE'
     )
+    param_bounds: dict[str, dict[str, float | str]] = Field(default_factory=dict, alias='GSFLOW_PARAM_BOUNDS')
     gsflow_mode: str = Field(default='COUPLED', alias='GSFLOW_MODE')
     distributed_gw: bool = Field(default=False, alias='GSFLOW_DISTRIBUTED_GW')
     gw_grid_n: int = Field(default=10, alias='GSFLOW_GW_GRID_N', ge=2, le=50)
+    initial_recharge: float = Field(default=1.e-8, alias='GSFLOW_INITIAL_RECHARGE', ge=0.,
+                                    description='Steady-state initialization recharge, m/day; estimate from spin-up, not evaluation discharge.')
+    uzf_saturated_water_content: float = Field(default=0.30, alias='GSFLOW_UZF_SATURATED_WATER_CONTENT', gt=0., lt=1.)
     timeout: int = Field(default=7200, alias='GSFLOW_TIMEOUT', ge=60, le=86400)
 
 

@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import numpy as np
 import pandas as pd
 import xarray as xr
 
@@ -24,6 +25,14 @@ from symfluence.core.constants import ModelDefaults
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
+
+from ..parameters import FORCING_PARAMS
+
+# mhm.nml entries that mHM writes to. Each worker points them at its own
+# directory so parallel evaluations never share an output location.
+_OUTPUT_KEYS = ('dirConfigOut', r'dir_Out\(1\)', r'dir_Total_Runoff\(1\)',
+                r'dir_Bankfull_Runoff\(1\)')
+_RESTART_KEYS = (r'mhm_file_RestartOut\(1\)', r'mrm_file_RestartOut\(1\)')
 
 
 @R.workers.add('MHM')
@@ -106,14 +115,131 @@ class MHMWorker(BaseWorker):
                     self.logger.error(f"mHM namelist file not found in {settings_dir}")
                     return False
 
+            mhm_nml = settings_dir / 'mhm.nml'
+            if mhm_nml.exists():
+                out_dir = Path(kwargs['sim_dir']) if kwargs.get('sim_dir') else settings_dir / 'output'
+                self._localise_outputs(mhm_nml, out_dir)
+
+            forcing_params = {k: v for k, v in params.items() if k in FORCING_PARAMS}
+            if forcing_params and not self._write_adjusted_precip(
+                    settings_dir, data_dir / f'domain_{domain_name}', params):
+                return False
+
             # Update parameter namelist with new parameter values
-            return self._update_namelist_file(param_namelist, params)
+            nml_params = {k: v for k, v in params.items() if k not in FORCING_PARAMS}
+            return self._update_namelist_file(param_namelist, nml_params)
 
         except Exception as e:  # noqa: BLE001 — calibration resilience
             self.logger.error(f"Error applying mHM parameters: {e}", exc_info=True)
             import traceback
             self.logger.debug(traceback.format_exc())
             return False
+
+    @staticmethod
+    def _set_nml_path(content: str, key: str, value: str) -> str:
+        """Replace the quoted value of ``key = "..."`` in a namelist."""
+        return re.sub(r'(^\s*' + key + r'\s*=\s*)"[^"]*"',
+                      lambda m: f'{m.group(1)}"{value}"', content, flags=re.MULTILINE)
+
+    def _localise_outputs(self, mhm_nml: Path, out_dir: Path) -> None:
+        """Point every mHM output path in ``mhm_nml`` at ``out_dir``."""
+        out_dir.mkdir(parents=True, exist_ok=True)
+        content = mhm_nml.read_text(encoding='utf-8')
+        for key in _OUTPUT_KEYS:
+            content = self._set_nml_path(content, key, f'{out_dir}/')
+        for key in _RESTART_KEYS:
+            match = re.search(r'^\s*' + key + r'\s*=\s*"([^"]*)"', content, flags=re.MULTILINE)
+            if match:
+                content = self._set_nml_path(content, key, str(out_dir / Path(match.group(1)).name))
+        mhm_nml.write_text(content, encoding='utf-8')
+
+    def _write_adjusted_precip(self, settings_dir: Path, project_dir: Path,
+                               params: Dict[str, float]) -> bool:
+        """Write this worker's precipitation input with the forcing-side
+        pseudo-parameters applied, and point its mhm.nml at it.
+
+        ``precipCorrectionFactor`` scales precipitation everywhere.
+        ``glacierIceDDF`` adds degree-day ice melt on the cells flagged in
+        ``morph/glacier_mask.asc``: a per-cell snow cover on the ice is tracked
+        with the corrected precipitation (snowfall below
+        ``snowTreshholdTemperature``) and melted at half the ice factor, the
+        usual snow/ice degree-day ratio; ice melts with whatever energy is left
+        once that snow is gone. The melt enters mHM as liquid input on the
+        sealed glacier cells. Annual basin-mean ice melt is written to
+        ``forcing_adjustment.json`` for comparison with glacier mass balance.
+        """
+        import json
+        import shutil
+
+        import netCDF4 as nc4
+
+        base_dir = project_dir / 'data' / 'forcing' / 'MHM_input'
+        work_dir = settings_dir / 'forcing_adjusted'
+        try:
+            work_dir.mkdir(parents=True, exist_ok=True)
+            for name in ('tavg.nc', 'pet.nc', 'header.txt'):
+                target = work_dir / name
+                if not target.exists():
+                    target.symlink_to(base_dir / name)
+            pre_path = work_dir / 'pre.nc'
+            shutil.copy2(base_dir / 'pre.nc', pre_path)
+
+            with nc4.Dataset(base_dir / 'pre.nc') as ds:
+                pre = np.ma.filled(ds['pre'][:], np.nan)
+                times = nc4.num2date(ds['time'][:], ds['time'].units,
+                                     calendar=getattr(ds['time'], 'calendar', 'standard'),
+                                     only_use_cftime_datetimes=False)
+            pre = pre * float(params.get('precipCorrectionFactor', 1.0))
+
+            summary: Dict[str, Any] = {k: float(params[k]) for k in FORCING_PARAMS if k in params}
+            mask_file = project_dir / 'settings' / 'MHM' / 'morph' / 'glacier_mask.asc'
+            if 'glacierIceDDF' in params and mask_file.exists():
+                glacier = np.loadtxt(mask_file, skiprows=6) == 1
+                with nc4.Dataset(base_dir / 'tavg.nc') as ds:
+                    tavg = np.ma.filled(ds['tavg'][:], np.nan)
+                ice_melt = self._glacier_ice_melt(
+                    pre[:, glacier], tavg[:, glacier], float(params['glacierIceDDF']),
+                    float(params.get('snowTreshholdTemperature', 1.0)))
+                pre[:, glacier] += ice_melt
+                n_active = int(np.isfinite(pre[0]).sum())
+                yearly = pd.Series(ice_melt.sum(axis=1) / max(n_active, 1),
+                                   index=pd.DatetimeIndex(times)).resample('YS-OCT').sum()
+                summary['ice_melt_basin_mm_per_wy'] = {str(t.year + 1): round(float(v), 1)
+                                                       for t, v in yearly.items()}
+                summary['ice_melt_glacier_mwe_per_wy_mean'] = round(
+                    float(ice_melt.sum(axis=1).mean() * 365.25 / glacier.sum() / 1000.0), 3)
+
+            with nc4.Dataset(pre_path, 'a') as ds:
+                ds['pre'][:] = np.where(np.isfinite(pre), pre, ds['pre']._FillValue)
+            (work_dir / 'forcing_adjustment.json').write_text(json.dumps(summary, indent=1))
+
+            mhm_nml = settings_dir / 'mhm.nml'
+            content = mhm_nml.read_text(encoding='utf-8')
+            for key in (r'dir_Precipitation\(1\)', r'dir_Temperature\(1\)', r'dir_ReferenceET\(1\)'):
+                content = self._set_nml_path(content, key, f'{work_dir}/')
+            mhm_nml.write_text(content, encoding='utf-8')
+            return True
+        except Exception as e:  # noqa: BLE001 — calibration resilience
+            self.logger.error(f"Error writing adjusted mHM precipitation: {e}", exc_info=True)
+            return False
+
+    @staticmethod
+    def _glacier_ice_melt(pre: np.ndarray, tavg: np.ndarray, ddf_ice: float,
+                          t_snow: float) -> np.ndarray:
+        """Daily ice melt (mm) on glacier cells; arrays are (time, cell)."""
+        ddf_snow = 0.5 * ddf_ice
+        snow = np.zeros(pre.shape[1])
+        melt = np.zeros_like(pre)
+        for t in range(pre.shape[0]):
+            temp = tavg[t]
+            snow += np.where(temp <= t_snow, pre[t], 0.0)
+            degree_days = np.maximum(temp, 0.0)
+            potential = ddf_snow * degree_days
+            snow_melt = np.minimum(snow, potential)
+            snow -= snow_melt
+            unused = np.where(potential > 0, 1.0 - snow_melt / np.where(potential > 0, potential, 1.0), 0.0)
+            melt[t] = unused * ddf_ice * degree_days
+        return melt
 
     def _update_namelist_file(self, namelist_file: Path, params: Dict[str, float]) -> bool:
         """
@@ -152,14 +278,14 @@ class MHMWorker(BaseWorker):
                     # 5-column format: paramName = lower, upper, VALUE, flag, scaling
                     # Capture: (prefix + lower, upper,) (value) (, flag, scaling)
                     pattern = re.compile(
-                        r'(\s*' + re.escape(param_name)
+                        r'(^[ \t]*' + re.escape(param_name)
                         + r'\s*=\s*'           # paramName =
                         + r'[^,]+,'             # lower,
                         + r'\s*[^,]+,'          # upper,
                         + r'\s*)'               # whitespace before value
                         + r'([^,]+)'            # VALUE  <-- group to replace
                         + r'(,\s*\d+,\s*\d+)',  # , flag, scaling
-                        re.IGNORECASE
+                        re.MULTILINE
                     )
                     match = pattern.search(content)
                     if match:
@@ -178,8 +304,8 @@ class MHMWorker(BaseWorker):
                 else:
                     # Legacy single-value format: paramName = value
                     pattern = re.compile(
-                        r'(\s*' + re.escape(param_name) + r'\s*=\s*)([^\s,!/]+)',
-                        re.IGNORECASE
+                        r'(^[ \t]*' + re.escape(param_name) + r'\s*=\s*)([^\s,!/]+)',
+                        re.MULTILINE
                     )
                     match = pattern.search(content)
                     if match:

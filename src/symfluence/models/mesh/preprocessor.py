@@ -261,7 +261,7 @@ class MESHPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         self.parameter_fixer.fix_hydrology_wf_r2()
         self.parameter_fixer.fix_missing_hydrology_params()
         # Multi-GRU domains need one hydrology value per GRU; expand after any
-        # RCHARG/FRZTH injection above so the section count stays consistent.
+        # ordinary hydrology fixes, before final frozen-soil targeting.
         self.parameter_fixer.fix_gru_dependent_hydrology_params()
         self.parameter_fixer.fix_class_initial_conditions()
         self.parameter_fixer.fix_class_vegetation_parameters()
@@ -272,6 +272,47 @@ class MESHPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         self.parameter_fixer.fix_reservoir_file()
         self.parameter_fixer.configure_lumped_outputs()
         self.parameter_fixer.create_safe_forcing()
+        spatial_units = self._get_config_value(lambda: self.config.model.mesh.spatial_units, default=None)
+        if spatial_units:
+            from .preprocessing.spatial_units import prepare_spatial_units
+            prepare_spatial_units(self.forcing_dir, spatial_units, self.config.model.mesh.spatial_forcing)
+        self._prepare_glacier_inputs()
+        from .preprocessing.frozen_soil import prepare_frozen_soil
+        prepare_frozen_soil(self.forcing_dir, self.config.model.mesh.frozen_soil_parameters)
+
+    def _prepare_glacier_inputs(self) -> None:
+        """Apply the opt-in ice split last, after all ordinary input fixers."""
+        mode = self._get_config_value(lambda: self.config.model.mesh.glacier_mode, default='none')
+        if mode == 'none':
+            return
+        import json
+        import os
+        import shutil
+        import tempfile
+
+        from .preprocessing.glacier_writer import write_glacier_bundle
+
+        cfg = self.config.model.mesh
+        manifest = json.loads(Path(cfg.glacier_manifest).read_text())
+        names = ['MESH_parameters_CLASS.ini', 'MESH_parameters_hydrology.ini', 'MESH_drainage_database.nc']
+        # Stage only the files changed by the writer, never copy forcing volumes.
+        with tempfile.TemporaryDirectory(dir=self.forcing_dir.parent, prefix='.glacier-') as temporary:
+            root = Path(temporary)
+            source = root/'source'
+            source.mkdir()
+            for name in names:
+                shutil.copy2(self.forcing_dir/name, source/name)
+            write_glacier_bundle(source, root/'ice', manifest, unit_ids=cfg.glacier_unit_ids,
+                                 albedo_visible=cfg.glacier_albedo_visible,
+                                 albedo_infrared=cfg.glacier_albedo_infrared,
+                                 temperature_c=cfg.glacier_temperature_c,
+                                 finite_storage=mode == 'finite_ice_guard')
+            extra = ['MESH_glacier_storage.ini'] if mode == 'finite_ice_guard' else []
+            for name in names + ['glacier_manifest.json'] + extra:
+                os.replace(root/'ice'/name, self.forcing_dir/name)
+            if not extra:
+                (self.forcing_dir/'MESH_glacier_storage.ini').unlink(missing_ok=True)
+        self.logger.info(f'Prepared glacier mode {mode}; no exposed-bed transition is supported')
 
     def _select_meshflow_forcing(
         self, forcing_files_path: Path, forcing_files_glob: str
@@ -586,6 +627,10 @@ class MESHPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         self.drainage_database.fix_drainage_topology()
         self.drainage_database.ensure_completeness()
 
+        if self._get_config_value(lambda: self.config.model.mesh.spatial_units, default=None):
+            from .preprocessing.spatial_units import preserve_template_grus
+            preserve_template_grus(self.forcing_dir)
+
         # Check if using elevation band discretization
         if is_elevation_band_mode(self.config_dict):
             self._apply_elevation_band_grus()
@@ -599,7 +644,7 @@ class MESHPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         self.parameter_fixer.fix_hydrology_wf_r2()
         self.parameter_fixer.fix_missing_hydrology_params()
         # Multi-GRU domains need one hydrology value per GRU; expand after any
-        # RCHARG/FRZTH injection above so the section count stays consistent.
+        # ordinary hydrology fixes, before final frozen-soil targeting.
         self.parameter_fixer.fix_gru_dependent_hydrology_params()
         self.parameter_fixer.fix_class_initial_conditions()
         self.parameter_fixer.fix_class_vegetation_parameters()

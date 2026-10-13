@@ -20,7 +20,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import numpy as np
 import pytest
+import xarray as xr
 
 from symfluence.data.acquisition.handlers.cds_datasets import (
     CARRAAcquirer,
@@ -48,6 +50,26 @@ def carra():
 @pytest.fixture
 def cerra():
     return _make(CERRAAcquirer)
+
+
+def test_converted_forcing_has_rate_and_specific_humidity_units(carra):
+    ds = xr.Dataset({
+        'air_temperature': ('time', [283.15], {'units': 'K'}),
+        'relative_humidity': ('time', [75.0], {'units': '%'}),
+        'surface_air_pressure': ('time', [100000.0], {'units': 'Pa'}),
+        'precipitation_flux': ('time', [3.6], {'units': 'kg m-2'}),
+        'surface_downwelling_shortwave_flux': ('time', [360000.0], {'units': 'J m-2'}),
+        'surface_downwelling_longwave_flux': ('time', [1080000.0], {'units': 'J m-2'}),
+    })
+    with xr.set_options(keep_attrs=True):
+        result = carra._convert_units(carra._calculate_derived_variables(ds))
+    assert result.specific_humidity.attrs['units'] == 'kg kg-1'
+    assert 0.005 < float(result.specific_humidity[0]) < 0.006
+    for name, expected in [('surface_downwelling_shortwave_flux', 100.0),
+                           ('surface_downwelling_longwave_flux', 300.0)]:
+        assert result[name].attrs['units'] == 'W m-2'
+        np.testing.assert_allclose(result[name], [expected])
+    np.testing.assert_allclose(result.precipitation_flux, [0.001])
 
 
 class TestForecastVariableNameSplit:

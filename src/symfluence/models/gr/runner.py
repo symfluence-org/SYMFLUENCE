@@ -166,7 +166,7 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
     def _setup_model_specific_paths(self) -> None:
         """Set up GR-specific paths."""
         # Catchment paths (use backward-compatible path resolution)
-        catchment_file = self._get_catchment_file_path()
+        catchment_file = self._find_basin_shapefile(required=True)
         self.catchment_path = catchment_file.parent
         self.catchment_name = catchment_file.name
 
@@ -918,10 +918,12 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
                 }}
 
                 # Preparation of RunOptions for full simulation
+                # Ind_Run already starts at time_start and includes spinup.
+                # Do not replay that same warmup before the simulation start.
                 RunOptions <- CreateRunOptions(
                     FUN_MOD = RunModel_CemaNeigeGR4J,
                     InputsModel = InputsModel,
-                    IndPeriod_WarmUp = Ind_Warm,
+                    IndPeriod_WarmUp = 0L,
                     IndPeriod_Run = Ind_Run,
                     IsHyst = TRUE
                 )

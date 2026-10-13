@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional
 from symfluence.core.exceptions import ModelExecutionError, symfluence_error_handler
 from symfluence.core.modeling.base import BaseModelRunner
 from symfluence.core.registries import R
+from symfluence.models.mesh.glacier_runtime import check_finite_output, check_finite_runtime
 
 
 @R.runners.add('MESH', runner_method='run_mesh')
@@ -63,7 +64,7 @@ class MESHRunner(BaseModelRunner):  # type: ignore[misc]
             default_install_subpath='installs/mesh/bin',
             exe_name_key='MESH_EXE',
             default_exe_name='mesh.exe',
-            typed_exe_accessor=lambda: self.typed_config.model.mesh.exe if (self.typed_config and self.typed_config.model.mesh) else None
+            typed_exe_accessor=lambda: self.config.model.mesh.exe if self.config.model.mesh else None
         )
 
         # Catchment paths (use backward-compatible path resolution)
@@ -116,12 +117,32 @@ class MESHRunner(BaseModelRunner):  # type: ignore[misc]
             self.logger,
             error_type=ModelExecutionError
         ):
+            from symfluence.models.mesh.preprocessing.frozen_soil import validate_frozen_soil
             # Clear stale output files from output_dir to prevent a crashed
             # iteration from finding valid files left by the previous iteration
             # on the same process (output_dir is reused across iterations).
             self._clear_stale_outputs(self.output_dir)
+            self._clear_stale_outputs(self.forcing_mesh_path)
+            self._clear_stale_outputs(self.forcing_mesh_path / 'results')
+            validate_frozen_soil(self.forcing_mesh_path)
 
+            from symfluence.models.mesh.preprocessing.spatial_units import prepare_spatial_baseflow
+            prepare_spatial_baseflow(self.forcing_mesh_path)
+            if self._get_config_value(
+                lambda: self.config.model.mesh.spatial_diagnostics,
+                default=False, dict_key='MESH_SPATIAL_DIAGNOSTICS',
+            ):
+                from symfluence.models.mesh.preprocessing.spatial_units import prepare_spatial_diagnostics
+                prepare_spatial_diagnostics(self.forcing_mesh_path, cryosphere_endpoints=self._get_config_value(
+                    lambda: self.config.model.mesh.cryosphere_constraints,
+                    default=False, dict_key='MESH_CRYOSPHERE_CONSTRAINTS'))
             # Create run command
+            finite_ice = check_finite_runtime(
+                Path(self.mesh_exe), self.forcing_mesh_path,
+                self._get_config_value(
+                    lambda: self.config.model.mesh.glacier_mode,
+                    default='none', dict_key='MESH_GLACIER_MODE'),
+            )
             cmd = self._create_run_command()
 
             # Set up logging
@@ -150,6 +171,19 @@ class MESHRunner(BaseModelRunner):  # type: ignore[misc]
                 success_log_level=logging.DEBUG,
             )
 
+            if finite_ice:
+                if not result.success:
+                    raise ModelExecutionError('Finite glacier run failed; partial output cannot be scored')
+                check_finite_output(self.forcing_mesh_path)
+            from symfluence.models.mesh.preprocessing.spatial_units import check_spatial_output
+            check_spatial_output(self.forcing_mesh_path)
+            routing_kernel = self._get_config_value(
+                lambda: self.config.model.mesh.spatial_routing_kernel,
+                default=None, dict_key='MESH_SPATIAL_ROUTING_KERNEL',
+            )
+            if routing_kernel:
+                from symfluence.models.mesh.spatial_routing import route_spatial_runoff
+                route_spatial_runoff(self.forcing_mesh_path, routing_kernel)
             outputs_ok = self._verify_outputs()
             # Check execution success (accept non-zero if outputs are valid)
             if outputs_ok:
@@ -178,7 +212,7 @@ class MESHRunner(BaseModelRunner):  # type: ignore[misc]
                          self.logger.debug("Last 20 lines of model log:")
                          for line in last_lines:
                              self.logger.debug(f"  {line.strip()}")
-                return None
+                raise ModelExecutionError(reason or 'MESH produced no complete usable output')
 
     def _create_run_command(self) -> List[str]:
         """
@@ -193,7 +227,7 @@ class MESHRunner(BaseModelRunner):  # type: ignore[misc]
         """
         # Copy mesh executable to forcing path (only if missing or outdated)
         mesh_exe_dest = self.forcing_mesh_path / self.mesh_exe.name
-        if not mesh_exe_dest.exists() or (
+        if (self.forcing_mesh_path / 'MESH_glacier_storage.ini').exists() or not mesh_exe_dest.exists() or (
             self.mesh_exe.stat().st_mtime > mesh_exe_dest.stat().st_mtime
         ):
             shutil.copy2(self.mesh_exe, mesh_exe_dest)
@@ -389,15 +423,17 @@ class MESHRunner(BaseModelRunner):  # type: ignore[misc]
         end = date_lines[-1]
         try:
             from datetime import timedelta
-            start_dt = datetime(start[0], 1, 1) + timedelta(days=start[1] - 1)
-            end_dt = datetime(end[0], 1, 1) + timedelta(days=end[1] - 1)
+            start_dt = datetime(start[0], 1, 1) + timedelta(days=start[1] - 1, hours=start[2], minutes=start[3])
+            end_dt = datetime(end[0], 1, 1) + timedelta(days=end[1] - 1, hours=end[2], minutes=end[3])
         except ValueError:
             return None
 
         if end_dt < start_dt:
             return None
 
-        return (end_dt - start_dt).days + 1
+        # MESH's native stop is exclusive; midnight is not another output day.
+        import math
+        return math.ceil((end_dt - start_dt).total_seconds() / 86400)
 
     def _count_csv_rows(self, path: Path) -> int:
         """Count data rows in a CSV file (excluding header)."""
@@ -446,7 +482,15 @@ class MESHRunner(BaseModelRunner):  # type: ignore[misc]
             # Lumped mode water balance outputs
             'Basin_average_water_balance.csv',
             'GRU_water_balance.csv',  # Hourly GRU water balance with ROF
+            'MESH_glacier_ledger.csv',
+            'MESH_glacier_storage.ini',
+            'glacier_manifest.json',
+            'MESH_spatial_streamflow.csv', 'MESH_routing_tail.csv', 'MESH_routing_balance.json',
         ]
+        if (self.forcing_mesh_path / 'spatial_diagnostics.json').exists():
+            from symfluence.models.mesh.preprocessing.spatial_units import SPATIAL_DIAGNOSTIC_FIELDS
+            outputs_to_copy += ['spatial_units.json', 'spatial_diagnostics.json', 'SNO_H.csv', 'LQWSSNO_H.csv']
+            outputs_to_copy += [f'{variable}_D.csv' for variable in SPATIAL_DIAGNOSTIC_FIELDS]
 
         for out_file in outputs_to_copy:
             # Check both forcing directory and results subdirectory
@@ -471,10 +515,15 @@ class MESHRunner(BaseModelRunner):  # type: ignore[misc]
             return
 
         stale_patterns = [
+            'MESH_glacier_ledger.csv', 'MESH_glacier_depletion.txt',
+            'SNO_H.csv', 'LQWSSNO_H.csv', 'cryosphere_metrics.json',
+            'MESH_spatial_streamflow.csv', 'MESH_routing_tail.csv', 'MESH_routing_balance.json',
             'MESH_output_*.csv', 'MESH_output_*.txt',
             'Basin_average_water_balance.csv',
             'GRU_water_balance.csv',
         ]
+        from symfluence.models.mesh.preprocessing.spatial_units import SPATIAL_DIAGNOSTIC_FIELDS
+        stale_patterns += [f'{variable}_D.csv' for variable in SPATIAL_DIAGNOSTIC_FIELDS]
         for pattern in stale_patterns:
             for stale_file in directory.glob(pattern):
                 stale_file.unlink()

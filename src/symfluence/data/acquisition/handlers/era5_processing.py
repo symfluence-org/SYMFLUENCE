@@ -336,65 +336,25 @@ def era5_to_summa_schema(
         processed_vars['specific_humidity'] = calculate_specific_humidity(dewpoint, pressure)
         logger.debug(f"Calculated specific humidity from {dew_var}, {pres_var}")
 
-    # === Accumulated variables (need de-accumulation) ===
-
-    # Precipitation
-    precip_var = find_variable(ds, 'precipitation', source)
-    if precip_var:
-        pptrate = deaccumulate_to_rate(
-            ds[precip_var], dt,
-            scale_factor=1000.0,  # m to mm
-            negate_if_negative=False,
-            var_name='precipitation_flux'
-        )
-        if source == 'arco':
-            processed_vars['precipitation_flux'] = pptrate
+    # CDS ERA5 single-levels supplies one-hour totals, not cumulative
+    # forecasts (ERA5-Land is different). Never infer this from monotonicity.
+    for logical, name, scale, negate in [
+        ('precipitation', 'precipitation_flux', 1000.0, False),
+        ('sw_radiation', 'surface_downwelling_shortwave_flux', 1.0, False),
+        ('lw_radiation', 'surface_downwelling_longwave_flux', 1.0, True),
+    ]:
+        variable = find_variable(ds, logical, source)
+        if not variable:
+            continue
+        if source == 'cds':
+            rate = ds[variable] * (scale / 3600.0)
         else:
-            # For CDS, prepend first value to maintain time dimension
-            original_times = ds['time'].values
-            first_val = pptrate.isel(time=0).drop_vars('time')
-            pptrate_full = xr.concat([first_val.expand_dims('time'), pptrate.drop_vars('time')], dim='time')
-            processed_vars['precipitation_flux'] = pptrate_full.assign_coords(time=original_times)
-        processed_vars['precipitation_flux'].attrs = SUMMA_VARIABLE_ATTRS['precipitation_flux']
-        logger.debug(f"Processed precipitation from {precip_var}")
+            rate = deaccumulate_to_rate(ds[variable], dt, scale_factor=scale,
+                                        negate_if_negative=negate, var_name=name)
+        processed_vars[name] = rate
+        processed_vars[name].attrs = SUMMA_VARIABLE_ATTRS[name]
 
-    # Shortwave radiation
-    sw_var = find_variable(ds, 'sw_radiation', source)
-    if sw_var:
-        sw_rad = deaccumulate_to_rate(
-            ds[sw_var], dt,
-            scale_factor=1.0,
-            negate_if_negative=False,
-            var_name='surface_downwelling_shortwave_flux'
-        )
-        if source == 'arco':
-            processed_vars['surface_downwelling_shortwave_flux'] = sw_rad
-        else:
-            original_times = ds['time'].values
-            first_val = sw_rad.isel(time=0).drop_vars('time')
-            sw_rad_full = xr.concat([first_val.expand_dims('time'), sw_rad.drop_vars('time')], dim='time')
-            processed_vars['surface_downwelling_shortwave_flux'] = sw_rad_full.assign_coords(time=original_times)
-        processed_vars['surface_downwelling_shortwave_flux'].attrs = SUMMA_VARIABLE_ATTRS['surface_downwelling_shortwave_flux']
-        logger.debug(f"Processed shortwave radiation from {sw_var}")
-
-    # Longwave radiation - CRITICAL: ERA5 may encode downward flux as negative
-    lw_var = find_variable(ds, 'lw_radiation', source)
-    if lw_var:
-        lw_rad = deaccumulate_to_rate(
-            ds[lw_var], dt,
-            scale_factor=1.0,
-            negate_if_negative=True,  # Handle negative downward flux convention
-            var_name='surface_downwelling_longwave_flux'
-        )
-        if source == 'arco':
-            processed_vars['surface_downwelling_longwave_flux'] = lw_rad
-        else:
-            original_times = ds['time'].values
-            first_val = lw_rad.isel(time=0).drop_vars('time')
-            lw_rad_full = xr.concat([first_val.expand_dims('time'), lw_rad.drop_vars('time')], dim='time')
-            processed_vars['surface_downwelling_longwave_flux'] = lw_rad_full.assign_coords(time=original_times)
-        processed_vars['surface_downwelling_longwave_flux'].attrs = SUMMA_VARIABLE_ATTRS['surface_downwelling_longwave_flux']
-
+    if 'surface_downwelling_longwave_flux' in processed_vars:
         # Validate longwave radiation
         lw_mean = float(processed_vars['surface_downwelling_longwave_flux'].mean().values)
         if lw_mean < 50:

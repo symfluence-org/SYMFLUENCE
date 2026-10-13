@@ -25,7 +25,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import easymore
 import netCDF4 as nc4
 import xarray as xr
 from tqdm import tqdm
@@ -53,11 +52,9 @@ def _init_worker_pool():
 
 def _create_easymore_instance():
     """Create an EASYMORE instance handling different module structures."""
-    if hasattr(easymore, "Easymore"):
-        return easymore.Easymore()
-    if hasattr(easymore, "easymore"):
-        return easymore.easymore()
-    raise AttributeError("easymore module does not expose an Easymore class")
+    from .easymore_compat import NativePointEasymore
+    return NativePointEasymore()
+
 
 
 class RemappingWeightGenerator(ConfigMixin):

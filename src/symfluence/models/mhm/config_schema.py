@@ -10,6 +10,8 @@ config system through ``R.config_schemas`` (via the model manifest /
 """
 from __future__ import annotations
 
+from typing import Literal, Optional
+
 from pydantic import BaseModel, Field
 
 from symfluence.core.config.models.base import FROZEN_CONFIG
@@ -44,3 +46,18 @@ class MHMConfig(BaseModel):
     timeout: int = Field(default=3600, alias='MHM_TIMEOUT', ge=60, le=86400)
     distributed_morph: bool = Field(default=False, alias='MHM_DISTRIBUTED')
     grid_res: float = Field(default=0.02, alias='MHM_GRID_RES', gt=0.0)
+
+    match_lumped_area: bool = Field(default=False, alias='MHM_MATCH_LUMPED_AREA')
+    # Model time step in hours; mHM accepts divisors of 24.
+    timestep: Literal[1, 2, 3, 4, 6, 12, 24] = Field(default=1, alias='MHM_TIMESTEP')
+
+    # Distributed-forcing options (only used with distributed_morph). The
+    # basin-mean forcing is taken to represent the basin-mean DEM elevation and
+    # temperature is lapsed to each cell's elevation; None keeps it uniform.
+    temp_lapse_rate: Optional[float] = Field(default=None, alias='MHM_TEMP_LAPSE_RATE')  # K/km
+    pet_method: Literal['hamon', 'oudin'] = Field(default='hamon', alias='MHM_PET_METHOD')
+    # Glacier outline (vector). Cells whose glacierised fraction is at least
+    # glacier_min_fraction become mHM land class 2 (fully sealed) and receive
+    # the external degree-day ice melt calibrated through glacierIceDDF.
+    glacier_outline: Optional[str] = Field(default=None, alias='MHM_GLACIER_OUTLINE')
+    glacier_min_fraction: float = Field(default=0.5, alias='MHM_GLACIER_MIN_FRACTION', ge=0.0, le=1.0)

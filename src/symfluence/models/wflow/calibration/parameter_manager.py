@@ -21,6 +21,7 @@ class WflowParameterManager(BaseParameterManager):
     """Handles Wflow parameter bounds, normalization, and file updates."""
 
     PARAM_VAR_MAP = {
+        'G_Cfmax': 'G_Cfmax', 'G_TT': 'G_TT', 'G_SIfrac': 'G_SIfrac',
         'KsatVer': 'KsatVer', 'f': 'f', 'SoilThickness': 'SoilThickness',
         'InfiltCapPath': 'InfiltCapPath', 'RootingDepth': 'RootingDepth',
         'KsatHorFrac': 'KsatHorFrac', 'n_river': 'N_River',
@@ -29,8 +30,11 @@ class WflowParameterManager(BaseParameterManager):
     }
 
     DEFAULT_BOUNDS = {
+        'G_Cfmax': {'min': 2.0, 'max': 12.0},
+        'G_TT': {'min': -2.0, 'max': 2.0},
+        'G_SIfrac': {'min': 0.001, 'max': 0.005},
         'KsatVer': {'min': 10.0, 'max': 3000.0},
-        'f': {'min': 0.5, 'max': 10.0},
+        'f': {'min': 0.0001, 'max': 0.01},
         'SoilThickness': {'min': 100.0, 'max': 5000.0},
         'InfiltCapPath': {'min': 10.0, 'max': 500.0},
         'RootingDepth': {'min': 50.0, 'max': 2000.0},
@@ -66,21 +70,30 @@ class WflowParameterManager(BaseParameterManager):
         params_list = [p.strip() for p in wflow_params_str.split(',') if p.strip()]
         # Always include routing params for lumped mode (post-hoc smoothing of
         # instantaneous net_runoff_volume_flux); they are no-ops for distributed.
-        for rp in sorted(self.ROUTING_PARAMS):
-            if rp not in params_list:
-                params_list.append(rp)
+        # Honor the configured list; no implicit added-water offset.
         self.params_to_calibrate = params_list
 
     def _get_parameter_names(self) -> List[str]:
         return list(self.params_to_calibrate)
 
     def _load_parameter_bounds(self) -> Dict[str, Dict[str, Any]]:
-        return {p: self.DEFAULT_BOUNDS[p] for p in self.params_to_calibrate if p in self.DEFAULT_BOUNDS}
+        bounds = {p: dict(self.DEFAULT_BOUNDS[p]) for p in self.params_to_calibrate if p in self.DEFAULT_BOUNDS}
+        overrides = self._get_config_value(
+            lambda: self.config.model.wflow.parameter_bounds,
+            default={}, dict_key='WFLOW_PARAMETER_BOUNDS') or {}
+        for name, limits in overrides.items():
+            if name not in bounds or set(limits) != {'min', 'max'}:
+                raise ValueError(f'Invalid Wflow bound override: {name}')
+            if not np.isfinite(list(limits.values())).all() or limits['min'] >= limits['max']:
+                raise ValueError(f'Invalid Wflow bounds for {name}')
+            bounds[name] = dict(limits)
+        return bounds
 
     # Physically-based defaults matching preprocessor output (baseline KGE ~0.04)
     # Much better starting point than midpoints of bounds for DDS
     PREPROCESSOR_DEFAULTS = {
-        'KsatVer': 250.0, 'f': 3.0, 'SoilThickness': 2000.0,
+        "G_Cfmax": 5.0, "G_TT": 0.0, "G_SIfrac": 0.001,
+        'KsatVer': 250.0, 'f': 0.003, 'SoilThickness': 2000.0,
         'InfiltCapPath': 50.0, 'RootingDepth': 500.0, 'KsatHorFrac': 50.0,
         'n_river': 0.036, 'PathFrac': 0.01, 'thetaS': 0.45, 'thetaR': 0.05,
         'Cfmax': 3.75, 'TT': 0.0, 'TTI': 1.0, 'TTM': 0.0, 'WHC': 0.1,
@@ -89,9 +102,15 @@ class WflowParameterManager(BaseParameterManager):
 
     def get_initial_parameters(self) -> Optional[Dict[str, Any]]:
         bounds = self._load_parameter_bounds()
+        specified = self._get_config_value(
+            lambda: self.config.model.wflow.initial_parameters,
+            default={}, dict_key='WFLOW_INITIAL_PARAMETERS') or {}
+        for name, value in specified.items():
+            if name not in bounds or not np.isfinite(value) or not bounds[name]['min'] <= value <= bounds[name]['max']:
+                raise ValueError(f'Invalid Wflow initial parameter: {name}')
         initial = {}
         for p, b in bounds.items():
-            default = self.PREPROCESSOR_DEFAULTS.get(p)
+            default = specified.get(p, self.PREPROCESSOR_DEFAULTS.get(p))
             if default is not None and b['min'] <= default <= b['max']:
                 initial[p] = default
             else:

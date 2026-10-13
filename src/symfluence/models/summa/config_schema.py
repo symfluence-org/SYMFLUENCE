@@ -70,6 +70,13 @@ class SUMMAConfig(BaseModel):
     glacier_mode: bool = Field(default=False, alias='SETTINGS_SUMMA_GLACIER_MODE')
     glacier_attributes: str = Field(default='attributes_glac.nc', alias='SETTINGS_SUMMA_GLACIER_ATTRIBUTES')
     glacier_coldstate: str = Field(default='coldState_glac.nc', alias='SETTINGS_SUMMA_GLACIER_COLDSTATE')
+    glacier_outline_path: Optional[str] = Field(default=None, alias='SUMMA_GLACIER_OUTLINE_PATH')
+    glacier_thickness_dir: Optional[str] = Field(default=None, alias='SUMMA_GLACIER_THICKNESS_DIR')
+    glacier_grid_resolution: float = Field(default=100., gt=0, alias='SUMMA_GLACIER_GRID_RESOLUTION')
+    # Optional calibration constraint: annual net glacier mass balance (';'-separated CSV
+    # with year index, annual_net_MB in m w.e. and g_area_dyn in km2). Adds GLACIER_SCORE.
+    glacier_mb_observations: Optional[str] = Field(default=None, alias='SUMMA_GLACIER_MB_OBSERVATIONS')
+    glacier_mb_error_scale: float = Field(default=1.0, gt=0, alias='SUMMA_GLACIER_MB_ERROR_SCALE')
     # Execution settings
     timeout: int = Field(default=7200, alias='SUMMA_TIMEOUT', ge=60, le=86400)  # seconds (1min to 24hr)
     backup_settings: str = Field(default='no', alias='EXPERIMENT_BACKUP_SETTINGS')
@@ -111,5 +118,10 @@ SUMMAConfig.LEGACY_FLAT_ALIASES = {
     'SETTINGS_SUMMA_GLACIER_MODE': 'glacier_mode',
     'SETTINGS_SUMMA_GLACIER_ATTRIBUTES': 'glacier_attributes',
     'SETTINGS_SUMMA_GLACIER_COLDSTATE': 'glacier_coldstate',
+    'SUMMA_GLACIER_OUTLINE_PATH': 'glacier_outline_path',
+    'SUMMA_GLACIER_THICKNESS_DIR': 'glacier_thickness_dir',
+    'SUMMA_GLACIER_GRID_RESOLUTION': 'glacier_grid_resolution',
+    'SUMMA_GLACIER_MB_OBSERVATIONS': 'glacier_mb_observations',
+    'SUMMA_GLACIER_MB_ERROR_SCALE': 'glacier_mb_error_scale',
     'SETTINGS_SUMMA_SOILPROFILE': 'soilprofile',
 }

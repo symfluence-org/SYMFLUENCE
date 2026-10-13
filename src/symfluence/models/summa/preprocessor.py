@@ -12,6 +12,7 @@ the preprocessing workflow for SUMMA model runs.
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from typing import Optional, Tuple
 
 # Third-party imports
@@ -283,6 +284,25 @@ class SummaPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         or when the file manager name contains 'glac'.
         """
         self.logger.info("Running glacier preprocessing for SUMMA")
+
+        glacier = self.config.model.summa
+        if glacier.glacier_outline_path or glacier.glacier_thickness_dir:
+            if not (glacier.glacier_outline_path and glacier.glacier_thickness_dir):
+                raise ValueError('Explicit glacier geometry requires both outlines and thickness rasters')
+            from .glacier_geometry import prepare_glacier_geometry
+            # These are the freshly generated inputs already named in the file
+            # manager. Fail visibly rather than silently running without ice.
+            prepare_glacier_geometry(
+                self.setup_dir / self.attribute_name,
+                self.setup_dir / self.coldstate_name,
+                self.catchment_path / self.catchment_name,
+                self.dem_path,
+                Path(glacier.glacier_outline_path),
+                Path(glacier.glacier_thickness_dir),
+                glacier.glacier_grid_resolution,
+                self.hruId,
+            )
+            return
 
         try:
             # Check if glacier files already exist (user-provided)

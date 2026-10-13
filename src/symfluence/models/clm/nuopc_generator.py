@@ -1050,10 +1050,20 @@ WAV_attributes::
         (self.pp.settings_dir / 'drv_flds_in').write_text(content)
         logger.debug("Generated drv_flds_in")
 
+    def _build_case_path(self) -> Path:
+        """Resolve the case belonging to the installed binary, including symlink installs."""
+        install = self.pp._get_install_path()
+        for exe in (install / 'bin' / 'cesm.exe', install / 'cesm.exe'):
+            if exe.exists():
+                candidate = exe.resolve().parent.parent
+                if (candidate / 'run' / 'fd.yaml').is_file():
+                    return candidate
+        return install / 'cases' / 'symfluence_build'
+
     def _copy_fd_yaml(self) -> None:
         """Copy fd.yaml field dictionary from CLM install."""
         install_path = self.pp._get_install_path()
-        fd_src = install_path / 'cases' / 'symfluence_build' / 'run' / 'fd.yaml'
+        fd_src = self._build_case_path() / 'run' / 'fd.yaml'
 
         if fd_src.exists():
             shutil.copy2(fd_src, self.pp.settings_dir / 'fd.yaml')
@@ -1064,7 +1074,7 @@ WAV_attributes::
     def _write_caseroot(self) -> None:
         """Write CASEROOT pointer file."""
         install_path = self.pp._get_install_path()
-        case_dir = install_path / 'cases' / 'symfluence_build'
+        case_dir = self._build_case_path()
         (self.pp.settings_dir / 'CASEROOT').write_text(str(case_dir) + '\n')
         logger.debug("Generated CASEROOT")
 

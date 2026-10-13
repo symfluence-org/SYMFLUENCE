@@ -394,6 +394,15 @@ def _run_summa_worker(summa_exe: Path, file_manager: Path, summa_dir: Path, logg
                 env=env,
             )
             if result:
+                from symfluence.core.exceptions import ValidationError
+                from symfluence.models.summa.output_validation import validate_output_coverage
+                try:
+                    validate_output_coverage(file_manager, summa_dir,
+                                             (config or {}).get('FORCING_TIME_STEP_SIZE'))
+                except (ValidationError, ValueError) as exc:
+                    logger.error(str(exc))
+                    debug_info['errors'].append(str(exc))
+                    return False
                 return True
             log_once(logger, logging.WARNING, key='summa-parallel-gru-fallback',
                      message="Parallel GRU execution did not succeed, falling back to sequential")
@@ -436,6 +445,15 @@ def _run_summa_worker(summa_exe: Path, file_manager: Path, summa_dir: Path, logg
                 )
 
         # Check if output files were created
+        from symfluence.core.exceptions import ValidationError
+        from symfluence.models.summa.output_validation import validate_output_coverage
+        try:
+            validate_output_coverage(file_manager, summa_dir,
+                                     (config or {}).get('FORCING_TIME_STEP_SIZE'))
+        except (ValidationError, ValueError) as exc:
+            logger.error(str(exc))
+            debug_info['errors'].append(str(exc))
+            return False
         timestep_files = list(summa_dir.glob("*timestep.nc"))
         if not timestep_files:
             # Look for any .nc files

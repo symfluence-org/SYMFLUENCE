@@ -1105,11 +1105,14 @@ class BaseModelOptimizer(
                 'crash_rate': crash_stats['crash_rate'],
             })
             self.record_iteration(iteration, score, params, additional_metrics=merged)
-            if iteration > 0 and iteration % checkpoint_interval == 0:
-                save_checkpoint(iteration)
 
         def update_best(score, params, iteration):
             self.update_best(score, params, iteration)
+            # Algorithms record the current iteration before updating the
+            # best solution. Persist both only after that update, otherwise
+            # an improving checkpoint has a current CSV but stale best JSON.
+            if iteration > 0 and iteration % checkpoint_interval == 0:
+                save_checkpoint(iteration)
 
         def log_progress(alg_name, iteration, best_score, n_improved=None, pop_size=None,
                          secondary_score=None, secondary_label=None, unit='evals',

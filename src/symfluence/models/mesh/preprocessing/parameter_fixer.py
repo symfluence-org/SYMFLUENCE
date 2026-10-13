@@ -442,20 +442,9 @@ class MESHParameterFixer(ConfigMixin):
                 else:
                     self.logger.debug("All standard routing parameters present (R2N, R1N, PWR, FLZ)")
 
-            calibratable_defaults = {
-                'RCHARG': (0.20, 'Recharge fraction to groundwater (typical 0.1-0.3)'),
-                'FRZTH': (0.10, 'Frozen soil infiltration threshold (m)'),
-            }
-
-            for param_name, (default_val, description) in calibratable_defaults.items():
-                if not re.search(rf'\b{param_name}\b', content):
-                    if not content.endswith('\n'):
-                        content += '\n'
-                    content += f"{param_name}  {default_val:.6f}  # {description}\n"
-                    modified = True
-                    self.logger.info(
-                        f"Pre-populated {param_name}={default_val} in {self.hydro_path.name}"
-                    )
+            # Do not append RCHARG/FRZTH: neither is recognized by the
+            # supported native reader. Frozen inputs are written explicitly
+            # after GRU/glacier geometry is finalized.
 
             if modified:
                 with open(self.hydro_path, 'w', encoding='utf-8') as f:
@@ -466,9 +455,8 @@ class MESHParameterFixer(ConfigMixin):
 
     # GRU-dependent hydrology parameters (one value per GRU column).
     # meshflow emits these under the "GRU class dependent hydrologic parameters"
-    # section; ZSNL/ZPLS/ZPLG are the standard set, and RCHARG/FRZTH are appended
-    # by fix_missing_hydrology_params.
-    _GRU_DEPENDENT_HYDRO_PARAMS = ('ZSNL', 'ZPLS', 'ZPLG', 'RCHARG', 'FRZTH', 'DDEN', 'MANN')
+    # section; frozen fields are written later by the explicit frozen-soil writer.
+    _GRU_DEPENDENT_HYDRO_PARAMS = ('ZSNL', 'ZPLS', 'ZPLG', 'FRZC', 'DDEN', 'MANN')
 
     def fix_gru_dependent_hydrology_params(self) -> None:
         """Expand GRU-dependent hydrology parameters to one value per GRU.
@@ -484,8 +472,8 @@ class MESHParameterFixer(ConfigMixin):
 
         Only the parameters MESH actually reads — the first ``count`` lines of the
         section, as declared by that section's own count — are expanded. Trailing
-        scalar lines that fix_missing_hydrology_params appends *after* the counted
-        block (RCHARG/FRZTH) are left untouched: MESH stops reading at ``count``
+        legacy scalar lines *after* the counted
+        block are left untouched: MESH stops reading at ``count``
         and never sees them, exactly as in the working lumped file. The section
         count is preserved. Single-GRU (lumped) files are already correct and
         pass through unchanged.

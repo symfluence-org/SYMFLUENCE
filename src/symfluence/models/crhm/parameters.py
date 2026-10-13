@@ -64,7 +64,7 @@ PARAM_BOUNDS = {
     'A_S':              {'min': 0.001, 'max': 0.01},      # snow age decay
     'N_S':              {'min': 50.0,  'max': 500.0},     # vegetation density
     'inhibit_subl':     {'min': 0.0,   'max': 1.0},       # 0/1 switch: PBSM blowing-snow sublimation off
-    'Qe_subl_from_SWE': {'min': 0.0,   'max': 1.0},       # fraction of snowpack sublimation (ebsm)
+    'Qe_subl_from_SWE': {'min': 0.0,   'max': 1.0},       # native integer switch, not a continuous fraction
     # -- Soil --
     'Ksat':             {'min': 0.01,  'max': 100.0},     # saturated hydraulic conductivity [mm/hr]
     'gw_K':             {'min': 0.0001, 'max': 1.0},      # gw recession [1/d]

@@ -187,6 +187,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 import geopandas as gpd
+import xarray as xr
 
 from symfluence.core.path_resolver import PathResolverMixin
 from symfluence.data.preprocessing.dataset_handlers.base_dataset import BaseDatasetHandler
@@ -585,52 +586,91 @@ class ForcingResampler(PathResolverMixin):
 
         self.logger.debug(f"Found {len(forcing_files)} forcing files to process")
 
-        # STEP 1: Create remapping weights once
-        source_shp_path = self.project_dir / 'shapefiles' / 'forcing' / f"forcing_{self._get_config_value(lambda: self.config.forcing.dataset)}.shp"
-        # Use backward-compatible catchment path resolution
-        target_shp_path = self._get_catchment_file_path(self.catchment_name)
+        # Each coordinate layout owns its geometry and weight cache. In particular,
+        # monthly archives can change coordinates without changing array shape.
+        import hashlib
+        import json
+        import shutil
+        import tempfile
+        import uuid
 
-        remap_file = self.weight_generator.create_weights(
-            sample_forcing_file=forcing_files[0],
-            intersect_path=intersect_path,
-            source_shp_path=source_shp_path,
-            target_shp_path=target_shp_path
+        from .resampling.grid_identity import (
+            grid_signature,
+            manifest_path,
+            output_matches,
+            target_signature,
         )
 
-        # Transfer cached shapefile info to weight applier
-        self.weight_applier.set_shapefile_cache(
-            self.weight_generator.cached_target_shp_wgs84,
-            self.weight_generator.cached_hru_field
-        )
-
-        # STEP 2: Filter already processed files
-        remaining_files = self.file_processor.filter_processed_files(forcing_files)
-        if not remaining_files:
-            self.logger.debug("All files have already been processed")
-            return
-
-        # STEP 3: Apply remapping weights
+        coordinates = self.dataset_handler.get_coordinate_names()
+        groups = {}
+        for file in forcing_files:
+            groups.setdefault(grid_signature(file, coordinates), []).append(file)
+        target = self._get_catchment_file_path(self.catchment_name)
+        # Configuration affects field selection and source geometry construction.
+        config_dict = self.config.to_dict(flatten=True) if hasattr(self.config, 'to_dict') else dict(self.config)
+        config_hash = hashlib.sha256(json.dumps(config_dict, sort_keys=True, default=str).encode()).hexdigest()
+        target_hash = target_signature(target)
+        self.logger.info(f"Remapping {len(forcing_files)} files on {len(groups)} distinct coordinate grids")
         requested_cpus = int(self._get_config_value(lambda: self.config.system.num_processes, default=1))
-        max_available_cpus = mp.cpu_count()
-        use_parallel = requested_cpus > 1 and max_available_cpus > 1
-
-        if use_parallel:
-            num_cpus = min(requested_cpus, max_available_cpus, 20, len(remaining_files))
-            self.logger.debug(f"Using parallel processing with {num_cpus} CPUs")
-            success_count = self._process_files_parallel(remaining_files, num_cpus, remap_file)
-        else:
-            self.logger.debug("Using serial processing")
-            success_count = self._process_files_serial(remaining_files, remap_file)
-
-        already_processed = len(forcing_files) - len(remaining_files)
-        self.logger.debug(
-            f"Processing complete: {success_count} files processed successfully "
-            f"out of {len(remaining_files)}"
-        )
-        self.logger.debug(
-            f"Total files processed or skipped: {success_count + already_processed} "
-            f"out of {len(forcing_files)}"
-        )
+        for grid, files in groups.items():
+            signature = hashlib.sha256((grid + target_hash + config_hash).encode()).hexdigest()
+            cache = intersect_path / signature
+            cache.mkdir(parents=True, exist_ok=True)
+            source_dir = self.shapefile_path / signature
+            source_dir.mkdir(parents=True, exist_ok=True)
+            source = source_dir / f"forcing_{self._get_config_value(lambda: self.config.forcing.dataset)}.shp"
+            ready = source_dir / 'grid_signature.txt'
+            if not source.exists() or not ready.exists() or ready.read_text() != grid:
+                # Handlers accept a directory. Give them only this grid's sample,
+                # copied rather than linked: coordinate normalization must never
+                # mutate a shared forcing archive as a side effect of this step.
+                with tempfile.TemporaryDirectory(dir=cache) as scratch:
+                    sample = Path(scratch) / files[0].name
+                    with xr.open_dataset(files[0]) as ds:
+                        ds.isel(time=slice(0, 1)).to_netcdf(sample)
+                    source = self.dataset_handler.create_shapefile(
+                        shapefile_path=source_dir, merged_forcing_path=Path(scratch),
+                        dem_path=self.dem_path,
+                        elevation_calculator=self.elevation_calculator.calculate,
+                    )
+                    if grid_signature(sample, coordinates) != grid:
+                        raise ValueError('Forcing coordinates require normalization before remapping; rerun forcing standardization')
+                    ready.write_text(grid)
+            # Snapshot target components within this identity's cache, so an old
+            # sibling WGS84 reprojection cannot hide changed target geometry.
+            target_dir = cache / 'target'
+            target_dir.mkdir(exist_ok=True)
+            cached_target = target_dir / target.name
+            for component in target.parent.glob(target.stem + '.*'):
+                if component.suffix in ('.shp', '.shx', '.dbf', '.prj', '.cpg', '.gpkg'):
+                    destination = target_dir / component.name
+                    if not destination.exists():
+                        shutil.copy2(component, destination)
+            remap_file = self.weight_generator.create_weights(
+                sample_forcing_file=files[0], intersect_path=cache,
+                source_shp_path=source, target_shp_path=cached_target,
+            )
+            manifest = dict(grid_signature=grid, signature=signature,
+                            coordinate_names=list(coordinates), target_signature=target_hash)
+            destination = manifest_path(remap_file)
+            staged = destination.with_suffix(f'.{uuid.uuid4().hex}.tmp')
+            staged.write_text(json.dumps(manifest, indent=2))
+            staged.replace(destination)
+            self.weight_applier.set_shapefile_cache(
+                self.weight_generator.cached_target_shp_wgs84,
+                self.weight_generator.cached_hru_field,
+            )
+            remaining = set(self.file_processor.filter_processed_files(files))
+            remaining.update(file for file in files if not output_matches(
+                self.file_processor.determine_output_filename(file), signature))
+            remaining = [file for file in files if file in remaining]
+            if not remaining:
+                continue
+            num_cpus = min(requested_cpus, mp.cpu_count(), 20, len(remaining))
+            success = (self._process_files_parallel(remaining, num_cpus, remap_file)
+                       if num_cpus > 1 else self._process_files_serial(remaining, remap_file))
+            if success != len(remaining):
+                raise RuntimeError(f'Remapping incomplete for grid {grid[:12]}: {success}/{len(remaining)} files')
 
     def _process_files_serial(self, files, remap_file):
         """Process files in serial mode."""

@@ -11,6 +11,7 @@ Handles MESH parameter bounds, normalization, and .ini file updates.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -24,6 +25,8 @@ from symfluence.core.calibration.parameters.parameter_bounds_registry import get
 from symfluence.core.logging_utils import log_once
 from symfluence.core.mixins.project import resolve_data_subdir
 from symfluence.core.registries import R
+
+from .glacier_parameters import ICE_CLASS, ICE_HYDRO, LAND_HYDRO, ice_mask, update_gru_arrays
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +115,8 @@ class MESHParameterManager(BaseParameterManager):
             # Hydrology: FLZ/PWR (baseflow recession)
             #
             # Excluded from default:
-            #   ZSNL/ZPLS — ponding depth params, minimal streamflow impact
+            #   ZSNL — snow depth for full cover; opt in for snow observations
+            #   ZPLS — ponding depth over snow
             #   RCHARG — groundwater recharge; can cause water balance issues
             #             without paired DRAINFRAC
             #   WF_R2/R2N — routing params, inert in noroute mode (auto-removed
@@ -148,6 +152,8 @@ class MESHParameterManager(BaseParameterManager):
         # NOTE: meshflow creates MESH_parameters_hydrology.ini with ZSNL, ZPLS, ZPLG, WF_R2
         # CLASS.ini has fixed-format parameters that control runoff generation
         self.param_file_map = {
+            **{key: 'CLASS' for key in ICE_CLASS},
+            **{key: 'hydrology' for key in ICE_HYDRO},
             # CLASS.ini parameters (fixed-format, control runoff)
             'KSAT': 'CLASS',      # Saturated hydraulic conductivity (mm/hr) - Line 13, pos 4
             'DRN': 'CLASS',       # Drainage parameter - Line 12, pos 1
@@ -174,7 +180,7 @@ class MESHParameterManager(BaseParameterManager):
             'PWR': 'hydrology',    # Power coefficient for LZS drainage
             # Legacy parameters (may not exist in meshflow-generated files)
             # FRZTH is a soil parameter written to hydrology.ini via key-value format.
-            # Note: FREZTH in run_options is a separate flag (frozen soil infiltration on/off);
+            # FREZTH is a distinct glacier pond-refreezing temperature (degrees C);
             # FRZTH here is the frozen soil infiltration *threshold* depth (m).
             'FRZTH': 'hydrology',
             'MANN': 'hydrology',
@@ -205,7 +211,9 @@ class MESHParameterManager(BaseParameterManager):
         # Build mapping from block index to NALCMS class ID for multipliers
         # This reads the landcover stats CSV to determine which NALCMS classes
         # correspond to which CLASS.ini blocks (blocks are ordered by frac_* column order)
-        self.block_to_nalcms = self._build_block_to_nalcms_mapping()
+        self.block_to_nalcms = (
+            self._build_block_to_nalcms_mapping() if self.use_landcover_multipliers else {}
+        )
 
     def _get_parameter_names(self) -> List[str]:
         """Return MESH parameter names from config."""
@@ -500,10 +508,14 @@ class MESHParameterManager(BaseParameterManager):
         bounds = get_mesh_bounds()
 
         # Override with config-specified bounds if available
-        config_bounds = self._get_config_value(lambda: None, default={}, dict_key='MESH_PARAM_BOUNDS')
+        config_bounds = self._get_config_value(lambda: self.config.model.mesh.param_bounds, default={}, dict_key='MESH_PARAM_BOUNDS')
         if config_bounds:
             self.logger.debug(f"Using config-specified MESH bounds for: {list(config_bounds.keys())}")
             self._apply_config_bounds_override(bounds, config_bounds)
+
+        for name in getattr(self, 'mesh_params', []):
+            if (name in ICE_CLASS or name in ICE_HYDRO) and name not in bounds:
+                raise ValueError(f'{name} requires explicit MESH_PARAM_BOUNDS; no glacier bounds are assumed')
 
         return bounds
 
@@ -875,6 +887,11 @@ class MESHParameterManager(BaseParameterManager):
 
             # Re-detect GRU blocks in case file changed
             blocks = self._detect_all_gru_blocks_from_lines(lines)
+            surfaces = ice_mask(lines)
+            if any(name in ICE_CLASS for name in params):
+                targets = surfaces if self.apply_to_all_grus else surfaces[:1]
+                if not any(targets):
+                    raise ValueError('Requested glacier CLASS parameters have no targeted ice GRU')
             if not blocks:
                 # Fall back to single-block behavior
                 blocks = [{'class_id': None, 'drn_line': 12, 'xslp_line': 13, 'block_index': 0}]
@@ -926,8 +943,17 @@ class MESHParameterManager(BaseParameterManager):
                     multiplier = multipliers.get(param_name, 1.0)
                     value = multiplied_params[param_name]
 
+                    is_ice = surfaces[block_idx] if block_idx < len(surfaces) else False
+                    if is_ice != (param_name in ICE_CLASS):
+                        continue
+
                     # Determine which line this parameter is on
-                    if param_name in ['DRN', 'SDEP']:
+                    if param_name in ICE_CLASS:
+                        marker, pos_idx = ICE_CLASS[param_name]
+                        start = drn_line - 7
+                        line_idx = next(i for i in range(max(0, start), drn_line) if marker in lines[i])
+                        num_values = 9
+                    elif param_name in ['DRN', 'SDEP']:
                         line_idx = drn_line
                         pos_idx = 0 if param_name == 'DRN' else 1
                         num_values = 4
@@ -1049,9 +1075,23 @@ class MESHParameterManager(BaseParameterManager):
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
 
-            updated = 0
+            gru_params = {key: value for key, value in params.items() if key in LAND_HYDRO or key in ICE_HYDRO}
+            if 'GRU class dependent hydrologic parameters' not in content and not any(key in ICE_HYDRO for key in params):
+                gru_params = {}  # Legacy flat key/value format has no counted arrays.
+            if gru_params:
+                class_file = self._resolve_ini_file('CLASS')
+                land_mask = None
+                spatial_manifest = class_file.parent / 'spatial_units.json'
+                if spatial_manifest.exists():
+                    units = json.loads(spatial_manifest.read_text())['units']
+                    land_mask = [u['surface'] == 'land' and u.get('modis') != 17 for u in units]
+                content = update_gru_arrays(content, gru_params, ice_mask(class_file.read_text().splitlines()), land_mask)
+
+            updated = len(gru_params)
             injected = 0
             for param_name, value in params.items():
+                if param_name in gru_params:
+                    continue
                 if param_name in self.ARRAY_PARAMS:
                     # Handle array parameters (e.g., WF_R2 has one value per river class)
                     # Format: WF_R2  0.30    0.30    0.30  # comment
@@ -1152,6 +1192,24 @@ class MESHParameterManager(BaseParameterManager):
             file_path = self._resolve_ini_file(file_type)
             if file_path is None:
                 return None
+
+            if param_name in ICE_CLASS:
+                lines = file_path.read_text().splitlines()
+                blocks = self._detect_all_gru_blocks_from_lines(lines)
+                for block, is_ice in zip(blocks, ice_mask(lines)):
+                    if is_ice:
+                        marker, position = ICE_CLASS[param_name]
+                        row = next(line for line in lines[max(0, block['drn_line']-7):block['drn_line']]
+                                   if marker in line)
+                        return float(row.split()[position])
+                return None
+            if param_name in ICE_HYDRO:
+                flags = ice_mask(self._resolve_ini_file('CLASS').read_text().splitlines())
+                if not any(flags):
+                    return None
+                row = next((line.split('#')[0].split()[1:] for line in file_path.read_text().splitlines()
+                            if line.strip().startswith(param_name+' ')), None)
+                return float(row[flags.index(True)] if len(row) > 1 else row[0]) if row else ICE_HYDRO[param_name]
 
             # CLASS parameters are positional (fixed-format lines)
             if file_type == 'CLASS':
