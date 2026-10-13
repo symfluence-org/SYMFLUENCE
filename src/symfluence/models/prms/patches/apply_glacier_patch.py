@@ -1,6 +1,11 @@
 """Apply the version-pinned PRMS 5.2.1.1 glacier patch to a source tree."""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import subprocess
 from pathlib import Path
-import argparse,hashlib,json,subprocess
 
 
 def apply(source: Path):

@@ -1,7 +1,11 @@
 """Ensure calibration cannot corrupt HRU-by-month PRMS parameter blocks."""
+from __future__ import annotations
+
 import pytest
-from symfluence.models.prms.calibration.worker import PRMSWorker
+
 from symfluence.models.prms.calibration.parameter_manager import PRMSParameterManager
+from symfluence.models.prms.calibration.worker import PRMSWorker
+
 
 @pytest.mark.parametrize('dimensions,count', [('nmonths',12), ('nhru\nnmonths',60)])
 def test_updates_preserve_dimensions(dimensions,count):

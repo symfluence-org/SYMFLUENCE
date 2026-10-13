@@ -1,6 +1,10 @@
+from __future__ import annotations
+
 import numpy as np
 import pytest
+
 from symfluence.models.prms.balance import check_water_balance
+
 
 @pytest.mark.parametrize('leak',[0.,.1])
 def test_glacier_snow_is_not_double_counted(tmp_path,leak):

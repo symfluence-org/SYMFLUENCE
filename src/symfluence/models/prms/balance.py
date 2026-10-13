@@ -1,5 +1,8 @@
 """Native PRMS basin balance, including the fixed-extent glacier convention."""
+from __future__ import annotations
+
 from pathlib import Path
+
 import numpy as np
 
 

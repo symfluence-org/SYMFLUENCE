@@ -1,4 +1,6 @@
 """PRMS routing chain, land/glacier depletion curves and climate_hru forcing."""
+from __future__ import annotations
+
 from datetime import datetime
 from types import SimpleNamespace as NS
 

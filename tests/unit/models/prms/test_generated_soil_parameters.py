@@ -1,6 +1,10 @@
 """Generated PRMS5 soil capacities must be active and internally consistent."""
+from __future__ import annotations
+
 from types import SimpleNamespace as NS
+
 import pytest
+
 from symfluence.models.prms.preprocessor import PRMSPreProcessor
 
 PROPS=dict(lat=64.,lon=-19.,elev=700.,area_km2=1145.,slope=5.,aspect=0.)
@@ -38,6 +42,7 @@ def test_prms_soil_defaults_preserve_depths(tmp_path,mode):
     (False,'auto','strmflow'),(True,'auto','muskingum'),(False,'muskingum','muskingum')])
 def test_glacier_discharge_uses_supported_routing(tmp_path,glacier,requested,expected):
     from datetime import datetime
+
     from symfluence.models.prms.config_schema import PRMSConfig
     p=object.__new__(PRMSPreProcessor);p.settings_dir=tmp_path;p.forcing_dir=tmp_path
     p.config=NS(model=NS(prms=PRMSConfig(glacier_flag=glacier,streamflow_module=requested)))
@@ -49,6 +54,7 @@ def test_glacier_discharge_uses_supported_routing(tmp_path,glacier,requested,exp
 
 def test_glacier_rejects_routing_that_discards_melt(tmp_path):
     from datetime import datetime
+
     from symfluence.models.prms.config_schema import PRMSConfig
     p=object.__new__(PRMSPreProcessor);p.settings_dir=tmp_path;p.forcing_dir=tmp_path
     p.config=NS(model=NS(prms=PRMSConfig(glacier_flag=True,streamflow_module='strmflow')))
@@ -58,6 +64,7 @@ def test_glacier_rejects_routing_that_discards_melt(tmp_path):
 
 def test_fixed_glacier_geometry_requires_capable_binary_and_pure_hrus(tmp_path):
     from datetime import datetime
+
     from symfluence.models.prms.config_schema import PRMSConfig
     p=object.__new__(PRMSPreProcessor);p.settings_dir=tmp_path;p.forcing_dir=tmp_path
     p._get_config_value=lambda getter,default=None,**kw:getter()

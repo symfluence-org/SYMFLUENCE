@@ -1,4 +1,6 @@
 """Calibration-only snow/annual glacier constraints for fixed pure-ice HRUs."""
+from __future__ import annotations
+
 import json
 from pathlib import Path
 
