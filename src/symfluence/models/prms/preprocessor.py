@@ -201,7 +201,7 @@ class PRMSPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
         names = {'precipitation_flux': 'precip', 'air_temperature': 'temp',
                  'surface_downwelling_shortwave_flux': 'swrad'}
-        parts = {v: [] for v in names.values()}
+        parts: dict[str, list[pd.DataFrame]] = {v: [] for v in names.values()}
         step = None
         # Monthly files opened one at a time: open_mfdataset on per-timestep
         # chunks is orders of magnitude slower for these small stores.

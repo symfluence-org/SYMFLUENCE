@@ -46,8 +46,9 @@ def calculate_constraints(statvar, parameters, project_dir, period, snow_scale=.
         raise ValidationError('Fewer than 30 paired snow observations')
     annual = pd.read_csv(observations / 'glacier_timeseries.csv', sep=';', index_col=0)
     years = []
-    for y, row in annual.iterrows():
-        left, right = pd.Timestamp(int(y)-1, 9, 30), pd.Timestamp(int(y), 9, 30)
+    for label, row in annual.iterrows():
+        y = int(str(label))
+        left, right = pd.Timestamp(y-1, 9, 30), pd.Timestamp(y, 9, 30)
         if left < start or right > end:
             continue
         if not np.isfinite(row.annual_net_MB) or not np.isfinite(row.g_area_dyn) or row.g_area_dyn <= 0:
@@ -57,7 +58,7 @@ def calculate_constraints(statvar, parameters, project_dir, period, snow_scale=.
         sim = (f.loc[right, 'basin_gl_storage_1']-f.loc[left, 'basin_gl_storage_1'])*.0254*area.sum()/row.g_area_dyn
         if not np.isfinite(sim):
             raise ModelExecutionError('Nonfinite glacier balance')
-        years.append(dict(year=int(y), simulated_mwe=float(sim), observed_mwe=float(row.annual_net_MB)))
+        years.append(dict(year=y, simulated_mwe=float(sim), observed_mwe=float(row.annual_net_MB)))
     if not years:
         raise ValidationError('No complete calibration glacier years')
     snow_rmse = float(np.sqrt(((pair.s-pair.o)**2).mean()))
