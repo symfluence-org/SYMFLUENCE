@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Dict, Optional, Tuple
 
+from symfluence.core.exceptions import ConfigurationError
+
 DERIVED_PARAMETERS = ('land_sca_max',)
 _POINTS = 11
 
@@ -20,13 +22,13 @@ def _curve_block(blocks):
         if lines and lines[0].strip() == 'snarea_curve':
             ndim = int(lines[1])
             return i, lines, 4 + ndim
-    raise ValueError('land_sca_max needs a snarea_curve block')
+    raise ConfigurationError('land_sca_max needs a snarea_curve block')
 
 
 def _two_curves(lines, start):
     values = [float(v) for v in lines[start:]]
     if len(values) != 2 * _POINTS:
-        raise ValueError('land_sca_max needs separate land and glacier depletion curves '
+        raise ConfigurationError('land_sca_max needs separate land and glacier depletion curves '
                          '(PRMS_SEPARATE_GLACIER_DEPLETION_CURVE: true)')
     return values[:_POINTS], values[_POINTS:]
 
@@ -38,7 +40,7 @@ def apply_derived_parameters(content: str, params: Dict[str, float]) -> Tuple[st
         return content, native
     value = float(params['land_sca_max'])
     if not 0. < value <= 1.:
-        raise ValueError(f'land_sca_max must be in (0, 1], got {value}')
+        raise ConfigurationError(f'land_sca_max must be in (0, 1], got {value}')
     blocks = content.split('####\n')
     i, lines, start = _curve_block(blocks)
     _, glacier = _two_curves(lines, start)

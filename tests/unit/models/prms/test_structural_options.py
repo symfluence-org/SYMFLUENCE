@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 import xarray as xr
 
+from symfluence.core.exceptions import ConfigurationError
 from symfluence.models.prms.calibration.parameter_manager import PRMSParameterManager
 from symfluence.models.prms.calibration.worker import PRMSWorker
 from symfluence.models.prms.config_schema import PRMSConfig
@@ -60,13 +61,13 @@ def test_routing_chain_and_separate_curves(tmp_path):
 
 def test_separate_curves_need_land_and_glacier_hrus(tmp_path):
     p = preprocessor(tmp_path, nhru=3, glacier_flag=True, separate_glacier_depletion_curve=True)
-    with pytest.raises(ValueError, match='pure land/glacier'):
+    with pytest.raises(ConfigurationError, match='pure land/glacier'):
         p._generate_parameter_file()
 
 
 def test_multiple_reaches_require_muskingum(tmp_path):
     p = preprocessor(tmp_path, routing_segments=2, streamflow_module='strmflow')
-    with pytest.raises(ValueError, match='muskingum'):
+    with pytest.raises(ConfigurationError, match='muskingum'):
         p._generate_control_file(datetime(2010, 1, 1), datetime(2010, 12, 31))
 
 
@@ -98,7 +99,7 @@ def test_land_sca_max_is_idempotent_and_readable(tmp_path):
 def test_land_sca_max_rejects_single_curve(tmp_path):
     p = preprocessor(tmp_path, nhru=3)
     p._generate_parameter_file()
-    with pytest.raises(ValueError, match='separate land and glacier'):
+    with pytest.raises(ConfigurationError, match='separate land and glacier'):
         apply_derived_parameters((tmp_path / 'params.dat').read_text(), {'land_sca_max': 0.7})
 
 
@@ -151,5 +152,5 @@ def test_climate_hru_rejects_missing_source_hru(tmp_path):
     write_hru_forcing(tmp_path / 'hru')
     p = preprocessor(tmp_path, nhru=2, forcing_mode='climate_hru', hru_forcing_path=str(tmp_path / 'hru'),
                      hru_forcing_map=[1, 5])
-    with pytest.raises(ValueError, match='lacks source hruIds'):
+    with pytest.raises(ConfigurationError, match='lacks source hruIds'):
         p._write_cbh_files(datetime(2010, 1, 1), datetime(2010, 1, 2, 23))

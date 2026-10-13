@@ -7,6 +7,8 @@ import json
 import subprocess
 from pathlib import Path
 
+from symfluence.core.exceptions import ValidationError
+
 
 def apply(source: Path):
     here=Path(__file__).resolve().parent
@@ -17,12 +19,12 @@ def apply(source: Path):
         digest=hashlib.sha256(content.encode()).hexdigest()
         state=next((name for name in ['before','after'] if digest==expected[name+'_normalized_sha256']),None)
         if state is None:
-            raise ValueError(f'Unexpected source version or local modifications: {relative}')
+            raise ValidationError(f'Unexpected source version or local modifications: {relative}')
         states.append(state)
     if all(state=='after' for state in states):
         print('Glacier conservation patch already applied');return
     if not all(state=='before' for state in states):
-        raise ValueError('Partially patched source tree; restore a complete source snapshot first')
+        raise ValidationError('Partially patched source tree; restore a complete source snapshot first')
     for relative in manifest:
         p=source/relative;p.write_text(p.read_text())  # normalize upstream CRLF
     patch=here/'prms5211_glacier_conservation.patch'

@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from symfluence.core.exceptions import ModelExecutionError
 from symfluence.models.prms.balance import check_water_balance
 
 
@@ -18,5 +19,5 @@ def test_glacier_snow_is_not_double_counted(tmp_path,leak):
     with p.open('a') as f:np.savetxt(f,data)
     params=tmp_path/'params.dat';params.write_text('** Parameters **\n####\nhru_area\n1\nnhru\n1\n2\n10\n')
     if leak:
-        with pytest.raises(ValueError,match='water balance failed'):check_water_balance(p,params,.05,True)
+        with pytest.raises(ModelExecutionError,match='water balance failed'):check_water_balance(p,params,.05,True)
     else:assert check_water_balance(p,params,.05,True)['cumulative_residual_mm']==0

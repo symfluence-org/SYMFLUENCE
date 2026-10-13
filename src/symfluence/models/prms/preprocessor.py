@@ -20,6 +20,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
+from symfluence.core.exceptions import ConfigurationError, ValidationError
 from symfluence.core.modeling.base.base_preprocessor import BaseModelPreProcessor
 from symfluence.core.registries import R
 
@@ -190,13 +191,13 @@ class PRMSPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         )
         prms = self.config.model.prms
         if not prms.hru_forcing_path:
-            raise ValueError('PRMS climate_hru forcing requires PRMS_HRU_FORCING_PATH')
+            raise ConfigurationError('PRMS climate_hru forcing requires PRMS_HRU_FORCING_PATH')
         files = sorted(Path(prms.hru_forcing_path).glob('*.nc'))
         if not files:
-            raise FileNotFoundError(f'No per-HRU forcing NetCDF in {prms.hru_forcing_path}')
+            raise ConfigurationError(f'No per-HRU forcing NetCDF in {prms.hru_forcing_path}')
         source_ids = prms.hru_forcing_map or list(range(1, prms.nhru + 1))
         if len(source_ids) != prms.nhru:
-            raise ValueError(f'PRMS_HRU_FORCING_MAP has {len(source_ids)} entries for {prms.nhru} HRUs')
+            raise ConfigurationError(f'PRMS_HRU_FORCING_MAP has {len(source_ids)} entries for {prms.nhru} HRUs')
 
         names = {'precipitation_flux': 'precip', 'air_temperature': 'temp',
                  'surface_downwelling_shortwave_flux': 'swrad'}
@@ -209,9 +210,9 @@ class PRMSPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             try:
                 missing = set(names) - set(ds.data_vars)
                 if missing:
-                    raise ValueError(f'{f.name} lacks canonical {sorted(missing)}')
+                    raise ValidationError(f'{f.name} lacks canonical {sorted(missing)}')
                 if 'hru' not in ds.dims:
-                    raise ValueError(f'{f.name} has no hru dimension; climate_hru needs per-HRU forcing')
+                    raise ValidationError(f'{f.name} has no hru dimension; climate_hru needs per-HRU forcing')
                 ids = ds['hruId']
                 ids = (ids.isel(time=0) if 'time' in ids.dims else ids).values.astype(int)
                 step = step or forcing_timestep_seconds(ds)
@@ -227,7 +228,7 @@ class PRMSPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             df = df[~df.index.duplicated()].loc[str(start_date):str(end_date)]
             absent = set(source_ids) - set(df.columns)
             if absent:
-                raise ValueError(f'Per-HRU forcing lacks source hruIds {sorted(absent)}')
+                raise ConfigurationError(f'Per-HRU forcing lacks source hruIds {sorted(absent)}')
             raw[short] = df[source_ids]
         temp = raw['temp'] - 273.15
         daily = {
@@ -238,7 +239,7 @@ class PRMSPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         }
         for name, df in daily.items():
             if df.isna().any().any() or len(df) == 0:
-                raise ValueError(f'Per-HRU {name} forcing has gaps between {start_date} and {end_date}')
+                raise ValidationError(f'Per-HRU {name} forcing has gaps between {start_date} and {end_date}')
         return daily
 
     def _write_cbh_files(self, start_date: datetime, end_date: datetime) -> None:
@@ -499,10 +500,10 @@ class PRMSPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         fractions = prms.parameter_overrides.get('glacier_frac_init', {}).get('values')
         if not prms.glacier_flag or not isinstance(fractions, list) or len(fractions) != prms.nhru \
                 or any(v not in (0, 1) for v in fractions):
-            raise ValueError('Separate glacier depletion curves need glacier_flag and pure land/glacier '
+            raise ConfigurationError('Separate glacier depletion curves need glacier_flag and pure land/glacier '
                              'HRUs (glacier_frac_init override of 0/1 per HRU)')
         if all(fractions) or not any(fractions):
-            raise ValueError('Separate glacier depletion curves need both land and glacier HRUs')
+            raise ConfigurationError('Separate glacier depletion curves need both land and glacier HRUs')
         return [2 if v == 1 else 1 for v in fractions]
 
     def _generate_parameter_file(self) -> None:
@@ -736,7 +737,7 @@ class PRMSPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         if self.config.model.prms.model_mode.upper() == 'PRMS5':
             legacy = {'soil_rechr_max', 'soil_moist_init', 'soil_rechr_init'} & overrides.keys()
             if legacy:
-                raise ValueError(
+                raise ConfigurationError(
                     f"PRMS5 ignores depth parameters {sorted(legacy)}; use the corresponding "
                     "*_frac parameters (fractions of their respective capacities)."
                 )
@@ -751,7 +752,7 @@ class PRMSPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                 if not isinstance(values, list):
                     values = [values] * count
                 if len(values) != count:
-                    raise ValueError(f"PRMS {name}: expected {count} values, got {len(values)}")
+                    raise ConfigurationError(f"PRMS {name}: expected {count} values, got {len(values)}")
                 blocks[name] = '\n'.join(map(str, [name, len(dimensions), *dimensions,
                                                        count, spec.get('dtype', 2), *values])) + '\n'
             out_path.write_text(prefix + "** Parameters **\n" + ''.join('####\n' + b for b in blocks.values()))
@@ -839,9 +840,9 @@ class PRMSPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             if routing == 'auto':
                 routing = 'muskingum' if self.config.model.prms.glacier_flag else 'strmflow'
             if self.config.model.prms.glacier_flag and routing == 'strmflow':
-                raise ValueError("PRMS strmflow omits glacier discharge; use muskingum with glacier_flag.")
+                raise ConfigurationError("PRMS strmflow omits glacier discharge; use muskingum with glacier_flag.")
             if self.config.model.prms.routing_segments > 1 and routing != 'muskingum':
-                raise ValueError("PRMS_ROUTING_SEGMENTS > 1 requires the muskingum streamflow module.")
+                raise ConfigurationError("PRMS_ROUTING_SEGMENTS > 1 requires the muskingum streamflow module.")
             write_ctrl("strmflow_module", 1, 4, routing)
             write_ctrl("transp_module", 1, 4, "transp_tindex")
             write_ctrl("soilzone_module", 1, 4, "soilzone")
@@ -853,10 +854,10 @@ class PRMSPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                 if binary.is_dir():
                     binary = binary / self.config.model.prms.exe
                 if not binary.is_file() or b'glacier_dynamics' not in binary.read_bytes():
-                    raise ValueError('Fixed glacier geometry requires a native PRMS build supporting glacier_dynamics')
+                    raise ConfigurationError('Fixed glacier geometry requires a native PRMS build supporting glacier_dynamics')
                 fractions = self.config.model.prms.parameter_overrides.get('glacier_frac_init', {}).get('values', [])
                 if not isinstance(fractions, list) or len(fractions) != self.config.model.prms.nhru or any(v not in (0, 1) for v in fractions):
-                    raise ValueError('Fixed glacier geometry requires separate pure glacier and land HRUs (fractions 0 or 1)')
+                    raise ConfigurationError('Fixed glacier geometry requires separate pure glacier and land HRUs (fractions 0 or 1)')
                 write_ctrl('glacier_dynamics', 1, 1, 0)
             write_ctrl("subbasin_flag", 1, 1, 0)
             write_ctrl("print_debug", 1, 1, -1)
@@ -883,7 +884,7 @@ class PRMSPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                     elements.extend(range(1, self.config.model.prms.nhru + 1))
             if self.config.model.prms.cryosphere_constraints:
                 if not self.config.model.prms.glacier_flag or self.config.model.prms.glacier_dynamics:
-                    raise ValueError('PRMS cryosphere constraints require fixed glacier geometry')
+                    raise ConfigurationError('PRMS cryosphere constraints require fixed glacier geometry')
                 variables.extend(['snowcov_area'] * self.config.model.prms.nhru)
                 elements.extend(range(1, self.config.model.prms.nhru + 1))
             write_ctrl("nstatVars", 1, 1, len(variables))
