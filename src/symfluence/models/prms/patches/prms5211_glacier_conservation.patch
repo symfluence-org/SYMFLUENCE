@@ -1,0 +1,86 @@
+--- a/prms/srunoff.f90
++++ b/prms/srunoff.f90
+@@ -766,10 +766,24 @@
+             CALL compute_infil(Net_rain(i), Net_ppt(i), Imperv_stor(i), Imperv_stor_max(i), Snowmelt(i), &
+      &                         Snowinfil_max(i), Net_snow(i), Pkwater_equiv(i), Infil(i), Hru_type(i), Intcp_changeover(i))
+           ELSE ! glacier
+-            temp = Snowmelt(i) + glcrmltb !Snowmelt or 0.0
++! Basal ice melt is not snowmelt: using it as the snowmelt flag
++! skips rain on snow-free, partially glaciated HRUs.
++            temp = Snowmelt(i)
+             temp2 = availh2o*(1.0-Glacier_frac(i))
+             CALL compute_infil(temp2, Net_ppt(i), Imperv_stor(i), Imperv_stor_max(i), temp, &
+      &                         Snowinfil_max(i), Net_snow(i), Pkwater_equiv(i), Infil(i), Hru_type(i), Intcp_changeover(i))
++! Basal melt arrives below the ice, independently of snow/rain state.
++            IF ( glcrmltb>0.0 ) THEN
++              Infil(i) = Infil(i) + glcrmltb
++              CALL check_capacity(Snowinfil_max(i), Infil(i))
++              IF ( Hruarea_imperv>0.0 ) THEN
++                Imperv_stor(i) = Imperv_stor(i) + glcrmltb
++                IF ( Imperv_stor(i)>Imperv_stor_max(i) ) THEN
++                  Sri = Sri + Imperv_stor(i) - Imperv_stor_max(i)
++                  Imperv_stor(i) = Imperv_stor_max(i)
++                ENDIF
++              ENDIF
++            ENDIF
+           ENDIF
+         ENDIF
+ 
+@@ -793,7 +807,7 @@
+ !       **********************************************************
+ 
+         srunoff = 0.0
+-        IF ( Hru_type(i)==LAND .OR. active_glacier==OFF ) THEN ! could be an glacier-capable HRU with no ice
++        IF ( Hru_type(i)==LAND .OR. Hru_type(i)==GLACIER ) THEN ! could be an glacier-capable HRU with no ice
+ !******Compute runoff for pervious and impervious area, and depression storage area
+           runoff = runoff + DBLE( Srp*perv_area + Sri*Hruarea_imperv )
+           srunoff = SNGL( runoff/Hruarea_dble )
+--- a/prms/glacr_melt.f90
++++ b/prms/glacr_melt.f90
+@@ -56,7 +56,7 @@
+       ! Nhrugl - Number of at least partially glacierized hrus at initiation
+ !#of cells=Nhrugl,#of streams=Ntp,#of cells/stream<=Ntp, #of glaciers<=Nhru
+       INTEGER, SAVE :: Nglres, Ngl, Ntp, Nhrugl, MbInit_flag, Output_unit, Fraw_unit, All_unit
+-      INTEGER, SAVE :: Seven, Four, Glac_HRUnum_down
++      INTEGER, SAVE :: Seven, Four, Glac_HRUnum_down, Glacier_dynamics
+       DOUBLE PRECISION, SAVE, ALLOCATABLE :: Hru_area_inch2(:), Gl_mbc_yrend(:)
+       REAL, PARAMETER :: Gravity = 9.8 ! m/s2
+       REAL, PARAMETER :: Aflow = 1.e-25 ! Pa^-3/s, Farinotti 2009 could be 2.4e-24, could be 1e-26 see Patterson 2010
+@@ -120,7 +120,7 @@
+ !     glacrsetdims - declares glacier module specific dimensions
+ !***********************************************************************
+       INTEGER FUNCTION glacrsetdims()
+-      USE PRMS_GLACR, ONLY: Nglres, Seven, Four, MbInit_flag
++      USE PRMS_GLACR, ONLY: Nglres, Seven, Four, MbInit_flag, Glacier_dynamics
+       IMPLICIT NONE
+ ! Functions
+       INTEGER, EXTERNAL :: declfix, control_integer
+@@ -136,6 +136,7 @@
+       Four = 4
+ 
+       IF ( control_integer(MbInit_flag, 'mbInit_flag')/=0 ) MbInit_flag = 0
++      IF ( control_integer(Glacier_dynamics, 'glacier_dynamics')/=0 ) Glacier_dynamics = 1
+ 
+       END FUNCTION glacrsetdims
+ 
+@@ -938,7 +939,7 @@
+       gl_gain = 0.D0
+ !
+ ! Start of year calculations after have a year of data
+-      IF ( Julwater==1 .AND. Nowyear>=Start_year+1) THEN
++      IF ( Julwater==1 .AND. Nowyear>=Start_year+1 .AND. Glacier_dynamics==1 ) THEN
+         IF (glacr_exist==1 ) THEN !have glaciers
+ ! Save year ending values from previous year
+           DO jj = 1, Active_hrus
+--- a/mmf/setup_cont.c
++++ b/mmf/setup_cont.c
+@@ -246,6 +246,9 @@
+ 		lval = (long *)umalloc (sizeof (long));
+ 		lval[0] = 0;
+ 		decl_control_int_array ("glacier_flag", 1, lval);
++        lval = (long *)umalloc(sizeof(long));
++        lval[0] = 1;
++        decl_control_int_array("glacier_dynamics", 1, lval);
+ 
+         lval = (long *)umalloc (sizeof (long));
+ 		lval[0] = 0;

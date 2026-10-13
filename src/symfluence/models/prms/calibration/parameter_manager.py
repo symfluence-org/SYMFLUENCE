@@ -95,7 +95,7 @@ class PRMSParameterManager(BaseParameterManager):
         prms_bounds = dict(PARAM_BOUNDS)
 
         # Check for config overrides (preserves transform metadata from registry)
-        config_bounds = self._get_config_value(lambda: None, default={}, dict_key='PRMS_PARAM_BOUNDS')
+        config_bounds = self._get_config_value(lambda: self.config.model.prms.param_bounds, default={}, dict_key='PRMS_PARAM_BOUNDS')
         if config_bounds:
             self._apply_config_bounds_override(prms_bounds, config_bounds)
 
@@ -131,7 +131,9 @@ class PRMSParameterManager(BaseParameterManager):
                 self.logger.error(f"PRMS parameter file not found: {param_path}")
                 return False
 
+            from ..derived_parameters import apply_derived_parameters
             content = param_path.read_text(encoding='utf-8')
+            content, params = apply_derived_parameters(content, params)
             blocks = content.split('####\n')
 
             updated_blocks = []
@@ -202,7 +204,7 @@ class PRMSParameterManager(BaseParameterManager):
         # The structure after param_name is:
         # ndim (1 line), dimension_name (1 line), dimension_size (1 line), type_code (1 line)
         # Then value lines follow
-        metadata_lines = 4  # ndim, dim_name, dim_size, type_code
+        metadata_lines = int(lines[param_idx + 1]) + 3  # ndim, dimension names, count, type
         value_start = param_idx + 1 + metadata_lines
 
         if value_start > len(lines):
@@ -210,7 +212,7 @@ class PRMSParameterManager(BaseParameterManager):
 
         # Get dimension size to know how many value lines to replace
         try:
-            dim_size_idx = param_idx + 3  # ndim + dim_name + dim_size
+            dim_size_idx = param_idx + int(lines[param_idx + 1]) + 2
             dim_size = int(lines[dim_size_idx].strip())
         except (IndexError, ValueError):
             dim_size = 1
@@ -242,9 +244,16 @@ class PRMSParameterManager(BaseParameterManager):
             content = param_path.read_text(encoding='utf-8')
             blocks = content.split('####')
 
+            from ..derived_parameters import DERIVED_PARAMETERS, read_derived_parameter
             params = {}
             for param_name in self.prms_params:
+                if param_name in DERIVED_PARAMETERS:
+                    value = read_derived_parameter(content, param_name)
+                    if value is not None:
+                        params[param_name] = value
                 for block in blocks:
+                    if param_name in params:
+                        break
                     if self._block_contains_param(block, param_name):
                         value = self._extract_first_value(block, param_name)
                         if value is not None:
@@ -273,7 +282,7 @@ class PRMSParameterManager(BaseParameterManager):
         if param_idx is None:
             return None
 
-        value_start = param_idx + 5  # name + ndim + dim_name + dim_size + type_code
+        value_start = param_idx + int(lines[param_idx + 1]) + 4
         if value_start < len(lines):
             try:
                 return float(lines[value_start].strip())

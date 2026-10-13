@@ -122,7 +122,9 @@ class PRMSWorker(BaseWorker):
             True if successful
         """
         try:
+            from ..derived_parameters import apply_derived_parameters
             content = param_file.read_text(encoding='utf-8')
+            content, params = apply_derived_parameters(content, params)
             blocks = content.split('####\n')
 
             updated_blocks = []
@@ -168,11 +170,11 @@ class PRMSWorker(BaseWorker):
 
         # Structure: name, ndim, dim_name, dim_size, type_code, values...
         try:
-            dim_size = int(lines[param_idx + 3].strip())
+            dim_size = int(lines[param_idx + int(lines[param_idx + 1]) + 2].strip())
         except (IndexError, ValueError):
             dim_size = 1
 
-        value_start = param_idx + 5  # name + 4 metadata lines
+        value_start = param_idx + int(lines[param_idx + 1]) + 4
         formatted = f"{value:.6f}"
 
         new_lines = lines[:value_start]
@@ -336,6 +338,11 @@ class PRMSWorker(BaseWorker):
                 self.logger.error(self._last_error)
                 return False
 
+            tolerance = config.get('PRMS_WATER_BALANCE_TOLERANCE_MM')
+            if tolerance is not None:
+                from ..balance import check_water_balance
+                check_water_balance(output_files[0], settings_dir / config.get('PRMS_PARAMETER_FILE', 'params.dat'),
+                                    float(tolerance), bool(config.get('PRMS_GLACIER_FLAG', False)))
             return True
 
         except Exception as e:  # noqa: BLE001 — calibration resilience
@@ -438,6 +445,13 @@ class PRMSWorker(BaseWorker):
             results = self._streamflow_metrics.calculate_metrics(
                 obs_aligned, sim_aligned, metrics=['kge', 'nse']
             )
+            if config.get('PRMS_CRYOSPHERE_CONSTRAINTS', False):
+                from ..cryosphere import calculate_constraints
+                parameter_file = Path(settings_dir) / 'params.dat' if settings_dir else project_dir / 'settings/PRMS/params.dat'
+                results.update(calculate_constraints(
+                    statvar_file, parameter_file, project_dir, cal_period_str,
+                    config.get('PRMS_SNOW_COVER_ERROR_SCALE', 0.2),
+                    config.get('PRMS_GLACIER_MB_ERROR_SCALE', 1.0)))
             return results
 
         except Exception as e:  # noqa: BLE001 — calibration resilience
