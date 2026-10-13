@@ -1,0 +1,14 @@
+{
+  "prms/srunoff.f90": {
+    "before_normalized_sha256": "1fb2a33a89a4ea939b40adbf691e1ef5353d3c5f06df9cad82188661c3f1ebb7",
+    "after_normalized_sha256": "7a63240e1cdc02e2b6495c3be1dbf910b613260f97a0225b078064dc056d8be9"
+  },
+  "prms/glacr_melt.f90": {
+    "before_normalized_sha256": "d1576f0792a926b769fdcad04e5db6cc4c3f0702cd1e076bc4727e2aba6475b3",
+    "after_normalized_sha256": "c7ddd001cdc78e79a75607800cf8b5298a93d21fabf20e63e8e334b4adf5c7c5"
+  },
+  "mmf/setup_cont.c": {
+    "before_normalized_sha256": "53f270b007d84ea7b4bac536e7ba2ec43b0583e489713cf369bde3565378a826",
+    "after_normalized_sha256": "1f1b84747be6e511f213e9502b35e40048215dcbb9b47f39ef58fc313d030618"
+  }
+}

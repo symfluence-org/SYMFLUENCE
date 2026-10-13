@@ -70,6 +70,21 @@ PARAM_BOUNDS: Dict[str, Dict[str, float]] = {
     'soil2gw_max': {
         'min': 0.01, 'max': 5.0,                   # inches/day, max soil-to-GW percolation
     },
+    'K_coef': {
+        'min': 1.0, 'max': 24.0,                   # hours per Muskingum reach (native cap 24)
+    },
+    'x_coef': {
+        'min': 0.0, 'max': 0.5,                    # Muskingum weighting factor
+    },
+    'rain_cbh_adj': {
+        'min': 0.7, 'max': 1.5,                    # climate_hru rain multiplier
+    },
+    'snow_cbh_adj': {
+        'min': 0.7, 'max': 2.5,                    # climate_hru snow multiplier
+    },
+    'land_sca_max': {
+        'min': 0.4, 'max': 1.0,                    # max snow-covered fraction of land HRUs (derived)
+    },
 }
 
 

@@ -7243,6 +7243,46 @@ PRMS_TIMEOUT: 3600
 #   Usage:      1
 PRMS_USE_OBS_SOLAR: false
 
+# station: one basin-mean series lapsed to each HRU (precip_1sta/temp_1sta).
+# climate_hru: per-HRU CBH files (precip, tmax, tmin, swrad) written from
+# forcing remapped onto the HRUs; calibrate rain_cbh_adj/snow_cbh_adj.
+# PRMS_FORCING_MODE
+#   Type:        str
+#   Default:     station
+#   Source:      PRMSConfig (models/prms/config_schema.py)
+PRMS_FORCING_MODE: station
+
+# Directory of canonical forcing NetCDF with an hru dimension (climate_hru).
+# PRMS_HRU_FORCING_PATH
+#   Type:        str
+#   Default:     null
+#   Source:      PRMSConfig (models/prms/config_schema.py)
+PRMS_HRU_FORCING_PATH: null
+
+# Source hruId for each PRMS HRU in PRMS order, e.g. [1, 2, 3, 3, 4, 5] when
+# band 3 is split into land and glacier HRUs. Default: 1..nhru.
+# PRMS_HRU_FORCING_MAP
+#   Type:        list[int]
+#   Default:     null
+#   Source:      PRMSConfig (models/prms/config_schema.py)
+PRMS_HRU_FORCING_MAP: null
+
+# Muskingum reaches in series (K_coef <= 24 h per reach natively); calibrate
+# K_coef and x_coef. Values > 1 require PRMS_STREAMFLOW_MODULE muskingum.
+# PRMS_ROUTING_SEGMENTS
+#   Type:        int
+#   Default:     1
+#   Source:      PRMSConfig (models/prms/config_schema.py)
+PRMS_ROUTING_SEGMENTS: 1
+
+# Separate land/glacier snow-cover depletion curves (needs pure 0/1
+# glacier_frac_init HRUs); calibrate land_sca_max, the land curve maximum.
+# PRMS_SEPARATE_GLACIER_DEPLETION_CURVE
+#   Type:        bool
+#   Default:     false
+#   Source:      PRMSConfig (models/prms/config_schema.py)
+PRMS_SEPARATE_GLACIER_DEPLETION_CURVE: false
+
 
 # 9.14. GSFLOW Model Configuration
 # ================================================================================
