@@ -375,7 +375,11 @@ class ModelManager(BaseManager):
                 # (e.g. PIHM's defensive ctor) would otherwise be silently skipped.
                 run_preprocessing = getattr(preprocessor, "run_preprocessing", None)
                 if callable(run_preprocessing):
-                    run_preprocessing()
+                    # Many preprocessors catch their own exceptions, log them and
+                    # return False; treat that as a failure rather than success.
+                    if run_preprocessing() is False:
+                        raise ModelExecutionError(
+                            f"{model} preprocessing failed; see the errors logged above")
                 else:
                     # Genuinely no preprocessing entry point (e.g. data-driven models).
                     self.logger.debug(f"{model} preprocessor exposes no run_preprocessing(); skipping")
