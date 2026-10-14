@@ -37,7 +37,7 @@ def forcing_grid_signature(path: Path, names: Optional[Tuple[str, str]] = None) 
             values = np.round(values, decimals=8).astype("<f8")
             signature.update(json.dumps([ds[name].dims, values.shape]).encode())
             signature.update(values.tobytes(order="C"))
-        metadata = {"projection": str(ds.attrs.get("MAP_PROJ4_STR", ""))}
+        metadata: dict[str, object] = {"projection": str(ds.attrs.get("MAP_PROJ4_STR", ""))}
         for key in ["DX", "DY"]:
             if key in ds.attrs:
                 value = np.asarray(ds.attrs[key], dtype=float)
