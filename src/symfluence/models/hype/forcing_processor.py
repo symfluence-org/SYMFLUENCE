@@ -452,7 +452,8 @@ class HYPEForcingProcessor(BaseForcingProcessor):
             except ValidationError:
                 raise direct from None
             vapour = q * p / (0.622 + 0.378 * q)
-            saturation = 610.94 * np.exp(17.625 * t / (t + 243.04))  # Alduchov & Eskridge (1996), Pa
+            saturation = 610.94 * pd.DataFrame(np.exp(17.625 * t / (t + 243.04)), index=t.index,
+                                               columns=t.columns)  # Alduchov & Eskridge (1996), Pa
             return 100 * vapour / saturation
 
     def write_humidity_obs(self, files: List[Path]) -> Path:
