@@ -18,12 +18,14 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import Tuple
 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
 
+from symfluence.core.exceptions import ConfigurationError, FileOperationError, SYMFLUENCEError, ValidationError
 from symfluence.core.modeling.base.base_preprocessor import BaseModelPreProcessor
 
 logger = logging.getLogger(__name__)
@@ -77,7 +79,7 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         try:
             import rasterio
             from rasterio.enums import Resampling
-            dd = self.project_dir / 'attributes' / 'elevation' / 'dem'
+            dd = self.project_attributes_dir / 'elevation' / 'dem'
             dems = sorted(dd.glob('*_elv.tif')) if dd.exists() else []
             if not dems:
                 return None
@@ -117,6 +119,11 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
             start_date, end_date = self._get_simulation_dates()
 
+            if self._gsflow_cfg().gw_grid_mode == 'basin':
+                self._generate_basin_inputs(start_date, end_date, gsflow_mode)
+                logger.info(f"GSFLOW basin-geometry preprocessing complete: {self.setup_dir}")
+                return True
+
             # 1. PRMS data file (forcing)
             self._generate_data_file(start_date, end_date)
 
@@ -139,6 +146,125 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             return False
 
     # ------------------------------------------------------------------
+    # Real-basin geometry (gw_grid_mode: basin)
+    # ------------------------------------------------------------------
+    def _gsflow_cfg(self):
+        return self.config.model.gsflow
+
+    def _resolve_input(self, configured, subdir: str, pattern: str, what: str) -> Path:
+        """Configured path, or the single match of ``pattern`` under ``subdir``."""
+        if configured:
+            p = Path(configured)
+            if not p.exists():
+                raise FileOperationError(f'GSFLOW {what} not found: {p}')
+            return p
+        hits = sorted((self.project_dir / subdir).glob(pattern))
+        if len(hits) != 1:
+            raise ConfigurationError(f'GSFLOW {what}: expected one {pattern} under {subdir}, found {len(hits)}; '
+                                     'set it explicitly')
+        return hits[0]
+
+    def _build_basin_geometry(self):
+        from .basin_geometry import build_basin_geometry
+        cfg = self._gsflow_cfg()
+        sub = gpd.read_file(self._resolve_input(cfg.subbasin_shapefile, 'shapefiles/river_basins', '*.shp', 'subbasins'))
+        net = gpd.read_file(self._resolve_input(cfg.river_network_shapefile, 'shapefiles/river_network', '*.shp',
+                                                'river network'))
+        if cfg.dem_path:
+            dem = self._resolve_input(cfg.dem_path, '', '', 'DEM')
+        else:
+            dems = sorted((self.project_attributes_dir / 'elevation' / 'dem').glob('*_elv.tif'))
+            if len(dems) != 1:
+                raise ConfigurationError(f'GSFLOW DEM: expected one *_elv.tif, found {len(dems)}; set GSFLOW_DEM_PATH')
+            dem = dems[0]
+        ice = None
+        if cfg.glacier_outlines:
+            ice = gpd.read_file(self._resolve_input(cfg.glacier_outlines, '', '', 'glacier outlines'))
+            if cfg.glacier_outline_query:
+                ice = ice.query(cfg.glacier_outline_query)
+            if ice.empty:
+                raise ConfigurationError('GSFLOW glacier outline selection is empty')
+        crs = cfg.grid_crs
+        if crs is None:
+            c = sub.to_crs(4326).geometry.union_all().centroid
+            crs = (32600 if c.y >= 0 else 32700) + int((c.x + 180) / 6) + 1
+        return build_basin_geometry(sub, net, dem, crs, cell_size=cfg.gw_cell_size_m, band_size=cfg.hru_band_size_m,
+                                    min_hru_area_km2=cfg.min_hru_area_km2,
+                                    min_glacier_hru_area_km2=cfg.min_glacier_hru_area_km2,
+                                    glacier_outlines=ice, channel_depth=cfg.channel_depth_m), dem
+
+    def _generate_basin_inputs(self, start_date: datetime, end_date: datetime, mode: str) -> None:
+        from .basin_inputs import hru_source_ids, load_hru_forcing, write_cbh, write_modflow, write_parameters
+        cfg = self._gsflow_cfg()
+        geo, dem = self._build_basin_geometry()
+        h = geo.hrus
+        logger.info(f"GSFLOW basin geometry: {geo.nhru} HRUs ({int(h.glacier.sum())} glacier, "
+                    f"{h[h.glacier == 1].area_m2.sum() / 1e6:.1f} km2 ice), grid {geo.nrow}x{geo.ncol} "
+                    f"({int(geo.active.sum())} active, {cfg.gw_cell_size_m:g} m), {len(geo.segments)} segments, "
+                    f"{len(geo.reaches)} reaches")
+        for note in geo.notes:
+            logger.warning(f"GSFLOW geometry: {note}")
+        geo.hrus.drop(columns='geometry').to_csv(self.setup_dir / 'basin_hrus.csv', index=False)
+        geo.hrus[['hru_id', 'gru_id', 'band', 'glacier', 'geometry']].to_file(self.setup_dir / 'basin_hrus.gpkg')
+        self._generate_data_file(start_date, end_date)
+        cbh = None
+        if cfg.forcing_mode == 'climate_hru':
+            if not cfg.hru_forcing_path:
+                raise ConfigurationError('GSFLOW climate_hru forcing requires GSFLOW_HRU_FORCING_PATH')
+            ids = hru_source_ids(h.elev, cfg.hru_band_size_m, cfg.hru_forcing_band_ids or {})
+            cbh = write_cbh(self.forcing_dir, load_hru_forcing(Path(cfg.hru_forcing_path), ids, start_date,
+                                                               end_date + pd.Timedelta(hours=23)))
+        write_parameters(self.setup_dir / 'params.dat', geo, cfg, cfg.parameter_overrides)
+        relief = None
+        if cfg.aquifer_thickness_m is None:
+            z = geo.top[geo.active]
+            relief = float(np.nanpercentile(z, 95) - np.nanpercentile(z, 5))
+        thickness = cfg.aquifer_thickness_m or max(100.0, relief or 0.0)
+        write_modflow(self.modflow_dir, geo, (end_date - start_date).days, thickness, cfg.initial_recharge,
+                      cfg.uzf_saturated_water_content, self._output_relpath, ntrail=cfg.uzf_ntrail,
+                      nsets=cfg.uzf_nsets)
+        self._generate_control_file(start_date, end_date, mode)
+        glacier = cfg.glacier_flag and bool(h.glacier.any())
+        self._append_basin_controls(geo, glacier, cbh)
+
+    def _append_basin_controls(self, geo, glacier: bool, cbh) -> None:
+        """Replace module/statvar controls written by _generate_control_file."""
+        from .basin_inputs import statvars
+        cfg = self._gsflow_cfg()
+        control = self.setup_dir / self._get_config_value(
+            lambda: self.config.model.gsflow.control_file, default='control.dat', dict_key='GSFLOW_CONTROL_FILE')
+        blocks = [b for b in control.read_text().split('####\n')]
+        head, body = blocks[0], {b.split('\n', 1)[0]: b for b in blocks[1:]}
+
+        def put(name, dtype, values):
+            values = values if isinstance(values, list) else [values]
+            body[name] = '\n'.join([name, str(len(values)), str(dtype), *map(str, values)]) + '\n'
+
+        if cbh:
+            for module in ('precip_module', 'temp_module', 'solrad_module'):
+                put(module, 4, 'climate_hru')
+            for name, path in cbh.items():
+                put(f'{name}_day', 4, str(path))
+            put('cbh_check_flag', 1, 1)
+        if glacier:
+            put('glacier_flag', 1, 1)
+            if not cfg.glacier_dynamics:
+                binary = Path(self._get_config_value(lambda: self.config.model.gsflow.install_path, default='default'))
+                if str(binary) == 'default':
+                    binary = Path(self.data_dir) / 'installs/gsflow/bin'
+                exe = binary / cfg.exe if binary.is_dir() else binary
+                if not exe.is_file() or b'glacier_dynamics' not in exe.read_bytes():
+                    raise ConfigurationError('Fixed GSFLOW glacier geometry needs a patched build: '
+                                             '`symfluence binary install gsflow --patched`')
+                put('glacier_dynamics', 1, 0)
+        sv = statvars(geo, glacier, cfg.cryosphere_constraints)
+        put('nstatVars', 1, len(sv))
+        put('statVar_names', 4, [n for n, _ in sv])
+        put('statVar_element', 4, [e for _, e in sv])
+        put('statvarOut_format', 1, 5)   # full precision; default ES10.3 is 4 significant digits
+        control.write_text(head + ''.join('####\n' + b for b in body.values()).rstrip('\n') + '\n')
+
+    # ------------------------------------------------------------------
     # Dates
     # ------------------------------------------------------------------
     def _get_simulation_dates(self) -> Tuple[datetime, datetime]:
@@ -158,13 +284,12 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
     def _get_catchment_properties(self) -> dict:
         """Catchment lat/lon/area (shapefile) and mean elev/slope/aspect (DEM).
 
-        Projection-safe (mirrors the CRHM/PRMS approach); falls back to
-        physically reasonable Icelandic defaults if the datastore is absent.
+        Resolve existing geometry independently of the output experiment ID.
+        Missing geometry must not silently create a fictitious 100 km2 basin.
         """
-        props = {'lat': 65.0, 'lon': -19.0, 'area_km2': 100.0,
-                 'elev': 500.0, 'slope': 5.0, 'aspect': 180.0}
+        props = {'elev': 500.0, 'slope': 5.0, 'aspect': 180.0}
         try:
-            cp = self.get_catchment_path()
+            cp = self._find_basin_shapefile(required=True)
             if cp and cp.exists():
                 gdf = gpd.read_file(cp)
                 if gdf.crs is None:
@@ -176,12 +301,19 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                 lon, lat = pt.x, pt.y
                 utm = int((lon + 180) / 6) + 1
                 area_m2 = gdf.to_crs(f"EPSG:{(32600 if lat >= 0 else 32700)+utm}").geometry.area.sum()
+                if not np.isfinite(area_m2) or area_m2 <= 0:
+                    raise ValidationError('Catchment area must be finite and positive')
+                expected = self._get_config_value(lambda: self.config.domain.catchment_area, default=None)
+                if expected is not None and not np.isclose(area_m2 / 1e6, expected, rtol=0.02):
+                    raise ConfigurationError(f'Geometry area {area_m2 / 1e6:g} km2 disagrees with CATCHMENT_AREA={expected}')
                 props.update({'lat': lat, 'lon': lon, 'area_km2': area_m2 / 1e6})
-        except Exception as e:  # noqa: BLE001 — model execution resilience
-            logger.warning(f"Could not read catchment shapefile: {e}; defaults", exc_info=True)
+            else:
+                raise FileOperationError(f'Catchment geometry not found: {cp}')
+        except (OSError, RuntimeError, ValueError, KeyError, SYMFLUENCEError) as e:
+            raise ConfigurationError('GSFLOW requires readable catchment geometry; refusing default basin area/location') from e
         try:
             import rasterio
-            dd = self.project_dir / 'attributes' / 'elevation' / 'dem'
+            dd = self.project_attributes_dir / 'elevation' / 'dem'
             dems = sorted(dd.glob('*_elv.tif')) if dd.exists() else []
             if dems:
                 with rasterio.open(dems[0]) as src:
@@ -400,9 +532,10 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
             # -- Soil zone --
             wp("soil_moist_max", 1, "nhru", nhru, 2, [6.0] * nhru)
-            wp("soil_rechr_max", 1, "nhru", nhru, 2, [2.0] * nhru)
-            wp("soil_moist_init", 1, "nhru", nhru, 2, [3.0] * nhru)
-            wp("soil_rechr_init", 1, "nhru", nhru, 2, [1.0] * nhru)
+            # GSFLOW5 uses fractions of capacity, not PRMS4 depths.
+            wp("soil_rechr_max_frac", 1, "nhru", nhru, 2, [1.0 / 3.0] * nhru)
+            wp("soil_moist_init_frac", 1, "nhru", nhru, 2, [0.5] * nhru)
+            wp("soil_rechr_init_frac", 1, "nhru", nhru, 2, [0.5] * nhru)
             wp("soil2gw_max", 1, "nhru", nhru, 2, [0.5] * nhru)
             wp("ssr2gw_rate", 1, "nssr", nhru, 2, [0.1] * nhru)
             wp("ssr2gw_exp", 1, "nssr", nhru, 2, [1.0] * nhru)
@@ -446,13 +579,18 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
             # -- GVR mapping --
             if self.distributed_gw:
-                # Lumped surface: every cell's GVR belongs to the single HRU,
-                # each carrying 1/ncells of the HRU area.
+                # Every cell is fully covered by the single surface HRU.
+                # gvr_cell_pct is a fraction of CELL area, not HRU area.
                 wp("gvr_hru_id", 1, "nhrucell", nhrucell, 1, [1] * nhrucell)
                 wp("gvr_cell_id", 1, "nhrucell", nhrucell, 1,
                    list(range(1, ncells + 1)))
                 wp("gvr_cell_pct", 1, "nhrucell", nhrucell, 2,
-                   [f"{1.0 / ncells:.8f}"] * nhrucell)
+                   ["1.00000000"] * nhrucell)
+                # The complementary mapping partitions the HRU across cells.
+                # Omitting it gives all-zero defaults and a 0/0 normalization
+                # in native prms2mfinit, contaminating storage and exchange.
+                wp("gvr_hru_pct", 1, "nhrucell", nhrucell, 2,
+                   [1.0 / ncells] * nhrucell)
             else:
                 # 1:1 — each HRU maps to one cell.
                 wp("gvr_hru_id", 1, "nhrucell", nhrucell, 1,
@@ -604,9 +742,10 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             f.write("# GSFLOW NWT Solver\n")
             # HEADTOL FLUXTOL MAXITEROUT THICKFACT LINMETH IPRNWT
             # IBOTAV OPTIONS
-            f.write("1.0E-3  100.0  500  1.0E-5  2  1  1  SPECIFIED\n")
-            # XMD solver line
-            f.write("2  1  3  3  1  0.0  1  5.0E-4  5.0E-4  200  XMD\n")
+            # SPECIFIED requires nonlinear damping/backtracking coefficients
+            # on the first record. Omitting them silently disables safeguards
+            # and can produce NaN heads during steady-state initialization.
+            f.write("1.0E-4  1.0  500  1.0E-5  1  0  1  COMPLEX\n")
 
         # -- UZF  (unsaturated zone flow — required for GSFLOW coupling) --
         uzf = mf / 'bow.uzf'
@@ -628,11 +767,17 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             # EPS (Brooks-Corey epsilon)
             f.write("  CONSTANT  3.5\n")
             # THTS (saturated water content)
-            f.write("  CONSTANT  0.30\n")
+            thts = self._get_config_value(
+                lambda: self.config.model.gsflow.uzf_saturated_water_content, default=0.30)
+            if thts <= sy:
+                raise ConfigurationError('GSFLOW saturated water content must exceed specific yield')
+            f.write(f"  CONSTANT  {thts:.8g}\n")
             # Stress period 1 (SS)
             ncells = nrow * ncol
             f.write(f"  {ncells}\n")               # NUZF1 (read FINF)
-            f.write("  CONSTANT  1.0E-8\n")        # FINF array
+            recharge = self._get_config_value(
+                lambda: self.config.model.gsflow.initial_recharge, default=1.e-8)
+            f.write(f"  CONSTANT  {recharge:.10g}\n")  # FINF, m/day
             # Stress period 2 (TR) — reuse previous
             f.write("  -1\n")                       # NUZF1 < 0 = reuse
         logger.info(f"  UZF: {uzf}")
