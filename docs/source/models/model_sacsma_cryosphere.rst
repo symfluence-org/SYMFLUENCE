@@ -63,6 +63,28 @@ errors are recorded, with target input checksums.
 Scientific qualification
 ------------------------
 
+Use measured geometry or georeferenced thickness estimates to define explicit
+per-HRU ice stocks. Record the estimate epoch, ice-to-water density conversion,
+spatial coverage and mapping assumptions. A thickness estimate is a prior, not
+proof of the exact inventory at initialization. Profile stock and area changes;
+unchanged discharge under thick stocks means the initial stock is unidentifiable.
+
+For geometric snow-area evaluation, jSACSMA's optional
+``compiled_snow_observer(config)`` exposes interval-end per-HRU snow-water
+histories. ``jsacsma.observations.snow_covered_area`` aggregates them with an
+explicit surface mask and detection threshold. Resolve elevation/surface
+heterogeneity in HRUs and renormalize weights within the observed domain.
+Match observation masks and temporal support; gap-filled MODIS daily products
+are not independent clear-sky scenes. This external observation operator is
+distinct from the replay schema's legacy effective-area proxy targets.
+
+Use actual basin-relevant survey dates when available. Stratigraphic glacier
+balances need an observation operator consistent with their summer-surface
+reference; chronological storage changes remain an approximation. Winter and
+summer errors can cancel in annual net balance. Archive externally computed
+seasonal objectives and targets explicitly when native replay metrics cannot
+represent them. Keep unused independent observations outside parameter selection.
+
 The variant uses binary snow presence within uniform HRUs to gate exposed ice,
 separate from Snow17 effective melt area. Ice is finite. V2 estimates covered versus bare time from Snow17 melt-energy
 and heat-deficit diagnostics within each computational substep; only the
