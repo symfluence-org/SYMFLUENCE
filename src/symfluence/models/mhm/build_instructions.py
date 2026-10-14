@@ -11,14 +11,50 @@ This module defines how to build mHM from source, including:
 
 mHM (mesoscale Hydrological Model) is built using CMake with Fortran support.
 It requires gfortran and NetCDF-Fortran libraries.
+
+``symfluence binary install mhm --patched`` additionally checks out the pinned
+upstream commit and applies the SYMFLUENCE time-step patch
+(``patches/mhm5134_timestep_meteo_index.patch``, see ``patches/README.md``),
+which MHM_TIMESTEP other than 1 requires.
 """
 from __future__ import annotations
+
+from pathlib import Path
 
 from symfluence.core.build import (
     get_common_build_environment,
     get_netcdf_detection,
 )
 from symfluence.core.registries import R
+
+# Upstream mHM commit (5.13.4+, Jul 2026) the timestep patch was written and
+# tested against. `--patched` builds check it out so the patch applies exactly.
+TIMESTEP_PATCH_BASE = 'fd474cc35af7a9e30bdebc38dee0eb69c24bcf49'
+TIMESTEP_PATCH = Path(__file__).with_name('patches') / 'mhm5134_timestep_meteo_index.patch'
+# Copied next to the executable by patched builds; the preprocessor looks for
+# it before writing a namelist with a model time step other than 1 h.
+TIMESTEP_PATCH_MARKER = 'applied_timestep_meteo_index.patch'
+
+
+def _timestep_patch_command() -> str:
+    """Shell step applying the timestep patch when --patched is set.
+
+    A no-op for ordinary installs, which keep building the configured branch.
+    """
+    patch = TIMESTEP_PATCH.as_posix()  # forward slashes also work for MSYS bash/git on Windows
+    return f'''set -e
+if [ "${{SYMFLUENCE_PATCHED:-0}}" = "1" ]; then
+    echo "Applying SYMFLUENCE mHM timestep patch (base {TIMESTEP_PATCH_BASE[:8]})"
+    if ! git cat-file -e "{TIMESTEP_PATCH_BASE}^{{commit}}" 2>/dev/null; then
+        git fetch --depth 1 origin "{TIMESTEP_PATCH_BASE}"
+    fi
+    git checkout -q "{TIMESTEP_PATCH_BASE}"
+    git apply --check "{patch}"
+    git apply "{patch}"
+    mkdir -p bin
+    cp "{patch}" "bin/{TIMESTEP_PATCH_MARKER}"
+fi
+'''
 
 
 @R.build_instructions.add('mhm')
@@ -46,6 +82,7 @@ def get_mhm_build_instructions():
         'install_dir': 'mhm',
         'build_commands': [
             common_env,
+            _timestep_patch_command(),
             netcdf_detect,
             r'''
 # mHM Build Script for SYMFLUENCE

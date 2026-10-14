@@ -16,6 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mass-balance score (`RAVEN_GLACIER_CONSTRAINTS`) for composite objectives. Calibratable forcing
   corrections `PRECIP_CORR` (rain and snow), `SNOW_CORR` (snow only) and `TEMP_CORR` (additive K), and
   per-parameter bound overrides via `RAVEN_PARAM_BOUNDS`. See `docs/source/models/model_raven.rst`.
+- **mHM distributed forcing and glacier options (opt-in)**: with `MHM_DISTRIBUTED`, the grid is now
+  conditioned on the catchment polygon; temperature can be lapsed to each cell (`MHM_TEMP_LAPSE_RATE`);
+  PET is `hamon` or `oudin` (`MHM_PET_METHOD`). Glacier outlines (`MHM_GLACIER_OUTLINE`) mark sealed
+  glacier cells that receive external degree-day ice melt. Calibration pseudo-parameters
+  `precipCorrectionFactor` and `glacierIceDDF` adjust the precipitation input; alternatively, the ice
+  factor can be solved each evaluation to match an observed calibration-period glacier mass balance
+  (`MHM_GLACIER_MB_TARGET`), optionally over the outline's area (`MHM_GLACIER_AREA_FROM_OUTLINE`).
+  Configurable model step `MHM_TIMESTEP`. The `degreeDayFactor_pervious` calibration range widens from
+  0–2 to 0–5 mm/°C/day; the upstream range was binding at Tungnaá.
+- **`symfluence binary install mhm --patched`** pins upstream mHM `fd474cc3` and applies a fix for
+  non-hourly time steps (see `models/mhm/patches/README.md`); `MHM_TIMESTEP` other than 1 now
+  requires it.
 
 ### Changed
 - **Core metrics facade exports repaired**: `StreamflowMetrics` and
@@ -210,6 +222,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   model modules at call time, closing the last coupling→models seam.
 
 ### Fixed
+- **A preprocessor returning `False` now fails the workflow step**: most model preprocessors catch
+  their own exceptions and return `False`, which `ModelManager.preprocess_models` ignored, so the
+  workflow reported success with incomplete model inputs.
+- **mHM calibration wrote `maxDegreeDayFactor_*` whenever it set `degreeDayFactor_*`**: the namelist
+  regex was unanchored and case-insensitive, so every calibration capped snowmelt at the base factor.
+  Parallel mHM workers also wrote to a shared output directory; each now writes to its own.
+- **mHM distributed preprocessing** read attributes from the wrong directory and fell back to the DEM
+  bounding box, which roughly doubled the basin; catchment properties no longer fall back to a
+  placeholder location.
 - **Two silent parameter-bound collisions in the central catalogue** (found by
   the new collision guard test): FUSE's snow bounds (`MBASE`, `MFMAX`,
   `MFMIN`) were overridden by Snow-17's — different ranges *and* units

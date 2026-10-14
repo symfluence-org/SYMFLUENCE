@@ -16,14 +16,24 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import numpy as np
 import pandas as pd
 import xarray as xr
 
 from symfluence.core.calibration.workers.base_worker import BaseWorker, WorkerTask
 from symfluence.core.constants import ModelDefaults
+from symfluence.core.exceptions import ConfigurationError
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
+
+from ..parameters import FORCING_PARAMS
+
+# mhm.nml entries that mHM writes to. Each worker points them at its own
+# directory so parallel evaluations never share an output location.
+_OUTPUT_KEYS = ('dirConfigOut', r'dir_Out\(1\)', r'dir_Total_Runoff\(1\)',
+                r'dir_Bankfull_Runoff\(1\)')
+_RESTART_KEYS = (r'mhm_file_RestartOut\(1\)', r'mrm_file_RestartOut\(1\)')
 
 
 @R.workers.add('MHM')
@@ -106,14 +116,229 @@ class MHMWorker(BaseWorker):
                     self.logger.error(f"mHM namelist file not found in {settings_dir}")
                     return False
 
+            mhm_nml = settings_dir / 'mhm.nml'
+            if mhm_nml.exists():
+                out_dir = Path(kwargs['sim_dir']) if kwargs.get('sim_dir') else settings_dir / 'output'
+                self._localise_outputs(mhm_nml, out_dir)
+
+            forcing_params = {k: v for k, v in params.items() if k in FORCING_PARAMS}
+            if (forcing_params or config.get('MHM_GLACIER_MB_TARGET') is not None) \
+                    and not self._write_adjusted_precip(
+                        settings_dir, data_dir / f'domain_{domain_name}', params, config):
+                return False
+
             # Update parameter namelist with new parameter values
-            return self._update_namelist_file(param_namelist, params)
+            nml_params = {k: v for k, v in params.items() if k not in FORCING_PARAMS}
+            return self._update_namelist_file(param_namelist, nml_params)
 
         except Exception as e:  # noqa: BLE001 — calibration resilience
             self.logger.error(f"Error applying mHM parameters: {e}", exc_info=True)
             import traceback
             self.logger.debug(traceback.format_exc())
             return False
+
+    @staticmethod
+    def _set_nml_path(content: str, key: str, value: str) -> str:
+        """Replace the quoted value of ``key = "..."`` in a namelist."""
+        return re.sub(r'(^\s*' + key + r'\s*=\s*)"[^"]*"',
+                      lambda m: f'{m.group(1)}"{value}"', content, flags=re.MULTILINE)
+
+    def _localise_outputs(self, mhm_nml: Path, out_dir: Path) -> None:
+        """Point every mHM output path in ``mhm_nml`` at ``out_dir`` (forward slashes on every OS)."""
+        out_dir.mkdir(parents=True, exist_ok=True)
+        content = mhm_nml.read_text(encoding='utf-8')
+        for key in _OUTPUT_KEYS:
+            content = self._set_nml_path(content, key, f'{out_dir.as_posix()}/')
+        for key in _RESTART_KEYS:
+            match = re.search(r'^\s*' + key + r'\s*=\s*"([^"]*)"', content, flags=re.MULTILINE)
+            if match:
+                content = self._set_nml_path(content, key, (out_dir / Path(match.group(1)).name).as_posix())
+        mhm_nml.write_text(content, encoding='utf-8')
+
+    def _write_adjusted_precip(self, settings_dir: Path, project_dir: Path,
+                               params: Dict[str, float],
+                               config: Optional[Dict[str, Any]] = None) -> bool:
+        """Write this worker's precipitation input with the forcing-side
+        pseudo-parameters applied, and point its mhm.nml at it.
+
+        ``precipCorrectionFactor`` scales precipitation everywhere.
+        ``glacierIceDDF`` adds degree-day ice melt on the cells flagged in
+        ``morph/glacier_mask.asc``: a per-cell snow cover on the ice is tracked
+        with the corrected precipitation (snowfall below
+        ``snowTreshholdTemperature``) and melted at half the ice factor, the
+        usual snow/ice degree-day ratio; ice melts with whatever energy is left
+        once that snow is gone. The melt enters mHM as liquid input on the
+        sealed glacier cells. With MHM_GLACIER_MB_TARGET set, the ice factor is
+        instead solved so the mean net balance over the calibration water years
+        matches the target. With MHM_GLACIER_AREA_FROM_OUTLINE, melt is scaled
+        by each cell's glacierised fraction. Annual ice melt and net balance
+        are written to ``forcing_adjustment.json``.
+        """
+        import json
+        import shutil
+
+        import netCDF4 as nc4
+
+        base_dir = project_dir / 'data' / 'forcing' / 'MHM_input'
+        work_dir = settings_dir / 'forcing_adjusted'
+        try:
+            work_dir.mkdir(parents=True, exist_ok=True)
+            for name in ('tavg.nc', 'pet.nc', 'header.txt'):
+                target = work_dir / name
+                if not target.exists():
+                    target.symlink_to(base_dir / name)
+            pre_path = work_dir / 'pre.nc'
+            shutil.copy2(base_dir / 'pre.nc', pre_path)
+
+            with nc4.Dataset(base_dir / 'pre.nc') as ds:
+                pre = np.ma.filled(ds['pre'][:], np.nan)
+                times = nc4.num2date(ds['time'][:], ds['time'].units,
+                                     calendar=getattr(ds['time'], 'calendar', 'standard'),
+                                     only_use_cftime_datetimes=False)
+            pre = pre * float(params.get('precipCorrectionFactor', 1.0))
+
+            config = config or {}
+            summary: Dict[str, Any] = {k: float(params[k]) for k in FORCING_PARAMS if k in params}
+            morph = project_dir / 'settings' / 'MHM' / 'morph'
+            mb_target = config.get('MHM_GLACIER_MB_TARGET')
+            if (morph / 'glacier_mask.asc').exists() and (
+                    'glacierIceDDF' in params or mb_target is not None):
+                glacier = np.loadtxt(morph / 'glacier_mask.asc', skiprows=6) == 1
+                weight = np.ones(int(glacier.sum()))
+                if config.get('MHM_GLACIER_AREA_FROM_OUTLINE'):
+                    weight = np.loadtxt(morph / 'glacier_fraction.asc', skiprows=6)[glacier]
+                with nc4.Dataset(base_dir / 'tavg.nc') as ds:
+                    tavg = np.ma.filled(ds['tavg'][:], np.nan)
+                index = pd.DatetimeIndex(times)
+                pre_g, tavg_g = pre[:, glacier], tavg[:, glacier]
+                t_snow = float(params.get('snowTreshholdTemperature', 1.0))
+                if mb_target is not None:
+                    ddf_ice = self._solve_ice_ddf(
+                        pre_g, tavg_g, t_snow, weight, index,
+                        self._calibration_water_years(config, index), float(mb_target))
+                else:
+                    ddf_ice = float(params['glacierIceDDF'])
+                ice_melt, snow = self._glacier_ice_melt(pre_g, tavg_g, ddf_ice, t_snow,
+                                                        return_snow=True)
+                balance = self._glacier_net_balance(ice_melt, snow, weight, index)
+                # Melt is per unit ice area; spread it over the whole cell.
+                ice_melt *= weight
+                pre[:, glacier] += ice_melt
+                n_active = int(np.isfinite(pre[0]).sum())
+                yearly = pd.Series(ice_melt.sum(axis=1) / max(n_active, 1),
+                                   index=index).resample('YS-OCT').sum()
+                summary.update(
+                    glacierIceDDF=round(ddf_ice, 4),
+                    glacier_cells=int(glacier.sum()),
+                    glacier_cell_equivalents=round(float(weight.sum()), 2),
+                    ice_melt_basin_mm_per_wy={str(t.year + 1): round(float(v), 1)
+                                              for t, v in yearly.items()},
+                    net_balance_mwe_per_wy={str(y): round(v, 3) for y, v in balance.items()})
+
+            with nc4.Dataset(pre_path, 'a') as ds:
+                ds['pre'][:] = np.where(np.isfinite(pre), pre, ds['pre']._FillValue)
+            (work_dir / 'forcing_adjustment.json').write_text(json.dumps(summary, indent=1))
+
+            mhm_nml = settings_dir / 'mhm.nml'
+            content = mhm_nml.read_text(encoding='utf-8')
+            for key in (r'dir_Precipitation\(1\)', r'dir_Temperature\(1\)', r'dir_ReferenceET\(1\)'):
+                content = self._set_nml_path(content, key, f'{work_dir.as_posix()}/')
+            mhm_nml.write_text(content, encoding='utf-8')
+            return True
+        except (ConfigurationError, OSError, RuntimeError, ValueError, KeyError, IndexError) as e:
+            self.logger.error(f"Error writing adjusted mHM precipitation: {e}", exc_info=True)
+            return False
+
+    @staticmethod
+    def _glacier_ice_melt(pre: np.ndarray, tavg: np.ndarray, ddf_ice: float,
+                          t_snow: float, return_snow: bool = False):
+        """Daily ice melt (mm) on glacier cells; arrays are (time, cell).
+
+        With ``return_snow`` also returns the snow cover on the ice (mm) at
+        the end of each day.
+        """
+        ddf_snow = 0.5 * ddf_ice
+        snow = np.zeros(pre.shape[1])
+        melt = np.zeros_like(pre)
+        cover = np.zeros_like(pre) if return_snow else None
+        for t in range(pre.shape[0]):
+            temp = tavg[t]
+            snow += np.where(temp <= t_snow, pre[t], 0.0)
+            degree_days = np.maximum(temp, 0.0)
+            potential = ddf_snow * degree_days
+            snow_melt = np.minimum(snow, potential)
+            snow -= snow_melt
+            unused = np.where(potential > 0, 1.0 - snow_melt / np.where(potential > 0, potential, 1.0), 0.0)
+            melt[t] = unused * ddf_ice * degree_days
+            if cover is not None:
+                cover[t] = snow
+        return (melt, cover) if return_snow else melt
+
+    @staticmethod
+    def _water_year(index: pd.DatetimeIndex) -> np.ndarray:
+        return np.asarray(index.year + (index.month >= 10).astype(int))
+
+    @classmethod
+    def _calibration_water_years(cls, config: Dict[str, Any],
+                                 index: pd.DatetimeIndex) -> list:
+        """Water years lying entirely inside CALIBRATION_PERIOD."""
+        period = str(config.get('CALIBRATION_PERIOD', ''))
+        if ',' not in period:
+            raise ConfigurationError('MHM_GLACIER_MB_TARGET needs CALIBRATION_PERIOD')
+        start, end = (pd.Timestamp(p.strip()) for p in period.split(',')[:2])
+        wy = cls._water_year(index)
+        return sorted(int(y) for y in set(wy[(index >= start) & (index <= end)])
+                      if pd.Timestamp(f'{y - 1}-10-01') >= start
+                      and pd.Timestamp(f'{y}-09-30') <= end)
+
+    @classmethod
+    def _glacier_net_balance(cls, melt: np.ndarray, snow: np.ndarray, weight: np.ndarray,
+                             index: pd.DatetimeIndex) -> Dict[int, float]:
+        """Area-weighted glacier net balance (m w.e.) per complete water year:
+        change in snow cover on the ice minus ice melt. ``melt`` is per unit
+        glacier area."""
+        w = weight / weight.sum()
+        melt_s, snow_s = melt @ w, snow @ w
+        wy = cls._water_year(index)
+        out: Dict[int, float] = {}
+        for y in np.unique(wy):
+            sel = np.flatnonzero(wy == y)
+            if index[sel[0]].month != 10 or index[sel[0]].day != 1 or \
+                    index[sel[-1]].month != 9 or index[sel[-1]].day != 30:
+                continue
+            start = snow_s[sel[0] - 1] if sel[0] > 0 else 0.0
+            out[int(y)] = float((snow_s[sel[-1]] - start - melt_s[sel].sum()) / 1000.0)
+        return out
+
+    def _solve_ice_ddf(self, pre: np.ndarray, tavg: np.ndarray, t_snow: float,
+                       weight: np.ndarray, index: pd.DatetimeIndex, years: list,
+                       target: float, lo: float = 1.0, hi: float = 30.0) -> float:
+        """Ice degree-day factor whose mean net balance over ``years`` equals
+        ``target`` (m w.e./yr). The balance falls monotonically as the factor
+        rises, so bisect; clip to [lo, hi] when the target is out of reach."""
+        if not years:
+            raise ConfigurationError('no complete water years in CALIBRATION_PERIOD')
+        n = int(np.flatnonzero(self._water_year(index) <= max(years))[-1]) + 1
+        pre, tavg, index = pre[:n], tavg[:n], index[:n]
+
+        def balance(ddf: float) -> float:
+            melt, snow = self._glacier_ice_melt(pre, tavg, ddf, t_snow, return_snow=True)
+            by_year = self._glacier_net_balance(melt, snow, weight, index)
+            return float(np.mean([by_year[y] for y in years]))
+
+        if balance(hi) > target:
+            self.logger.warning(f'glacier net balance stays above {target} m w.e. at ice DDF {hi}')
+            return hi
+        if balance(lo) < target:
+            self.logger.warning(f'glacier net balance is below {target} m w.e. even at ice DDF {lo}')
+            return lo
+        for _ in range(20):
+            mid = 0.5 * (lo + hi)
+            if balance(mid) > target:
+                lo = mid
+            else:
+                hi = mid
+        return 0.5 * (lo + hi)
 
     def _update_namelist_file(self, namelist_file: Path, params: Dict[str, float]) -> bool:
         """
@@ -152,14 +377,14 @@ class MHMWorker(BaseWorker):
                     # 5-column format: paramName = lower, upper, VALUE, flag, scaling
                     # Capture: (prefix + lower, upper,) (value) (, flag, scaling)
                     pattern = re.compile(
-                        r'(\s*' + re.escape(param_name)
+                        r'(^[ \t]*' + re.escape(param_name)
                         + r'\s*=\s*'           # paramName =
                         + r'[^,]+,'             # lower,
                         + r'\s*[^,]+,'          # upper,
                         + r'\s*)'               # whitespace before value
                         + r'([^,]+)'            # VALUE  <-- group to replace
                         + r'(,\s*\d+,\s*\d+)',  # , flag, scaling
-                        re.IGNORECASE
+                        re.MULTILINE
                     )
                     match = pattern.search(content)
                     if match:
@@ -178,8 +403,8 @@ class MHMWorker(BaseWorker):
                 else:
                     # Legacy single-value format: paramName = value
                     pattern = re.compile(
-                        r'(\s*' + re.escape(param_name) + r'\s*=\s*)([^\s,!/]+)',
-                        re.IGNORECASE
+                        r'(^[ \t]*' + re.escape(param_name) + r'\s*=\s*)([^\s,!/]+)',
+                        re.MULTILINE
                     )
                     match = pattern.search(content)
                     if match:
