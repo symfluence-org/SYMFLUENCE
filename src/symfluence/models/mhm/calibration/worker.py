@@ -244,7 +244,7 @@ class MHMWorker(BaseWorker):
                 content = self._set_nml_path(content, key, f'{work_dir}/')
             mhm_nml.write_text(content, encoding='utf-8')
             return True
-        except Exception as e:  # noqa: BLE001 — calibration resilience
+        except (OSError, RuntimeError, ValueError, KeyError, IndexError) as e:
             self.logger.error(f"Error writing adjusted mHM precipitation: {e}", exc_info=True)
             return False
 
