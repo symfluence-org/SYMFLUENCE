@@ -130,54 +130,13 @@ class RemappingWeightGenerator(ConfigMixin):
     def _weights_match_forcing_grid(
         self, remap_file: Path, sample_forcing_file: Path
     ) -> bool:
-        """Return True if cached remap weights index the current forcing grid.
+        """Verify the cached source coordinates at their actual array indices."""
+        from .coordinate_grid import weights_match_forcing_coordinates
 
-        Cached EASYMORE weights reference source cells by flat index. If the forcing
-        grid changed (e.g. resolution 0.025 -> 0.01), the same file paths are reused
-        but the indices now point to the wrong cells, silently scrambling the remap.
-        Compare the source-cell count implied by the weights to the current forcing
-        grid's cell count. On any read error, return False (regenerate = safe).
-        """
         try:
-            import pandas as pd
-
-            w = pd.read_csv(remap_file)
-            # EASYMORE remap CSVs carry 'rows'/'cols' (source grid extent) and/or a
-            # source-cell id column. Prefer rows*cols; fall back to max source id + 1.
-            weights_cells = None
-            if 'rows' in w.columns and 'cols' in w.columns:
-                weights_cells = int(w['rows'].max() + 1) * int(w['cols'].max() + 1)
-            elif 'ID_s' in w.columns:
-                weights_cells = int(w['ID_s'].max())  # 1-based count
-
-            ds = xr.open_dataset(sample_forcing_file)
-            try:
-                dims = ds.sizes
-                if 'latitude' in dims and 'longitude' in dims:
-                    forcing_cells = int(dims['latitude']) * int(dims['longitude'])
-                elif 'lat' in dims and 'lon' in dims:
-                    forcing_cells = int(dims['lat']) * int(dims['lon'])
-                elif {'y', 'x'} <= set(dims):
-                    forcing_cells = int(dims['y']) * int(dims['x'])
-                else:
-                    return True  # unknown layout: don't force needless regeneration
-            finally:
-                ds.close()
-
-            if weights_cells is None:
-                return True  # can't determine -> keep existing behaviour
-            # Allow small slack: weights may drop cells fully outside the target extent,
-            # so require the weights' grid to not EXCEED the forcing grid and to be within
-            # a generous factor (a resolution change is a large, unambiguous mismatch).
-            # Legit cached weights may drop a few edge cells with no target overlap, so
-            # allow ~15% slack; a resolution change is a far larger, unambiguous mismatch.
-            if weights_cells > forcing_cells * 1.05:
-                return False
-            if forcing_cells > weights_cells * 1.15:
-                return False
-            return True
-        except (OSError, ValueError, KeyError, TypeError) as e:  # noqa: BLE001 handled
-            self.logger.debug(f"Could not validate cached weights grid ({e}); regenerating.")
+            return weights_match_forcing_coordinates(remap_file, sample_forcing_file)
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            self.logger.debug(f"Cannot verify cached forcing-grid coordinates ({error}); regenerating.")
             return False
 
     def create_weights(
