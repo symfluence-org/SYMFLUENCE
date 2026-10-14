@@ -105,6 +105,24 @@ validation. This interface does not promote the Maríufossar prototype.
 Validation
 ----------
 
+Further process variants must retain their own model identity and cannot be
+replayed by silently changing this V2 engine. Separate glacier and land forcing
+corrections; reserve AWS sites/years before inspecting target values. Statistical
+snow patches need normalized snowfall redistribution, unchanged rainfall,
+separate snow states and geometric observation support. Test patch resolution
+and distribution priors independently of optical-data fitting.
+
+For frozen soil, preserve original SAC capacities and distinguish total from
+liquid water. Ice occupies available storage; only liquid supplies fluxes.
+Retain pre-redistribution latent enthalpy when advancing the heat component,
+including heat released by freezing new water. Equation checks and conservation
+do not establish operational SAC-HT equivalence or physical soil-state validity.
+Require explicit thermal/texture assumptions, reference cases, timestep and
+property profiles, and spring/summer flood counterchecks. Keep chronological and
+stratigraphic glacier-balance observation definitions distinct. A source-complete
+research replay remains ineligible for the native ensemble adapter until its
+identity, schema, outputs and physical qualifications are reviewed.
+
 The unit suite includes schema/hash/path checks, initial-ice effects, moving and
 rerunning a bundle, native output agreement, balance gates and rejection of
 changed ensemble observations/windows. Engine integration tests skip when the
