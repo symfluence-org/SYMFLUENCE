@@ -1,0 +1,32 @@
+diff --git a/src/meteo/mo_meteo_handler.f90 b/src/meteo/mo_meteo_handler.f90
+index 1614c4c..c96ad5c 100644
+--- a/src/meteo/mo_meteo_handler.f90
++++ b/src/meteo/mo_meteo_handler.f90
+@@ -546,12 +546,13 @@ contains
+       self%s_meteo = level1(iDomain)%iStart
+       self%e_meteo = level1(iDomain)%iEnd
+ 
+-      ! time step for meteorological variable (daily values)
+-      ! iMeteoTS = ceiling(real(tt, dp) / real(nTstepDay, dp))
++      ! time step for meteorological variable: tt counts model steps, so divide
++      ! by the number of model steps per forcing step (not by hours per
++      ! forcing step, which is only right for an hourly model step)
+       if (self%couple_all) then
+         self%iMeteoTS = 1_i4
+       else
+-        self%iMeteoTS = ceiling(real(tt, dp) / real(nint( 24._dp / real(self%nTstepForcingDay, dp)), dp))
++        self%iMeteoTS = ceiling(real(tt, dp) / real(max(1_i4, self%nTStepDay / self%nTstepForcingDay), dp))
+       end if
+     else
+       ! read chunk of meteorological forcings data (reading, upscaling/downscaling)
+@@ -559,8 +560,8 @@ contains
+       ! set start and end of meteo position
+       self%s_meteo = 1
+       self%e_meteo = level1(iDomain)%iEnd - level1(iDomain)%iStart + 1
+-      ! time step for meteorological variable (daily values)
+-      self%iMeteoTS = ceiling(real(tt, dp) / real(nint( 24._dp / real(self%nTstepForcingDay, dp)), dp)) &
++      ! time step for meteorological variable (model steps per forcing step)
++      self%iMeteoTS = ceiling(real(tt, dp) / real(max(1_i4, self%nTStepDay / self%nTstepForcingDay), dp)) &
+                       - (self%readPer%julStart - simPer(iDomain)%julStart)
+     end if
+ 
