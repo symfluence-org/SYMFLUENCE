@@ -24,7 +24,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from symfluence.core.exceptions import FileOperationError
+from symfluence.core.exceptions import ConfigurationError, FileOperationError
 from symfluence.core.geometry_utils import calculate_catchment_centroid
 from symfluence.core.modeling.base.base_preprocessor import BaseModelPreProcessor
 from symfluence.core.process_exec import run as run_subprocess
@@ -106,6 +106,16 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         self.grid_res = float(self._get_config_value(
             lambda: self.config.model.mhm.grid_res,
             default=0.02, dict_key='MHM_GRID_RES'))   # degrees (~2 km lat)
+        if not self.distributed_morph and self.config.model.mhm.match_lumped_area:
+            from scipy.optimize import brentq
+            props = self._get_catchment_properties()
+            # Same two-cell spherical area calculation as mo_common_grid.f90.
+            metres_per_degree = 6371228.0 * np.pi / 180.0
+            def area(cell):
+                return (cell * metres_per_degree) ** 2 * (
+                    np.cos(np.radians(props['lat'])) + np.cos(np.radians(props['lat'] - cell)))
+            self.LUMPED_CELLSIZE = brentq(lambda cell: area(cell) - props['area_m2'], 0.001, 5.0)
+            logger.info(f"mHM lumped cells matched to {props['area_m2'] / 1e6:.3f} km2")
         self._dist_grid = None  # cache of distributed-grid arrays/metadata
         if self.distributed_morph:
             logger.info(f"mHM distributed morphology ON (grid res {self.grid_res} deg, TauDEM flow)")
@@ -165,9 +175,8 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         from rasterio.warp import Resampling, reproject
 
         res = self.grid_res
-        dem_path = self.project_dir / 'attributes' / 'elevation' / 'dem'
+        dem_path = self.project_attributes_dir / 'elevation' / 'dem'
         dem_files = sorted(dem_path.glob('*_elv.tif'))
-        catch = self.get_catchment_path()
 
         # 1. Resample DEM to the (geographic) grid at grid_res.
         with rasterio.open(dem_files[0]) as src:
@@ -181,19 +190,51 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                       src_crs=src.crs, dst_transform=dst_t, dst_crs=src.crs,
                       resampling=Resampling.average, dst_nodata=-9999.0)
             crs = src.crs
-        # 2. Flow network via pyflwdir (in-process; depression-filled D8). Its
-        # 'd8' encoding IS the ESRI/mHM convention (1=E,2=SE,4=S,...,128=NE), so
-        # no remapping is needed. latlon=True uses geographic cell distances.
-        # (TauDEM produces the same network but fails in the workflow subprocess
-        # due to macOS stripping its GDAL/MPI dyld paths.)
+        # 2. Catchment mask. The river-basin polygon does not depend on the
+        # experiment id (the HRU catchment path does), so prefer it. A missing
+        # polygon is an error: falling back to the DEM extent picks whichever
+        # basin drains the most of the bounding box, not this catchment.
+        basin_shp = (self.project_dir / 'shapefiles' / 'river_basins'
+                     / f'{self.domain_name}_riverBasins_lumped.shp')
+        gdf = gpd.read_file(basin_shp if basin_shp.exists() else self._catchment_polygon_path())
+        if gdf.crs is None:
+            gdf = gdf.set_crs(epsg=4326)
+        polygon_km2 = float(gdf.to_crs(gdf.estimate_utm_crs()).area.sum() / 1e6)
+        gdf = gdf.to_crs(crs)
+        inside = ~geometry_mask(gdf.geometry, (nrow, ncol), dst_t, invert=False)
+
+        # 3. Flow network via pyflwdir (in-process; depression-filled D8),
+        # conditioned on the polygon: the DEM outside it is nodata and only the
+        # lowest edge cell is an outlet, so every polygon cell drains to one
+        # outlet. Deriving the basin from the raw coarse DEM instead loses ice
+        # divide and flat headwater cells that drain "elsewhere" at grid_res
+        # (14% of Tungnaa at 0.02 deg, mostly glacier). Masking the network
+        # after the fact would cut it and make mRM routing loop forever.
+        # pyflwdir's 'd8' encoding IS the ESRI/mHM convention
+        # (1=E,2=SE,4=S,...,128=NE); latlon=True uses geographic distances.
+        # (TauDEM produces the same network but fails in the workflow
+        # subprocess due to macOS stripping its GDAL/MPI dyld paths.)
         dem_filled = np.where(dem > -100.0, dem, np.nan).astype('float32')
-        flw = pyflwdir.from_dem(data=dem_filled, nodata=np.nan,
-                                transform=dst_t, latlon=True)
+        flw = pyflwdir.from_dem(data=np.where(inside, dem_filled, np.nan), nodata=np.nan,
+                                transform=dst_t, latlon=True, outlets='min')
         fdir = flw.to_array(ftype='d8').astype('int32')
         fdir = np.where(fdir > 0, fdir, 0)
         ad8 = flw.upstream_area(unit='cell').astype('float64')
         ad8 = np.where(ad8 < 0, 0, ad8)
-        # Slope (m/m) from the filled DEM gradient, using geographic cell sizes.
+        mask = inside & np.isfinite(dem_filled)
+        ad8m = np.where(mask, ad8, -1)
+        oi, oj = np.unravel_index(int(np.argmax(ad8m)), ad8m.shape)
+        # Polygon fragments not 8-connected to the main basin drain to their
+        # own pits; drop them, but refuse if that loses a material area.
+        draining = flw.basins(idxs=np.array([oi * ncol + oj])) > 0
+        dropped = int((mask & ~draining).sum())
+        if dropped > 0.02 * mask.sum():
+            raise ValueError(f"{dropped} of {int(mask.sum())} catchment cells do not drain "
+                             "to the mHM outlet; check MHM_GRID_RES and the catchment polygon")
+        if dropped:
+            logger.info(f"mHM dropped {dropped} catchment cells disconnected from the outlet")
+        mask &= draining
+        # Slope (m/m) from the unconditioned DEM gradient, geographic cell sizes.
         latc = (b.top + b.bottom) / 2.0
         ym = res * 111320.0
         xm = res * 111320.0 * max(np.cos(np.radians(latc)), 0.1)
@@ -201,33 +242,6 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                                       dem_filled), ym, xm)
         sd8 = np.hypot(dx, dy)
 
-        # 4. Hydrologic mask = the basin upstream of the catchment outlet.
-        # Masking by the raw polygon would cut the flow network (cells draining
-        # to masked neighbours), which makes mHM's mRM routing loop forever.
-        # Using pyflwdir's basin guarantees a single consistent drainage tree
-        # whose pit (outlet) drains off-domain. Intersect with the catchment
-        # polygon to pick which basin is ours.
-        try:
-            import geopandas as gpd
-            gdf = gpd.read_file(catch)
-            if gdf.crs is None:
-                gdf = gdf.set_crs(epsg=4326)
-            gdf = gdf.to_crs(crs)
-            inside = ~geometry_mask(gdf.geometry, (nrow, ncol), dst_t, invert=False)
-        except Exception as e:  # noqa: BLE001 — model execution resilience
-            logger.warning(f"Catchment polygon mask failed: {e}; DEM extent", exc_info=True)
-            inside = dem > -100.0
-        # Outlet candidate = highest-accumulation cell inside the polygon.
-        ad8p = np.where(inside & (dem > -100.0), ad8, -1)
-        oi, oj = np.unravel_index(int(np.argmax(ad8p)), ad8p.shape)
-        # Basin upstream of that outlet -> the consistent drainage tree.
-        basins = flw.basins(xy=([dst_t.c + dst_t.a * (oj + 0.5)],
-                                [dst_t.f + dst_t.e * (oi + 0.5)])).astype('int32')
-        mask = (basins > 0) & (dem > -100.0)
-        if mask.sum() < 3:  # fallback if pour-point basin is degenerate
-            mask = inside & (dem > -100.0) & (fdir >= 0)
-        ad8m = np.where(mask, ad8, -1)
-        oi, oj = np.unravel_index(int(np.argmax(ad8m)), ad8m.shape)
         # The outlet pit drains off-domain; give it a defined edge direction
         # so mHM sees a clear basin exit rather than a self-pointing pit.
         if fdir[oi, oj] <= 0:
@@ -244,20 +258,95 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             except Exception:  # noqa: BLE001
                 pass
             return out
-        soil = _resample_class(self.project_dir / 'attributes' / 'soilclass'
+        soil = _resample_class(self.project_attributes_dir / 'soilclass'
                                / f'domain_{self.domain_name}_soil_classes.tif')
-        land = _resample_class(self.project_dir / 'attributes' / 'landclass'
+        land = _resample_class(self.project_attributes_dir / 'landclass'
                                / f'domain_{self.domain_name}_land_classes.tif')
+        glacier_frac = np.where(mask, self._glacier_fraction_grid(nrow, ncol, dst_t, crs), 0.0)
+        min_frac = float(self._get_config_value(
+            lambda: self.config.model.mhm.glacier_min_fraction,
+            default=0.5, dict_key='MHM_GLACIER_MIN_FRACTION'))
+        glacier = glacier_frac >= max(min_frac, 1e-9)
 
         slope = np.clip(np.abs(sd8), 0.0001, 2.0)
         self._dist_grid = dict(
             nrow=nrow, ncol=ncol, res=res, transform=dst_t, crs=crs,
             dem=dem, fdir=fdir, facc=ad8, slope=slope, mask=mask,
-            soil=soil, land=land, outlet=(int(oi), int(oj)))
+            soil=soil, land=land, glacier=glacier, glacier_frac=glacier_frac,
+            outlet=(int(oi), int(oj)))
+        cell_km2 = (res * 111.32) ** 2 * np.cos(np.radians(
+            dst_t.f + dst_t.e * (np.arange(nrow) + 0.5)))[:, None]
+        basin_km2 = float((cell_km2 * mask).sum())
+        logger.info(f"mHM distributed basin {basin_km2:.0f} km2 vs catchment polygon "
+                    f"{polygon_km2:.0f} km2")
+        if abs(basin_km2 / polygon_km2 - 1.0) > 0.15:
+            logger.warning("mHM distributed basin area differs from the catchment "
+                           "polygon by more than 15%; check MHM_GRID_RES and the outlet")
         logger.info(f"mHM distributed grid: {nrow}x{ncol} @ {res} deg, "
                     f"{int(mask.sum())} active cells, outlet=({oi},{oj}), "
-                    f"max_acc={int(np.nanmax(ad8m))}")
+                    f"max_acc={int(np.nanmax(ad8m))}, glacier cells={int(glacier.sum())}")
+        if glacier.any():
+            logger.info(f"mHM glacier: {float((cell_km2 * glacier).sum()):.1f} km2 in glacier cells, "
+                        f"{float((cell_km2 * glacier_frac * glacier).sum()):.1f} km2 of outline within them, "
+                        f"{float((cell_km2 * glacier_frac).sum()):.1f} km2 of outline in the basin")
         return self._dist_grid
+
+    def _glacier_fraction_grid(self, nrow, ncol, transform, crs) -> np.ndarray:
+        """Glacierised fraction of each cell, from the configured glacier
+        outline.
+
+        Fractions come from rasterising the outline on a 10x finer grid and
+        block-averaging, so partially glacierised edge cells are resolved.
+        Returns all zeros when no outline is configured.
+        """
+        outline = self._get_config_value(
+            lambda: self.config.model.mhm.glacier_outline,
+            default=None, dict_key='MHM_GLACIER_OUTLINE')
+        if not outline:
+            return np.zeros((nrow, ncol))
+        from rasterio.features import rasterize
+        from rasterio.transform import Affine
+        gdf = gpd.read_file(outline)
+        if gdf.crs is None:
+            gdf = gdf.set_crs(epsg=4326)
+        gdf = gdf.to_crs(crs)
+        k = 10
+        fine_t = transform * Affine.scale(1.0 / k)
+        fine = rasterize(((g, 1) for g in gdf.geometry), out_shape=(nrow * k, ncol * k),
+                         transform=fine_t, fill=0, dtype='uint8')
+        return fine.reshape(nrow, k, ncol, k).mean(axis=(1, 3))
+
+    def _model_timestep(self) -> int:
+        """MHM_TIMESTEP, refused for a non-hourly step unless the installed mHM
+        carries the SYMFLUENCE timestep patch.
+
+        Upstream mHM picks the forcing record with ``ceil(tt / (24 h per
+        forcing step))``, i.e. it assumes ``tt`` counts hours. At a 6 h or
+        24 h step each forcing day is reused for 6 or 24 model steps and the
+        run silently consumes only the start of the forcing.
+        """
+        from .build_instructions import TIMESTEP_PATCH_MARKER
+
+        timestep = int(self._get_config_value(
+            lambda: self.config.model.mhm.timestep, default=1, dict_key='MHM_TIMESTEP'))
+        if timestep == 1:
+            return timestep
+        install = self._get_config_value(
+            lambda: self.config.model.mhm.install_path, default='default',
+            dict_key='MHM_INSTALL_PATH')
+        if not install or install == 'default':
+            data_dir = Path(self._get_config_value(
+                lambda: self.config.system.data_dir, dict_key='SYMFLUENCE_DATA_DIR'))
+            install = data_dir / 'installs' / 'mhm' / 'bin'
+        install = Path(install)
+        if not any((d / TIMESTEP_PATCH_MARKER).exists()
+                   for d in (install, install / 'bin', install.parent)):
+            raise ConfigurationError(
+                f"MHM_TIMESTEP={timestep} needs the patched mHM build "
+                f"(`symfluence binary install mhm --patched`); upstream mHM misreads "
+                f"the forcing at any step other than 1 h. No {TIMESTEP_PATCH_MARKER} "
+                f"found under {install}.")
+        return timestep
 
     def run_preprocessing(self) -> bool:
         """
@@ -268,6 +357,7 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         """
         try:
             logger.info("Starting mHM preprocessing...")
+            self._model_timestep()
 
             # Create directory structure
             self._create_directory_structure()
@@ -322,46 +412,42 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
         return start_date.to_pydatetime(), end_date.to_pydatetime()
 
+    def _catchment_polygon_path(self) -> Path:
+        """Catchment polygon: the experiment's HRU file when present, else the
+        experiment-independent river-basin polygon."""
+        for path in (self.get_catchment_path(),
+                     self.project_dir / 'shapefiles' / 'river_basins'
+                     / f'{self.domain_name}_riverBasins_lumped.shp'):
+            if path.exists():
+                return path
+        raise FileNotFoundError(
+            f"No catchment polygon for {self.domain_name}: neither "
+            f"{self.get_catchment_path()} nor the lumped river-basin shapefile exists")
+
     def _get_catchment_properties(self) -> Dict:
         """
         Get catchment properties from shapefile.
 
+        A missing polygon raises: the old placeholder (a 100 km2 basin at
+        51N, 115W) silently set the lumped cell size and coordinates.
+
         Returns:
             Dict with centroid lat/lon, area, and elevation
         """
-        try:
-            catchment_path = self.get_catchment_path()
-            if catchment_path.exists():
-                gdf = gpd.read_file(catchment_path)
+        gdf = gpd.read_file(self._catchment_polygon_path())
 
-                # Get centroid using proper CRS-aware calculation
-                lon, lat = calculate_catchment_centroid(gdf, logger=logger)
+        # Get centroid using proper CRS-aware calculation
+        lon, lat = calculate_catchment_centroid(gdf, logger=logger)
 
-                # Project to UTM for accurate area
-                utm_zone = int((lon + 180) / 6) + 1
-                utm_epsg = 32600 + utm_zone if lat >= 0 else 32700 + utm_zone
-                gdf_proj = gdf.to_crs(f"EPSG:{utm_epsg}")
-                area_m2 = gdf_proj.geometry.area.sum()
+        # Project to UTM for accurate area
+        utm_zone = int((lon + 180) / 6) + 1
+        utm_epsg = 32600 + utm_zone if lat >= 0 else 32700 + utm_zone
+        area_m2 = gdf.to_crs(f"EPSG:{utm_epsg}").geometry.area.sum()
 
-                # Get elevation if available
-                elev = float(gdf.get('elev_mean', [1000])[0]) if 'elev_mean' in gdf.columns else 1000.0
+        # Get elevation if available
+        elev = float(gdf['elev_mean'].iloc[0]) if 'elev_mean' in gdf.columns else 1000.0
 
-                return {
-                    'lat': lat,
-                    'lon': lon,
-                    'area_m2': area_m2,
-                    'elev': elev
-                }
-        except Exception as e:  # noqa: BLE001 — model execution resilience
-            logger.warning(f"Could not read catchment properties: {e}", exc_info=True)
-
-        # Defaults
-        return {
-            'lat': 51.0,
-            'lon': -115.0,
-            'area_m2': 1e8,
-            'elev': 1000.0
-        }
+        return {'lat': lat, 'lon': lon, 'area_m2': area_m2, 'elev': elev}
 
     def _generate_forcing_files(self) -> None:
         """
@@ -683,32 +769,24 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             times = precip_daily.index.values
             logger.info(f"Aggregated to {len(times)} daily timesteps")
 
-        # Estimate PET using Hamon method from temperature
-        doy = pd.DatetimeIndex(times).dayofyear
-        lat_rad = np.radians(props['lat'])
-        # Solar declination
-        declination = 0.4093 * np.sin(2 * np.pi / 365 * doy - 1.405)
-        # Day length in hours
-        hour_angle = np.arccos(-np.tan(lat_rad) * np.tan(declination))
-        day_length = 24.0 / np.pi * hour_angle
-        # Saturated vapor pressure (hPa)
-        es = 6.108 * np.exp(17.27 * temp / (temp + 237.3))
-        # Hamon PET (mm/day)
-        # D = day_length normalised to 12-hour units
-        # RHOSAT = saturated absolute humidity (g/m³) via ideal gas approximation
-        D = day_length / 12.0
-        RHOSAT = 216.7 * es / (temp + 273.15)
-        pet = 0.1651 * D * D * RHOSAT
-        pet = np.maximum(pet, 0.0)
+        doy = pd.DatetimeIndex(times).dayofyear.values
 
         if self.distributed_morph:
-            # Uniform forcing broadcast across the distributed grid (L2 meteo
-            # grid == L0/L1 grid, so resolutions align exactly). Surface forcing
-            # stays lumped; only morphology/parameters are distributed.
+            # Basin-mean forcing broadcast across the distributed grid (L2 meteo
+            # grid == L0/L1 grid, so resolutions align exactly). With
+            # MHM_TEMP_LAPSE_RATE set, temperature is lapsed from the basin-mean
+            # DEM elevation to each cell and PET follows the cell temperature;
+            # precipitation stays uniform.
+            g = self._build_distributed_grids()
+            temp_grid = self._lapse_temperature(temp, g)
+            lat2d, _ = self._grid_latlon(g)
+            pet_grid = self._compute_pet(temp_grid, doy[:, None, None], lat2d[None])
             self._write_distributed_forcing(
-                {'pre': precip, 'tavg': temp, 'pet': pet}, times)
+                {'pre': precip, 'tavg': temp_grid, 'pet': pet_grid}, times)
             logger.info(f"mHM distributed forcing written to {self.forcing_dir}")
             return
+
+        pet = self._compute_pet(temp, doy, props['lat'])
 
         # Write forcing NetCDF files in mHM-expected format
         self._write_mhm_forcing_nc(
@@ -726,6 +804,48 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
         logger.info(f"mHM forcing files written to {self.forcing_dir}")
 
+    def _lapse_temperature(self, temp: np.ndarray, g: dict) -> np.ndarray:
+        """Return temperature as (time, nrow, ncol), lapsed to each cell's
+        elevation when MHM_TEMP_LAPSE_RATE (K/km) is configured."""
+        lapse = self._get_config_value(
+            lambda: self.config.model.mhm.temp_lapse_rate,
+            default=None, dict_key='MHM_TEMP_LAPSE_RATE')
+        temp = np.asarray(temp, 'f8')
+        if lapse is None:
+            return np.broadcast_to(temp[:, None, None], (len(temp), g['nrow'], g['ncol'])).copy()
+        dem = np.where(g['mask'], g['dem'], np.nan)
+        z_ref = float(np.nanmean(dem))
+        offset = np.nan_to_num(float(lapse) * (dem - z_ref) / 1000.0)
+        logger.info(f"mHM temperature lapsed at {lapse} K/km from basin-mean "
+                    f"{z_ref:.0f} m (cell offsets {np.nanmin(offset[g['mask']]):+.1f}"
+                    f" to {np.nanmax(offset[g['mask']]):+.1f} K)")
+        return temp[:, None, None] + offset[None]
+
+    def _compute_pet(self, temp, doy, lat_deg):
+        """Daily PET (mm/day) from temperature with Hamon or Oudin
+        (MHM_PET_METHOD). Arguments broadcast, so this serves both the lumped
+        series and the (time, nrow, ncol) distributed grid."""
+        method = self._get_config_value(
+            lambda: self.config.model.mhm.pet_method,
+            default='hamon', dict_key='MHM_PET_METHOD')
+        lat_rad = np.radians(lat_deg)
+        declination = 0.4093 * np.sin(2 * np.pi / 365 * doy - 1.405)
+        ws = np.arccos(np.clip(-np.tan(lat_rad) * np.tan(declination), -1.0, 1.0))
+        if method == 'oudin':
+            # Oudin et al. (2005): PET = Re / (lambda rho) * (T + 5) / 100.
+            dr = 1 + 0.033 * np.cos(2 * np.pi / 365 * doy)
+            re = (24 * 60 / np.pi) * 0.0820 * dr * (
+                ws * np.sin(lat_rad) * np.sin(declination)
+                + np.cos(lat_rad) * np.cos(declination) * np.sin(ws))
+            pet = re / 2.45 * (temp + 5.0) / 100.0
+        else:
+            # Hamon: D = day length in 12-hour units, RHOSAT = saturated
+            # absolute humidity (g/m3).
+            D = (24.0 / np.pi * ws) / 12.0
+            es = 6.108 * np.exp(17.27 * temp / (temp + 237.3))
+            pet = 0.1651 * D * D * 216.7 * es / (temp + 273.15)
+        return np.maximum(pet, 0.0)
+
     def _grid_latlon(self, g):
         """2D lat/lon (yc,xc) of cell centres for a distributed grid dict."""
         t = g['transform']
@@ -736,8 +856,9 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         return lat2d, lon2d
 
     def _write_distributed_forcing(self, var_data: Dict, times) -> None:
-        """Write pre/tavg/pet NetCDFs + header.txt on the distributed grid,
-        broadcasting each daily series uniformly across active cells."""
+        """Write pre/tavg/pet NetCDFs + header.txt on the distributed grid.
+        Each variable is a daily series broadcast uniformly across active
+        cells, or an already-gridded (time, nrow, ncol) array."""
         g = self._build_distributed_grids()
         nrow, ncol = g['nrow'], g['ncol']
         lat2d, lon2d = self._grid_latlon(g)
@@ -760,9 +881,10 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                 latv = ds.createVariable('lat', 'f8', ('yc', 'xc')); latv.units = 'degrees_north'; latv[:] = lat2d
                 dv = ds.createVariable(name, 'f8', ('time', 'yc', 'xc'), fill_value=fill)
                 dv.units = units[name]
-                arr = np.asarray(series, 'f8')
-                arr = np.nan_to_num(arr, nan=0.0)
-                grid = np.broadcast_to(arr[:, None, None], (len(arr), nrow, ncol)).copy()
+                arr = np.nan_to_num(np.asarray(series, 'f8'), nan=0.0)
+                if arr.ndim == 1:
+                    arr = arr[:, None, None]
+                grid = np.broadcast_to(arr, (arr.shape[0], nrow, ncol)).copy()
                 grid[:, ~g['mask']] = fill
                 dv[:] = grid
             finally:
@@ -946,10 +1068,22 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         self._write_asc_array(md / 'idgauges.asc', idg, m, t, intfmt=True)
         # Land cover -> mHM 3-class scheme (1=forest,2=impervious,3=pervious).
         lc = self._landcover_to_mhm(g['land'])
+        # Glacier cells become class 2 (sealed, fracSealed_cityArea = 1): no
+        # soil store, own degree-day factors. glacier_mask.asc is not an mHM
+        # input; the calibration worker reads it to add external ice melt.
+        lc[g['glacier']] = 2
+        self._write_asc_array(md / 'glacier_mask.asc', g['glacier'].astype('int32'),
+                              m, t, intfmt=True)
+        # Glacierised fraction of each glacier cell, for MHM_GLACIER_AREA_FROM_OUTLINE.
+        self._write_asc_array(md / 'glacier_fraction.asc',
+                              np.where(g['glacier'], g['glacier_frac'], 0.0), m, t)
         self._write_asc_array(self.lcover_dir / f'lc_{start_date.year}.asc',
                               lc, m, t, intfmt=True)
         self._n_soil_classes = int(soil_ids[m].max()) if m.any() else 1
         logger.info(f"Distributed morph grids written ({self._n_soil_classes} soil classes)")
+
+    def _has_glacier_cells(self) -> bool:
+        return bool(self.distributed_morph and self._build_distributed_grids()['glacier'].any())
 
     @staticmethod
     def _dense_class_grid(grid, mask):
@@ -1038,7 +1172,7 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
   mhm_file_RestartIn(1) = ""
   mrm_file_RestartIn(1) = ""
   resolution_Routing(1) = {self.grid_res if self.distributed_morph else self.LUMPED_CELLSIZE}
-  timestep = 1
+  timestep = {self._model_timestep()}
   read_restart = .FALSE.
   optimize = .FALSE.
   optimize_restart = .FALSE.
@@ -1140,7 +1274,7 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 /
 
 &LCover_MPR
-  fracSealed_cityArea = 0.6
+  fracSealed_cityArea = {1.0 if self._has_glacier_cells() else 0.6}
 /
 
 &directories_MPR
