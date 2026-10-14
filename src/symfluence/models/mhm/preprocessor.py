@@ -24,7 +24,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from symfluence.core.exceptions import ConfigurationError, FileOperationError
+from symfluence.core.exceptions import ConfigurationError, FileOperationError, GeospatialError
 from symfluence.core.geometry_utils import calculate_catchment_centroid
 from symfluence.core.modeling.base.base_preprocessor import BaseModelPreProcessor
 from symfluence.core.process_exec import run as run_subprocess
@@ -229,8 +229,8 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         draining = flw.basins(idxs=np.array([oi * ncol + oj])) > 0
         dropped = int((mask & ~draining).sum())
         if dropped > 0.02 * mask.sum():
-            raise ValueError(f"{dropped} of {int(mask.sum())} catchment cells do not drain "
-                             "to the mHM outlet; check MHM_GRID_RES and the catchment polygon")
+            raise GeospatialError(f"{dropped} of {int(mask.sum())} catchment cells do not drain "
+                                  "to the mHM outlet; check MHM_GRID_RES and the catchment polygon")
         if dropped:
             logger.info(f"mHM dropped {dropped} catchment cells disconnected from the outlet")
         mask &= draining
@@ -420,7 +420,7 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                      / f'{self.domain_name}_riverBasins_lumped.shp'):
             if path.exists():
                 return path
-        raise FileNotFoundError(
+        raise FileOperationError(
             f"No catchment polygon for {self.domain_name}: neither "
             f"{self.get_catchment_path()} nor the lumped river-basin shapefile exists")
 

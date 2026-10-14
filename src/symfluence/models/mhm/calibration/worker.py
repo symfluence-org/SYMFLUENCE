@@ -22,6 +22,7 @@ import xarray as xr
 
 from symfluence.core.calibration.workers.base_worker import BaseWorker, WorkerTask
 from symfluence.core.constants import ModelDefaults
+from symfluence.core.exceptions import ConfigurationError
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
@@ -244,7 +245,7 @@ class MHMWorker(BaseWorker):
                 content = self._set_nml_path(content, key, f'{work_dir}/')
             mhm_nml.write_text(content, encoding='utf-8')
             return True
-        except (OSError, RuntimeError, ValueError, KeyError, IndexError) as e:
+        except (ConfigurationError, OSError, RuntimeError, ValueError, KeyError, IndexError) as e:
             self.logger.error(f"Error writing adjusted mHM precipitation: {e}", exc_info=True)
             return False
 
@@ -283,7 +284,7 @@ class MHMWorker(BaseWorker):
         """Water years lying entirely inside CALIBRATION_PERIOD."""
         period = str(config.get('CALIBRATION_PERIOD', ''))
         if ',' not in period:
-            raise ValueError('MHM_GLACIER_MB_TARGET needs CALIBRATION_PERIOD')
+            raise ConfigurationError('MHM_GLACIER_MB_TARGET needs CALIBRATION_PERIOD')
         start, end = (pd.Timestamp(p.strip()) for p in period.split(',')[:2])
         wy = cls._water_year(index)
         return sorted(int(y) for y in set(wy[(index >= start) & (index <= end)])
@@ -316,7 +317,7 @@ class MHMWorker(BaseWorker):
         ``target`` (m w.e./yr). The balance falls monotonically as the factor
         rises, so bisect; clip to [lo, hi] when the target is out of reach."""
         if not years:
-            raise ValueError('no complete water years in CALIBRATION_PERIOD')
+            raise ConfigurationError('no complete water years in CALIBRATION_PERIOD')
         n = int(np.flatnonzero(self._water_year(index) <= max(years))[-1]) + 1
         pre, tavg, index = pre[:n], tavg[:n], index[:n]
 
