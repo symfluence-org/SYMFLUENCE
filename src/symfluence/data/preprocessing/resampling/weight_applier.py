@@ -103,6 +103,15 @@ class RemappingWeightApplier(ConfigMixin):
         worker_str = f"Worker {worker_id}: " if worker_id is not None else ""
 
         try:
+            from .coordinate_grid import weights_match_forcing_coordinates
+
+            if not weights_match_forcing_coordinates(remap_file, file):
+                self.logger.error(
+                    f"{worker_str}Remapping weights do not match coordinates in {file}. "
+                    "Generate weights for this source grid before applying them."
+                )
+                return False
+
             # Check if output already exists
             if output_file.exists():
                 file_size = output_file.stat().st_size

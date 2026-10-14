@@ -343,6 +343,20 @@ Diagnostic Commands
 
 ---
 
+Forcing Remapping Across Changing Grids
+--------------------------------------
+
+The error ``Forcing grid changes between ...`` means that the archive contains
+different source coordinates, ordering, or declared cell geometry. One set of
+positional remapping weights cannot be applied to the complete archive. This
+check runs before weight generation and before existing outputs are skipped.
+
+Separate the input files by coordinate grid and generate weights from the
+corresponding source-grid shapefile for each group. Remap the groups separately,
+then combine their outputs chronologically. Cached EASYMORE source coordinates
+must match the cells at their stored row and column indices. Changing or
+regenerating weights requires regenerating affected remapped outputs as well.
+
 Tips for Successful Runs
 -------------------------
 

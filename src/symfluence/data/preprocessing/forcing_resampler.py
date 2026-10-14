@@ -577,6 +577,14 @@ class ForcingResampler(PathResolverMixin):
 
         self.logger.debug(f"Found {len(forcing_files)} forcing files to process")
 
+        # Positional weights cannot be shared across changing coordinate grids.
+        # Check the complete archive before generating weights or skipping outputs.
+        from .resampling.coordinate_grid import require_same_forcing_grid
+
+        require_same_forcing_grid(
+            forcing_files, self.dataset_handler.get_coordinate_names()
+        )
+
         # STEP 1: Create remapping weights once
         source_shp_path = self.project_dir / 'shapefiles' / 'forcing' / f"forcing_{self._get_config_value(lambda: self.config.forcing.dataset)}.shp"
         # Use backward-compatible catchment path resolution
