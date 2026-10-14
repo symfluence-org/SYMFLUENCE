@@ -209,6 +209,7 @@ class HYPEParameterManager(BaseParameterManager):
                 content = f.read()
 
             updated = 0
+            missing: List[str] = []
             for param_name, value in params.items():
                 if isinstance(value, (list, tuple)):
                     val_str = '\t'.join(f'{v:.6f}' for v in value)
@@ -223,19 +224,25 @@ class HYPEParameterManager(BaseParameterManager):
                     content = new_content
                     continue
 
-                # Match parameter line and replace first numeric value
-                # Pattern: param_name + whitespace + numeric value(s)
-                pattern = rf'^({param_name}\s+)([\d\.\-\+eE]+)'
+                # A scalar applies to every class column on the line (land-use
+                # and soil parameters have one column per class); replacing only
+                # the first column would calibrate class 1 alone.
+                pattern = rf'^({param_name}[ \t]+)([\d\.\-\+eE]+(?:[ \t]+[\d\.\-\+eE]+)*)'
 
                 def replacer(match, _value=value):
-                    nonlocal updated
-                    updated += 1
-                    return f"{match.group(1)}{_value:.6f}"
+                    count = len(match.group(2).split())
+                    return match.group(1) + '\t'.join([f'{_value:.6f}'] * count)
 
                 content, n = re.subn(pattern, replacer, content, count=1, flags=re.MULTILINE)
-
                 if n == 0:
-                    self.logger.warning(f"Parameter {param_name} not found in par.txt")
+                    missing.append(param_name)
+                updated += n
+
+            if missing:
+                # A calibrated parameter absent from par.txt would be silently inert.
+                self.logger.error(f"Parameters not found in par.txt: {missing} "
+                                  "(add them with HYPE_EXTRA_PARAMETERS)")
+                return False
 
             # Write updated content
             with open(self.par_file_path, 'w', encoding='utf-8') as f:

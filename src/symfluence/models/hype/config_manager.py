@@ -30,6 +30,8 @@ import pandas as pd
 from symfluence.core.exceptions import ValidationError
 from symfluence.core.mixins import ConfigMixin
 
+from .forcing_processor import required_extra_obs
+
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
@@ -258,9 +260,12 @@ class HYPEConfigManager(ConfigMixin):
         if self.config.get('HYPE_CRYOSPHERE_CONSTRAINTS', False):
             glacier_outputs = '\tGLCV\tGLCA\tGMLT\tCFSC'
         if self.config.get('HYPE_WATER_BALANCE_DIAGNOSTICS', False):
-            glacier_outputs += '\tSOIM\tSML1\tSML2\tSML3\tCLRV\tCMRV\tCPRC'
+            glacier_outputs += '\tSOIM\tSML1\tSML2\tSML3\tCLRV\tCMRV\tCPRC\tEPOT'
         snow_melt_model = self.config.get('HYPE_SNOW_MELT_MODEL', 0)
-        read_sw = 'y' if snow_melt_model == 2 else 'n'
+        extra_obs = required_extra_obs(self.config)
+        read_sf, read_sw, read_u, read_rh = ('y' if name in extra_obs else 'n'
+                                             for name in ('SFobs', 'SWobs', 'Uobs', 'RHobs'))
+        snowfall_model = 1 if 'SFobs' in extra_obs else 0
         info_content = f"""!! ----------------------------------------------------------------------------
 !!
 !! HYPE - Model Agnostic Framework
@@ -292,10 +297,10 @@ steplength\t1d
 !! Enable/disable optional input files
 !!
 !! -----------------
-readsfobs\tn
+readsfobs\t{read_sf}
 readswobs\t{read_sw}
-readuobs\tn
-readrhobs\tn
+readuobs\t{read_u}
+readrhobs\t{read_rh}
 readtminobs\ty
 readtmaxobs\ty
 soiliniwet\t{soiliniwet_opt}
@@ -305,7 +310,7 @@ usestop84\tn
 !! Define model options (optional)
 !!
 !! -----------------
-modeloption snowfallmodel\t0
+modeloption snowfallmodel\t{snowfall_model}
 modeloption snowdensity\t0
 modeloption snowfalldist\t2
 modeloption snowheat\t0
@@ -437,6 +442,17 @@ timeoutput decimals\t3
             threshold = self.config.get('HYPE_GLACIER_MELT_THRESHOLD', 0.0)
             par_content += f'\n!! Glacier degree-day melt; initial volume uses HYPE area-volume defaults\nglaccmlt\t{melt}\nglacttmp\t{threshold}\nglacdens\t0.85\n'
 
+        # HYPE's native model 2 implements the Oudin temperature/radiation
+        # formulation; supply its reference constants explicitly (cevp is inactive).
+        # Models 2-5 scale reference PET by the land-use crop coefficient kc.
+        # Custom templates retain their own values.
+        pet_model = self.config.get('HYPE_PET_MODEL')
+        if pet_model in (2, 3, 4, 5) and not template_file:
+            par_content += f'\n!! Reference PET (native petmodel {pet_model})\n'
+            if pet_model == 2:
+                par_content += 'jhtadd\t5.0\njhtscale\t100.0\n'
+            par_content += 'kc\t' + '\t'.join(['1.0'] * max_lu) + '\n'
+
         # Apply parameter substitutions
         percolation = self.config.get('HYPE_SOIL_PERCOLATION')
         if percolation is not None:
@@ -472,13 +488,58 @@ timeoutput decimals\t3
             if template_file or any(k in (params or {}) for k in ('glacvcoef1', 'glacvexp1')):
                 raise ValidationError('Ice-cap volume preservation requires the default area-volume relation')
             par_content += '\n!! Relation used to preserve parent ice-cap volume across bands\nglacvcoef1\t1.701\nglacvexp1\t1.25\n'
+        extra = self.config.get('HYPE_EXTRA_PARAMETERS')
+        if extra:
+            par_content = self._apply_extra_parameters(par_content, extra, max_lu, num_soil)
         if params:
+            missing = [k for k in params if not re.search(fr'^{re.escape(k)}\s', par_content, flags=re.MULTILINE)]
+            if missing:
+                # Substitution would silently leave these parameters inert.
+                raise ValidationError(f'Calibrated HYPE parameters not in par.txt: {missing}; '
+                                      'add them with HYPE_EXTRA_PARAMETERS')
             par_content = self._apply_param_substitutions(par_content, params)
 
         with open(output_file, 'w', encoding='utf-8') as f:
             f.write(par_content)
 
         self.logger.debug(f"Created par.txt in {self.output_path}")
+
+    # Class-dependent parameters a scalar HYPE_EXTRA_PARAMETERS entry is
+    # replicated across when the name is not already in par.txt (HYPE 5 par.txt
+    # documentation). Anything else is written as a single general value.
+    LANDUSE_PARAMETERS = frozenset({
+        'ttmp', 'cmlt', 'cmrad', 'snalbmin', 'snalbmax', 'snalbkexp', 'cevp', 'kc', 'alb',
+        'fepotsnow', 'ttrig', 'treda', 'tredb', 'srrcs', 'surfmem', 'depthrel', 'frost',
+        'fscdistmax', 'fscdist0', 'fscdist1', 'fepotglac'})
+    SOIL_PARAMETERS = frozenset({
+        'rrcs1', 'rrcs2', 'wcwp', 'wcfc', 'wcep', 'wcwp1', 'wcfc1', 'wcep1', 'mperc1', 'mperc2',
+        'bfroznsoil', 'logsatmp', 'bcosby', 'sfrost', 'macrate', 'mactrinf', 'mactrsm', 'srrate'})
+
+    def _apply_extra_parameters(
+        self, par_content: str, extra: dict[str, Any], max_lu: int, num_soil: int
+    ) -> str:
+        """Add or replace par.txt entries from ``HYPE_EXTRA_PARAMETERS``.
+
+        Existing entries keep their column count (scalars are replicated).
+        New class-dependent entries get one column per land-use or soil class;
+        lists are written as given and must match that class count.
+        """
+        for name, value in extra.items():
+            if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*', str(name)):
+                raise ValidationError(f'Invalid HYPE parameter name {name!r}')
+            values = list(value) if isinstance(value, (list, tuple)) else [value]
+            if not values or not all(isinstance(v, (int, float)) and math.isfinite(v) for v in values):
+                raise ValidationError(f'HYPE parameter {name} needs finite numeric values')
+            width = max_lu if name in self.LANDUSE_PARAMETERS else num_soil if name in self.SOIL_PARAMETERS else 1
+            if re.search(fr'^{name}\s', par_content, flags=re.MULTILINE):
+                par_content = self._apply_param_substitutions(par_content, {name: value})
+                continue
+            if len(values) == 1:
+                values = values * width
+            elif len(values) != width:
+                raise ValidationError(f'HYPE parameter {name} needs 1 or {width} values, got {len(values)}')
+            par_content += f'{name}\t' + '\t'.join(str(v) for v in values) + '\t!! HYPE_EXTRA_PARAMETERS\n'
+        return par_content
 
     def _generate_landuse_params(
         self,

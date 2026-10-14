@@ -71,6 +71,16 @@ PARAMS: Dict[str, ParameterInfo] = {
     'ilratk': ParameterInfo(0.1, 1000.0, '-', 'Internal lake rating curve coefficient', 'routing'),
     'ilratp': ParameterInfo(1.0, 10.0, '-', 'Internal lake rating curve exponent', 'routing'),
     'illdepth': ParameterInfo(0.1, 2.0, 'm', 'Internal lake depth', 'routing'),
+    'cmrad': ParameterInfo(0.0, 1.5, 'mm/(MJ/m2)', 'Snow radiation melt coefficient (snowmeltmodel 2)', 'snow'),
+    'fscdist0': ParameterInfo(0.3, 0.8, '-', 'Snow distribution coefficient (fractional snow cover)', 'snow'),
+    'pcusnow': ParameterInfo(0.0, 0.6, '-', 'Snowfall undercatch correction', 'precipitation'),
+    'pcurain': ParameterInfo(0.0, 0.3, '-', 'Rainfall undercatch correction', 'precipitation'),
+    'pcelevadd': ParameterInfo(0.0, 0.15, '1/100 m', 'Precipitation increase per 100 m above pcelevth', 'precipitation'),
+    'mperc1': ParameterInfo(0.1, 20.0, 'mm/day', 'Maximum percolation, soil layer 1 to 2', 'soil', transform='log'),
+    'mperc2': ParameterInfo(0.1, 20.0, 'mm/day', 'Maximum percolation, soil layer 2 to 3', 'soil', transform='log'),
+    'glaccmlt': ParameterInfo(2.0, 12.0, 'mm/°C/day', 'Glacier ice degree-day melt coefficient', 'glacier'),
+    'glacttmp': ParameterInfo(-2.0, 2.0, '°C', 'Glacier ice melt threshold temperature', 'glacier'),
+    'glaccmrad': ParameterInfo(0.0, 1.5, 'mm/(MJ/m2)', 'Glacier radiation melt coefficient (snowmeltmodel 2)', 'glacier'),
 }
 
 #: Tier A -- the catalogue names composing HYPE's bound set, in served order.
@@ -112,6 +122,16 @@ BOUND_SET: List[str] = [
     'ilratk',
     'ilratp',
     'illdepth',
+    'cmrad',
+    'fscdist0',
+    'pcusnow',
+    'pcurain',
+    'pcelevadd',
+    'mperc1',
+    'mperc2',
+    'glaccmlt',
+    'glacttmp',
+    'glaccmrad',
 ]
 
 #: Catalogue keys are already the served names.
