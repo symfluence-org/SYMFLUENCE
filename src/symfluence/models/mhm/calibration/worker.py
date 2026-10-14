@@ -144,15 +144,15 @@ class MHMWorker(BaseWorker):
                       lambda m: f'{m.group(1)}"{value}"', content, flags=re.MULTILINE)
 
     def _localise_outputs(self, mhm_nml: Path, out_dir: Path) -> None:
-        """Point every mHM output path in ``mhm_nml`` at ``out_dir``."""
+        """Point every mHM output path in ``mhm_nml`` at ``out_dir`` (forward slashes on every OS)."""
         out_dir.mkdir(parents=True, exist_ok=True)
         content = mhm_nml.read_text(encoding='utf-8')
         for key in _OUTPUT_KEYS:
-            content = self._set_nml_path(content, key, f'{out_dir}/')
+            content = self._set_nml_path(content, key, f'{out_dir.as_posix()}/')
         for key in _RESTART_KEYS:
             match = re.search(r'^\s*' + key + r'\s*=\s*"([^"]*)"', content, flags=re.MULTILINE)
             if match:
-                content = self._set_nml_path(content, key, str(out_dir / Path(match.group(1)).name))
+                content = self._set_nml_path(content, key, (out_dir / Path(match.group(1)).name).as_posix())
         mhm_nml.write_text(content, encoding='utf-8')
 
     def _write_adjusted_precip(self, settings_dir: Path, project_dir: Path,
@@ -242,7 +242,7 @@ class MHMWorker(BaseWorker):
             mhm_nml = settings_dir / 'mhm.nml'
             content = mhm_nml.read_text(encoding='utf-8')
             for key in (r'dir_Precipitation\(1\)', r'dir_Temperature\(1\)', r'dir_ReferenceET\(1\)'):
-                content = self._set_nml_path(content, key, f'{work_dir}/')
+                content = self._set_nml_path(content, key, f'{work_dir.as_posix()}/')
             mhm_nml.write_text(content, encoding='utf-8')
             return True
         except (ConfigurationError, OSError, RuntimeError, ValueError, KeyError, IndexError) as e:

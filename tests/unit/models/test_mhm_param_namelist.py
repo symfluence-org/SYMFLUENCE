@@ -51,8 +51,9 @@ def test_localise_outputs_rewrites_only_output_paths(tmp_path):
         '  dir_Precipitation(1) = "/shared/forcing/"\n')
     _worker()._localise_outputs(nml, tmp_path / "proc_1")
     text = nml.read_text()
-    assert f'dir_Out(1) = "{tmp_path}/proc_1/"' in text
-    assert f'mhm_file_RestartOut(1) = "{tmp_path}/proc_1/mHM_restart_001.nc"' in text
+    out = tmp_path.as_posix()
+    assert f'dir_Out(1) = "{out}/proc_1/"' in text
+    assert f'mhm_file_RestartOut(1) = "{out}/proc_1/mHM_restart_001.nc"' in text
     assert 'dir_Precipitation(1) = "/shared/forcing/"' in text
 
 
