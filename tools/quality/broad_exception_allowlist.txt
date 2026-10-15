@@ -749,7 +749,7 @@ src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker._update_paramete
 src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker._update_upw_parameters:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker.apply_parameters:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker.run_model:except Exception as e:  # noqa: BLE001 — calibration resilience
+src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker._run_model:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/gsflow/calibration/worker.py:_evaluate_gsflow_parameters_worker:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/gsflow/coupling.py:GSFLOWCouplingManager.update_modflow_parameters:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/gsflow/extractor.py:GSFLOWResultExtractor._parse_statvar_file:except Exception as e:  # noqa: BLE001 — model execution resilience

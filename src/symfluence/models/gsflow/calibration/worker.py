@@ -8,14 +8,17 @@ Worker implementation for GSFLOW model optimization.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import numpy as np
 import pandas as pd
 
 from symfluence.core.calibration.workers.base_worker import BaseWorker, WorkerTask
@@ -62,65 +65,14 @@ class GSFLOWWorker(BaseWorker):
                     break
 
             params = self._enforce_constraints(params)
-
-            # Update PRMS params
-            param_file_name = config.get('GSFLOW_PARAMETER_FILE', 'params.dat')
-            param_file = settings_dir / param_file_name
-            if param_file.exists():
-                prms_params = {k: v for k, v in params.items() if k not in ('K', 'SY')}
-                if prms_params:
-                    self._update_parameter_file(param_file, prms_params)
-
-            # Update MODFLOW UPW params (K, SY) in modflow/ subdir
-            modflow_params = {k: v for k, v in params.items() if k in ('K', 'SY')}
-            if modflow_params:
-                modflow_dir = settings_dir / 'modflow'
-                if not modflow_dir.exists():
-                    modflow_dir = settings_dir  # fallback
-                self._update_upw_parameters(modflow_dir, modflow_params)
-
+            self._trial_params = dict(params)
+            from ..parameter_files import apply_gsflow_parameters
+            apply_gsflow_parameters(settings_dir, params, config.get('GSFLOW_PARAMETER_FILE', 'params.dat'))
             return True
         except Exception as e:  # noqa: BLE001 — calibration resilience
             self.logger.error(f"Error applying GSFLOW parameters: {e}", exc_info=True)
             import traceback
             self.logger.error(traceback.format_exc())
-            return False
-
-    def _update_upw_parameters(self, search_dir: Path, params: Dict[str, float]) -> bool:
-        """Update K and SY in UPW package file.
-
-        UPW layout (after header + layer flags):
-          CONSTANT <HK>      # line index 7
-          CONSTANT <VKA>     # line index 8
-          CONSTANT <SS>      # line index 9
-          CONSTANT <SY>      # line index 10
-        """
-        upw_files = list(search_dir.glob('*.upw'))
-        if not upw_files:
-            self.logger.warning(f"No UPW package file found in {search_dir}")
-            return True
-
-        try:
-            upw_file = upw_files[0]
-            lines = upw_file.read_text(encoding='utf-8').split('\n')
-
-            # Find the CONSTANT lines after the layer flag lines
-            const_indices = [i for i, l in enumerate(lines)
-                             if l.strip().upper().startswith('CONSTANT')]
-
-            # Expected: HK=0, VKA=1, SS=2, SY=3 (in order of CONSTANT lines)
-            if len(const_indices) >= 4:
-                if 'K' in params:
-                    lines[const_indices[0]] = f"  CONSTANT  {params['K']:.6e}"
-                    lines[const_indices[1]] = f"  CONSTANT  {params['K']:.6e}"  # VKA = HK
-                if 'SY' in params:
-                    lines[const_indices[3]] = f"  CONSTANT  {params['SY']:.6e}"
-
-            upw_file.write_text('\n'.join(lines), encoding='utf-8')
-            self.logger.debug(f"Updated MODFLOW UPW: {params}")
-            return True
-        except Exception as e:  # noqa: BLE001 — calibration resilience
-            self.logger.error(f"Error updating UPW: {e}", exc_info=True)
             return False
 
     @staticmethod
@@ -140,56 +92,24 @@ class GSFLOWWorker(BaseWorker):
                 p['tmax_allsnow'] = p['tmax_allrain'] - 2.0
         return p
 
-    def _update_parameter_file(self, param_file: Path, params: Dict[str, float]) -> bool:
-        """Update PRMS ####-delimited parameter file."""
-        try:
-            content = param_file.read_text(encoding='utf-8')
-            blocks = content.split('####\n')
-            updated_blocks = []
-            for block in blocks:
-                updated_block = block
-                for param_name, value in params.items():
-                    lines = block.strip().split('\n')
-                    for line in lines:
-                        if line.strip() == param_name:
-                            updated_block = self._replace_block_values(block, param_name, value)
-                            break
-                updated_blocks.append(updated_block)
-            param_file.write_text('####\n'.join(updated_blocks), encoding='utf-8')
-            return True
-        except Exception as e:  # noqa: BLE001 — calibration resilience
-            self.logger.error(f"Error updating parameter file: {e}", exc_info=True)
-            return False
-
-    def _replace_block_values(self, block: str, param_name: str, value: float) -> str:
-        stripped = block.strip()
-        lines = stripped.split('\n')
-        param_idx = None
-        for i, line in enumerate(lines):
-            if line.strip() == param_name:
-                param_idx = i
-                break
-        if param_idx is None:
-            return block
-        try:
-            dim_size = int(lines[param_idx + 3].strip())
-        except (IndexError, ValueError):
-            dim_size = 1
-        value_start = param_idx + 5
-        formatted = f"{value:.6f}"
-        new_lines = lines[:value_start]
-        for _ in range(dim_size):
-            new_lines.append(formatted)
-        remaining = value_start + dim_size
-        if remaining < len(lines):
-            new_lines.extend(lines[remaining:])
-        result = '\n'.join(new_lines)
-        if block.endswith('\n'):
-            result += '\n'
-        return result
-
     def run_model(self, config: Dict[str, Any], settings_dir: Path, output_dir: Path, **kwargs) -> bool:
-        """Run GSFLOW model."""
+        """Run GSFLOW model; with GSFLOW_EVALUATION_LOG set, append one JSON line per run."""
+        self._last_error = ''
+        start = time.monotonic()
+        ok = self._run_model(config, settings_dir, output_dir, **kwargs)
+        log_path = config.get('GSFLOW_EVALUATION_LOG')
+        if log_path:
+            record = dict(time=pd.Timestamp.now().isoformat(timespec='seconds'), run_dir=str(settings_dir),
+                          ok=ok, seconds=round(time.monotonic() - start, 1), error=self._last_error or None,
+                          params=getattr(self, '_trial_params', None))
+            try:
+                with open(log_path, 'a') as f:
+                    f.write(json.dumps(record) + '\n')
+            except OSError as e:
+                self.logger.warning(f'Could not write GSFLOW evaluation log {log_path}: {e}')
+        return ok
+
+    def _run_model(self, config: Dict[str, Any], settings_dir: Path, output_dir: Path, **kwargs) -> bool:
         try:
             data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
             sim_dir = Path(kwargs.get('sim_dir', output_dir))
@@ -244,7 +164,8 @@ class GSFLOWWorker(BaseWorker):
                         timeout=timeout
                     )
             except subprocess.TimeoutExpired:
-                self.logger.warning(f"GSFLOW timed out after {timeout}s")
+                self._last_error = f'GSFLOW timed out after {timeout}s'
+                self.logger.warning(self._last_error)
                 return False
 
             if result.returncode != 0:
@@ -262,6 +183,19 @@ class GSFLOWWorker(BaseWorker):
                 self._last_error = "No GSFLOW output files produced"
                 self.logger.error(self._last_error)
                 return False
+            budget_file = sim_dir / 'gsflow.csv'
+            if budget_file.exists() and self._extract_streamflow_from_csv(budget_file) is None:
+                self._last_error = "Invalid GSFLOW coupled budget; refusing to score finite outlet flow alone"
+                self.logger.error(self._last_error)
+                return False
+            budget_log = sim_dir / 'gsflow.out'
+            if budget_log.exists():
+                import re
+                failures = re.findall(r'Number of non-convergence:\s*(\d+)', budget_log.read_text())
+                if any(int(n) > 0 for n in failures):
+                    self._last_error = f'GSFLOW reported non-converged time steps ({max(int(n) for n in failures)})'
+                    self.logger.warning(self._last_error)
+                    return False
             return True
         except Exception as e:  # noqa: BLE001 — calibration resilience
             self._last_error = str(e)
@@ -360,6 +294,8 @@ class GSFLOWWorker(BaseWorker):
                          or list(sim_dir.glob('*.csv')))
             if csv_files:
                 sim_series = self._extract_streamflow_from_csv(csv_files[0])
+                if sim_series is None or len(sim_series) == 0:
+                    return {'kge': self.penalty_score, 'error': 'Invalid coupled streamflow/budget CSV'}
 
             if sim_series is None or len(sim_series) == 0:
                 output_files = list(sim_dir.glob('statvar*'))
@@ -393,9 +329,22 @@ class GSFLOWWorker(BaseWorker):
             obs_aligned, sim_aligned = self._streamflow_metrics.align_timeseries(
                 sim_series, obs_series, calibration_period=period_tuple
             )
-            return self._streamflow_metrics.calculate_metrics(
+            results = self._streamflow_metrics.calculate_metrics(
                 obs_aligned, sim_aligned, metrics=['kge', 'nse']
             )
+            if config.get('GSFLOW_CRYOSPHERE_CONSTRAINTS', False):
+                # Same snow-cover / glacier mass-balance scores as PRMS (GSFLOW
+                # embeds PRMS); always scored over the calibration period.
+                from symfluence.models.prms.cryosphere import calculate_constraints
+                statvar = next(iter(sorted(sim_dir.glob('statvar*'))), None)
+                param_dir = Path(settings_dir) if settings_dir else project_dir / 'settings' / 'GSFLOW'
+                if statvar is None:
+                    return {'kge': self.penalty_score, 'error': 'No statvar for cryosphere constraints'}
+                results.update(calculate_constraints(
+                    statvar, param_dir / config.get('GSFLOW_PARAMETER_FILE', 'params.dat'), project_dir,
+                    config.get('CALIBRATION_PERIOD', ''), config.get('GSFLOW_SNOW_COVER_ERROR_SCALE', 0.2),
+                    config.get('GSFLOW_GLACIER_MB_ERROR_SCALE', 1.0)))
+            return results
         except Exception as e:  # noqa: BLE001 — calibration resilience
             self.logger.error(f"Error calculating GSFLOW metrics: {e}", exc_info=True)
             return {'kge': self.penalty_score, 'error': str(e)}
@@ -415,6 +364,10 @@ class GSFLOWWorker(BaseWorker):
                                               'basinstreamflow_q')), None)
             if flow_col is None:
                 return None
+            for column in [c for c in df if c == flow_col or c.endswith(('_S', '_Q'))]:
+                if column in df and not np.isfinite(pd.to_numeric(df[column], errors='coerce')).all():
+                    self.logger.error(f"Non-finite GSFLOW budget variable {column} in {csv_file}")
+                    return None
             idx = pd.to_datetime(df[date_col])
             series = pd.Series(pd.to_numeric(df[flow_col], errors='coerce').values,
                                index=idx, name='GSFLOW_discharge_cms') / 86400.0

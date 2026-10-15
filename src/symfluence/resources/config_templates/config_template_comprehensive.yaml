@@ -7366,6 +7366,190 @@ GSFLOW_PARAMS_TO_CALIBRATE: soil_moist_max,soil_rechr_max,ssr2gw_rate,gwflow_coe
 #   Usage:      3
 GSFLOW_TIMEOUT: 7200
 
+# Calibration: append one JSON line per run (params, seconds, error).
+# GSFLOW_EVALUATION_LOG
+#   Type:        str | None
+#   Default:     None
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_EVALUATION_LOG: null
+
+# Real-basin GSFLOW (GSFLOW_GW_GRID_MODE: basin): MODFLOW grid clipped to the
+# delineated subbasins with DEM land surface, SFR along the river network,
+# HRUs = subbasin x elevation band x land/glacier mapped to cells by overlap.
+
+# square: schematic grid (distributed_gw / 3x3). basin: MODFLOW grid clipped to
+# the delineated subbasins, SFR along the river network, HRUs = subbasin x
+# elevation band x land/glacier mapped to cells by true overlap.
+# GSFLOW_GW_GRID_MODE
+#   Type:        Literal['square', 'basin']
+#   Default:     square
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_GW_GRID_MODE: square
+
+# GSFLOW_GW_CELL_SIZE_M
+#   Type:        <class 'float'>
+#   Default:     2000.0
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_GW_CELL_SIZE_M: 2000.0
+
+# Projected EPSG code for the grid; default: UTM zone of the basin.
+# GSFLOW_GRID_CRS
+#   Type:        int | None
+#   Default:     null
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_GRID_CRS: null
+
+# GSFLOW_HRU_BAND_SIZE_M
+#   Type:        <class 'float'>
+#   Default:     200.0
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_HRU_BAND_SIZE_M: 200.0
+
+# GSFLOW_MIN_HRU_AREA_KM2
+#   Type:        <class 'float'>
+#   Default:     2.0
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_MIN_HRU_AREA_KM2: 2.0
+
+# GSFLOW_MIN_GLACIER_HRU_AREA_KM2
+#   Type:        <class 'float'>
+#   Default:     0.25
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_MIN_GLACIER_HRU_AREA_KM2: 0.25
+
+# Delineated subbasins (GRU_ID, gru_to_seg).
+# GSFLOW_SUBBASIN_SHAPEFILE
+#   Type:        str | None
+#   Default:     null
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_SUBBASIN_SHAPEFILE: null
+
+# TauDEM river network (LINKNO, DSLINKNO).
+# GSFLOW_RIVER_NETWORK_SHAPEFILE
+#   Type:        str | None
+#   Default:     null
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_RIVER_NETWORK_SHAPEFILE: null
+
+# GSFLOW_DEM_PATH
+#   Type:        str | None
+#   Default:     null
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_DEM_PATH: null
+
+# GSFLOW_GLACIER_OUTLINES
+#   Type:        str | None
+#   Default:     null
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_GLACIER_OUTLINES: null
+
+# pandas query selecting outlines, e.g. "id == 86".
+# GSFLOW_GLACIER_OUTLINE_QUERY
+#   Type:        str | None
+#   Default:     null
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_GLACIER_OUTLINE_QUERY: null
+
+# GSFLOW_CHANNEL_DEPTH_M
+#   Type:        <class 'float'>
+#   Default:     1.0
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_CHANNEL_DEPTH_M: 1.0
+
+# UZF NTRAIL2 (trailing waves); fewer is faster (basin mode).
+# GSFLOW_UZF_NTRAIL
+#   Type:        <class 'int'>
+#   Default:     15
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_UZF_NTRAIL: 15
+
+# UZF NSETS2 (basin mode).
+# GSFLOW_UZF_NSETS
+#   Type:        <class 'int'>
+#   Default:     20
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_UZF_NSETS: 20
+
+# Default: max(100 m, 5-95% relief).
+# GSFLOW_AQUIFER_THICKNESS_M
+#   Type:        float | None
+#   Default:     null
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_AQUIFER_THICKNESS_M: null
+
+# PRMS cover type for land HRUs (0 bare, 1 grass, 2 shrub, 3 trees).
+# GSFLOW_COV_TYPE
+#   Type:        <class 'int'>
+#   Default:     3
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_COV_TYPE: 3
+
+# GSFLOW_GLACIER_FLAG
+#   Type:        <class 'bool'>
+#   Default:     false
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_GLACIER_FLAG: false
+
+# False = fixed glacier geometry; requires a `binary install gsflow --patched`
+# build.
+# GSFLOW_GLACIER_DYNAMICS
+#   Type:        <class 'bool'>
+#   Default:     true
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_GLACIER_DYNAMICS: true
+
+# GSFLOW_FORCING_MODE
+#   Type:        Literal['station', 'climate_hru']
+#   Default:     station
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_FORCING_MODE: station
+
+# Canonical forcing NetCDF with an hru dimension.
+# GSFLOW_HRU_FORCING_PATH
+#   Type:        str | None
+#   Default:     null
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_HRU_FORCING_PATH: null
+
+# Elevation-band lower bound (m) -> source hruId; each HRU uses its band
+# (nearest band outside the mapped range).
+# GSFLOW_HRU_FORCING_BAND_IDS
+#   Type:        dict[int, int] | None
+#   Default:     null
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_HRU_FORCING_BAND_IDS: null
+
+# GSFLOW_SEPARATE_GLACIER_DEPLETION_CURVE
+#   Type:        <class 'bool'>
+#   Default:     false
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_SEPARATE_GLACIER_DEPLETION_CURVE: false
+
+# Add snow-cover and glacier mass-balance scores (PRMS scheme).
+# GSFLOW_CRYOSPHERE_CONSTRAINTS
+#   Type:        <class 'bool'>
+#   Default:     false
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_CRYOSPHERE_CONSTRAINTS: false
+
+# GSFLOW_SNOW_COVER_ERROR_SCALE
+#   Type:        <class 'float'>
+#   Default:     0.2
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_SNOW_COVER_ERROR_SCALE: 0.2
+
+# GSFLOW_GLACIER_MB_ERROR_SCALE
+#   Type:        <class 'float'>
+#   Default:     1.0
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_GLACIER_MB_ERROR_SCALE: 1.0
+
+# GSFLOW_PARAMETER_OVERRIDES
+#   Type:        dict[str, dict]
+#   Default:     {}
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_PARAMETER_OVERRIDES: {}
+
 # Distributed-groundwater mode: lumped PRMS surface over an NxN MODFLOW grid
 # with per-cell DEM elevations, so hydraulic conductivity / spatial routing matter.
 # GSFLOW_DISTRIBUTED_GW
