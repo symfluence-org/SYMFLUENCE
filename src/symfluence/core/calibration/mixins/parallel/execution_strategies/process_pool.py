@@ -61,11 +61,19 @@ class ProcessPoolExecutionStrategy(ExecutionStrategy):
 
         results: List[Dict[str, Any]] = [{} for _ in tasks]
 
+        from symfluence.core.calibration.eval_watchdog import get_watchdog
+        watchdog = get_watchdog()
+
         try:
             # Use ProcessPoolExecutor.map to preserve order
             with ProcessPoolExecutor(max_workers=max_workers) as executor:
                 try:
-                    results = list(executor.map(worker_func, tasks))
+                    results = []
+                    for wave in self._waves_without_shared_dirs(tasks):
+                        watchdog.beat()
+                        for result in executor.map(worker_func, wave):
+                            results.append(result)
+                            watchdog.beat()  # each completed task is progress
                 except BrokenExecutor as e:
                     self.logger.warning(f"Process pool was broken: {str(e)}. Falling back to sequential execution.")
                     # Fallback to sequential execution
@@ -76,3 +84,27 @@ class ProcessPoolExecutionStrategy(ExecutionStrategy):
             results = [worker_func(task) for task in tasks]
 
         return results
+
+    @staticmethod
+    def _waves_without_shared_dirs(tasks: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
+        """Split tasks into consecutive waves in which no two tasks share a ``proc_id``.
+
+        Tasks with the same ``proc_id`` use the same per-process run directory
+        (settings, forcing, output). When a batch holds more tasks than workers,
+        ``executor.map`` would hand a freed worker the next task even though the
+        task occupying that directory is still running.
+        """
+        waves: List[List[Dict[str, Any]]] = []
+        current: List[Dict[str, Any]] = []
+        seen: set = set()
+        for task in tasks:
+            proc_id = task.get('proc_id') if isinstance(task, dict) else None
+            if proc_id is not None and proc_id in seen:
+                waves.append(current)
+                current, seen = [], set()
+            current.append(task)
+            if proc_id is not None:
+                seen.add(proc_id)
+        if current:
+            waves.append(current)
+        return waves
