@@ -25,6 +25,7 @@ class GSFLOWParameterManager(BaseParameterManager):
     # Parameters are written by parameter_files.apply_gsflow_parameters.
     # Note: soil_rechr_max, gwflow_coef, gw_seep_coef and tmax_allrain have no
     # effect in COUPLED mode (GSFLOW v2.4.0+ ignores them); do not calibrate them.
+    # The all-rain threshold is tmax_allrain_offset (above tmax_allsnow).
 
     def __init__(
         self,
