@@ -155,6 +155,8 @@ def write_parameters(path: Path, geo: BasinGeometry, cfg, overrides: Dict[str, d
         w('emis_noppt', H, [0.757] * n)
         w('freeh2o_cap', H, [0.05] * n)
         w('cecn_coef', M, [5.0] * 12)
+        w('albset_sna', (['one'],), 0.05)
+        w('albset_snm', (['one'],), 0.2)
         w('snarea_curve', (['ndeplval'],), SNAREA_CURVE * ndepl)
         w('snarea_thresh', H, [50.0] * n)
         w('transp_beg', H, [4] * n, 1)
@@ -174,7 +176,8 @@ def write_parameters(path: Path, geo: BasinGeometry, cfg, overrides: Dict[str, d
         for k, v in (('gwflow_coef', 0.015), ('gwstor_init', 2.0), ('gwstor_min', 0.0), ('gwsink_coef', 0.0),
                      ('gw_seep_coef', 0.02)):
             w(k, (['ngw'],), [v] * n)
-        w('tmax_allrain', M, [3.3] * 12)
+        # PRMS 5 ignores tmax_allrain (PRMS4_flag off): all-rain at tmax_allsnow + offset
+        w('tmax_allrain_offset', M, [3.3] * 12)
         w('tmax_allsnow', M, [0.0] * 12)
         w('adjmix_rain', M, [1.0] * 12)
         w('tmax_adj', H, [0.0] * n)

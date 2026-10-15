@@ -120,6 +120,8 @@ def test_written_inputs_and_parameter_updates(basin, tmp_path):
     apply_gsflow_parameters(settings, {'rain_cbh_adj': 1.2, 'land_sca_max': 0.7, 'K': 250.0, 'SY': 0.1,
                                        'strhc1': 3.5})
     text = (settings / 'params.dat').read_text()
+    assert '\ntmax_allrain_offset\n' in text and '\ntmax_allrain\n' not in text   # PRMS 5 ignores tmax_allrain
+    assert '\nalbset_sna\n' in text and '\nalbset_snm\n' in text
     block = text.split('####\nrain_cbh_adj\n')[1].split('####')[0].split('\n')
     assert block[0] == '2' and block[5:5 + g.nhru * 12] == ['1.200000'] * (g.nhru * 12)
     upw = (settings / 'modflow/bow.upw').read_text()

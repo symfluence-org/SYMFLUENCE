@@ -7366,6 +7366,13 @@ GSFLOW_PARAMS_TO_CALIBRATE: soil_moist_max,soil_rechr_max,ssr2gw_rate,gwflow_coe
 #   Usage:      3
 GSFLOW_TIMEOUT: 7200
 
+# Calibration: append one JSON line per run (params, seconds, error).
+# GSFLOW_EVALUATION_LOG
+#   Type:        str | None
+#   Default:     None
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_EVALUATION_LOG: null
+
 # Real-basin GSFLOW (GSFLOW_GW_GRID_MODE: basin): MODFLOW grid clipped to the
 # delineated subbasins with DEM land surface, SFR along the river network,
 # HRUs = subbasin x elevation band x land/glacier mapped to cells by overlap.

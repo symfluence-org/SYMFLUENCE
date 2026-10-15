@@ -54,6 +54,8 @@ class GSFLOWConfig(BaseModel):
                                     description='Steady-state initialization recharge, m/day; estimate from spin-up, not evaluation discharge.')
     uzf_saturated_water_content: float = Field(default=0.30, alias='GSFLOW_UZF_SATURATED_WATER_CONTENT', gt=0., lt=1.)
     timeout: int = Field(default=7200, alias='GSFLOW_TIMEOUT', ge=60, le=86400)
+    evaluation_log: str | None = Field(default=None, alias='GSFLOW_EVALUATION_LOG',
+                                       description='Calibration: append one JSON line per run (params, seconds, error).')
 
     # --- Real-basin geometry (gw_grid_mode: basin) -------------------------
     gw_grid_mode: Literal['square', 'basin'] = Field(

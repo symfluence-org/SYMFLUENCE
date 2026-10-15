@@ -8,11 +8,13 @@ Worker implementation for GSFLOW model optimization.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -63,6 +65,7 @@ class GSFLOWWorker(BaseWorker):
                     break
 
             params = self._enforce_constraints(params)
+            self._trial_params = dict(params)
             from ..parameter_files import apply_gsflow_parameters
             apply_gsflow_parameters(settings_dir, params, config.get('GSFLOW_PARAMETER_FILE', 'params.dat'))
             return True
@@ -90,7 +93,23 @@ class GSFLOWWorker(BaseWorker):
         return p
 
     def run_model(self, config: Dict[str, Any], settings_dir: Path, output_dir: Path, **kwargs) -> bool:
-        """Run GSFLOW model."""
+        """Run GSFLOW model; with GSFLOW_EVALUATION_LOG set, append one JSON line per run."""
+        self._last_error = ''
+        start = time.monotonic()
+        ok = self._run_model(config, settings_dir, output_dir, **kwargs)
+        log_path = config.get('GSFLOW_EVALUATION_LOG')
+        if log_path:
+            record = dict(time=pd.Timestamp.now().isoformat(timespec='seconds'), run_dir=str(settings_dir),
+                          ok=ok, seconds=round(time.monotonic() - start, 1), error=self._last_error or None,
+                          params=getattr(self, '_trial_params', None))
+            try:
+                with open(log_path, 'a') as f:
+                    f.write(json.dumps(record) + '\n')
+            except OSError as e:
+                self.logger.warning(f'Could not write GSFLOW evaluation log {log_path}: {e}')
+        return ok
+
+    def _run_model(self, config: Dict[str, Any], settings_dir: Path, output_dir: Path, **kwargs) -> bool:
         try:
             data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
             sim_dir = Path(kwargs.get('sim_dir', output_dir))
@@ -145,7 +164,8 @@ class GSFLOWWorker(BaseWorker):
                         timeout=timeout
                     )
             except subprocess.TimeoutExpired:
-                self.logger.warning(f"GSFLOW timed out after {timeout}s")
+                self._last_error = f'GSFLOW timed out after {timeout}s'
+                self.logger.warning(self._last_error)
                 return False
 
             if result.returncode != 0:
@@ -173,7 +193,8 @@ class GSFLOWWorker(BaseWorker):
                 import re
                 failures = re.findall(r'Number of non-convergence:\s*(\d+)', budget_log.read_text())
                 if any(int(n) > 0 for n in failures):
-                    self._last_error = 'GSFLOW reported non-converged time steps'
+                    self._last_error = f'GSFLOW reported non-converged time steps ({max(int(n) for n in failures)})'
+                    self.logger.warning(self._last_error)
                     return False
             return True
         except Exception as e:  # noqa: BLE001 — calibration resilience
