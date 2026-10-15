@@ -129,3 +129,19 @@ changed ensemble observations/windows. Engine integration tests skip when the
 optional corrected packages are unavailable; run with both correction PRs to
 exercise those tests. Upstream references: NOAA SAC1 compiled fixtures and
 `Anderson's Snow17 description <https://www.weather.gov/media/owp/oh/hrl/docs/22snow17.pdf>`_.
+
+Historical unfrozen research bundles
+-----------------------------------
+
+The separate ``research_bundle.load_research_candidate`` reader accepts the
+source-complete ``SACSMA_CRYOSPHERE_GRID_MOMENT_PATCH_RESEARCH_V4`` bundle only
+when both configuration and selection explicitly disable frozen soil. It checks
+all source/input fingerprints, binds the replay report to the current manifest,
+requires numerical replay evidence, and compares observations and daily timestamps
+exactly with the target ensemble. Its returned metadata specifies one SAC family
+vote and historical development-validation status.
+
+This reader does not widen the native V1/V2 configuration schema, replay a V4
+model through the native implementation, or certify scientific promotion.
+Experimental frozen variants remain rejected. Recalibration, sensitivity review,
+and any independent-assessment qualifications must accompany a promotion decision.
