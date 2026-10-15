@@ -555,7 +555,8 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             wp("gw_seep_coef", 1, "ngw", nhru, 2, [0.02] * nhru)
 
             # -- Temp / precip adjustments --
-            wp("tmax_allrain", 1, "nmonths", nmonths, 2, [3.3] * nmonths)
+            # PRMS 5 ignores tmax_allrain (PRMS4_flag off): all-rain at tmax_allsnow + offset
+            wp("tmax_allrain_offset", 1, "nmonths", nmonths, 2, [3.3] * nmonths)
             wp("tmax_allsnow", 1, "nmonths", nmonths, 2, [0.0] * nmonths)
             wp("adjmix_rain", 1, "nmonths", nmonths, 2, [1.0] * nmonths)
             wp("tmax_adj", 1, "nhru", nhru, 2, [0.0] * nhru)

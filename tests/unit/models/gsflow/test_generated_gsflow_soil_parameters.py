@@ -30,4 +30,6 @@ def test_gsflow_mapping_covers_cells_and_partitions_hrus(tmp_path,distributed):
         assert all(a>0 for a in v['gvr_hru_pct'])
     assert 'soil_rechr_max' not in v
     assert v['soil_rechr_max_frac'][0]==pytest.approx(1/3)
+    # GSFLOW's PRMS 5 reads tmax_allrain_offset and ignores tmax_allrain
+    assert 'tmax_allrain' not in v and v['tmax_allrain_offset']==[3.3]*12
 
