@@ -94,3 +94,13 @@ def load_research_candidate(
         "assessment_role": "historical_development_validation",
         "scientific_promotion_certified": False,
     }
+
+
+def load_selected_research_candidate(selection: dict, observations: pd.Series) -> tuple[pd.Series, dict]:
+    """Read an explicit, fingerprint-pinned ensemble selection for this family."""
+    if selection.get("adapter") != "research_bundle_unfrozen_v4" or selection.get("model") != "SACSMA":
+        raise ReplayValidationError("An explicit unfrozen research adapter and SACSMA family are required")
+    q, metadata = load_research_candidate(selection["bundle"], observations)
+    if selection.get("manifest_fingerprint") != metadata["manifest_fingerprint"]:
+        raise ReplayValidationError("Selected research manifest fingerprint differs")
+    return q, metadata

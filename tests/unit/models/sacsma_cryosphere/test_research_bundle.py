@@ -12,19 +12,20 @@ from symfluence.models.sacsma_cryosphere.research_bundle import (
     MODEL_ID,
     REQUIRED_FILES,
     load_research_candidate,
+    load_selected_research_candidate,
     manifest_fingerprint,
 )
 
 
-def bundle(tmp_path, frozen=False):
+def bundle(tmp_path, frozen=False, days=3):
     for name in REQUIRED_FILES:
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("fixture")
     (tmp_path / "config.json").write_text(json.dumps({"frozen_soil": frozen}))
     (tmp_path / "selected.json").write_text(json.dumps({"frozen_soil": frozen}))
-    dates = pd.date_range("2012-10-01", periods=3)
-    obs = pd.Series([1., 2., 3.], index=dates)
+    dates = pd.date_range("2012-10-01", periods=days)
+    obs = pd.Series([float(i + 1) for i in range(days)], index=dates)
     (obs * 1.1).to_csv(tmp_path / "daily.csv")
     obs.to_csv(tmp_path / "observations.csv")
     manifest = {"model_id": MODEL_ID, "artifacts_sha256": {
@@ -90,3 +91,17 @@ def test_failed_numerical_evidence_rejected(tmp_path, key, value):
     path.write_text(json.dumps(report))
     with pytest.raises(ReplayValidationError):
         load_research_candidate(tmp_path, obs)
+
+
+@pytest.mark.parametrize("field,value", [("adapter", "native_v2"), ("model", "HBV"),
+                                         ("manifest_fingerprint", "wrong")])
+def test_selection_must_pin_adapter_family_and_manifest(tmp_path, field, value):
+    obs = bundle(tmp_path, days=4017)
+    manifest = json.loads((tmp_path / "manifest.json").read_text())
+    selection = {"bundle": str(tmp_path), "adapter": "research_bundle_unfrozen_v4",
+                 "model": "SACSMA", "manifest_fingerprint": manifest_fingerprint(manifest)}
+    q, metadata = load_selected_research_candidate(selection, obs)
+    assert len(q) == 4017 and metadata["family_votes"] == 1
+    selection[field] = value
+    with pytest.raises(ReplayValidationError):
+        load_selected_research_candidate(selection, obs)

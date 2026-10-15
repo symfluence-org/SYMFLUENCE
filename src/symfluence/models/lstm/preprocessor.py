@@ -286,7 +286,7 @@ class LSTMPreProcessor(BaseModelPreProcessor):
 
         if self.spatial_mode == SpatialMode.LUMPED:
             # Average features across all HRUs for each timestep
-            features_to_scale = forcing_df.groupby('time')[feature_columns].mean()
+            features_to_scale = forcing_df.groupby('time')[list(feature_columns)].mean()
             features_avg = features_to_scale.copy()
         else:
             # Distributed mode: scale features for all HRUs together
