@@ -101,6 +101,12 @@ src/symfluence/models/lstm/runner.py:<module>:raise ImportError(
 src/symfluence/models/lstm/runner.py:LSTMRunner._load_model_checkpoint:raise FileNotFoundError(f"Model checkpoint not found at {path}")
 src/symfluence/models/lstm/runner.py:LSTMRunner._train_model_with_routing:raise ImportError("droute required for training through routing")
 src/symfluence/models/mesh/calibration/worker.py:MESHWorker.run_model:raise ValueError("SYMFLUENCE_DATA_DIR or system.data_dir is required")
+src/symfluence/models/mesh/config_schema.py:MESHConfig.validate_glacier_inputs:raise ValueError('Cryosphere RMSE ceilings require cryosphere constraints')
+src/symfluence/models/mesh/config_schema.py:MESHConfig.validate_glacier_inputs:raise ValueError('Cryosphere constraints require spatial diagnostics, finite ice and observations')
+src/symfluence/models/mesh/config_schema.py:MESHConfig.validate_glacier_inputs:raise ValueError('Native glacier mode requires a geometry manifest, ordered unit IDs, albedos and temperature')
+src/symfluence/models/mesh/config_schema.py:MESHConfig.validate_glacier_inputs:raise ValueError('Spatial diagnostics require explicit spatial units')
+src/symfluence/models/mesh/config_schema.py:MESHConfig.validate_glacier_inputs:raise ValueError('Spatial routing requires per-unit diagnostics')
+src/symfluence/models/mesh/config_schema.py:MESHConfig.validate_glacier_inputs:raise ValueError('Spatial units and spatial forcing must be supplied together')
 src/symfluence/models/mesh/extractor.py:MESHResultExtractor._extract_from_basin_avg_water_balance:raise ValueError(
 src/symfluence/models/mesh/extractor.py:MESHResultExtractor._extract_from_basin_avg_water_balance:raise ValueError("Basin_average_water_balance.csv has no data rows")
 src/symfluence/models/mesh/extractor.py:MESHResultExtractor._extract_from_basin_avg_water_balance:raise ValueError("No RFF or RFFACC column found")
