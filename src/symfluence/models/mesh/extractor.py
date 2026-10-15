@@ -33,6 +33,7 @@ class MESHResultExtractor(ModelResultExtractor):
         """Get file patterns for MESH outputs."""
         return {
             'streamflow': [
+                'MESH_spatial_streamflow.csv',
                 'MESH_output_streamflow.csv',
                 'MESH_output_streamflow_ts.csv',
                 'forcing/MESH_input/MESH_output_streamflow.csv',

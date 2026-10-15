@@ -128,7 +128,7 @@ class RunOptionsConfigBuilder(ConfigMixin):
                 self.logger.info(
                     "Single-cell domain with explicit MESH_RUNMODE='%s': "
                     "honouring the routing request so the wf_lzs baseflow store "
-                    "(FLZ/PWR/RCHARG) stays active.", runmode
+                    "(FLZ/PWR) stays active.", runmode
                 )
 
             if runmode == 'noroute':
@@ -146,7 +146,7 @@ class RunOptionsConfigBuilder(ConfigMixin):
             )
             frozen_flag = "1" if enable_frozen else "0"
             if enable_frozen:
-                self.logger.info("FROZENSOILINFILFLAG enabled (1) - calibration of FRZTH is recommended")
+                self.logger.info("FROZENSOILINFILFLAG enabled (1); explicit counted frozen-soil inputs will be validated")
 
             modified = False
             replacements = [
@@ -306,8 +306,14 @@ class RunOptionsConfigBuilder(ConfigMixin):
         if len(date_line_indices) >= 2:
             start_idx = date_line_indices[-2]
             end_idx = date_line_indices[-1]
-            new_lines[start_idx] = f"{start_time.year:04d} {start_time.dayofyear:03d}   1   0"
-            new_lines[end_idx] = f"{end_time.year:04d} {end_time.dayofyear:03d}  23   0"
+            # Config bounds identify forcing records. MESH stops before its
+            # stop timestamp, so include the complete final forcing interval.
+            dt = int(self._get_config_value(
+                lambda: self.config.forcing.time_step_size,
+                default=3600, dict_key='FORCING_TIME_STEP_SIZE'))
+            stop = pd.Timestamp(end_time) + pd.Timedelta(seconds=dt)
+            new_lines[start_idx] = f"{start_time.year:04d} {start_time.dayofyear:03d} {start_time.hour:3d} {start_time.minute:3d}"
+            new_lines[end_idx] = f"{stop.year:04d} {stop.dayofyear:03d} {stop.hour:3d} {stop.minute:3d}"
             modified = True
             self.logger.info(
                 f"Updated simulation dates: {start_time.year:04d}/{start_time.dayofyear:03d} "

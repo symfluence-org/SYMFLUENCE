@@ -21,6 +21,8 @@ from symfluence.core.mixins.project import resolve_data_subdir
 from symfluence.core.registries import R
 from symfluence.models.mesh.runner import MESHRunner
 
+from ..errors import MESHConfigurationError
+
 
 @R.workers.add('MESH')
 class MESHWorker(BaseWorker):
@@ -37,6 +39,51 @@ class MESHWorker(BaseWorker):
     ):
         """Initialize MESH worker."""
         super().__init__(config, logger)
+
+    def _extract_primary_score(self, metrics, config):
+        """Never fall back to discharge-only scoring when constraints are enabled."""
+        if isinstance(config, dict):
+            mesh = config.get('model', {}).get('mesh', {})
+            enabled = config.get('MESH_CRYOSPHERE_CONSTRAINTS', mesh.get('cryosphere_constraints', False))
+            ceilings = {
+                'snow_rmse': config.get('MESH_SNOW_COVER_MAX_RMSE', mesh.get('snow_cover_max_rmse')),
+                'glacier_mb_rmse': config.get('MESH_GLACIER_MB_MAX_RMSE', mesh.get('glacier_mb_max_rmse')),
+            }
+            optimization = config.get('optimization', {})
+            normalized = dict(config)
+            normalized.setdefault('OPTIMIZATION_METRIC', optimization.get('metric', 'KGE'))
+            normalized.setdefault('COMPOSITE_METRIC', optimization.get('composite_metric'))
+        else:
+            enabled = config.model.mesh.cryosphere_constraints
+            ceilings = {
+                'snow_rmse': config.model.mesh.snow_cover_max_rmse,
+                'glacier_mb_rmse': config.model.mesh.glacier_mb_max_rmse,
+            }
+            normalized = config
+        # Hard limits must not be traded against a higher discharge score.
+        for name, ceiling in ceilings.items():
+            if ceiling is None:
+                continue
+            if not enabled:
+                return self.penalty_score
+            try:
+                limit = float(ceiling)
+                value = float(metrics[name])
+            except (KeyError, TypeError, ValueError):
+                return self.penalty_score
+            if not np.isfinite(limit) or limit < 0 or not np.isfinite(value) or value < 0 or value > limit:
+                return self.penalty_score
+        if enabled:
+            weights = (normalized.get('COMPOSITE_METRIC') if isinstance(normalized, dict)
+                       else normalized.optimization.composite_metric)
+            if not weights or set(weights) != {'kge', 'snow_score', 'glacier_score'}:
+                return self.penalty_score
+            if any(not np.isfinite(v) or v <= 0 for v in weights.values()):
+                return self.penalty_score
+            if any(k not in metrics or not np.isfinite(metrics[k]) for k in weights) or 'error' in metrics:
+                return self.penalty_score
+            return self._extract_composite_score(metrics, weights)
+        return super()._extract_primary_score(metrics, normalized)
 
     def apply_parameters(
         self,
@@ -187,6 +234,11 @@ class MESHWorker(BaseWorker):
 
         from symfluence.models.mesh.extractor import MESHResultExtractor
 
+        # Final evaluation passes the typed config; trial tasks pass dictionaries.
+        # Normalize once so explicit observation paths survive both entry points.
+        if not isinstance(config, dict):
+            config = config.to_dict()
+
         try:
             # MESH output file for streamflow or runoff.
             # Basin_average is preferred for lumped domains (uses RFF + LKG,
@@ -202,6 +254,10 @@ class MESHWorker(BaseWorker):
                 output_dir / 'results' / 'MESH_output_streamflow.csv',
                 output_dir / 'streamflow.csv',
             ]
+            mesh_config = config.get('model', {}).get('mesh', {})
+            if config.get('MESH_SPATIAL_ROUTING_KERNEL') or mesh_config.get('spatial_routing_kernel'):
+                # Never silently score unrouted runoff if requested routing failed.
+                sim_file_candidates = [output_dir / 'MESH_spatial_streamflow.csv']
 
             sim_file = None
             for candidate in sim_file_candidates:
@@ -308,8 +364,12 @@ class MESHWorker(BaseWorker):
 
             data_dir = Path(data_dir)
             project_dir = data_dir / f'domain_{domain_name}'
+            observation_config = dict(config)
+            if not observation_config.get('OBSERVATIONS_PATH'):
+                observation_config['OBSERVATIONS_PATH'] = config.get('paths', {}).get(
+                    'observations_path', 'default')
             obs_values, obs_index = StreamflowMetrics().load_observations(
-                config, project_dir, domain_name, resample_freq=None,
+                observation_config, project_dir, domain_name, resample_freq=None,
             )
             if obs_values is None or obs_index is None:
                 self.logger.error("Observations not found (store or preprocessed CSV)")
@@ -335,7 +395,7 @@ class MESHWorker(BaseWorker):
             # sub-daily (e.g., hourly). Detect and resample so each daily MESH
             # value is compared against the daily-mean observation, not just a
             # single sub-daily timestamp.
-            if is_basin_wb or is_gru_wb:
+            if is_basin_wb or is_gru_wb or sim_file.name == 'MESH_spatial_streamflow.csv':
                 # Check if obs are sub-daily (more records than unique days)
                 n_obs_days = len(obs_df.index.normalize().unique())
                 if len(obs_df) > n_obs_days * 1.5:
@@ -358,7 +418,7 @@ class MESHWorker(BaseWorker):
             if run_opts.exists():
                 actual_spinup = self._parse_spinup_from_run_options(run_opts)
             warmup_days = actual_spinup if actual_spinup > 0 else int(
-                config.get('MESH_SPINUP_DAYS', 365)
+                config.get('MESH_SPINUP_DAYS', mesh_config.get('spinup_days', 365))
             )
             if not sim_df.empty:
                 sim_start = sim_df.index.min()
@@ -385,8 +445,10 @@ class MESHWorker(BaseWorker):
             # back to CALIBRATION_PERIOD from the config dict.
             period = kwargs.get('period', '')
             if not period:
-                period = config.get('CALIBRATION_PERIOD', '')
-            if period and ',' in str(period):
+                period = config.get('CALIBRATION_PERIOD') or config.get('domain', {}).get('calibration_period', '')
+            if period and ',' not in str(period):
+                return {'kge': self.penalty_score, 'error': 'Invalid scoring period'}
+            if period:
                 try:
                     start_str, end_str = [s.strip() for s in str(period).split(',')]
                     period_start = pd.Timestamp(start_str)
@@ -402,7 +464,8 @@ class MESHWorker(BaseWorker):
                         f"sim={len(sim_df)} obs={len(obs_daily)} rows"
                     )
                 except (ValueError, TypeError) as e:
-                    self.logger.warning(f"Could not parse period '{period}': {e}")
+                    self.logger.error(f"Could not parse period '{period}': {e}")
+                    return {'kge': self.penalty_score, 'error': 'Invalid scoring period'}
 
             # Align simulation and observations
             common_idx = sim_df.index.intersection(obs_daily.index)
@@ -444,7 +507,7 @@ class MESHWorker(BaseWorker):
                 f"NSE={nse_val:.4f}, KGE_log={kge_log_val:.4f}"
             )
 
-            return {
+            metrics = {
                 'kge': float(kge_result['KGE']),  # type: ignore[index]
                 'nse': float(nse_val),
                 'r': float(kge_result['r']),  # type: ignore[index]
@@ -452,6 +515,16 @@ class MESHWorker(BaseWorker):
                 'beta': float(kge_result['beta']),  # type: ignore[index]
                 'kge_log': kge_log_val,
             }
+            if config.get('MESH_CRYOSPHERE_CONSTRAINTS', mesh_config.get('cryosphere_constraints', False)):
+                from symfluence.models.mesh.cryosphere import calculate_constraints
+                observation_dir = config.get('MESH_CRYOSPHERE_OBSERVATIONS') or mesh_config.get('cryosphere_observations')
+                if not observation_dir:
+                    raise MESHConfigurationError('Cryosphere observations directory is required')
+                metrics.update(calculate_constraints(
+                    output_dir, observation_dir, period,
+                    config.get('MESH_SNOW_COVER_ERROR_SCALE', mesh_config.get('snow_cover_error_scale', .2)),
+                    config.get('MESH_GLACIER_MB_ERROR_SCALE', mesh_config.get('glacier_mb_error_scale', 1.))))
+            return metrics
 
         except FileNotFoundError as e:
             self.logger.error(f"Output or observation file not found: {e}")

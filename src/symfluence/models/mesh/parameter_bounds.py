@@ -63,6 +63,10 @@ PARAMS: Dict[str, ParameterInfo] = {
     'BASEFLW': ParameterInfo(0.001, 0.1, 'm/day', 'Baseflow rate', 'baseflow'),
     'WF_R2': ParameterInfo(0.1, 0.5, '-', 'Channel roughness coefficient for WATFLOOD routing', 'routing'),
     'DTMINUSR': ParameterInfo(60.0, 600.0, 's', 'Routing time-step', 'routing'),
+    'SAND': ParameterInfo(20.0, 95.0, '%', 'Sand fraction of land GRU soil layers', 'soil'),
+    'CLAY': ParameterInfo(1.0, 30.0, '%', 'Clay fraction of land GRU soil layers', 'soil'),
+    'PRECIP_MULT': ParameterInfo(0.8, 1.6, '-', 'Total precipitation multiplier on run forcing', 'forcing'),
+    'TEMP_OFFSET': ParameterInfo(-2.0, 2.0, 'K', 'Air temperature offset on run forcing', 'forcing'),
 }
 
 #: Tier A -- the catalogue names composing MESH's bound set, in served order.
@@ -97,6 +101,10 @@ BOUND_SET: List[str] = [
     'BASEFLW',
     'WF_R2',
     'DTMINUSR',
+    'SAND',
+    'CLAY',
+    'PRECIP_MULT',
+    'TEMP_OFFSET',
 ]
 
 #: Catalogue keys are already the served names.
