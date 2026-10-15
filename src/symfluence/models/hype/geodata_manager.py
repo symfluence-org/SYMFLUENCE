@@ -252,6 +252,12 @@ class HYPEGeoDataManager:
                 for frame in (soil_data, landcover_data, elevation_data)
             )
 
+        for label, frame in (('soil', soil_data), ('land cover', landcover_data), ('elevation', elevation_data)):
+            if frame.index.duplicated().any():
+                raise ValidationError(
+                    f'GIS {label} statistics have several rows per basin id; '
+                    'pass the elevation-band shapefile or build the model-ready attributes store')
+
         # 5. SLC processing
         glacier_fraction = self.config.get('HYPE_GLACIER_FRACTION')
         if glacier_fraction is not None:
@@ -483,20 +489,27 @@ class HYPEGeoDataManager:
         if store_stats is not None:
             return store_stats
 
+        def index_rows(df: pd.DataFrame) -> pd.DataFrame:
+            idx_col = basin_id_col if basin_id_col in df.columns else ('ID' if 'ID' in df.columns else df.columns[0])
+            # Elevation-band intersections carry one row per HRU, all sharing the
+            # parent basin id. Key them by HRU (as the attributes store does) so
+            # band statistics are area-weighted to the parent, not read row-by-row.
+            if df[idx_col].duplicated().any():
+                hru_col = next((c for c in ('HRU_ID', 'hru_id', 'hruId', 'HRUID')
+                                if c in df.columns and not df[c].duplicated().any()), None)
+                if hru_col is not None:
+                    idx_col = hru_col
+            return df.set_index(idx_col)
+
         def find_data(pattern: str, fallback_shp_path: Optional[str] = None) -> Optional[pd.DataFrame]:
             files = list(gistool_output.glob(pattern))
             if files:
-                df = pd.read_csv(files[0])
-                # Be robust with index name
-                idx_col = basin_id_col if basin_id_col in df.columns else ('ID' if 'ID' in df.columns else df.columns[0])
-                return df.set_index(idx_col)
+                return index_rows(pd.read_csv(files[0]))
 
             if intersect_base_path and fallback_shp_path:
                 shp_files = list(Path(intersect_base_path).parent.glob(fallback_shp_path))
                 if shp_files:
-                    gdf = gpd.read_file(shp_files[0])
-                    idx_col = basin_id_col if basin_id_col in gdf.columns else ('ID' if 'ID' in gdf.columns else gdf.columns[0])
-                    return gdf.set_index(idx_col)
+                    return index_rows(gpd.read_file(shp_files[0]))
             return None
 
         soil = find_data('*stats_soil_classes.csv', 'with_soilgrids/*soilclass.shp')

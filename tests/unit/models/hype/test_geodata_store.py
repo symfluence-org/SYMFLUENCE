@@ -130,3 +130,56 @@ def test_store_frames_drive_slc_processing(tmp_path):
 
 def test_returns_none_when_store_absent(tmp_path):
     assert _manager(tmp_path / "domain_test")._load_gis_stats_from_store("HRU_ID") is None
+
+
+def _banded_domain(project_dir):
+    """Three elevation-band HRUs of one parent basin; the top band is all glacier (IGBP_15)."""
+    inter = project_dir / "shapefiles" / "catchment_intersection"
+    common = {"GRU_ID": [1, 1, 1], "HRU_ID": HRU_IDS, "HRU_area": [3.0e6, 2.0e6, 1.0e6],
+              "geometry": [box(i, 50, i + 1, 51) for i in range(3)]}
+    layers = {
+        project_dir / "shapefiles" / "catchment" / "test_HRUs_lumped.shp": {},
+        inter / "with_soilgrids" / "catchment_with_soilclass.shp": {"USGS_1": [1.0, 1.0, 0.0], "USGS_2": [0.0, 0.0, 1.0]},
+        inter / "with_landclass" / "catchment_with_landclass.shp": {
+            "IGBP_15": [0.0, 0.2, 1.0], "IGBP_16": [0.9, 0.8, 0.0], "IGBP_10": [0.1, 0.0, 0.0]},
+        inter / "with_dem" / "catchment_with_dem.shp": {"elev_mean": [600.0, 900.0, 1300.0]},
+    }
+    for path, extra in layers.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        gpd.GeoDataFrame({**common, **extra}, crs="EPSG:4326").to_file(path)
+    return inter / "with_soilgrids"
+
+
+def test_shapefile_fallback_keys_band_rows_by_hru(tmp_path):
+    # Band rows share the parent id; reading them per parent row used to drop all
+    # but the lowest band, and with HYPE_GLACIER_FRACTION the all-ice band raised
+    # "No non-glacier land cover available for fraction override".
+    project_dir = tmp_path / "domain_test"
+    intersect = _banded_domain(project_dir)
+    mgr = _manager(project_dir)
+    soil, land, elev = mgr._load_gis_stats(tmp_path / "no_gistool", intersect, "GRU_ID")
+    for frame in (soil, land, elev):
+        assert list(frame.index) == HRU_IDS
+
+    bands = {1: [dict(hru_id=h, area_frac=a) for h, a in zip(HRU_IDS, [3.0, 2.0, 1.0])]}
+    parent = HYPEGeoDataManager._aggregate_band_stats(land, bands)
+    assert list(parent.index) == [1]
+    assert parent.loc[1, "IGBP_15"] == pytest.approx((0.4 + 1.0) / 6)
+    assert parent.loc[1, "IGBP_16"] == pytest.approx((2.7 + 1.6) / 6)
+    assert parent.loc[1, ["IGBP_10", "IGBP_16"]].sum() > 0  # glacier override has land to rescale
+
+
+def test_shapefile_fallback_matches_attributes_store(tmp_path):
+    project_dir = tmp_path / "domain_test"
+    intersect = _banded_domain(project_dir)
+    mgr = _manager(project_dir)
+    fallback = mgr._load_gis_stats(tmp_path / "no_gistool", intersect, "GRU_ID")
+    _build(project_dir)
+    store = mgr._load_gis_stats_from_store("HRU_ID")
+    assert store is not None
+    bands = {1: [dict(hru_id=h, area_frac=a) for h, a in zip(HRU_IDS, [3.0, 2.0, 1.0])]}
+    for a, b in zip(fallback, store):
+        a, b = (HYPEGeoDataManager._aggregate_band_stats(f, bands) for f in (a, b))
+        cols = [c for c in b.columns if c in a.columns and c.startswith(("IGBP_", "USGS_", "elev_mean"))]
+        assert cols
+        np.testing.assert_allclose(a[cols].to_numpy(float), b[cols].to_numpy(float), atol=1e-6)
