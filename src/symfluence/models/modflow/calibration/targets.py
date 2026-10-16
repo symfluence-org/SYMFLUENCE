@@ -167,5 +167,6 @@ class CoupledGWStreamflowTarget(StreamflowEvaluator):
         fast.index = pd.to_datetime(fast.index).normalize()
         total = (fast + gw).dropna()
         if total.empty:
-            raise ValueError('Land fast flow and MODFLOW discharge do not overlap in time')
+            from symfluence.core.exceptions import ValidationError
+            raise ValidationError('Land fast flow and MODFLOW discharge do not overlap in time')
         return total.rename('total_streamflow_m3s')

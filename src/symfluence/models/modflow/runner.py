@@ -294,7 +294,7 @@ class MODFLOWRunner(BaseModelRunner):
             from .basin_model import BUDGET_CSV, check_run
             check_run(self.output_dir)
             if not (self.output_dir / BUDGET_CSV).exists():
-                raise RuntimeError(f"MODFLOW did not write {BUDGET_CSV} in {self.output_dir}")
+                raise ModelExecutionError(f"MODFLOW did not write {BUDGET_CSV} in {self.output_dir}")
             return
         # Check for head and budget files
         hds_files = list(self.output_dir.glob("*.hds"))
