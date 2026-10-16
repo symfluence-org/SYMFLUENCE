@@ -10,7 +10,7 @@ optimizers. Keeps orchestration lean; algorithm details and examples are in
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional, cast
 
 import pandas as pd
 
@@ -579,7 +579,7 @@ class OptimizationManager(BaseManager):
                                         best_idx = results_df[score_col].idxmin()
                                     else:
                                         best_idx = results_df[score_col].idxmax()
-                                    best_row = results_df.loc[best_idx]
+                                    best_row = results_df.loc[cast(Any, best_idx)]
                                 else:
                                     # No score column found, fall back to last row (most recent)
                                     best_row = results_df.iloc[-1]
@@ -784,7 +784,7 @@ class OptimizationManager(BaseManager):
                     best_idx = results_df[score_col].idxmin()
                 else:
                     best_idx = results_df[score_col].idxmax()
-                best_iteration = results_df.loc[best_idx].to_dict()
+                best_iteration = results_df.loc[cast(Any, best_idx)].to_dict()
             else:
                 # Fall back to last row if no score column found
                 best_iteration = results_df.iloc[-1].to_dict() if not results_df.empty else {}

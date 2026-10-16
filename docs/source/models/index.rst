@@ -73,6 +73,7 @@ Simplified representations using storage-based approaches.
    model_fuse
    model_gr
    model_hbv
+   model_sacsma_cryosphere
 
 ----
 

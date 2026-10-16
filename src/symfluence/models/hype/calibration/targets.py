@@ -126,7 +126,7 @@ class HYPEStreamflowTarget(StreamflowEvaluator):
             # Auto-select outlet subbasin (highest mean flow)
             if len(subbasin_cols) > 1:
                 subbasin_means = df[subbasin_cols].mean(numeric_only=True)
-                outlet_col = subbasin_means.idxmax()
+                outlet_col = str(subbasin_means.idxmax())
                 self.logger.info(f"Auto-selected HYPE outlet subbasin {outlet_col} (mean flow: {subbasin_means[outlet_col]:.2f} m3/s)")
                 self.logger.debug(f"All subbasin mean flows: {dict(sorted(subbasin_means.items(), key=lambda x: x[1], reverse=True)[:5])}")
                 streamflow = df[outlet_col]

@@ -18,7 +18,7 @@ import itertools
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import numpy as np
 import pandas as pd
@@ -235,7 +235,7 @@ class BaseStructureEnsembleAnalyzer(ProjectContextMixin, ABC):
                 else:
                     best_row_idx = df[metric].idxmax()
 
-                best_row = df.loc[best_row_idx]
+                best_row = df.loc[cast(Any, best_row_idx)]
                 best_combinations[metric] = {
                     'score': float(best_row[metric]),
                     'combination': {decision: best_row[decision] for decision in decisions}
