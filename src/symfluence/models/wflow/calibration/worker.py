@@ -73,12 +73,16 @@ class WflowWorker(BaseWorker):
             return False
 
     def _patch_toml(self, source_toml, target_toml, settings_dir, output_dir):
-        """Copy TOML and patch path_static and dir_output for process isolation."""
+        """Copy TOML and patch path_static and dir_output for process isolation.
+
+        Paths are written with forward slashes: backslashes are escapes in TOML
+        basic strings, and Wflow accepts forward slashes on every platform.
+        """
         content = source_toml.read_text()
         # Point path_static to the process-specific staticmaps
         content = re.sub(
             r'(path_static\s*=\s*)"[^"]*"',
-            lambda m: f'{m.group(1)}"{settings_dir / "wflow_staticmaps.nc"}"',
+            lambda m: f'{m.group(1)}"{(settings_dir / "wflow_staticmaps.nc").as_posix()}"',
             content,
         )
         # Redirect output to process-specific dir if available
@@ -87,12 +91,12 @@ class WflowWorker(BaseWorker):
             output_dir.mkdir(parents=True, exist_ok=True)
             content = re.sub(
                 r'(dir_output\s*=\s*)"[^"]*"',
-                lambda m: f'{m.group(1)}"{output_dir}"',
+                lambda m: f'{m.group(1)}"{output_dir.as_posix()}"',
                 content,
             )
             content = re.sub(
                 r'(path\s*=\s*)"(?:[^"]*/)?output\.csv"',
-                lambda m: f'{m.group(1)}"{output_dir / "output.csv"}"',
+                lambda m: f'{m.group(1)}"{(output_dir / "output.csv").as_posix()}"',
                 content,
             )
             # Remove state I/O paths for calibration (cold start each iteration)

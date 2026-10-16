@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pyflwdir
 from rasterio.transform import rowcol
 from shapely.geometry import Point
 
@@ -29,6 +28,8 @@ def flow_to_gauge(dem, transform, outlet_index, nodata=-9999.):
     """Condition one connected native catchment to its explicit gauge cell."""
     if not 0 <= outlet_index < dem.size or dem.ravel()[outlet_index] == nodata:
         raise ValidationError('Gauge outlet is not an active DEM cell')
+    import pyflwdir  # deferred: pulls in numba
+
     filled, d8 = pyflwdir.dem.fill_depressions(
         dem, nodata=nodata, idxs_pit=np.array([outlet_index], dtype=np.int64))
     flow = pyflwdir.from_array(d8, ftype='d8', transform=transform)

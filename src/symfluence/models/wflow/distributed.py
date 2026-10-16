@@ -6,7 +6,6 @@ import json
 
 import numpy as np
 import pandas as pd
-import pyflwdir
 import rasterio
 import xarray as xr
 from rasterio.features import rasterize
@@ -85,6 +84,8 @@ def prepare(pre):
         raise ValidationError("DEM does not cover grid")
     dem[~mask] = -9999
     if gauge_index is None:
+        import pyflwdir  # deferred: pulls in numba
+
         flow = pyflwdir.from_dem(dem, transform=transform, nodata=-9999, outlets="min")
     else:
         from .outlet import flow_to_gauge

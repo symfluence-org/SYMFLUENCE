@@ -20,8 +20,8 @@ def test_final_run_redirects_paths_without_apply_parameters(tmp_path, csv_path):
     def native(command,**kwargs):
         import tomllib
         data=tomllib.loads(toml.read_text())
-        assert data['dir_output']==str(output)
-        assert data['output']['csv']['path']==str(output/'output.csv')
+        assert Path(data['dir_output'])==output
+        assert Path(data['output']['csv']['path'])==output/'output.csv'
         assert Path(command[1])==toml
         from types import SimpleNamespace
         return SimpleNamespace(returncode=0,stderr='')
