@@ -377,9 +377,10 @@ class GRPreProcessor(BaseModelPreProcessor, PETCalculatorMixin, GeospatialUtilsM
         # Calculate PET using GR variable name 'T' (mapped by VariableHandler)
         pet = self.calculate_pet_oudin(ds['T'], mean_lat)
 
-        # Find overlapping time period
-        start_time = max(ds.time.min().values, obs_ds.time.min().values)
-        end_time = min(ds.time.max().values, obs_ds.time.max().values)
+        # Observations may end before forcing (e.g. a forecast/transfer run).
+        # Preserve the simulation clock and leave unavailable observations NaN.
+        start_time = ds.time.min().values
+        end_time = ds.time.max().values
 
         # Create explicit time index
         time_index = pd.date_range(start=start_time, end=end_time, freq='D')

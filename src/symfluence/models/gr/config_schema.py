@@ -51,6 +51,21 @@ class GRConfig(BaseModel):
         default=None, alias='GR_MODEL_TYPE',
         description="GR model variant (e.g. 'GR4J', 'GR5J'); default GR4J"
     )
+    # Number of equal-area CemaNeige elevation layers (airGR NLayers).
+    snow_layers: int = Field(default=5, ge=1, alias='GR_SNOW_LAYERS')
+    # Lumped glacier mode: CemaNeige and GR4J run separately and degree-day
+    # ice melt from the outline's share of each layer joins GR4J's input.
+    glacier_enabled: bool = Field(default=False, alias='GR_GLACIER_ENABLED')
+    glacier_outline: Optional[str] = Field(default=None, alias='GR_GLACIER_OUTLINE')
+    # Observed mean annual net glacier mass balance (m w.e./yr) over the
+    # calibration water years. When set, the ice degree-day factor is solved
+    # in every run to reproduce it; otherwise ICE_DDF is a parameter.
+    glacier_mb_target: Optional[float] = Field(default=None, alias='GR_GLACIER_MB_TARGET')
+    glacier_ice_ddf_bounds: List[float] = Field(default=[1.0, 20.0], alias='GR_GLACIER_ICE_DDF_BOUNDS')
+    glacier_snowfree_swe: float = Field(default=1.0, ge=0.0, alias='GR_GLACIER_SNOWFREE_SWE')
+    # LamaH-Ice style glacier_timeseries.csv; scales the outline area to the
+    # observed area of each water year.
+    glacier_area_file: Optional[str] = Field(default=None, alias='GR_GLACIER_AREA_FILE')
 
 
 # Legacy flat config keys accepted for backward compatibility, mapped to

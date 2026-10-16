@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **GR forcing corrections and lumped glacier melt (opt-in)**: calibratable `PCORR` (precipitation
+  multiplier) and `TCORR` (additive temperature offset) for GR4J + CemaNeige; `GR_SNOW_LAYERS` sets the
+  CemaNeige layer count. `GR_GLACIER_ENABLED` runs CemaNeige and GR4J separately and adds degree-day ice
+  melt from the outline's share of each elevation layer (`GR_GLACIER_OUTLINE`), with the ice factor
+  calibrated (`ICE_DDF`) or solved each run to an observed mean mass balance (`GR_GLACIER_MB_TARGET`),
+  optionally scaled to observed glacier area per water year (`GR_GLACIER_AREA_FILE`). Defaults leave
+  existing GR runs bit-identical.
 - **Wflow distributed glacier mode (opt-in)**: `WFLOW_SPATIAL_MODE: distributed` builds a DEM-derived
   Wflow SBM grid (`WFLOW_GRID_RESOLUTION`) with native river routing, an explicit gauge outlet
   (`WFLOW_OUTLET_MODE: gauge`), per-cell lapsed forcing and finite glacier ice from mapped outlines and

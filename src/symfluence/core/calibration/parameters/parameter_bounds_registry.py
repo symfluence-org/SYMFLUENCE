@@ -882,7 +882,7 @@ def get_mesh_bounds() -> Dict[str, Dict[str, float]]:
 
 
 def get_gr_bounds() -> Dict[str, Dict[str, float]]:
-    """GR4J + CemaNeige bound set (8 parameters, all solo).
+    """GR4J + CemaNeige bound set (11 parameters incl. forcing corrections and ice DDF, all solo).
 
     Owned by ``symfluence.models.gr`` (tier A: composition; tier B: solo
     definitions). Core keeps no second copy — this helper resolves what
