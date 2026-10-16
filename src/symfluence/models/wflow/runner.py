@@ -16,6 +16,26 @@ class WflowRunner(BaseModelRunner):
     """Runner for the Wflow model (wflow_cli binary)."""
     MODEL_NAME = "WFLOW"
 
+    def run(self, **kwargs):
+        from symfluence.core.exceptions import ModelExecutionError
+        output = super().run(**kwargs)
+        if output is None:
+            raise ModelExecutionError('Wflow native execution or output verification failed')
+        if self.config.model.wflow.spatial_mode == 'distributed':
+            import tomllib
+
+            import pandas as pd
+
+            from .balance import check
+            check(output)
+            native = tomllib.loads((self.settings_dir / self.config.model.wflow.config_file).read_text())
+            expected = pd.date_range(pd.Timestamp(native['time']['starttime']) + pd.Timedelta(days=1),
+                                     pd.Timestamp(native['time']['endtime']), freq='D')
+            actual = pd.DatetimeIndex(pd.read_csv(Path(output) / 'output.csv', usecols=['time']).time)
+            if not actual.equals(expected):
+                raise ModelExecutionError('Incomplete Wflow daily output coverage')
+        return output
+
     def _setup_model_specific_paths(self) -> None:
         self.settings_dir = self.project_dir / "settings" / "WFLOW"
         self.wflow_exe = self.get_model_executable(

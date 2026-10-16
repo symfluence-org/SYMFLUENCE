@@ -113,8 +113,22 @@ class StreamflowEvaluator(ModelEvaluator):
         Returns:
             List[Path]: Paths to streamflow output files
         """
+        if self._uses_native_wflow_discharge():
+            # cryosphere.nc contains states, not outlet discharge. Do not let
+            # the generic NetCDF locator select it ahead of the native CSV.
+            output = sim_dir / 'output.csv'
+            return [output] if output.is_file() else []
         locator = OutputFileLocator(self.logger)
         return locator.find_streamflow_files(sim_dir)
+
+    def _uses_native_wflow_discharge(self) -> bool:
+        model = self._get_config_value(
+            lambda: self.config.model.hydrological_model,
+            default='', dict_key='HYDROLOGICAL_MODEL')
+        spatial_mode = self._get_config_value(
+            lambda: self.config.model.wflow.spatial_mode,
+            default='', dict_key='WFLOW_SPATIAL_MODE')
+        return str(model).upper() == 'WFLOW' and spatial_mode == 'distributed'
 
     def extract_simulated_data(self, sim_files: List[Path], **kwargs) -> pd.Series:
         """Extract streamflow data from simulation files with unit conversion.
@@ -141,6 +155,12 @@ class StreamflowEvaluator(ModelEvaluator):
         """
         sim_file = sim_files[0]
         try:
+            if self._uses_native_wflow_discharge():
+                # Native daily Q is already m3/s and is labelled by interval
+                # end. Shift it to the same day as the calibration worker
+                # (WflowResultExtractor); no area conversion or extra routing.
+                df = pd.read_csv(sim_file, parse_dates=['time'])
+                return pd.Series(df['Q'].values, index=pd.DatetimeIndex(df['time']) - pd.Timedelta(days=1))
             if self._is_mizuroute_output(sim_file):
                 return self._extract_mizuroute_streamflow(sim_file)
             elif self._is_troute_output(sim_file):

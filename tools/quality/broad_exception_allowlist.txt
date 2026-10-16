@@ -1192,11 +1192,11 @@ src/symfluence/models/wflow/calibration/worker.py:WflowWorker._load_observations
 src/symfluence/models/wflow/calibration/worker.py:WflowWorker.apply_parameters:except Exception as e:  # noqa: BLE001
 src/symfluence/models/wflow/calibration/worker.py:WflowWorker.calculate_metrics:except Exception as e:  # noqa: BLE001
 src/symfluence/models/wflow/calibration/worker.py:WflowWorker.run_model:except Exception as e:  # noqa: BLE001
+src/symfluence/models/wflow/calibration/worker.py:_evaluate_wflow_parameters_worker:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/wflow/extractor.py:WflowResultExtractor.extract_variable:except Exception as e:  # noqa: BLE001
 src/symfluence/models/wflow/postprocessor.py:WflowPostProcessor.extract_streamflow:except Exception as e:  # noqa: BLE001
 src/symfluence/models/wflow/postprocessor.py:WflowPostProcessor.extract_streamflow:except Exception as e:  # noqa: BLE001
 src/symfluence/models/wflow/preprocessor.py:WflowPreProcessor._extract_forcing_var:except Exception:  # noqa: BLE001
-src/symfluence/models/wflow/preprocessor.py:WflowPreProcessor._get_catchment_properties:except Exception as e:  # noqa: BLE001
 src/symfluence/models/wflow/preprocessor.py:WflowPreProcessor.run_preprocessing:except Exception as e:  # noqa: BLE001
 src/symfluence/models/wmfire/ignition.py:FirePerimeterValidator.compare_perimeters:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/wmfire/ignition.py:FirePerimeterValidator.create_comparison_map:except Exception as e:  # noqa: BLE001 — model execution resilience
