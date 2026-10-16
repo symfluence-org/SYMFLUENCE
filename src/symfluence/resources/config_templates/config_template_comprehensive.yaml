@@ -230,6 +230,13 @@ HYPE_SNOW_EVAPORATION: null
 #   Description: HYPE deep groundwater option
 HYPE_DEEP_GROUND: null
 
+# HYPE_GROUNDWATER_EXPORT
+#   Type:        Optional[bool]
+#   Default:     None (on when GROUNDWATER_MODEL is MODFLOW)
+#   Source:      HYPEConfig (models/hype/config_schema.py)
+#   Description: rcgrw groundwater leaves every subbasin as AQIN, the recharge of an external groundwater model
+HYPE_GROUNDWATER_EXPORT: null
+
 # HYPE_SURFACE_RUNOFF
 #   Type:        Optional
 #   Default:     None
@@ -5462,6 +5469,97 @@ SETTINGS_MODFLOW_PATH: default
 #   Default:     lumped
 #   Source:      MODFLOWConfig (model_configs.py)
 MODFLOW_SPATIAL_MODE: lumped
+
+# MODFLOW_GRID_MODE
+#   Type:        str (lumped/basin)
+#   Default:     lumped
+#   Source:      MODFLOWConfig (models/modflow/config_schema.py)
+#   Description: 'basin' = real-basin grid with river/seepage drains and land-model recharge zones
+MODFLOW_GRID_MODE: lumped
+
+# MODFLOW_SUBBASIN_SHAPEFILE
+#   Type:        Optional[str]
+#   Default:     None (single *.shp under shapefiles/river_basins)
+#   Source:      MODFLOWConfig (models/modflow/config_schema.py)
+#   Description: Basin mode subbasins (GRU_ID, gru_to_seg)
+MODFLOW_SUBBASIN_SHAPEFILE: null
+
+# MODFLOW_RIVER_NETWORK_SHAPEFILE
+#   Type:        Optional[str]
+#   Default:     None (single *.shp under shapefiles/river_network)
+#   Source:      MODFLOWConfig (models/modflow/config_schema.py)
+#   Description: Basin mode river network (LINKNO, DSLINKNO)
+MODFLOW_RIVER_NETWORK_SHAPEFILE: null
+
+# MODFLOW_DEM_PATH
+#   Type:        Optional[str]
+#   Default:     None (single *_elv.tif under data/attributes/elevation/dem)
+#   Source:      MODFLOWConfig (models/modflow/config_schema.py)
+#   Description: Basin mode DEM for land surface and streambeds
+MODFLOW_DEM_PATH: null
+
+# MODFLOW_GRID_CRS
+#   Type:        Optional[int]
+#   Default:     None (UTM zone of the basin)
+#   Source:      MODFLOWConfig (models/modflow/config_schema.py)
+#   Description: EPSG code of the metric basin grid CRS
+MODFLOW_GRID_CRS: null
+
+# MODFLOW_CHANNEL_DEPTH
+#   Type:        float (m)
+#   Default:     1.0
+#   Source:      MODFLOWConfig (models/modflow/config_schema.py)
+#   Description: Streambed depth below the DEM at river reaches (basin mode)
+MODFLOW_CHANNEL_DEPTH: 1.0
+
+# MODFLOW_AQUIFER_THICKNESS
+#   Type:        float (m)
+#   Default:     100.0
+#   Source:      MODFLOWConfig (models/modflow/config_schema.py)
+#   Description: Aquifer thickness below land surface / streambed (basin mode)
+MODFLOW_AQUIFER_THICKNESS: 100.0
+
+# MODFLOW_RIVER_LEAKANCE
+#   Type:        float (m2/d per m)
+#   Default:     10.0
+#   Source:      MODFLOWConfig (models/modflow/config_schema.py)
+#   Description: River drain conductance per reach length (basin mode)
+MODFLOW_RIVER_LEAKANCE: 10.0
+
+# MODFLOW_SEEPAGE_LEAKANCE
+#   Type:        float (1/d)
+#   Default:     0.1
+#   Source:      MODFLOWConfig (models/modflow/config_schema.py)
+#   Description: Land-surface seepage drain conductance per area (basin mode)
+MODFLOW_SEEPAGE_LEAKANCE: 0.1
+
+# MODFLOW_SAVE_HEADS
+#   Type:        str (none/last/all)
+#   Default:     last
+#   Source:      MODFLOWConfig (models/modflow/config_schema.py)
+#   Description: Head output in basin mode
+MODFLOW_SAVE_HEADS: last
+
+# MODFLOW_LAND_ZONE_SHAPEFILE
+#   Type:        Optional[str]
+#   Default:     None
+#   Source:      MODFLOWConfig (models/modflow/config_schema.py)
+#   Description: Polygons of the land model recharge units (HYPE subid, SUMMA hruId)
+MODFLOW_LAND_ZONE_SHAPEFILE: null
+
+# MODFLOW_LAND_ZONE_ID_FIELD
+#   Type:        str
+#   Default:     HRU_ID
+#   Source:      MODFLOWConfig (models/modflow/config_schema.py)
+#   Description: Id field of MODFLOW_LAND_ZONE_SHAPEFILE matching the land model units
+MODFLOW_LAND_ZONE_ID_FIELD: HRU_ID
+
+# MODFLOW_LAND_OUTLET_ID
+#   Type:        Optional[int]
+#   Default:     None (detected)
+#   Source:      MODFLOWConfig (models/modflow/config_schema.py)
+#   Description: Land-model outlet unit whose flow is the fast flow
+MODFLOW_LAND_OUTLET_ID: null
 
 # MODFLOW_GRID_TYPE
 #   Type:        str (dis/disv/disu)

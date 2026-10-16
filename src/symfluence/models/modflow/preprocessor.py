@@ -4,9 +4,12 @@
 """
 MODFLOW 6 Preprocessor
 
-Generates MODFLOW 6 text input files for a lumped single-cell groundwater
-model. The cell represents the entire catchment with area-equivalent
-dimensions.
+Generates MODFLOW 6 text input files. ``MODFLOW_GRID_MODE: lumped`` (default)
+writes a single-cell groundwater model with the catchment's area;
+``basin`` writes a real-basin grid driven by land-model recharge zones
+(see ``basin_model.py`` and ``land_adapters.py``).
+
+Lumped-mode input files:
 
 Input files generated:
     mfsim.nam   — simulation name file
@@ -27,6 +30,7 @@ import logging
 import math
 from pathlib import Path
 
+from symfluence.core.exceptions import ConfigurationError, FileOperationError
 from symfluence.core.modeling.base.base_preprocessor import BaseModelPreProcessor
 from symfluence.core.registries import R
 
@@ -144,6 +148,10 @@ class MODFLOWPreProcessor(BaseModelPreProcessor):
         settings_dir = self.project_dir / "settings" / "MODFLOW"
         settings_dir.mkdir(parents=True, exist_ok=True)
 
+        if self._get_modflow_cfg('GRID_MODE', 'lumped') == 'basin':
+            self._run_basin_preprocessing(settings_dir)
+            return
+
         self.logger.info(f"Generating MODFLOW 6 input files in {settings_dir}")
 
         # Get parameters
@@ -195,6 +203,65 @@ class MODFLOWPreProcessor(BaseModelPreProcessor):
         self._write_ims(settings_dir)
 
         self.logger.info(f"MODFLOW 6 input files generated in {settings_dir}")
+
+    # ------------------------------------------------------------------
+    # Real-basin grid (MODFLOW_GRID_MODE: basin)
+    # ------------------------------------------------------------------
+    def _resolve_input(self, configured, subdir: str, pattern: str, what: str) -> Path:
+        """Configured path, or the single match of ``pattern`` under ``subdir``."""
+        if configured:
+            p = Path(configured)
+            if not p.exists():
+                raise FileOperationError(f'MODFLOW {what} not found: {p}')
+            return p
+        hits = sorted((self.project_dir / subdir).glob(pattern))
+        if len(hits) != 1:
+            raise ConfigurationError(f'MODFLOW {what}: expected one {pattern} under {subdir}, found {len(hits)}; '
+                                     'set it explicitly')
+        return hits[0]
+
+    def _run_basin_preprocessing(self, settings_dir: Path) -> None:
+        """Grid from subbasins/network/DEM, recharge zones from the land model."""
+        import geopandas as gpd
+
+        from symfluence.models.gsflow.basin_geometry import build_basin_geometry
+
+        from .basin_model import grid_from_basin_geometry, params_from_config, write_simulation, zone_cell_weights
+        from .land_adapters import get_land_adapter
+
+        cfg = self.config.model.modflow
+        sub = gpd.read_file(self._resolve_input(cfg.subbasin_shapefile, 'shapefiles/river_basins', '*.shp',
+                                                'subbasins'))
+        net = gpd.read_file(self._resolve_input(cfg.river_network_shapefile, 'shapefiles/river_network', '*.shp',
+                                                'river network'))
+        dem = self._resolve_input(cfg.dem_path, 'data/attributes/elevation/dem', '*_elv.tif', 'DEM')
+        crs = cfg.grid_crs
+        if crs is None:
+            c = sub.to_crs(4326).geometry.union_all().centroid
+            crs = (32600 if c.y >= 0 else 32700) + int((c.x + 180) / 6) + 1
+        cell = float(cfg.cell_size or 2000.0)
+        geo = build_basin_geometry(sub, net, dem, crs, cell_size=cell, channel_depth=cfg.channel_depth)
+        grid = grid_from_basin_geometry(geo)
+
+        land = str(cfg.coupling_source or '').upper()
+        if land in ('', 'NONE', 'DEFAULT'):
+            raise ConfigurationError('MODFLOW basin mode needs MODFLOW_COUPLING_SOURCE (the land model)')
+        adapter = get_land_adapter(land, {'zone_shapefile': cfg.land_zone_shapefile,
+                                          'zone_id_field': cfg.land_zone_id_field,
+                                          'outlet_id': cfg.land_outlet_id,
+                                          'basin_shapefile': self._resolve_input(cfg.subbasin_shapefile,
+                                                                                 'shapefiles/river_basins',
+                                                                                 '*.shp', 'subbasins')})
+        zones = adapter.recharge_zones(self.project_dir / 'settings' / land)
+        weights = zone_cell_weights(grid, zones, dict(zip(zones.zone_id, zones.area_m2)))
+        _, _, n_days = self._get_time_info()
+        write_simulation(settings_dir, grid, weights, n_days, params_from_config(cfg), save_heads=cfg.save_heads)
+        self.logger.info(
+            f"MODFLOW basin grid: {grid.nrow}x{grid.ncol}, {int(grid.active.sum())} active {cell:g} m cells, "
+            f"{len(grid.river)} river cells; {land} recharge zones {sorted(zones.zone_id)} "
+            f"({len(weights)} zone-cell links) in {settings_dir}")
+        for note in grid.notes:
+            self.logger.debug(f"MODFLOW geometry: {note}")
 
     def _write_mfsim_nam(self, d: Path, n_periods, sp_length, nstp):
         """Write simulation name file."""

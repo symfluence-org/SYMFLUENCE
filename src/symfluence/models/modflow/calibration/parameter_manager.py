@@ -43,6 +43,22 @@ MODFLOW_DEFAULT_BOUNDS = {
         'transform': 'log',
         'description': 'Drain conductance (m2/d) — lumped cell total',
     },
+    # Basin grid mode (MODFLOW_GRID_MODE: basin)
+    'AQUIFER_THICKNESS': {
+        'min': 10.0, 'max': 500.0,
+        'transform': 'log',
+        'description': 'Aquifer thickness below land surface / streambed (m)',
+    },
+    'RIVER_LEAKANCE': {
+        'min': 0.01, 'max': 1000.0,
+        'transform': 'log',
+        'description': 'River drain conductance per reach length (m2/d per m)',
+    },
+    'SEEPAGE_LEAKANCE': {
+        'min': 1e-4, 'max': 10.0,
+        'transform': 'log',
+        'description': 'Land-surface seepage drain conductance per area (1/d)',
+    },
 }
 
 
@@ -66,11 +82,8 @@ class CoupledGWParameterManager(BaseParameterManager):
         super().__init__(config, logger, settings_dir)
 
         # Determine the land surface model
-        self.land_model_name = self._get_config_value(
-            lambda: None,
-            default='SUMMA',
-            dict_key='LAND_SURFACE_MODEL',
-        ).upper()
+        from ..land_adapters import resolve_land_model
+        self.land_model_name = resolve_land_model(self.config_dict or config)
 
         # Resolve model-specific settings directories
         self.land_settings_dir = settings_dir / self.land_model_name
@@ -180,6 +193,11 @@ class CoupledGWParameterManager(BaseParameterManager):
         try:
             d = self.modflow_settings_dir
 
+            from ..basin_model import apply_basin_parameters, params_from_config
+            mf_cfg = self.config.model.modflow if getattr(self.config, 'model', None) else None
+            if apply_basin_parameters(d, params, params_from_config(mf_cfg)):
+                return True
+
             if 'K' in params:
                 self._write_npf(d, params['K'])
 
@@ -287,6 +305,11 @@ class CoupledGWParameterManager(BaseParameterManager):
                 default=1e4
             )),
         }
+        mf = self.config.model.modflow if getattr(self.config, 'model', None) else None
+        if mf is not None:
+            modflow_defaults.update(AQUIFER_THICKNESS=float(mf.aquifer_thickness),
+                                    RIVER_LEAKANCE=float(mf.river_leakance),
+                                    SEEPAGE_LEAKANCE=float(mf.seepage_leakance))
         for p in self.modflow_params:
             if p in modflow_defaults:
                 params[p] = modflow_defaults[p]
