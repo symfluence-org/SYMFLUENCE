@@ -397,7 +397,7 @@ class HYPEWorker(BaseWorker):
                 for col in subbasin_cols:
                     sim_df[col] = pd.to_numeric(sim_df[col], errors='coerce')
                 subbasin_means = sim_df[subbasin_cols].mean()
-                outlet_col = subbasin_means.idxmax()
+                outlet_col = str(subbasin_means.idxmax())
                 sim_series = sim_df[outlet_col]
                 self.logger.debug(
                     f"Auto-selected outlet '{outlet_col}' from {len(subbasin_cols)} subbasins "
