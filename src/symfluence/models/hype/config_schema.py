@@ -102,6 +102,12 @@ class HYPEConfig(BaseModel):
         default=None, alias='HYPE_DEEP_GROUND',
         description='HYPE deep groundwater option'
     )
+    groundwater_export: Optional[bool] = Field(
+        default=None, alias='HYPE_GROUNDWATER_EXPORT',
+        description='Send regional groundwater (rcgrw) out of the model domain from every subbasin '
+                    'and output it as AQIN, for an external groundwater model. Default: on when '
+                    'GROUNDWATER_MODEL is MODFLOW'
+    )
     surface_runoff: Optional[int] = Field(
         default=None, alias='HYPE_SURFACE_RUNOFF',
         description='HYPE surface runoff option'

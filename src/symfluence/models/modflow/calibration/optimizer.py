@@ -63,12 +63,8 @@ class CoupledGWModelOptimizer(BaseModelOptimizer):
     @staticmethod
     def _resolve_land_model_name(config: Dict[str, Any]) -> str:
         """Resolve land surface model name from config."""
-        if isinstance(config, dict):
-            return config.get('LAND_SURFACE_MODEL', 'SUMMA').upper()
-        try:
-            return config.model.land_surface.upper()
-        except (AttributeError, TypeError):
-            return 'SUMMA'
+        from symfluence.models.modflow.land_adapters import resolve_land_model
+        return resolve_land_model(config)
 
     def _get_model_name(self) -> str:
         return 'COUPLED_GW'

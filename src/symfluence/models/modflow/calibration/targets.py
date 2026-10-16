@@ -51,7 +51,8 @@ class CoupledGWStreamflowTarget(StreamflowEvaluator):
     ):
         super().__init__(config, project_dir, logger)
         self.model_name = 'COUPLED_GW'
-        self.land_model_name = self._get_config_value(lambda: None, default='SUMMA', dict_key='LAND_SURFACE_MODEL').upper()
+        from symfluence.models.modflow.land_adapters import resolve_land_model
+        self.land_model_name = resolve_land_model(self.config_dict or config)
 
     def get_simulation_files(self, sim_dir: Path) -> List[Path]:
         """Return output files from both land surface and MODFLOW sub-directories."""
@@ -61,12 +62,14 @@ class CoupledGWStreamflowTarget(StreamflowEvaluator):
         land_dir = sim_dir / self.land_model_name
         if land_dir.exists():
             files.extend(sorted(land_dir.glob('*.nc')))
+            files.extend(sorted(land_dir.glob('time*.txt')))   # HYPE
 
-        # MODFLOW output
+        # MODFLOW output (lumped: binary budget/heads; basin: budget CSV)
         modflow_dir = sim_dir / 'MODFLOW'
         if modflow_dir.exists():
             files.extend(sorted(modflow_dir.glob('*.bud')))
             files.extend(sorted(modflow_dir.glob('*.hds')))
+            files.extend(sorted(modflow_dir.glob('*.bud.csv')))
 
         return files
 
@@ -108,6 +111,10 @@ class CoupledGWStreamflowTarget(StreamflowEvaluator):
         Returns:
             Total streamflow in m3/s with daily datetime index.
         """
+        from symfluence.models.modflow.basin_model import GRID_FILE
+        if (modflow_dir / GRID_FILE).exists():
+            return self._extract_basin_streamflow(modflow_dir)
+
         from symfluence.models.modflow.coupling import SUMMAToMODFLOWCoupler
         from symfluence.models.modflow.extractor import MODFLOWResultExtractor
 
@@ -147,3 +154,19 @@ class CoupledGWStreamflowTarget(StreamflowEvaluator):
         )
 
         return total_streamflow
+
+    def _extract_basin_streamflow(self, modflow_dir: Path) -> pd.Series:
+        """Basin mode: land-model fast flow + MODFLOW discharge to rivers (m3/s)."""
+        from symfluence.models.modflow.basin_model import read_coupling_record, read_groundwater_discharge
+        from symfluence.models.modflow.land_adapters import adapter_options, get_land_adapter
+
+        rec = read_coupling_record(modflow_dir)
+        adapter = get_land_adapter(rec['land_model'], adapter_options(self.config_dict))
+        fast = adapter.read_fast_flow(Path(rec['land_output']), Path(rec['land_settings']))
+        gw = read_groundwater_discharge(modflow_dir)
+        fast.index = pd.to_datetime(fast.index).normalize()
+        total = (fast + gw).dropna()
+        if total.empty:
+            from symfluence.core.exceptions import ValidationError
+            raise ValidationError('Land fast flow and MODFLOW discharge do not overlap in time')
+        return total.rename('total_streamflow_m3s')

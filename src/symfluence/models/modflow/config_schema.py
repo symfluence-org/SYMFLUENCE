@@ -10,7 +10,7 @@ config system through ``R.config_schemas`` (via the model manifest /
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -40,7 +40,28 @@ class MODFLOWConfig(BaseModel):
     settings_path: str = Field(default='default', alias='SETTINGS_MODFLOW_PATH')
     spatial_mode: SpatialModeType = Field(default='lumped', alias='MODFLOW_SPATIAL_MODE')
 
-    # Grid discretization
+    # Grid: 'lumped' (single cell, default) or 'basin' (real-basin grid from the
+    # delineated subbasins, river network and DEM; see basin_model.py)
+    grid_mode: Literal['lumped', 'basin'] = Field(default='lumped', alias='MODFLOW_GRID_MODE')
+    subbasin_shapefile: Optional[str] = Field(default=None, alias='MODFLOW_SUBBASIN_SHAPEFILE')
+    river_network_shapefile: Optional[str] = Field(default=None, alias='MODFLOW_RIVER_NETWORK_SHAPEFILE')
+    dem_path: Optional[str] = Field(default=None, alias='MODFLOW_DEM_PATH')
+    grid_crs: Optional[int] = Field(default=None, alias='MODFLOW_GRID_CRS',
+                                    description='EPSG code of the (metric) grid CRS; default: UTM zone')
+    channel_depth: float = Field(default=1.0, alias='MODFLOW_CHANNEL_DEPTH', ge=0)
+    aquifer_thickness: float = Field(default=100.0, alias='MODFLOW_AQUIFER_THICKNESS', gt=0)
+    river_leakance: float = Field(default=10.0, alias='MODFLOW_RIVER_LEAKANCE', gt=0,
+                                  description='River drain conductance per reach length (m2/d per m)')
+    seepage_leakance: float = Field(default=0.1, alias='MODFLOW_SEEPAGE_LEAKANCE', gt=0,
+                                    description='Land-surface seepage drain conductance per area (1/d)')
+    save_heads: Literal['none', 'last', 'all'] = Field(default='last', alias='MODFLOW_SAVE_HEADS')
+    # Land-model recharge zones (basin mode): shapefile whose id field matches
+    # the land model's spatial units (HYPE subid, SUMMA hruId)
+    land_zone_shapefile: Optional[str] = Field(default=None, alias='MODFLOW_LAND_ZONE_SHAPEFILE')
+    land_zone_id_field: str = Field(default='HRU_ID', alias='MODFLOW_LAND_ZONE_ID_FIELD')
+    land_outlet_id: Optional[int] = Field(default=None, alias='MODFLOW_LAND_OUTLET_ID')
+
+    # Grid discretization (lumped mode)
     grid_type: str = Field(default='dis', alias='MODFLOW_GRID_TYPE')
     nlay: int = Field(default=1, alias='MODFLOW_NLAY', ge=1, le=100)
     nrow: int = Field(default=1, alias='MODFLOW_NROW', ge=1, le=10000)
@@ -73,6 +94,7 @@ class MODFLOWConfig(BaseModel):
     # Calibration
     params_to_calibrate: str = Field(
         default='K,SY,DRAIN_CONDUCTANCE',
+        description='Lumped: K,SY,DRAIN_CONDUCTANCE. Basin: any of K,SY,AQUIFER_THICKNESS,RIVER_LEAKANCE,SEEPAGE_LEAKANCE',
         alias='MODFLOW_PARAMS_TO_CALIBRATE'
     )
 

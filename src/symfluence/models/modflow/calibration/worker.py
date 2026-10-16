@@ -69,8 +69,8 @@ class CoupledGWWorker(BaseWorker):
     def land_model_name(self) -> str:
         """Get land surface model name from config."""
         if self._land_model_name is None:
-            config = self.config or {}
-            self._land_model_name = config.get('LAND_SURFACE_MODEL', 'SUMMA').upper()
+            from symfluence.models.modflow.land_adapters import resolve_land_model
+            self._land_model_name = resolve_land_model(self.config or {})
         assert self._land_model_name is not None
         return self._land_model_name
 
@@ -129,7 +129,7 @@ class CoupledGWWorker(BaseWorker):
             land_settings = self._resolve_land_settings(settings_dir)
             # Resilience: if settings were deleted by a concurrent cleanup,
             # regenerate them from the project-level settings.
-            if not (land_settings / 'attributes.nc').exists():
+            if not self._land_settings_present(land_settings):
                 self._regenerate_settings(settings_dir, config)
                 land_settings = self._resolve_land_settings(settings_dir)
             try:
@@ -162,6 +162,11 @@ class CoupledGWWorker(BaseWorker):
 
         return success
 
+    def _land_settings_present(self, land_settings: Path) -> bool:
+        if self.land_model_name == 'SUMMA':
+            return (land_settings / 'attributes.nc').exists()
+        return land_settings.is_dir() and any(land_settings.iterdir())
+
     def _write_modflow_params(
         self,
         params: Dict[str, float],
@@ -169,6 +174,10 @@ class CoupledGWWorker(BaseWorker):
         config: Dict[str, Any],
     ) -> bool:
         """Write MODFLOW parameter files directly (NPF, STO, DRN)."""
+        from symfluence.models.modflow.basin_model import apply_basin_parameters, params_from_flat
+        if apply_basin_parameters(modflow_dir, params, params_from_flat(config)):
+            return True
+
         if 'K' in params:
             k = float(params['K'])
             (modflow_dir / "gwf.npf").write_text(
@@ -288,7 +297,9 @@ class CoupledGWWorker(BaseWorker):
                 shutil.rmtree(d, ignore_errors=True)
             d.mkdir(parents=True, exist_ok=True)
 
-        # Step 1: Run land surface model
+        # Step 1: Run land surface model (writing into land_output)
+        from symfluence.models.modflow.land_adapters import adapter_options, get_land_adapter
+        get_land_adapter(self.land_model_name, adapter_options(config)).set_output_dir(land_settings, land_output)
         self.logger.debug(f"Running {self.land_model_name} (land surface)...")
         # Filter kwargs to avoid duplicate keyword arguments when delegating
         land_kwargs = {
@@ -384,7 +395,7 @@ class CoupledGWWorker(BaseWorker):
         # Regenerate land surface settings
         land_dest = settings_dir / self.land_model_name
         land_source = project_dir / 'settings' / self.land_model_name
-        if land_source.exists() and not (land_dest / 'attributes.nc').exists():
+        if land_source.exists() and not self._land_settings_present(land_dest):
             land_dest.mkdir(parents=True, exist_ok=True)
             for item in land_source.iterdir():
                 if item.is_file():

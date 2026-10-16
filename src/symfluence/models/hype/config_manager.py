@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any, Match
 import numpy as np
 import pandas as pd
 
-from symfluence.core.exceptions import ValidationError
+from symfluence.core.exceptions import ConfigurationError, ValidationError
 from symfluence.core.mixins import ConfigMixin
 
 from .forcing_processor import required_extra_obs
@@ -246,6 +246,12 @@ class HYPEConfigManager(ConfigMixin):
             lambda: self.config.model.hype.deep_ground,
             default=0, dict_key='HYPE_DEEP_GROUND',
         )
+        from .geodata_manager import groundwater_export_enabled
+        groundwater_export = groundwater_export_enabled(self.config)
+        if groundwater_export:
+            if deepground_opt not in (0, 1, None):
+                raise ConfigurationError('HYPE_GROUNDWATER_EXPORT requires HYPE_DEEP_GROUND 1 (or unset)')
+            deepground_opt = 1
         surfrunoff_opt = self._get_config_value(
             lambda: self.config.model.hype.surface_runoff,
             default=0, dict_key='HYPE_SURFACE_RUNOFF',
@@ -261,6 +267,8 @@ class HYPEConfigManager(ConfigMixin):
             glacier_outputs = '\tGLCV\tGLCA\tGMLT\tCFSC'
         if self.config.get('HYPE_WATER_BALANCE_DIAGNOSTICS', False):
             glacier_outputs += '\tSOIM\tSML1\tSML2\tSML3\tCLRV\tCMRV\tCPRC\tEPOT'
+        if groundwater_export:
+            glacier_outputs += '\tAQIN'
         snow_melt_model = self.config.get('HYPE_SNOW_MELT_MODEL', 0)
         extra_obs = required_extra_obs(self.config)
         read_sf, read_sw, read_u, read_rh = ('y' if name in extra_obs else 'n'

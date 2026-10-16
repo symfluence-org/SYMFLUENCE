@@ -43,6 +43,23 @@ if TYPE_CHECKING:
     pass
 
 
+# grwdown of a subid that does not exist: HYPE resolves it to "outside the model
+# domain". (All-zero grwdown would instead be replaced by maindown.)
+GROUNDWATER_OUT_OF_DOMAIN_SUBID = 999999999
+
+
+def groundwater_export_enabled(config) -> bool:
+    """Regional groundwater leaves HYPE for an external groundwater model.
+
+    On with HYPE_GROUNDWATER_EXPORT, or by default when GROUNDWATER_MODEL is
+    MODFLOW (HYPE_GROUNDWATER_EXPORT: false turns it off).
+    """
+    explicit = config.get('HYPE_GROUNDWATER_EXPORT')
+    if explicit is not None:
+        return bool(explicit)
+    return str(config.get('GROUNDWATER_MODEL') or '').strip().upper() == 'MODFLOW'
+
+
 def load_elevation_band_table(shapefile: Path | str) -> list[dict[str, float]]:
     """Read an elevation-banded HRU shapefile into an ordered band table.
 
@@ -388,6 +405,10 @@ class HYPEGeoDataManager:
         sorted_df = self.sort_geodata(base_df)
         sorted_df = self.apply_river_length_overrides(sorted_df)
         volume_correction = sorted_df.pop('_glacier_logvolcor') if '_glacier_logvolcor' in sorted_df else None
+        if groundwater_export_enabled(self.config):
+            if (sorted_df['subid'] == GROUNDWATER_OUT_OF_DOMAIN_SUBID).any():
+                raise ValidationError(f'subid {GROUNDWATER_OUT_OF_DOMAIN_SUBID} is reserved for groundwater export')
+            sorted_df['grwdown'] = GROUNDWATER_OUT_OF_DOMAIN_SUBID
         sorted_df.to_csv(self.output_path / 'GeoData.txt', sep='\t', index=False)
 
         # 9. Write ForcKey.txt (required for readobsid=y)

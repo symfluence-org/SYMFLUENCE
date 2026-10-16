@@ -198,6 +198,10 @@ class MODFLOWRunner(BaseModelRunner):
             logger.debug("No coupling source configured — skipping recharge preparation")
             return
 
+        if self._grid_mode() == 'basin':
+            self._prepare_basin_recharge(coupling_source, source_output_dir)
+            return
+
         if not source_output_dir.exists():
             logger.warning(
                 f"Coupling source output directory not found: {source_output_dir}. "
@@ -229,6 +233,32 @@ class MODFLOWRunner(BaseModelRunner):
 
         logger.debug(f"Wrote coupled recharge ({len(recharge_series)} periods) to {rch_path}")
 
+    def _grid_mode(self) -> str:
+        return str(self._get_config_value(
+            lambda: self.config.model.modflow.grid_mode, default='lumped', dict_key='MODFLOW_GRID_MODE',
+        )).lower()
+
+    def _prepare_basin_recharge(self, land: str, source_output_dir: Path) -> None:
+        """Basin mode: zone recharge from the land model's output -> RCH time series + TDIS."""
+        import pandas as pd
+
+        from .basin_model import WEIGHTS_FILE, set_simulation_length, write_coupling_record, write_recharge_timeseries
+        from .land_adapters import adapter_options, get_land_adapter
+
+        if not source_output_dir.exists():
+            raise ModelExecutionError(f"{land} output for MODFLOW recharge not found: {source_output_dir}")
+        land_settings = self.settings_dir.parent / land
+        if not land_settings.exists():
+            land_settings = self.project_dir / 'settings' / land
+        adapter = get_land_adapter(land, adapter_options(self.config_dict or self.config))
+        recharge = adapter.read_recharge(source_output_dir, land_settings)
+        weights = pd.read_csv(self.settings_dir / WEIGHTS_FILE)
+        dates = write_recharge_timeseries(self.settings_dir, recharge, sorted(weights.zone_id.unique()))
+        set_simulation_length(self.settings_dir, len(dates))
+        write_coupling_record(self.settings_dir, land, land_settings, source_output_dir, dates[0])
+        logger.debug(f"MODFLOW basin recharge from {land}: {len(dates)} days from {dates[0].date()}, "
+                     f"{len(recharge.columns)} zones")
+
     def _setup_sim_directory(self, sim_dir: Path) -> None:
         """Copy all MODFLOW input files to simulation directory."""
         if not self.settings_dir.exists():
@@ -236,6 +266,12 @@ class MODFLOWRunner(BaseModelRunner):
                 f"MODFLOW settings directory not found: {self.settings_dir}. "
                 "Run preprocessing first."
             )
+        if self._grid_mode() == 'basin':
+            if Path(sim_dir).resolve() != self.settings_dir.resolve():
+                for src in self.settings_dir.iterdir():
+                    if src.is_file():
+                        shutil.copy2(src, Path(sim_dir) / src.name)
+            return
 
         # Copy all MODFLOW input files
         modflow_files = [
@@ -254,6 +290,12 @@ class MODFLOWRunner(BaseModelRunner):
 
     def _verify_output(self) -> None:
         """Verify MODFLOW produced valid output files."""
+        if self._grid_mode() == 'basin':
+            from .basin_model import BUDGET_CSV, check_run
+            check_run(self.output_dir)
+            if not (self.output_dir / BUDGET_CSV).exists():
+                raise ModelExecutionError(f"MODFLOW did not write {BUDGET_CSV} in {self.output_dir}")
+            return
         # Check for head and budget files
         hds_files = list(self.output_dir.glob("*.hds"))
         bud_files = list(self.output_dir.glob("*.bud"))
