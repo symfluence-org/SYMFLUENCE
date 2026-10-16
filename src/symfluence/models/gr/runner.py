@@ -11,6 +11,7 @@ Refactored to use the Unified Model Execution Framework.
 """
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -166,7 +167,7 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
     def _setup_model_specific_paths(self) -> None:
         """Set up GR-specific paths."""
         # Catchment paths (use backward-compatible path resolution)
-        catchment_file = self._get_catchment_file_path()
+        catchment_file = self._find_basin_shapefile(required=True)
         self.catchment_path = catchment_file.parent
         self.catchment_name = catchment_file.name
 
@@ -342,6 +343,137 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
             self.logger.debug(f"Could not load calibrated defaults: {e}", exc_info=True)
 
         return self._calibrated_defaults_cache
+
+    def _forcing_corrections(self) -> Dict[str, float]:
+        """Precipitation multiplier and temperature offset (identity unless calibrated)."""
+        params = self._external_params or {}
+        return {'PCORR': float(params.get('PCORR', 1.0)), 'TCORR': float(params.get('TCORR', 0.0))}
+
+    def _glacier_enabled(self) -> bool:
+        return bool(self._get_config_value(
+            lambda: self.config.model.gr.glacier_enabled, default=False, dict_key='GR_GLACIER_ENABLED'
+        ))
+
+    def _execute_gr_lumped_glacier(self, params: Dict[str, float], n_layers: int,
+                                   forcing: Dict[str, float]) -> bool:
+        """Lumped CemaNeige -> degree-day ice melt -> GR4J (X2 as given).
+
+        airGR has no glacier store, so CemaNeige and GR4J run as two calls and
+        ice melt from the outline's share of each elevation layer is added to
+        CemaNeige's liquid output before GR4J. See ``glacier.py``.
+        """
+        from .glacier import area_scale_series, compute_ice_melt, load_glacier_geometry
+
+        gr_cfg = self.config.model.gr
+        if not gr_cfg.glacier_outline:
+            raise ModelExecutionError("GR_GLACIER_ENABLED requires GR_GLACIER_OUTLINE")
+        dem_path = self.project_attributes_dir / 'elevation' / 'dem' / f"domain_{self.domain_name}_elv.tif"
+        geom = load_glacier_geometry(str(dem_path), str(self.catchment_path / self.catchment_name),
+                                     str(self._project_path(gr_cfg.glacier_outline)), n_layers)
+
+        forcing_csv = self.forcing_gr_path / f"{self.domain_name}_input.csv"
+        dates = pd.DatetimeIndex(pd.read_csv(forcing_csv, usecols=['time'])['time'].pipe(pd.to_datetime))
+        run_start = pd.to_datetime(self.time_start).normalize()
+        run_end = pd.to_datetime(self.time_end).normalize()
+        run_idx = np.flatnonzero((dates >= run_start) & (dates <= run_end))
+        if run_idx.size == 0:
+            raise ModelExecutionError(f"GR forcing does not cover the run {run_start:%Y-%m-%d} to {run_end:%Y-%m-%d}")
+        run_dates = dates[run_idx]
+
+        cemaneige = [params.get(k, self._load_calibrated_defaults().get(k, d))
+                     for k, d in (('CTG', 0.0), ('Kf', 3.69), ('Gratio', 0.1), ('Albedo_diff', 0.1))]
+        r_dates = 'as.POSIXct(BasinObs$time, tz = "UTC")'
+        r_vec = lambda v: f"c({', '.join(repr(float(x)) for x in v)})"  # noqa: E731
+        run_r_script(robjects, f'''
+            library(airGR)
+            BasinObs <- read.csv({r_path(forcing_csv)})
+            Ind_Run <- {int(run_idx[0]) + 1}L:{int(run_idx[-1]) + 1}L
+            InputsCN <- CreateInputsModel(
+                FUN_MOD = RunModel_CemaNeige, DatesR = {r_dates},
+                Precip = BasinObs$pr * {forcing['PCORR']}, TempMean = BasinObs$temp + {forcing['TCORR']},
+                ZInputs = {geom.z_mean}, HypsoData = {r_vec(geom.hypso)}, NLayers = {n_layers}, verbose = FALSE
+            )
+            RunOptionsCN <- CreateRunOptions(
+                FUN_MOD = RunModel_CemaNeige, InputsModel = InputsCN, IndPeriod_WarmUp = 0L,
+                IndPeriod_Run = Ind_Run, IsHyst = TRUE, warnings = FALSE, verbose = FALSE
+            )
+            OutputsCN <- RunModel_CemaNeige(InputsCN, RunOptionsCN, Param = {r_vec(cemaneige)})
+            layer_matrix <- function(name) sapply(OutputsCN$CemaNeigeLayers, function(l) l[[name]])
+            CN_swe <- layer_matrix("SnowPack"); CN_temp <- layer_matrix("Temp")
+            CN_liquid <- rowMeans(layer_matrix("PliqAndMelt"))
+            TRUE
+        ''', "GR CemaNeige layers")
+
+        def r_matrix(name: str) -> np.ndarray:
+            # as.vector() flattens column-major (layer by layer), independent of
+            # how the active rpy2 converter maps R matrices.
+            return np.asarray(run_r_script(robjects, f'as.vector({name})', name), dtype=float).reshape(n_layers, -1).T
+
+        swe, temp = r_matrix('CN_swe'), r_matrix('CN_temp')
+        liquid = np.asarray(run_r_script(robjects, 'CN_liquid', 'CemaNeige liquid output'), dtype=float)
+
+        area_file = self._project_path(gr_cfg.glacier_area_file) if gr_cfg.glacier_area_file else None
+        mb_years = self._calibration_water_years()
+        mb_target = gr_cfg.glacier_mb_target
+        ice = compute_ice_melt(
+            run_dates, swe, temp, geom.layer_fraction,
+            area_scale_series(run_dates, geom.glacier_area_km2, area_file),
+            ddf=params.get('ICE_DDF'),
+            mb_target_mm=None if mb_target is None else 1000.0 * float(mb_target),
+            mb_years=mb_years, ddf_bounds=gr_cfg.glacier_ice_ddf_bounds,
+            snowfree_swe=gr_cfg.glacier_snowfree_swe,
+        )
+        if np.isfinite(ice.ddf_unclipped) and ice.ddf != ice.ddf_unclipped:
+            self.logger.warning(f"Solved ice degree-day factor {ice.ddf_unclipped:.3g} clipped to {ice.ddf:.3g}; "
+                                "the mass-balance target is not met")
+
+        robjects.globalenv['GR_liquid'] = robjects.FloatVector(liquid + ice.ice_melt)
+        x = [params.get(k, self._load_calibrated_defaults().get(k, d))
+             for k, d in (('X1', 350.0), ('X2', 0.0), ('X3', 100.0), ('X4', 1.7))]
+        run_r_script(robjects, f'''
+            InputsGR <- CreateInputsModel(
+                FUN_MOD = RunModel_GR4J, DatesR = {r_dates}[Ind_Run],
+                Precip = GR_liquid, PotEvap = BasinObs$pet[Ind_Run], verbose = FALSE
+            )
+            RunOptionsGR <- CreateRunOptions(
+                FUN_MOD = RunModel_GR4J, InputsModel = InputsGR, IndPeriod_WarmUp = 0L,
+                IndPeriod_Run = seq_along(GR_liquid), warnings = FALSE, verbose = FALSE
+            )
+            OutputsModel <- RunModel_GR4J(InputsGR, RunOptionsGR, Param = {r_vec(x)})
+            save(OutputsModel, file = {r_path(self.output_path / 'GR_results.Rdata')})
+            TRUE
+        ''', "GR4J with glacier melt")
+        q = np.asarray(run_r_script(robjects, 'OutputsModel$Qsim', 'GR4J discharge'), dtype=float)
+
+        pd.DataFrame({
+            'datetime': run_dates.strftime('%Y-%m-%d %H:%M:%S'),
+            'q_sim': q, 'ice_melt_mm': ice.ice_melt,
+        }).to_csv(self.output_path / 'GR_results.csv', index=False)
+        (self.output_path / 'GR_glacier_diagnostics.json').write_text(json.dumps({
+            'ice_ddf': ice.ddf, 'ice_ddf_unclipped': ice.ddf_unclipped,
+            'mb_target_mwe': mb_target, 'mb_years': list(mb_years),
+            'glacier_area_km2_outline': geom.glacier_area_km2,
+            'layer_glacier_fraction': geom.layer_fraction.tolist(),
+            'forcing': forcing,
+            'mass_balance_mwe': {str(k): v / 1000.0 for k, v in ice.mass_balance.items()},
+        }, indent=1))
+        return True
+
+    def _project_path(self, value: str) -> Path:
+        path = Path(value).expanduser()
+        return path if path.is_absolute() else self.project_dir / path
+
+    def _calibration_water_years(self) -> list:
+        """Water years lying fully inside the calibration period."""
+        period = self._get_config_value(lambda: self.config.domain.calibration_period, default=None)
+        if not period:
+            raise ModelExecutionError("GR glacier mass-balance target needs a calibration period")
+        start, end = (pd.to_datetime(p.strip()) for p in str(period).split(','))
+        first_oct1 = pd.Timestamp(start.year, 10, 1)
+        first = first_oct1.year + 1 if start <= first_oct1 else first_oct1.year + 2
+        last_sep30 = pd.Timestamp(end.year, 9, 30)
+        last = last_sep30.year if end >= last_sep30 else last_sep30.year - 1
+        return list(range(first, last + 1))
 
     def _check_routing_requirements(self) -> bool:
         """Check if distributed routing is needed.
@@ -814,6 +946,15 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
             # (GR_calib.Rdata) so that un-optimized params keep their
             # calibrated values instead of falling back to poor defaults.
             external_params = self._external_params
+            forcing = self._forcing_corrections()
+            n_layers = self._get_config_value(lambda: self.config.model.gr.snow_layers, default=5)
+            if self._glacier_enabled():
+                if not external_params:
+                    raise ModelExecutionError(
+                        "GR glacier mode has no internal (Michel) calibration; "
+                        "calibrate with the optimizer or pass parameters"
+                    )
+                return self._execute_gr_lumped_glacier(external_params, int(n_layers), forcing)
             if external_params:
                 calibrated_defaults = self._load_calibrated_defaults()
                 x1 = external_params.get('X1', calibrated_defaults.get('X1', default_params[0]))
@@ -870,11 +1011,12 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
                 InputsModel <- CreateInputsModel(
                     FUN_MOD = RunModel_CemaNeigeGR4J,
                     DatesR = as.POSIXct(BasinObs$time),
-                    Precip = BasinObs$pr,
+                    Precip = BasinObs$pr * {forcing['PCORR']},
                     PotEvap = BasinObs$pet,
-                    TempMean = BasinObs$temp,
+                    TempMean = BasinObs$temp + {forcing['TCORR']},
                     HypsoData = c({', '.join(map(str, Hypso))}),
-                    ZInputs = {Zmean}
+                    ZInputs = {Zmean},
+                    NLayers = {int(n_layers)}
                 )
 
                 # Preparation of RunOptions object
@@ -918,10 +1060,12 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
                 }}
 
                 # Preparation of RunOptions for full simulation
+                # Ind_Run already starts at time_start and includes spinup.
+                # Do not replay that same warmup before the simulation start.
                 RunOptions <- CreateRunOptions(
                     FUN_MOD = RunModel_CemaNeigeGR4J,
                     InputsModel = InputsModel,
-                    IndPeriod_WarmUp = Ind_Warm,
+                    IndPeriod_WarmUp = 0L,
                     IndPeriod_Run = Ind_Run,
                     IsHyst = TRUE
                 )

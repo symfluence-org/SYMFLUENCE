@@ -44,6 +44,9 @@ PARAMS: Dict[str, ParameterInfo] = {
     'Kf': ParameterInfo(0.0, 20.0, 'mm/°C/day', 'Melt factor', 'snow'),
     'Gratio': ParameterInfo(0.01, 200.0, '-', 'Thermal coefficient for snow pack thermal state', 'snow'),
     'Albedo_diff': ParameterInfo(0.001, 1.0, '-', 'Albedo diffusion coefficient', 'snow'),
+    'PCORR': ParameterInfo(0.5, 2.0, '-', 'Total precipitation multiplier', 'forcing'),
+    'TCORR': ParameterInfo(-3.0, 3.0, 'K', 'Additive temperature offset', 'forcing'),
+    'ICE_DDF': ParameterInfo(1.0, 20.0, 'mm/°C/day', 'Glacier ice degree-day factor', 'glacier'),
 }
 
 #: Tier A -- the catalogue names composing GR's bound set, in served order.
@@ -56,6 +59,9 @@ BOUND_SET: List[str] = [
     'Kf',
     'Gratio',
     'Albedo_diff',
+    'PCORR',
+    'TCORR',
+    'ICE_DDF',
 ]
 
 #: Catalogue keys are already the served names.

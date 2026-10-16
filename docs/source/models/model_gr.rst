@@ -107,6 +107,40 @@ Automatically enabled when using elevation discretization:
      elevation_bands:
        n_bands: 5  # CemaNeige activated with 5 elevation zones
 
+Forcing corrections and glacier melt (lumped, opt-in)
+-----------------------------------------------------
+
+Two optional calibration parameters correct the forcing before CemaNeige:
+``PCORR`` multiplies total precipitation and ``TCORR`` adds a temperature
+offset (K). Both are identity values (1 and 0) unless listed in
+``GR_PARAMS_TO_CALIBRATE``. ``GR_SNOW_LAYERS`` sets the number of equal-area
+CemaNeige elevation layers (airGR ``NLayers``, default 5).
+
+airGR has no glacier process. With ``GR_GLACIER_ENABLED`` the lumped runner
+calls CemaNeige and GR4J separately and adds degree-day ice melt between them:
+each layer carries the glacierised fraction of its elevation band from
+``GR_GLACIER_OUTLINE``, and ice melts at ``DDF * max(T_layer, 0)`` on days the
+layer's snowpack is below ``GR_GLACIER_SNOWFREE_SWE`` (mm). The ice
+degree-day factor is either calibrated (``ICE_DDF``) or, when
+``GR_GLACIER_MB_TARGET`` (observed mean net balance, m w.e./yr over the
+calibration water years) is set, solved in every run to reproduce that
+balance and clipped to ``GR_GLACIER_ICE_DDF_BOUNDS``. ``GR_GLACIER_AREA_FILE``
+(LamaH-Ice ``glacier_timeseries.csv``) scales the outline area to the observed
+area of each water year. Ice storage is unlimited, so this is a forcing-side
+workaround rather than glacier dynamics. Glacier mode needs external
+parameters (the optimizer); it has no internal Michel calibration. Each run
+writes ``GR_glacier_diagnostics.json`` (solved factor, simulated annual
+balances) and an ``ice_melt_mm`` column in ``GR_results.csv``.
+
+.. code-block:: yaml
+
+   GR_PARAMS_TO_CALIBRATE: X1,X3,X4,CTG,Kf,Gratio,Albedo_diff,PCORR,TCORR
+   GR_SNOW_LAYERS: 10
+   GR_GLACIER_ENABLED: true
+   GR_GLACIER_OUTLINE: /path/to/rgi_outline.gpkg
+   GR_GLACIER_MB_TARGET: -1.907
+   GR_GLACIER_AREA_FILE: /path/to/glacier_timeseries.csv
+
 Spatial Modes
 =============
 
