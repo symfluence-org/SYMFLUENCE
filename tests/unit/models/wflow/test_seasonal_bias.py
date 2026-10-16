@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from symfluence.core.exceptions import EvaluationError
 from symfluence.models.wflow.calibration.seasonal import seasonal_bias_score
 
 
@@ -19,10 +20,10 @@ def test_seasonal_errors_do_not_cancel():
 
 def test_missing_and_partial_seasons_rejected():
     obs = pd.Series(1., index=pd.date_range('2012-10-01', '2013-09-30'))
-    with pytest.raises(ValueError):
+    with pytest.raises(EvaluationError):
         seasonal_bias_score(obs.drop(obs.index[12]), obs.drop(obs.index[12]))
-    with pytest.raises(ValueError):
+    with pytest.raises(EvaluationError):
         seasonal_bias_score(obs.iloc[1:], obs.iloc[1:])
     missing = obs.copy(); missing.iloc[4] = np.nan
-    with pytest.raises(ValueError):
+    with pytest.raises(EvaluationError):
         seasonal_bias_score(missing, obs)

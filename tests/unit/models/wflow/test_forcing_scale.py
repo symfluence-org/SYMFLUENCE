@@ -5,6 +5,7 @@ import tomllib
 
 import pytest
 
+from symfluence.core.exceptions import ConfigurationError
 from symfluence.models.wflow.calibration.parameter_manager import WflowParameterManager
 
 TOML = '''[input.forcing]
@@ -27,5 +28,5 @@ def test_scale_written_and_idempotent(tmp_path):
 def test_missing_entry_raises(tmp_path):
     path = tmp_path / 'wflow_sbm.toml'
     path.write_text('[input.forcing]\natmosphere_air__temperature = "temp"\n')
-    with pytest.raises(ValueError):
+    with pytest.raises(ConfigurationError):
         WflowParameterManager.set_forcing_scales(path, {'PCORR': 1.2})

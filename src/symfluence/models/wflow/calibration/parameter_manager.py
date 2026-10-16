@@ -15,6 +15,7 @@ import numpy as np
 import xarray as xr
 
 from symfluence.core.calibration.parameters.base_parameter_manager import BaseParameterManager
+from symfluence.core.exceptions import ConfigurationError
 from symfluence.core.registries import R
 
 
@@ -93,9 +94,9 @@ class WflowParameterManager(BaseParameterManager):
             default={}, dict_key='WFLOW_PARAMETER_BOUNDS') or {}
         for name, limits in overrides.items():
             if name not in bounds or set(limits) != {'min', 'max'}:
-                raise ValueError(f'Invalid Wflow bound override: {name}')
+                raise ConfigurationError(f'Invalid Wflow bound override: {name}')
             if not np.isfinite(list(limits.values())).all() or limits['min'] >= limits['max']:
-                raise ValueError(f'Invalid Wflow bounds for {name}')
+                raise ConfigurationError(f'Invalid Wflow bounds for {name}')
             bounds[name] = dict(limits)
         return bounds
 
@@ -117,7 +118,7 @@ class WflowParameterManager(BaseParameterManager):
             default={}, dict_key='WFLOW_INITIAL_PARAMETERS') or {}
         for name, value in specified.items():
             if name not in bounds or not np.isfinite(value) or not bounds[name]['min'] <= value <= bounds[name]['max']:
-                raise ValueError(f'Invalid Wflow initial parameter: {name}')
+                raise ConfigurationError(f'Invalid Wflow initial parameter: {name}')
         initial = {}
         for p, b in bounds.items():
             default = specified.get(p, self.PREPROCESSOR_DEFAULTS.get(p))
@@ -147,11 +148,11 @@ class WflowParameterManager(BaseParameterManager):
             entry = forcing.get(name)
             variable = entry.get('netcdf_variable_name') if isinstance(entry, dict) else entry
             if not isinstance(variable, str):
-                raise ValueError(f'Wflow forcing entry {name} not found in {toml_path}')
+                raise ConfigurationError(f'Wflow forcing entry {name} not found in {toml_path}')
             line = f'{name} = {{ netcdf_variable_name = "{variable}", scale = {float(value)!r} }}'
             content, count = re.subn(rf'^{name}\s*=.*$', line, content, flags=re.MULTILINE)
             if count != 1:
-                raise ValueError(f'Expected one {name} entry in {toml_path}, found {count}')
+                raise ConfigurationError(f'Expected one {name} entry in {toml_path}, found {count}')
         toml_path.write_text(content)
 
     def update_model_files(self, params: Dict[str, float], settings_dir: Optional[Path] = None, **kwargs) -> bool:

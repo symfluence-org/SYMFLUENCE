@@ -7,6 +7,7 @@ import rasterio
 from rasterio.transform import from_origin
 from shapely.geometry import box
 
+from symfluence.core.exceptions import GeospatialError
 from symfluence.models.wflow.glacier_geometry import mapped_glaciers
 
 
@@ -32,6 +33,6 @@ def test_rejects_lost_glacier_boundary(tmp_path):
                        height=2, width=2, count=1, dtype='float64', crs=3057,
                        transform=from_origin(0, 200, 100, 100)) as dst:
         dst.write(np.ones((2, 2))*100, 1)
-    with pytest.raises(ValueError, match='boundary'):
+    with pytest.raises(GeospatialError, match='boundary'):
         mapped_glaciers(np.array([[True, False], [True, False]]),
                         from_origin(0, 200, 100, 100), outlines, tmp_path, box(0, 0, 200, 200))

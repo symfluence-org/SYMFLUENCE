@@ -9,6 +9,7 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
+from symfluence.core.exceptions import ConfigurationError
 from symfluence.core.modeling.base import ModelResultExtractor
 
 
@@ -38,7 +39,7 @@ class WflowResultExtractor(ModelResultExtractor):
             # New native-routing distributed output is daily, end-labelled.
             if 'WB_max' in df:
                 return pd.Series(df.Q.values, index=pd.DatetimeIndex(df.time)-pd.Timedelta(days=1))
-            raise ValueError('Legacy lumped CSV requires its area-aware worker extractor')
+            raise ConfigurationError('Legacy lumped CSV requires its area-aware worker extractor')
         import xarray as xr
         var_names = self.get_variable_names(variable_type)
         try:

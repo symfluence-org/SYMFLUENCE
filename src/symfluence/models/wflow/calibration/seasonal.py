@@ -4,6 +4,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from symfluence.core.exceptions import EvaluationError
+
 
 def seasonal_bias_score(sim: pd.Series, obs: pd.Series) -> float:
     """One minus mean absolute fractional bias for Oct–Mar, Apr–Jun, Jul–Sep.
@@ -12,11 +14,11 @@ def seasonal_bias_score(sim: pd.Series, obs: pd.Series) -> float:
     nonpositive observed seasonal volumes invalidate the score.
     """
     if not sim.index.equals(obs.index) or sim.index.has_duplicates or len(sim) == 0:
-        raise ValueError('Seasonal bias requires matching unique daily indices')
+        raise EvaluationError('Seasonal bias requires matching unique daily indices')
     if not sim.index.equals(pd.date_range(sim.index[0], sim.index[-1])):
-        raise ValueError('Seasonal bias requires complete daily coverage')
+        raise EvaluationError('Seasonal bias requires complete daily coverage')
     if not np.isfinite(sim).all() or not np.isfinite(obs).all():
-        raise ValueError('Seasonal bias requires finite paired values')
+        raise EvaluationError('Seasonal bias requires finite paired values')
     index = sim.index
     wy = index.year + (index.month >= 10)
     season = np.where((index.month >= 10) | (index.month <= 3), 0,
@@ -29,9 +31,9 @@ def seasonal_bias_score(sim: pd.Series, obs: pd.Series) -> float:
         dates = pd.date_range(lo, hi)
         mask = (wy == year) & (season == group)
         if not index[mask].equals(dates):
-            raise ValueError('Seasonal bias requires whole seasons')
+            raise EvaluationError('Seasonal bias requires whole seasons')
         denominator = float(obs.loc[dates].sum())
         if denominator <= 0:
-            raise ValueError('Seasonal observed volume must be positive')
+            raise EvaluationError('Seasonal observed volume must be positive')
         errors.append(abs(float(sim.loc[dates].sum()) / denominator - 1))
     return float(1 - np.mean(errors))

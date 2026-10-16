@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 import xarray as xr
 
+from symfluence.core.exceptions import ModelExecutionError
 from symfluence.models.wflow.cryosphere import calculate_constraints
 
 
@@ -64,5 +65,5 @@ def test_rejects_incomplete_or_invalid_states(tmp_path, failure):
     else:
         data['ice'].values[100, 0, 1] = np.nan
     data.to_netcdf(output / 'cryosphere.nc')
-    with pytest.raises(ValueError):
+    with pytest.raises(ModelExecutionError):
         calculate_constraints(output, settings, tmp_path, '2012-10-01, 2013-09-30')

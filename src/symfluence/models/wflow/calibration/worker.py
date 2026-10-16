@@ -17,6 +17,7 @@ import xarray as xr
 
 from symfluence.core.calibration.workers.base_worker import BaseWorker, WorkerTask
 from symfluence.core.constants import ModelDefaults
+from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
@@ -140,7 +141,7 @@ class WflowWorker(BaseWorker):
                                          pd.Timestamp(native['time']['endtime']), freq='D')
                 actual = pd.DatetimeIndex(pd.read_csv(output_dir / 'output.csv', usecols=['time']).time)
                 if not actual.equals(expected):
-                    raise ValueError('Incomplete Wflow daily output coverage')
+                    raise ModelExecutionError('Incomplete Wflow daily output coverage')
             return result.returncode == 0
         except subprocess.TimeoutExpired:
             return False
