@@ -10,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Wflow distributed glacier mode (opt-in)**: `WFLOW_SPATIAL_MODE: distributed` builds a DEM-derived
+  Wflow SBM grid (`WFLOW_GRID_RESOLUTION`) with native river routing, an explicit gauge outlet
+  (`WFLOW_OUTLET_MODE: gauge`), per-cell lapsed forcing and finite glacier ice from mapped outlines and
+  thickness (`WFLOW_GLACIER_OUTLINE_FILE`, `WFLOW_GLACIER_THICKNESS_DIR`). Run gates check native land,
+  river and subsurface balances. Optional calibration-period snow-cover and glacier mass-balance scores
+  (`WFLOW_CRYOSPHERE_CONSTRAINTS`) for composite objectives. New `PCORR` precipitation multiplier applied
+  through Wflow's native forcing `scale`; calibratable `cf_soil`; per-parameter bound and start overrides
+  (`WFLOW_PARAMETER_BOUNDS`, `WFLOW_INITIAL_PARAMETERS`); fixed seasonal temperature offsets
+  (`WFLOW_TEMPERATURE_OFFSETS`, DJF/MAM/JJA/SON; Oudin PET recomputed) and frozen-soil infiltration
+  (`WFLOW_FROZEN_SOIL`).
 - **Native Raven HBV-EC adapter (experimental)**: `RAVEN` model with elevation-band HRUs, optional
   glacier HRUs with finite ice storage (patched Raven build pinned in `binary install raven`), run
   gates for mass balance and ice initialisation, DDS calibration, and an optional LamaH-Ice-style glacier
@@ -89,6 +99,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resolve through `R.observation_handlers`/`R.acquisition_handlers`, which
   now self-seed on first lookup like the other deferred registries. The
   layering guard forbids handler-module imports from outside `data/`.
+
+### Fixed
+- **Wflow parallel calibration**: the Wflow worker now provides `evaluate_worker_function`; previously
+  every parallel or async Wflow DDS run failed with "Subclasses must implement" and calibration ran
+  serially. Final streamflow scoring of distributed Wflow reads the native outlet `output.csv` instead of
+  the cryosphere state NetCDF.
 
 ### Deprecated
 - **Back-compat shim import paths** left by the service-decomposition

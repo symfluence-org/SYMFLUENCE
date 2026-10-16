@@ -7,13 +7,16 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import sys
+import tomllib
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import xarray as xr
 
-from symfluence.core.calibration.workers.base_worker import BaseWorker
+from symfluence.core.calibration.workers.base_worker import BaseWorker, WorkerTask
+from symfluence.core.constants import ModelDefaults
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
@@ -87,7 +90,7 @@ class WflowWorker(BaseWorker):
                 content,
             )
             content = re.sub(
-                r'(path\s*=\s*)"[^"]*/output\.csv"',
+                r'(path\s*=\s*)"(?:[^"]*/)?output\.csv"',
                 lambda m: f'{m.group(1)}"{output_dir / "output.csv"}"',
                 content,
             )
@@ -107,12 +110,37 @@ class WflowWorker(BaseWorker):
             if not exe_path.exists():
                 self.logger.error(f"wflow_cli not found at {exe_path}")
                 return False
+            # Final evaluation applies parameters through the parameter manager,
+            # bypassing apply_parameters(). Always bind native output paths to
+            # the requested run directory before launching Wflow.
+            settings_dir = Path(settings_dir).resolve()
+            output_dir = Path(output_dir).resolve()
+            toml_path = settings_dir / config_file
+            self._patch_toml(toml_path, toml_path, settings_dir, output_dir)
+            if config.get('WFLOW_CALIBRATION_ONLY_PERIOD', False):
+                end = (config['EXPERIMENT_TIME_END'] if kwargs.get('final_evaluation', False)
+                       else config['CALIBRATION_PERIOD'].split(',')[1].strip())
+                native_end = pd.Timestamp(end).normalize() + pd.Timedelta(days=1)
+                content = re.sub(r'^endtime\s*=.*$', f'endtime = {native_end:%Y-%m-%dT00:00:00}',
+                                 toml_path.read_text(), flags=re.MULTILINE)
+                toml_path.write_text(content)
+            command = [str(exe_path), str(toml_path)]
             result = run_subprocess(
-                [str(exe_path), str(Path(settings_dir) / config_file)],
+                command,
                 cwd=str(settings_dir), capture_output=True, text=True, timeout=timeout,
             )
             if result.returncode != 0 and result.stderr:
                 self.logger.warning(f"Wflow stderr: {result.stderr[-500:]}")
+            if result.returncode == 0 and config.get('WFLOW_SPATIAL_MODE') == 'distributed':
+                from ..balance import check
+                check(output_dir)
+                import tomllib
+                native = tomllib.loads(toml_path.read_text())
+                expected = pd.date_range(pd.Timestamp(native['time']['starttime']) + pd.Timedelta(days=1),
+                                         pd.Timestamp(native['time']['endtime']), freq='D')
+                actual = pd.DatetimeIndex(pd.read_csv(output_dir / 'output.csv', usecols=['time']).time)
+                if not actual.equals(expected):
+                    raise ValueError('Incomplete Wflow daily output coverage')
             return result.returncode == 0
         except subprocess.TimeoutExpired:
             return False
@@ -160,6 +188,20 @@ class WflowWorker(BaseWorker):
                 f"output_dir={output_dir}, cal_period={cal_period}"
             )
             metrics = self._streamflow_metrics.calculate_metrics(obs.values, sim.values)
+            if any(str(k).upper() == 'SEASONAL_BIAS_SCORE'
+                   for k in (config.get('COMPOSITE_METRIC') or {})):
+                from .seasonal import seasonal_bias_score
+                metrics['seasonal_bias_score'] = seasonal_bias_score(sim, obs)
+            if config.get('WFLOW_CRYOSPHERE_CONSTRAINTS', False):
+                from ..cryosphere import calculate_constraints
+                project = Path(config['SYMFLUENCE_DATA_DIR']) / ('domain_' + config['DOMAIN_NAME'])
+                # Spatial geometry is immutable during calibration; parameter updates
+                # cannot change the areas used to weight snow/ice observations.
+                metrics.update(calculate_constraints(
+                    output_dir, project / 'settings/WFLOW', project, cal_period,
+                    config.get('WFLOW_SNOW_COVER_ERROR_SCALE', .2),
+                    config.get('WFLOW_GLACIER_MB_ERROR_SCALE', 1.),
+                    config.get('WFLOW_SNOW_COVER_THRESHOLD_MM', 5.)))
             self.logger.info(f"Computed metrics: {metrics}")
             return metrics
         except Exception as e:  # noqa: BLE001
@@ -208,13 +250,15 @@ class WflowWorker(BaseWorker):
         # (net_runoff_volume_flux is instantaneous — needs smoothing)
         if self._is_runoff_flux_output(output_dir, config) and routing_params:
             q = self._apply_routing(q, routing_params)
+        if q is not None and config and config.get('WFLOW_SPATIAL_MODE') == 'distributed':
+            q.index = q.index - pd.Timedelta(days=1)
         return q
 
     def _is_runoff_flux_output(self, output_dir: Path, config: dict = None):
         """Check if the TOML output uses net_runoff_volume_flux (mm/dt units)."""
         toml_name = config.get('WFLOW_CONFIG_FILE', 'wflow_sbm.toml') if config else 'wflow_sbm.toml'
         # Search multiple possible locations for the TOML
-        search_dirs = [output_dir.parent / 'settings', output_dir.parent]
+        search_dirs = [output_dir, output_dir.parent / 'settings', output_dir.parent]
         # Also check the original domain settings (works during DDS calibration)
         if config:
             data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
@@ -223,11 +267,16 @@ class WflowWorker(BaseWorker):
         for settings_dir in search_dirs:
             toml_path = settings_dir / toml_name
             if toml_path.exists():
-                content = toml_path.read_text()
-                if 'net_runoff_volume_flux' in content:
-                    return True
-                if 'volume_flow_rate' in content:
-                    return False
+                native = tomllib.loads(toml_path.read_text())
+                columns = native.get('output', {}).get('csv', {}).get('column', [])
+                # Determine units from the selected discharge column, never from
+                # unrelated diagnostic columns elsewhere in the configuration.
+                for header in ('Q', 'Q_av', 'q_av'):
+                    selected = next((c for c in columns if c.get('header') == header), None)
+                    if selected is not None:
+                        return 'net_runoff_volume_flux' in selected.get('parameter', '')
+                if len(columns) == 1:
+                    return 'net_runoff_volume_flux' in columns[0].get('parameter', '')
         return False
 
     def _get_basin_area_and_timestep(self, config):
@@ -294,3 +343,45 @@ class WflowWorker(BaseWorker):
             return pd.Series(values, index=index, name='discharge_cms')
         except Exception:  # noqa: BLE001
             return None
+
+    @staticmethod
+    def evaluate_worker_function(task_data):
+        """Static worker function for process pool execution."""
+        return _evaluate_wflow_parameters_worker(task_data)
+
+
+def _evaluate_wflow_parameters_worker(task_data):
+    """Module-level worker function for process pool execution."""
+    import os
+    import random
+    import signal
+    import time
+    import traceback
+
+    def signal_handler(signum, frame):
+        sys.exit(1)
+    try:
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+    except ValueError:
+        pass
+
+    os.environ.update({
+        'OMP_NUM_THREADS': '1', 'MKL_NUM_THREADS': '1',
+        'OPENBLAS_NUM_THREADS': '1', 'MallocStackLogging': '0',
+    })
+    time.sleep(random.uniform(0.1, 0.5))
+
+    try:
+        worker = WflowWorker(config=task_data.get('config'))
+        task = WorkerTask.from_legacy_dict(task_data)
+        result = worker.evaluate(task)
+        return result.to_legacy_dict()
+    except Exception as e:  # noqa: BLE001 — calibration resilience
+        return {
+            'individual_id': task_data.get('individual_id', -1),
+            'params': task_data.get('params', {}),
+            'score': ModelDefaults.PENALTY_SCORE,
+            'error': f'Wflow worker exception: {str(e)}\n{traceback.format_exc()}',
+            'proc_id': task_data.get('proc_id', -1)
+        }
