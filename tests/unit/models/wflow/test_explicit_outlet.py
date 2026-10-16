@@ -16,6 +16,10 @@ def test_gauge_on_narrow_vector_edge_retains_its_cell():
     result, pit, added = retain_gauge_cell(labels, from_origin(0, 3, 1, 1), [geom], (.9, 1.9))
     assert added and pit == 3 and result[1, 0] == 1
     assert labels[1, 0] == 0
+    try:
+        import pyflwdir  # noqa: F401
+    except ImportError as exc:  # numba refuses some NumPy versions at import
+        pytest.skip(f'pyflwdir unavailable: {exc}')
     dem = np.where(result, [[0., 8., 9.], [5., 7., 8.], [0., 0., 0.]], -9999.)
     flow, meta = flow_to_gauge(dem, from_origin(0, 3, 1, 1), pit)
     assert flow.idxs_pit.tolist() == [pit]
