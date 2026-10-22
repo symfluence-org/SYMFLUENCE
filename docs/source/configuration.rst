@@ -364,7 +364,7 @@ Forcing Data Parameters
    * - FORCING_DATASET
      - string
      - required
-     - Forcing dataset source (ERA5, RDRS, CARRA, CERRA, CONUS404, etc.)
+     - Forcing dataset source (ERA5, RDRS, CARRA, CARRA2, CERRA, CONUS404, etc.)
    * - FORCING_VARIABLES
      - string
      - "default"

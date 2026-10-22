@@ -53,6 +53,7 @@ _handler_imports = [
     ('casr_utils', 'CASRHandler'),
     ('era5_utils', 'ERA5Handler'),
     ('carra_utils', 'CARRAHandler'),
+    ('carra2_utils', 'CARRA2Handler'),
     ('cerra_utils', 'CERRAHandler'),
     ('aorc_utils', 'AORCHandler'),
     ('conus404_utils', 'CONUS404Handler'),
