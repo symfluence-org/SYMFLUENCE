@@ -27,6 +27,7 @@ _handler_modules = [
     'hrrr',
     'conus404',
     'cds_datasets',
+    'carra2',
     'daymet',
     'dem',
     'soilgrids',

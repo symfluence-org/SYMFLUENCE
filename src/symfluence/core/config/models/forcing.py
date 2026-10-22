@@ -20,7 +20,7 @@ from .base import FROZEN_CONFIG
 # entry point; selecting it without the plugin installed fails at handler
 # lookup with a clear registry error.
 ForcingDatasetType = Literal[
-    'NLDAS', 'NLDAS2', 'NEX-GDDP', 'ERA5', 'EM-EARTH', 'RDRS', 'CASR', 'CARRA', 'CERRA',
+    'NLDAS', 'NLDAS2', 'NEX-GDDP', 'ERA5', 'EM-EARTH', 'RDRS', 'CASR', 'CARRA', 'CARRA2', 'CERRA',
     'MSWEP', 'AORC', 'CONUS404', 'HRRR', 'DAYMET', 'NWM3_RETROSPECTIVE', 'CFS', 'local'
 ]
 
