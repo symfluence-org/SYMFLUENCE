@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "symfluence-carra2"
+version = "0.1.3"
+description = "CARRA2 forecast forcing acquisition for SYMFLUENCE"
+requires-python = ">=3.11"
+dependencies = ["cdsapi>=0.7", "eccodes>=2.40", "numpy", "pandas", "xarray", "netCDF4", "pyproj"]
+
+[project.entry-points."symfluence.plugins"]
+carra2 = "symfluence_carra2:register"
+
+[tool.setuptools.packages.find]
+where = ["src"]
