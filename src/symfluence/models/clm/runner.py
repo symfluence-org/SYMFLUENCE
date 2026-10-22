@@ -24,6 +24,14 @@ class CLMRunner(BaseModelRunner):
 
     MODEL_NAME = "CLM"
 
+    def run(self, **kwargs) -> Optional[Path]:
+        """Propagate native execution failure instead of reporting an empty success."""
+        result = super().run(**kwargs)
+        if result is None:
+            from symfluence.core.exceptions import ModelExecutionError
+            raise ModelExecutionError("CLM did not produce a successful native run; inspect its log")
+        return result
+
     def _setup_model_specific_paths(self) -> None:
         """Set up CLM-specific paths."""
         self.setup_dir = self.project_dir / "settings" / self.model_name
@@ -90,6 +98,9 @@ class CLMRunner(BaseModelRunner):
         ]
         # Create timing dirs that cesm.exe expects
         (run_dir / 'timing' / 'checkpoints').mkdir(parents=True, exist_ok=True)
+        # use_init_interp writes ./init_generated_files/finidat_interp_dest.nc
+        # (fixed path in CTSM 5.3, not a namelist item); without it CLM aborts
+        (run_dir / 'init_generated_files').mkdir(parents=True, exist_ok=True)
 
         for name in runtime_files:
             src = self.settings_dir / name

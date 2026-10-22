@@ -44,7 +44,6 @@ class CLMWorker(BaseWorker):
         logger: Optional[logging.Logger] = None,
     ):
         super().__init__(config, logger)
-        self._routing_params: Dict[str, float] = {}
 
     _streamflow_metrics = StreamflowMetrics()
 
@@ -131,13 +130,13 @@ class CLMWorker(BaseWorker):
                 return False
 
             # Apply parameters using parameter manager logic
-            from .parameter_manager import CLM_PARAM_DEFS
+            from .parameter_manager import CLM_PARAM_DEFS, check_removed_params
+            check_removed_params(list(params))
 
             # Separate by target
             nl_params = {}
             params_nc = {}
             surfdata_params = {}
-            routing_params = {}
 
             for name, value in params.items():
                 if name not in CLM_PARAM_DEFS:
@@ -151,11 +150,6 @@ class CLMWorker(BaseWorker):
                     params_nc[name] = value
                 elif target == 'surfdata':
                     surfdata_params[name] = value
-                elif target == 'routing':
-                    routing_params[name] = value
-
-            # Store routing params for use in calculate_metrics
-            self._routing_params = routing_params
 
             success = True
 
@@ -355,7 +349,7 @@ class CLMWorker(BaseWorker):
         """
         import netCDF4
 
-        from .parameter_manager import CLM_PARAM_DEFS
+        from .parameter_manager import apply_texture_offsets
 
         surfdata_file = params_dir / 'surfdata_clm.nc'
         if not surfdata_file.exists():
@@ -368,24 +362,20 @@ class CLMWorker(BaseWorker):
 
         ds = netCDF4.Dataset(str(surfdata_file), 'r+')
 
-        for name, value in params.items():
-            if name not in CLM_PARAM_DEFS:
-                continue
-            _, nc_var, _ = CLM_PARAM_DEFS[name]
-
-            if name == 'fmax' and 'FMAX' in ds.variables:
-                ds.variables['FMAX'][:] = value
-            elif name == 'organic_max' and 'ORGANIC' in ds.variables:
-                org = ds.variables['ORGANIC'][:]
-                ds.variables['ORGANIC'][:] = np.minimum(org, value)
-            elif name.endswith('_mult') and nc_var and nc_var in ds.variables:
-                base_vals = ds.variables[nc_var][:].copy()
-                new_vals = base_vals * value
-                if name == 'watsat_mult':
-                    new_vals = np.clip(new_vals, 0.01, 0.95)
-                elif name == 'hksat_mult':
-                    new_vals = np.maximum(new_vals, 1e-10)
-                ds.variables[nc_var][:] = new_vals
+        if 'fmax' in params and 'FMAX' in ds.variables:
+            ds.variables['FMAX'][:] = params['fmax']
+        if 'organic_max' in params and 'ORGANIC' in ds.variables:
+            org = ds.variables['ORGANIC'][:]
+            ds.variables['ORGANIC'][:] = np.minimum(org, params['organic_max'])
+        # Texture is applied to the fresh copy made in apply_parameters, so
+        # offsets never compound across evaluations.
+        if {'sand_offset', 'clay_offset'} & set(params) and \
+                {'PCT_SAND', 'PCT_CLAY'} <= set(ds.variables):
+            sand, clay = apply_texture_offsets(
+                ds.variables['PCT_SAND'][:], ds.variables['PCT_CLAY'][:],
+                params.get('sand_offset', 0.0), params.get('clay_offset', 0.0))
+            ds.variables['PCT_SAND'][:] = sand
+            ds.variables['PCT_CLAY'][:] = clay
 
         ds.close()
         return True
@@ -423,17 +413,6 @@ class CLMWorker(BaseWorker):
                 f"SNOW_DENSITY_MAX={dmax:.0f}"
             )
             return False
-
-        # Low porosity + high conductivity → numerical instability
-        wm = params.get('watsat_mult')
-        hm = params.get('hksat_mult')
-        if wm is not None and hm is not None:
-            if wm < 0.85 and hm > 5.0:
-                self.logger.debug(
-                    f"Infeasible: watsat_mult={wm:.3f} < 0.85 "
-                    f"with hksat_mult={hm:.3f} > 5.0"
-                )
-                return False
 
         return True
 
@@ -490,6 +469,9 @@ class CLMWorker(BaseWorker):
             ]
             # Create timing dirs that cesm.exe expects
             (output_dir / 'timing' / 'checkpoints').mkdir(parents=True, exist_ok=True)
+            # use_init_interp writes ./init_generated_files/finidat_interp_dest.nc
+            # (fixed path in CTSM 5.3, not a namelist item)
+            (output_dir / 'init_generated_files').mkdir(parents=True, exist_ok=True)
 
             for name in runtime_files:
                 src = settings_dir / name
@@ -725,13 +707,6 @@ class CLMWorker(BaseWorker):
             area_m2 = area_km2 * 1e6
             streamflow_m3s = total_runoff * area_m2 / 1000.0
 
-            # Apply linear reservoir routing if route_k > 1
-            route_k = self._routing_params.get('route_k', 1.0)
-            if route_k > 1.0:
-                streamflow_m3s = self._apply_routing(
-                    streamflow_m3s, route_k
-                )
-
             sim_series = pd.Series(streamflow_m3s, index=times)
 
             # Skip warmup
@@ -774,30 +749,6 @@ class CLMWorker(BaseWorker):
             import traceback
             self.logger.debug(traceback.format_exc())
             return {'kge': self.penalty_score, 'error': str(e)}
-
-    @staticmethod
-    def _apply_routing(
-        streamflow: np.ndarray, k: float
-    ) -> np.ndarray:
-        """Apply linear reservoir routing to raw CLM streamflow.
-
-        CLM produces instantaneous runoff with no basin travel time.
-        This applies a single linear reservoir to create delayed flow:
-            Q_out(t) = (1 - 1/K) * Q_out(t-1) + (1/K) * Q_in(t)
-
-        Args:
-            streamflow: Raw streamflow array (m3/s)
-            k: Storage time constant in days. K=1 is passthrough.
-
-        Returns:
-            Routed streamflow array (m3/s), same length.
-        """
-        alpha = 1.0 / max(k, 1.0)
-        routed = np.empty_like(streamflow)
-        routed[0] = streamflow[0]
-        for i in range(1, len(routed)):
-            routed[i] = (1.0 - alpha) * routed[i - 1] + alpha * streamflow[i]
-        return routed
 
     def _cleanup_stale_output(self, output_dir: Path) -> None:
         """Remove ALL stale output/restart files before a new run.
