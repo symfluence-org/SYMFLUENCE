@@ -1,5 +1,5 @@
 SAC-SMA cryosphere research replay
-=================================
+==================================
 
 This optional interface replays ``SACSMA_CRYOSPHERE_UNIFORM_HRU_V2`` with
 jSACSMA and jSnow17 0.3.0. It is an explicit elevation/finite-ice extension,
@@ -131,7 +131,7 @@ exercise those tests. Upstream references: NOAA SAC1 compiled fixtures and
 `Anderson's Snow17 description <https://www.weather.gov/media/owp/oh/hrl/docs/22snow17.pdf>`_.
 
 Historical unfrozen research bundles
------------------------------------
+------------------------------------
 
 The separate ``research_bundle.load_research_candidate`` reader accepts the
 source-complete ``SACSMA_CRYOSPHERE_GRID_MOMENT_PATCH_RESEARCH_V4`` bundle only

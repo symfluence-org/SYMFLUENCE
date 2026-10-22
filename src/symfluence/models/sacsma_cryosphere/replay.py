@@ -14,7 +14,7 @@ import hashlib
 import importlib
 import json
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Literal
 
 import numpy as np
@@ -57,7 +57,10 @@ class FileRef(StrictModel):
 
     @model_validator(mode="after")
     def relative(self):
-        if Path(self.path).is_absolute() or ".." in Path(self.path).parts:
+        # Check both path flavours: on Windows "/x" has no drive and is not
+        # absolute to Path, but it still escapes the bundle on POSIX hosts.
+        posix, windows = PurePosixPath(self.path), PureWindowsPath(self.path)
+        if posix.is_absolute() or windows.is_absolute() or windows.root or ".." in posix.parts or ".." in windows.parts:
             raise ReplayValidationError("Bundle input paths must be relative and remain inside the bundle")
         return self
 
