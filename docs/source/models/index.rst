@@ -15,7 +15,7 @@ physical models to data-driven machine learning approaches.
 
       Physically-based models with detailed process representation.
 
-      **SUMMA** · **MESH** · **HYPE** · **RHESSys**
+      **SUMMA** · **MESH** · **HYPE** · **RHESSys** · **ParFlow-CLM**
 
    .. grid-item-card:: Conceptual Models
       :link: conceptual
@@ -58,6 +58,7 @@ Models with explicit representation of physical processes.
    model_hype
    model_rhessys
    model_cwatm
+   model_clmparflow
    model_noahmp
 
 ----

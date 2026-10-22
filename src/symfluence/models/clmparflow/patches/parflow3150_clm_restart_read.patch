@@ -1,0 +1,15 @@
+diff --git a/pfsimulator/clm/drv_restart.F90 b/pfsimulator/clm/drv_restart.F90
+index a1a0789..0275ecc 100644
+--- a/pfsimulator/clm/drv_restart.F90
++++ b/pfsimulator/clm/drv_restart.F90
+@@ -163,6 +163,10 @@ subroutine drv_restart (rw, drv, tile, clm, rank, istep_pf)
+      ! Initialize VIS/NIR snow ages from legacy - will be overwritten if new format @RMM 2025
+      snowage_vis = snowage
+      snowage_nir = snowage
++     ! SYMFLUENCE fix: the writer stores snowage_vis/snowage_nir after snowage (@RMM 2025) but the
++     ! reader skipped them, so every restart read failed ("I/O past end of record").
++     read(40) snowage_vis
++     read(40) snowage_nir
+      read(40) snowdp               !CLM Snow Depth [m]
+      read(40) h2ocan               !CLM Depth of Water on Foliage [mm]
+      read(40) frac_sno             !CLM Fractional Snow Cover [-]

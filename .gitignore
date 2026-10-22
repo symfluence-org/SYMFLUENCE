@@ -118,6 +118,8 @@ default/*.nc
 default/*.hdf
 default/*.h5
 *.dat
+# CLM driver templates shipped with ParFlow-CLM basin mode
+!src/symfluence/models/clmparflow/basin/templates/*.dat
 
 # Unit test / coverage reports
 htmlcov/

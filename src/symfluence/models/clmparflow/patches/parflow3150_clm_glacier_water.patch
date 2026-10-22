@@ -1,0 +1,106 @@
+diff --git a/pfsimulator/clm/CMakeLists.txt b/pfsimulator/clm/CMakeLists.txt
+index 4b9b4ba..d0a28f6 100644
+--- a/pfsimulator/clm/CMakeLists.txt
++++ b/pfsimulator/clm/CMakeLists.txt
+@@ -58,6 +58,7 @@ set (SRC_FILES
+   clm_hydro_snow.F90
+   clm_soilalb.F90
+   clm_hydro_soil.F90
++  clm_hydro_ice.F90
+   drv_pout.F90
+   clm_hydro_wetice.F90
+   clm_stomata.F90
+diff --git a/pfsimulator/clm/clm.F90 b/pfsimulator/clm/clm.F90
+index 2ea9b32..ca1293f 100644
+--- a/pfsimulator/clm/clm.F90
++++ b/pfsimulator/clm/clm.F90
+@@ -222,6 +222,7 @@ interception_schemepf,interception_tanh_alphapf)
+   integer  :: j_incr,k_incr                      ! increment for j and k to convert 1D vector to 3D i,j,k array
+   real(r8) :: total
+   character*100 :: RI
++  logical :: glacier_log_open                    ! SYMFLUENCE glacier patch
+   real(r8) :: u         ! Tempoary UNDEF Variable
+ 
+   real(r8) pf_porosity(pf_nlevsoi)  !porosity from PF, replaces watsat clm var
+@@ -236,6 +237,9 @@ interception_schemepf,interception_tanh_alphapf)
+ 
+   !=== Open CLM text output
+   write(RI,*)  rank
++  ! SYMFLUENCE glacier patch: per-rank land-ice log written by clm_hydro_ice
++  inquire (unit=2601, opened=glacier_log_open)
++  if (.not. glacier_log_open) open(2601, file="glacier_ice.txt."//trim(adjustl(RI)), action="write", status="replace")
+ 
+ ! NBE: Throughout clm.F90, any writes to unit 999 are now prefaced with the logical to disable the
+ !       writing of the log files. This greatly reduces the number of files created during a run.
+diff --git a/pfsimulator/clm/clm_hydro_ice.F90 b/pfsimulator/clm/clm_hydro_ice.F90
+new file mode 100644
+index 0000000..a7bad5e
+--- /dev/null
++++ b/pfsimulator/clm/clm_hydro_ice.F90
+@@ -0,0 +1,54 @@
++!#include <misc.h>
++
++subroutine clm_hydro_ice (clm)
++
++!=========================================================================
++!  SYMFLUENCE patch: land-ice tile hydrology.
++!
++!  Stock ParFlow-CLM never sets qflx_infl on land-ice tiles (clm_hydro_soil
++!  runs on soil tiles only), so rain, snowpack outflow and ice melt on a
++!  glacier never reach ParFlow; and because pfreadout overwrites h2osoi_liq
++!  from ParFlow saturation every step, ice melted by clm_meltfreeze vanishes.
++!
++!  Here, on land-ice tiles:
++!    melt  = ice lost from the column this step (dz*denice - h2osoi_ice, >= 0)
++!    infl  = qflx_top_soil - qflx_evap_grnd + melt/dtime   (as clm_hydro_soil)
++!    if infl < 0 (sublimation exceeds supply) the deficit comes from the ice
++!  and the column is then restored to full ice (the glacier is an unlimited
++!  ice store; glacier mass change = -(melt - deficit), logged per tile/step to
++!  glacier_ice.txt.<rank> (unit 2601, opened in clm.F90) as:
++!  istep  melt_mm  deficit_mm  infl_mm).
++!=========================================================================
++
++  use precision
++  use clmtype
++  use clm_varpar, only : nlevsoi
++  use clm_varcon, only : denice
++  implicit none
++
++  type (clm1d), intent(inout) :: clm
++  integer  :: j
++  real(r8) :: melt, deficit, full
++
++  melt = 0.d0
++  do j = 1, nlevsoi
++     full = clm%dz(j)*denice
++     melt = melt + max(0.d0, full - clm%h2osoi_ice(j))
++     clm%h2osoi_ice(j) = full
++  enddo
++  ! Step 1: drv_clmini filled the ice column using CLM's default layer thicknesses,
++  ! which ParFlow then replaces with its own dz; the gap is initialisation, not melt.
++  if (clm%istep <= 1) melt = 0.d0
++
++  clm%qflx_infl = clm%qflx_top_soil - clm%qflx_evap_grnd + melt/clm%dtime
++  deficit = 0.d0
++  if (clm%qflx_infl < 0.d0) then
++     deficit = -clm%qflx_infl*clm%dtime
++     clm%qflx_infl = 0.d0
++  endif
++  clm%qflx_drain = 0.d0
++  clm%qflx_surf  = 0.d0
++
++  write(2601,'(i8,3es14.6)') clm%istep, melt, deficit, clm%qflx_infl*clm%dtime
++
++end subroutine clm_hydro_ice
+diff --git a/pfsimulator/clm/clm_main.F90 b/pfsimulator/clm/clm_main.F90
+index 8e87a9f..ce2dd66 100644
+--- a/pfsimulator/clm/clm_main.F90
++++ b/pfsimulator/clm/clm_main.F90
+@@ -268,6 +268,7 @@ subroutine clm_main (clm,day,gmt,clm_forc_veg)
+      ! Determine Soil hydrology 
+ 
+      if (clm%itypwat == istsoil) call clm_hydro_soil (clm)
++     if (clm%itypwat == istice) call clm_hydro_ice (clm)   ! SYMFLUENCE glacier patch
+ 
+      ! Determine compaction rate for snow - combine/divide thin or thick snow elements
+ 

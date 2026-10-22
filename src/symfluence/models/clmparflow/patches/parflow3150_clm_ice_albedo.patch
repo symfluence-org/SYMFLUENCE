@@ -1,0 +1,35 @@
+diff --git a/pfsimulator/clm/clm_soilalb.F90 b/pfsimulator/clm/clm_soilalb.F90
+index 722ea9f..159d737 100644
+--- a/pfsimulator/clm/clm_soilalb.F90
++++ b/pfsimulator/clm/clm_soilalb.F90
+@@ -34,15 +34,29 @@ subroutine clm_soilalb (clm, coszen, nband, albsnd, albsni)
+   real(r8) inc     !soil water correction factor for soil albedo
+   real(r8) albsod  !soil albedo (direct)
+   real(r8) albsoi  !soil albedo (diffuse)
++  real(r8), save :: albice_run(2) = (/-1._r8, -1._r8/) !land-ice albedo, optionally read from clm_albice.txt
++  logical , save :: albice_read = .false.
++  logical ex
+ ! -----------------------------------------------------------------
+ 
++  if (.not. albice_read) then
++     albice_read = .true.
++     albice_run = albice
++     inquire (file='clm_albice.txt', exist=ex)
++     if (ex) then
++        open (unit=97, file='clm_albice.txt', status='old')
++        read (97,*) albice_run(1), albice_run(2)
++        close (97)
++     end if
++  end if
++
+   do ib = 1, nband
+      if (clm%itypwat == istsoil)  then               !soil
+         inc    = max(0.11-0.40*clm%h2osoi_vol(1), 0._r8)
+         albsod = min(albsat(clm%isoicol,ib)+inc, albdry(clm%isoicol,ib))
+         albsoi = albsod
+      else if (clm%itypwat == istice)  then           !land ice
+-        albsod = albice(ib)
++        albsod = albice_run(ib)
+         albsoi = albsod
+      else if (clm%t_grnd > tfrz) then                !unfrozen lake, wetland
+         albsod = 0.05/(max(dble(0.001),coszen) + 0.15)

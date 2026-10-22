@@ -10,7 +10,7 @@ config system through ``R.config_schemas`` (via the model manifest /
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -101,3 +101,33 @@ class CLMParFlowConfig(BaseModel):
 
     # Execution
     timeout: int = Field(default=7200, alias='CLMPARFLOW_TIMEOUT', ge=60, le=86400)
+
+    # Basin mode (opt-in): regular grid over the real basin, water-year segments with spin-up (basin/ package).
+    # Glacier water and the ice albedo need the patched build: symfluence binary install clmparflow --patched.
+    basin_mode: bool = Field(default=False, alias='CLMPARFLOW_BASIN_MODE')
+    basin_outline: str = Field(default='default', alias='CLMPARFLOW_BASIN_OUTLINE')
+    basin_units: str = Field(default='default', alias='CLMPARFLOW_BASIN_UNITS')
+    basin_unit_field: str = Field(default='HRU_ID', alias='CLMPARFLOW_BASIN_UNIT_FIELD')
+    basin_ice_field: Optional[str] = Field(default=None, alias='CLMPARFLOW_BASIN_ICE_FIELD')
+    basin_ice_value: str = Field(default='ice', alias='CLMPARFLOW_BASIN_ICE_VALUE')
+    basin_dem: str = Field(default='default', alias='CLMPARFLOW_BASIN_DEM')
+    basin_pour_point: str = Field(default='default', alias='CLMPARFLOW_BASIN_POUR_POINT')
+    basin_crs: Optional[str] = Field(default=None, alias='CLMPARFLOW_BASIN_CRS')
+    basin_dx: float = Field(default=1000.0, alias='CLMPARFLOW_BASIN_DX', gt=0)
+    basin_min_slope: float = Field(default=1e-4, alias='CLMPARFLOW_BASIN_MIN_SLOPE', gt=0)
+    basin_forcing: str = Field(default='default', alias='CLMPARFLOW_BASIN_FORCING')
+    basin_forcing_unit_variable: str = Field(default='hruId', alias='CLMPARFLOW_BASIN_FORCING_UNIT_VARIABLE')
+    basin_forcing_variables: Optional[Dict[str, str]] = Field(default=None, alias='CLMPARFLOW_BASIN_FORCING_VARIABLES')
+    basin_precip_scale: float = Field(default=1.0, alias='CLMPARFLOW_BASIN_PRECIP_SCALE', gt=0)
+    basin_ice_albedo: Optional[List[float]] = Field(default=None, alias='CLMPARFLOW_BASIN_ICE_ALBEDO')
+    basin_glacier_bed_k: Optional[float] = Field(default=None, alias='CLMPARFLOW_BASIN_GLACIER_BED_K', gt=0)
+    basin_soil_k: float = Field(default=0.1, alias='CLMPARFLOW_BASIN_SOIL_K', gt=0)
+    basin_aquifer_k: float = Field(default=1.0, alias='CLMPARFLOW_BASIN_AQUIFER_K', gt=0)
+    basin_manning: float = Field(default=3e-6, alias='CLMPARFLOW_BASIN_MANNING', gt=0)
+    basin_initial_water_table_depth: float = Field(default=3.0, alias='CLMPARFLOW_BASIN_INITIAL_WATER_TABLE_DEPTH', ge=0)
+    basin_spinup_years: Optional[List[int]] = Field(default=None, alias='CLMPARFLOW_BASIN_SPINUP_YEARS')
+    basin_first_water_year: Optional[int] = Field(default=None, alias='CLMPARFLOW_BASIN_FIRST_WATER_YEAR')
+    basin_last_water_year: Optional[int] = Field(default=None, alias='CLMPARFLOW_BASIN_LAST_WATER_YEAR')
+    basin_drift_tol: float = Field(default=0.05, alias='CLMPARFLOW_BASIN_DRIFT_TOL', gt=0)
+    basin_max_spinup_cycles: int = Field(default=3, alias='CLMPARFLOW_BASIN_MAX_SPINUP_CYCLES', ge=1)
+    basin_initial_state: Optional[str] = Field(default=None, alias='CLMPARFLOW_BASIN_INITIAL_STATE')

@@ -130,6 +130,9 @@ class CLMParFlowRunner(BaseModelRunner):
 
             self.output_dir.mkdir(parents=True, exist_ok=True)
 
+            if self._get_config_value(lambda: self.config.model.clmparflow.basin_mode, default=False):
+                return self._run_basin(self.output_dir)
+
             pf_exe = self._get_parflow_executable()
             runname = self._get_runname()
 
@@ -190,6 +193,39 @@ class CLMParFlowRunner(BaseModelRunner):
             self._verify_output(runname)
 
             return self.output_dir
+
+    def _run_basin(self, output_dir: Path) -> Path:
+        """Basin mode: run (or resume) the spin-up and production chain; writes the daily outlet discharge."""
+        from .basin import BasinGrid, run_chain
+        from .basin.settings import GRID_SUBDIR, basin_inputs, basin_parameters, chain_settings
+
+        cfg = self.config.model.clmparflow
+        grid_dir = self.project_dir / GRID_SUBDIR
+        if not (grid_dir / 'grid.npz').exists():
+            raise ModelExecutionError(f"CLMParFlow basin grid not found in {grid_dir}. Run preprocessing first.")
+        grid = BasinGrid.load(grid_dir)
+        inputs = basin_inputs(cfg, self.project_dir, self.config.domain.name)
+        params = basin_parameters(cfg)
+        settings = chain_settings(cfg, str(self.config.domain.time_start), str(self.config.domain.time_end),
+                                  self._get_num_procs())
+        pf_dir = self._get_parflow_dir()
+        if not pf_dir:
+            raise ModelExecutionError("CLMParFlow install not found (set CLMPARFLOW_INSTALL_PATH or CLMPARFLOW_DIR)")
+        if settings.P > 1:
+            mpirun = find_mpirun(self._get_parflow_executable())
+            if mpirun is None:
+                raise ModelExecutionError("MPI launcher (mpirun/mpiexec) not found for CLMPARFLOW_NUM_PROCS > 1")
+            settings.mpirun = str(mpirun)
+        # CLMPARFLOW_TIMEOUT (default 2 h) is for the lumped run; a basin water year takes hours, so a segment is
+        # only limited when the timeout is set above its default
+        timeout = self._get_timeout()
+        settings.timeout = timeout if timeout > 7200 else None
+        logger.info(f"CLMParFlow basin mode: spin-up WY{settings.spinup_years}, production "
+                    f"WY{settings.production_years[0]}-{settings.production_years[-1]} on {settings.P} rank(s)")
+        q = run_chain(output_dir / 'basin_runs', grid, params, Path(pf_dir), inputs.forcing, settings,
+                      log=logger.info)
+        q.rename_axis('date').to_csv(output_dir / 'clmparflow_basin_outlet.csv')
+        return output_dir
 
     def _setup_sim_directory(self, sim_dir: Path) -> None:
         """Copy CLMParFlow settings and forcing files to simulation directory."""
