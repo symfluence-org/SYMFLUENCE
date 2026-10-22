@@ -1,0 +1,292 @@
+diff --git a/build/source/engine/convert_funcs.f90 b/build/source/engine/convert_funcs.f90
+index 8ca5e4d2..17324b8c 100644
+--- a/build/source/engine/convert_funcs.f90
++++ b/build/source/engine/convert_funcs.f90
+@@ -264,51 +264,47 @@ end function RELHM2SPHM
+ ! public function WETBULBTMP: compute wet bulb temperature based on humidity and pressure
+ ! ***************************************************************************************************************
+ function WETBULBTMP(TAIR, RELHM, PRESS)
++use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+ implicit none
+-real(rkind),intent(in)        :: TAIR           ! Air temp              (K)
+-real(rkind),intent(in)        :: RELHM          ! Relative Humidity     (-)
+-real(rkind),intent(in)        :: PRESS          ! Pressure              (Pa)
+-real(rkind)                   :: WETBULBTMP     ! Wet bulb temperature (K)
+-real(rkind)                   :: Tcel           ! Temperature in celcius      (C)
+-real(rkind)                   :: PVP            ! Partial vapor pressure (Pa)
+-real(rkind)                   :: TWcel          ! Wet bulb temperature in celcius (C)
+-real(rkind),parameter         :: k=6.54E-4_DP   ! normalizing factor in wet bulb estimate (C-1)
+-real(rkind)                   :: Twet_trial0    ! trial value for wet bulb temperature (C)
+-real(rkind)                   :: Twet_trial1    ! trial value for wet bulb temperature (C)
+-real(rkind)                   :: f0,f1          ! function evaluations (C)
+-real(rkind)                   :: df_dT          ! derivative (-)
+-real(rkind)                   :: TWinc          ! wet bulb temperature increment (C)
+-INTEGER(I4B)                  :: iter           ! iterattion index
+-real(rkind),parameter         :: Xoff=1.E-5_DP  ! finite difference increment (C)
+-real(rkind),parameter         :: Xtol=1.E-8_DP  ! convergence tolerance (C)
+-INTEGER(I4B)                  :: maxiter=15     ! maximum number of iterations
+-!---------------------------------------------------------------------------------------------------
+-! convert temperature to Celcius
+-Tcel = TAIR-TFREEZE
+-! compute partial vapor pressure based on temperature (Pa)
+-PVP = RELHM * SATVPRESS(Tcel)
+-! define an initial trial value for wetbulb temperature
+-TWcel = Tcel - 5._rkind
+-! iterate until convergence
+-do iter=1,maxiter
+- ! compute Twet estimates
+- Twet_trial0 = Tcel - (SATVPRESS(TWcel)      - PVP)/(k*PRESS)
+- Twet_trial1 = Tcel - (SATVPRESS(TWcel+Xoff) - PVP)/(k*PRESS)
+- ! compute function evaluations
+- f0 = Twet_trial0 - TWcel
+- f1 = Twet_trial1 - (TWcel+Xoff)
+- ! compute derivative and iteration increment
+- df_dT = (f0 - f1)/Xoff
+- TWinc = f0/df_dT
+- ! compute new value of wet bulb temperature (C)
+- TWcel = TWcel + TWinc
+- ! check if achieved tolerance
+- if(abs(f0) < Xtol) exit
+- ! check convergence
+- if(iter==maxiter)stop 'failed to converge in WETBULBTMP'
+-end do  ! (iterating)
+-! return value in K
+-WETBULBTMP = TWcel + TFREEZE
++real(rkind),intent(in) :: TAIR, RELHM, PRESS
++real(rkind) :: WETBULBTMP, Tcel, PVP, lo, hi, mid, residual
++real(rkind),parameter :: k=6.54e-4_rkind, xtol=1.e-8_rkind
++integer :: iter
++! Solve the same Tetens/psychrometric equation with a bounded monotone
++! bracket, rather than an unconstrained finite-difference Newton iteration.
++if (.not.all(ieee_is_finite([TAIR,RELHM,PRESS]))) then
++ write(*,*) 'WETBULBTMP nonfinite inputs TAIR,RELHM,PRESS=',TAIR,RELHM,PRESS
++ error stop 1
++endif
++Tcel=TAIR-TFREEZE
++if (PRESS<=0._rkind .or. RELHM<0._rkind .or. RELHM>1._rkind .or. Tcel<=-237.3_rkind) then
++ write(*,*) 'WETBULBTMP invalid inputs TAIR,RELHM,PRESS=',TAIR,RELHM,PRESS
++ error stop 1
++endif
++PVP=RELHM*SATVPRESS(Tcel)
++! At lo the saturation pressure tends to zero; hi is dry-bulb temperature.
++! f(T)=es(T)-PVP-k*PRESS*(Tcel-T) increases strictly on this interval.
++lo=-237.3_rkind+1.e-6_rkind
++hi=Tcel
++if (RELHM==1._rkind) then
++ WETBULBTMP=TAIR
++ return
++endif
++do iter=1,100
++ mid=lo+(hi-lo)*0.5_rkind
++ residual=SATVPRESS(mid)-PVP-k*PRESS*(Tcel-mid)
++ if (residual>0._rkind) then
++  hi=mid
++ else
++  lo=mid
++ endif
++ if (hi-lo<xtol) then
++  WETBULBTMP=(hi+lo)*0.5_rkind+TFREEZE
++  return
++ endif
++enddo
++write(*,*) 'WETBULBTMP bracket failed TAIR,RELHM,PRESS=',TAIR,RELHM,PRESS
++error stop 1
+ end function WETBULBTMP
+ 
+ ! ***************************************************************************************************************
+diff --git a/build/source/engine/coupled_em.f90 b/build/source/engine/coupled_em.f90
+index 1a37b9d1..0c3113c6 100644
+--- a/build/source/engine/coupled_em.f90
++++ b/build/source/engine/coupled_em.f90
+@@ -1239,8 +1239,8 @@ subroutine coupled_em(&
+           if(err/=0)then; message=trim(message)//trim(cmessage); return; end if ! err could be 20 or 55 here
+ 
+           ! add the liquid water squeezed out of glacier ice layers to the glacier melt
+-          scalarGlceMelt = scalarGlceMelt - glceReduceLiq ! negative values here as representing upwards flux of water from the glacier ice layers            
+-          scalarGlacierMelt = scalarGlacierMelt + glceReduceLiq          
++          scalarGlceMelt = scalarGlceMelt - glceReduceLiq*whole_step/dt_sub ! negative values here as representing upwards flux of water from the glacier ice layers            
++          scalarGlacierMelt = scalarGlacierMelt + glceReduceLiq*whole_step/dt_sub          
+ 
+           ! process the flag for too much sublimation
+           if(tooMuchSublim)then
+diff --git a/build/source/engine/getVectorz.f90 b/build/source/engine/getVectorz.f90
+index 2cf934d4..ae60eeb2 100644
+--- a/build/source/engine/getVectorz.f90
++++ b/build/source/engine/getVectorz.f90
+@@ -531,7 +531,7 @@ subroutine checkFeas(&
+         ! --> check
+         if(stateVec( ixSnLaSoGlHyd(iLayer) ) < xMin .or. stateVec( ixSnLaSoGlHyd(iLayer) ) > xMax)then 
+           feasible=.false.
+-          message=trim(message)//'layer water out of bounds/'
++          write(message,'(a,i0,3(a,es24.16))') 'checkFeas/layer=',iLayer,' water=',stateVec(ixSnLaSoGlHyd(iLayer)),' min=',xMin,' max=',xMax
+           if(printFlag)then 
+             if(stateVec( ixSnLaSoGlHyd(iLayer) ) < xMin .or. stateVec( ixSnLaSoGlHyd(iLayer) ) > xMax) &
+             write(*,'(a,1x,i4,1x,i4,1x,L1,1x,10(f20.10,1x))') 'iLayer, layerType, feasible, stateVec( ixSnLaSoGlHyd(iLayer) ), xMin, xMax = ', &
+diff --git a/build/source/engine/run_oneGRU.f90 b/build/source/engine/run_oneGRU.f90
+index eff42103..7e132c7f 100644
+--- a/build/source/engine/run_oneGRU.f90
++++ b/build/source/engine/run_oneGRU.f90
+@@ -58,6 +58,8 @@ USE data_types,only:&
+         
+ 
+ ! provide access to the named variables that describe elements of parameter structures
++USE var_lookup,only:iLookGRID
++USE globalData,only:thick4area
+ USE var_lookup,only:iLookTYPE          ! look-up values for classification of veg, soils etc.
+ USE var_lookup,only:iLookID            ! look-up values for hru and gru IDs
+ USE var_lookup,only:iLookATTR          ! look-up values for local attributes
+@@ -92,7 +94,7 @@ USE mDecisions_module,only:&           ! look-up values for the choice of method
+ ! -----------------------------------------------------------------------------------------------------------------------------------
+ implicit none
+ private
+-public::run_oneGRU
++public::run_oneGRU, exposedTerrainMoment, partitionGlacierArea
+ contains
+ 
+ ! ************************************************************************************************
+@@ -160,6 +162,9 @@ subroutine run_oneGRU(&
+   character(len=512)                  :: cmessage                       ! error message
+   integer(i4b)                        :: iHRU                           ! HRU index
+   integer(i4b)                        :: jHRU,kHRU                      ! index of the hydrologic response unit
++  integer(i4b)                        :: iGridTerrain, nxTerrain, nyTerrain
++  real(rkind) :: terrainMoment, terrainArea, gridMoment, gridArea
++  real(rkind), allocatable :: partitionAreas(:)
+   integer(i4b)                        :: iDOM                           ! domain index
+   real(rkind)                         :: fracDOM                        ! fractional area of a given HRU domain in GRU (-)
+   integer(i4b)                        :: nglacDOM                       ! number of glacier domains in the GRU
+@@ -473,7 +478,7 @@ subroutine run_oneGRU(&
+   call qGlacier(&
+                 ! input
+                 bparData%var(iLookBPAR%glacStor_kIce),              & ! intent(in):    storage coefficient ice reservoir (hours)
+-                bparData%var(iLookBPAR%glacStor_kFirn),             & ! intent(in):    storage coefficient snow reservoir (hours)
++                bparData%var(iLookBPAR%glacStor_kSnow),             & ! intent(in):    storage coefficient snow reservoir (hours)
+                 bparData%var(iLookBPAR%glacStor_kFirn),             & ! intent(in):    storage coefficient firn reservoir (hours)
+                 glacIceMelt,                                        & ! intent(in):    total melt into ice reservoirs (m s-1)
+                 glacSnowMelt,                                       & ! intent(in):    total melt into snow reservoirs (m s-1)
+@@ -606,6 +611,39 @@ subroutine run_oneGRU(&
+ 
+   if(updateGlacArea .or. updateLakeArea)then
+     do iHRU=1,gruInfo%hruCount
++      ! Raster cells can straddle polygon boundaries: normalize domain areas
++      ! to the immutable HRU area before computing the complementary land area.
++      if(updateGlacArea .and. .not.updateLakeArea)then
++        allocate(partitionAreas(gruInfo%hruInfo(iHRU)%domCount))
++        partitionAreas=0._rkind
++        do iDOM=1,size(partitionAreas)
++          if(gruInfo%hruInfo(iHRU)%domInfo(iDOM)%dom_type/=upland) &
++            partitionAreas(iDOM)=progHRU%hru(iHRU)%dom(iDOM)%var(iLookPROG%DOMarea)%dat(1)
++        enddo
++        call partitionGlacierArea(attrHRU%hru(iHRU)%var(iLookATTR%HRUarea),partitionAreas)
++        do iDOM=1,size(partitionAreas)
++          if(gruInfo%hruInfo(iHRU)%domInfo(iDOM)%dom_type/=upland) &
++            progHRU%hru(iHRU)%dom(iDOM)%var(iLookPROG%DOMarea)%dat(1)=partitionAreas(iDOM)
++        enddo
++        deallocate(partitionAreas)
++      endif
++      ! Compute the elevation of exposed terrain directly. Ice thinning must
++      ! not be balanced by an artificial rise of the residual upland fraction.
++      terrainMoment=0._rkind; terrainArea=0._rkind
++      if(updateGlacArea .and. .not.updateLakeArea)then
++        do iGridTerrain=1,gruInfo%nGrid
++          nxTerrain=gruInfo%gridInfo(iGridTerrain)%nx
++          nyTerrain=gruInfo%gridInfo(iGridTerrain)%ny
++          call exposedTerrainMoment( &
++            gridData%grid(iGridTerrain)%var(iLookGRID%bed_elev)%dat2(1:nxTerrain,1:nyTerrain), &
++            gridData%grid(iGridTerrain)%var(iLookGRID%surface_elev)%dat2(1:nxTerrain,1:nyTerrain), &
++            gridData%grid(iGridTerrain)%var(iLookGRID%cell2hru)%dat2(1:nxTerrain,1:nyTerrain), &
++            iHRU,thick4area,gruInfo%gridInfo(iGridTerrain)%dx*gruInfo%gridInfo(iGridTerrain)%dy, &
++            gridMoment,gridArea)
++          terrainMoment=terrainMoment+gridMoment
++          terrainArea=terrainArea+gridArea
++        enddo
++      endif
+       ! update the upland coordinate variables for the HRU based on the new glacier and wetland areas
+       ! NOTE: contour length is not updated as we do not know how much of the original contour length is associated with the glacier/lake 
+       remaining_area = attrHRU%hru(iHRU)%var(iLookATTR%HRUarea)
+@@ -645,6 +683,16 @@ subroutine run_oneGRU(&
+               else
+                 DOMaspect = 0._rkind
+               endif
++              if(updateGlacArea .and. .not.updateLakeArea)then
++                ! Sub-grid land with no exposed cell uses the original HRU
++                ! elevation. This is explicit terrain resolution uncertainty.
++                DOMelev=attrHRU%hru(iHRU)%var(iLookATTR%elevation)
++                if(terrainArea>0._rkind) DOMelev=terrainMoment/terrainArea
++                ! Retain static HRU terrain orientation, rather than amplifying
++                ! glacier slope/aspect changes by a tiny land fraction.
++                DOMtan_slope=attrHRU%hru(iHRU)%var(iLookATTR%tan_slope)
++                DOMaspect=attrHRU%hru(iHRU)%var(iLookATTR%aspect)
++              endif
+             else
+               DOMelev = realMissing
+               DOMarea = 0._rkind
+@@ -664,4 +712,23 @@ subroutine run_oneGRU(&
+ 
+ end subroutine run_oneGRU
+ 
++! Helpers exposed for direct native regression tests.
++pure subroutine exposedTerrainMoment(bed,surface,cell2hru,hru,threshold,cellArea,moment,area)
++real(rkind),intent(in)::bed(:,:),surface(:,:),cell2hru(:,:),threshold,cellArea
++integer(i4b),intent(in)::hru
++real(rkind),intent(out)::moment,area
++logical::mask(size(bed,1),size(bed,2))
++mask=int(cell2hru)==hru .and. surface-bed<=threshold
++area=real(count(mask),rkind)*cellArea
++moment=sum(bed,mask=mask)*cellArea
++end subroutine
++
++pure subroutine partitionGlacierArea(total,areas)
++real(rkind),intent(in)::total
++real(rkind),intent(inout)::areas(:)
++real(rkind)::occupied
++occupied=sum(areas)
++if(occupied>total) areas=areas*(total/occupied)
++end subroutine
++
+ end module run_oneGRU_module
+diff --git a/build/source/engine/snowGlceDepth.f90 b/build/source/engine/snowGlceDepth.f90
+index 73d05fd2..04e65368 100644
+--- a/build/source/engine/snowGlceDepth.f90
++++ b/build/source/engine/snowGlceDepth.f90
+@@ -353,9 +353,13 @@ subroutine glceReduce(&
+ 
+     ! Keep liquid water fraction in the layer constant; excess liquid is squeezed out
+     ! Note, if it got colder the depth icreases and thus adds a bit of water to the layer, but will be corrected when the layer is reduced to the active layer depth
+-    massLiqRetained = iden_water*mLayerVolFracLiqNew(iGlce)*mLayerDepth(iGlce) ! kg m-2
++    ! Conserve existing liquid when refreezing expands the layer; melting
++    ! cannot retain liquid in volume already occupied by ice.
++    massLiqRetained = min(massLiqOld, &
++      iden_water*mLayerVolFracLiqNew(iGlce)*mLayerDepth(iGlce), &
++      iden_water*max(0._rkind, mLayerDepth(iGlce)-massIceOld/iden_ice))
+     layerReduceLiq = max(0._rkind, massLiqOld - massLiqRetained) ! only take away liquid water, don't add any
+-    glceReduceLiq = (glceReduceLiq + layerReduceLiq)/(iden_water*dt) ! convert to m s-1
++    glceReduceLiq = glceReduceLiq + layerReduceLiq/(iden_water*dt) ! convert to m s-1
+ 
+     ! check that we did not remove the entire layer
+     if(mLayerDepth(iGlce) < verySmall)then
+diff --git a/build/source/engine/systemSolv.f90 b/build/source/engine/systemSolv.f90
+index c2387f48..0d9e3c3f 100644
+--- a/build/source/engine/systemSolv.f90
++++ b/build/source/engine/systemSolv.f90
+@@ -401,7 +401,7 @@ contains
+    end if
+   end associate
+ 
+-  if (.not.feasible) then; message=trim(message)//'state vector not feasible'; err=20; return_flag=.true.; return; end if
++  if (.not.feasible) then; message=trim(message)//'state vector not feasible: '//trim(cmessage); err=20; return_flag=.true.; return; end if
+ 
+   ! copy over the initial flux structure since some model fluxes are not computed in the iterations
+   do concurrent ( iVar=1:size(flux_meta) )
+diff --git a/build/source/engine/varSubstep.f90 b/build/source/engine/varSubstep.f90
+index a17c284b..17b5a46d 100644
+--- a/build/source/engine/varSubstep.f90
++++ b/build/source/engine/varSubstep.f90
+@@ -630,6 +630,8 @@ subroutine varSubstep(&
+         end do
+       endif
+       if(ixVegHyd/=integerMissing) diag_data%var(iLookDIAG%balanceVegMass)%dat(1) = sumBalance(ixVegHyd)/dt
++      ! Inactive hydrology layers have no solved mass residual.
++      diag_data%var(iLookDIAG%balanceLayerMass)%dat(:) = 0._rkind
+       if(nSnLaSoGlHyd>0) then
+         do concurrent (ixLayer=1:nLayers,ixSnLaSoGlHyd(ixLayer)/=integerMissing)
+           diag_data%var(iLookDIAG%balanceLayerMass)%dat(ixLayer) = sumBalance(ixSnLaSoGlHyd(ixLayer))/dt

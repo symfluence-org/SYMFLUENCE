@@ -26,6 +26,14 @@ from symfluence.core.calibration.parameters.parameter_bounds_registry import get
 from symfluence.core.profiling import ProfilerContext
 from symfluence.core.registries import R
 
+from .forcing_scaling import (
+    FORCING_PARAM_BOUNDS,
+    FORCING_PARAM_DEFAULTS,
+    PRECIP_MULT_PARAM,
+    apply_precip_multiplier,
+    split_forcing_params,
+)
+
 
 @R.parameter_managers.add('SUMMA')
 class SUMMAParameterManager(BaseParameterManager):
@@ -85,6 +93,9 @@ class SUMMAParameterManager(BaseParameterManager):
         if 'total_soil_depth_multiplier' in self.local_params:
             self.depth_params.append('total_soil_depth_multiplier')
             self.local_params.remove('total_soil_depth_multiplier')
+
+        # Forcing pseudo-parameters (precip_mult) rescale forcing, not trialParams
+        self.local_params, self.forcing_params = split_forcing_params(self.local_params)
 
         # Parse mizuRoute parameters
         self.mizuroute_params = []
@@ -519,8 +530,8 @@ class SUMMAParameterManager(BaseParameterManager):
         if self._use_regionalization:
             self._init_regionalization()
             coeff_names = list(self._regionalization.get_calibration_parameters().keys())
-            return coeff_names + self.basin_params + self.depth_params + self.mizuroute_params
-        return self.local_params + self.basin_params + self.depth_params + self.mizuroute_params
+            return coeff_names + self.basin_params + self.depth_params + self.mizuroute_params + self.forcing_params
+        return self.local_params + self.basin_params + self.depth_params + self.mizuroute_params + self.forcing_params
 
     def _load_parameter_bounds(self) -> Dict[str, Dict[str, Any]]:
         """Parse SUMMA parameter bounds from localParamInfo.txt, etc.
@@ -562,8 +573,17 @@ class SUMMAParameterManager(BaseParameterManager):
         if self._use_regionalization:
             params = self._expand_regionalized_params(params)
 
+        forcing_values = {k: params[k] for k in self.forcing_params if k in params}
+        params = {k: v for k, v in params.items() if k not in self.forcing_params}
+
         success = True
         success = success and self._generate_trial_params_file(params)
+        if PRECIP_MULT_PARAM in forcing_values:
+            file_manager = self._get_config_value(
+                lambda: self.config.model.summa.filemanager, default='fileManager.txt',
+                dict_key='SETTINGS_SUMMA_FILEMANAGER')
+            success = success and apply_precip_multiplier(
+                self.settings_dir, forcing_values[PRECIP_MULT_PARAM], self.logger, file_manager)
         if self.depth_params:
             success = success and self._update_soil_depths(params)
         if self.mizuroute_params:
@@ -599,7 +619,7 @@ class SUMMAParameterManager(BaseParameterManager):
         # Regionalization coefficients are scalar — don't expand
         if self._use_regionalization and (param_name.endswith('_a') or param_name.endswith('_b')):
             return value
-        if param_name in self.depth_params:
+        if param_name in self.depth_params or param_name in self.forcing_params:
             return np.array([value])
         elif param_name in self.mizuroute_params:
             return value  # mizuRoute uses scalars
@@ -632,6 +652,9 @@ class SUMMAParameterManager(BaseParameterManager):
             for param in self.mizuroute_params:
                 if param in mizuroute_bounds:
                     bounds[param] = mizuroute_bounds[param]
+
+        for param in self.forcing_params:
+            bounds[param] = dict(FORCING_PARAM_BOUNDS[param])
 
         return bounds
 
@@ -702,6 +725,9 @@ class SUMMAParameterManager(BaseParameterManager):
                     bounds[param] = mizuroute_bounds[param]
                 else:
                     self.logger.warning(f"Unknown mizuRoute parameter: {param}")
+
+        for param in self.forcing_params:
+            bounds[param] = dict(FORCING_PARAM_BOUNDS[param])
 
         # Config-level overrides (highest priority)
         config_bounds = self._get_config_value(lambda: None, default={}, dict_key='PARAMETER_BOUNDS')
@@ -795,6 +821,9 @@ class SUMMAParameterManager(BaseParameterManager):
             for param in self.mizuroute_params:
                 defaults[param] = self._get_default_mizuroute_value(param)
 
+        for param in self.forcing_params:
+            defaults[param] = np.array([FORCING_PARAM_DEFAULTS[param]])
+
         # Expand to HRU count
         return self._expand_defaults_to_hru_count(defaults)
 
@@ -851,7 +880,7 @@ class SUMMAParameterManager(BaseParameterManager):
             for param_name, values in defaults.items():
                 if param_name in self.basin_params or param_name in routing_params:
                     expanded_defaults[param_name] = values
-                elif param_name in self.depth_params or param_name in self.mizuroute_params:
+                elif param_name in self.depth_params or param_name in self.mizuroute_params or param_name in self.forcing_params:
                     expanded_defaults[param_name] = values
                 else:
                     expanded_defaults[param_name] = np.full(num_hrus, values[0])
