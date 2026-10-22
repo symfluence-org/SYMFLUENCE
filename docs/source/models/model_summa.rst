@@ -455,21 +455,90 @@ For detailed snow modeling:
 Glacier Mode Workflow
 ---------------------
 
-For glacier-dominated basins:
+Install the experimental glacier engine explicitly (the ordinary ``summa``
+target does not include glacier physics):
+
+.. code-block:: bash
+
+   symfluence binary install summa-glacier
+
+This installs Ashley Medin's glacier fork at revision
+``b851c3df2bdc3fd91c8eeae856ce6098078a4055`` under
+``$SYMFLUENCE_DATA_DIR/installs/summa-glacier/bin/summa.exe``, separately from
+ordinary SUMMA. It uses the native solver, requires CMake, NetCDF-Fortran and
+OpenBLAS/LAPACK, and is excluded from default installations. Builds default to
+two jobs (override with ``CMAKE_BUILD_PARALLEL_LEVEL``). ``--branch`` explicitly
+overrides the pinned revision; ``--git-hash`` selects an explicit commit.
+
+For glacier experiments, select the executable and both input files explicitly:
 
 .. code-block:: yaml
 
    # Enable glacier preprocessing
    SETTINGS_SUMMA_GLACIER_MODE: true
 
+   # Replace /path/to/SYMFLUENCE_data with your data directory
+   SUMMA_INSTALL_PATH: /path/to/SYMFLUENCE_data/installs/summa-glacier/bin
+   SUMMA_EXE: summa.exe
+
    # Glacier-specific attributes will be generated
    SETTINGS_SUMMA_GLACIER_ATTRIBUTES: attributes_glac.nc
    SETTINGS_SUMMA_GLACIER_COLDSTATE: coldState_glac.nc
+
+   # File-manager inputs must reference the glacier files too
+   SETTINGS_SUMMA_ATTRIBUTES: attributes_glac.nc
+   SETTINGS_SUMMA_COLDSTATE: coldState_glac.nc
 
    # Use glacier-suitable decision options
    SUMMA_DECISION_OPTIONS:
      snowLayers: CLM_2010
      alb_method: varDecay      # Variable decay for glacier ice albedo
+
+The glacier flag alone does not establish valid glacier physics. Supply and
+validate glacier fractions, ice thickness/bed geometry, layer counts and phase
+fractions. The pinned upstream engine has a known inactive-layer initialization
+issue in its glacier mass-residual diagnostic; this target installs unmodified
+upstream source. Successful execution is not evidence of water-balance closure.
+Use isolated experiments and independently check precipitation, runoff,
+evapotranspiration and storage before calibration.
+
+``symfluence binary install summa-glacier --patched`` applies the inactive-layer
+diagnostic initialization fix and passes the snow reservoir's own time constant
+to glacier routing. It also conserves liquid mass and available pore volume
+during glacier-layer resizing, sums expelled water consistently across layers,
+and accounts for its outer-step duration when averaging substep fluxes.
+These corrections require watershed-scale validation before calibration.
+The patched wet-bulb calculation brackets the original psychrometric equation
+instead of using an unconstrained Newton iteration. Invalid inputs terminate
+with a nonzero exit code. SUMMA execution and calibration also validate output
+timestamps against the file manager, rejecting truncated or gapped output even
+when the native executable returns zero.
+For glacier-only geometry updates, upland elevation is recomputed from exposed
+bed-grid cells. A sub-grid land fraction with no exposed cell uses the original
+HRU elevation. HRU slope and aspect remain static terrain attributes. This avoids
+artificially changing land elevation to compensate for glacier thinning while
+holding the original HRU mean elevation fixed. Rasterized domain areas are
+normalized when their sum exceeds the polygon HRU area.
+Use ``--force`` to rebuild an existing installation. The
+applied patch is retained in ``bin/applied_glacier.patch`` for provenance.
+
+For explicit semidistributed geometry, supply projected or georeferenced source
+data using:
+
+.. code-block:: yaml
+
+   SUMMA_GLACIER_OUTLINE_PATH: /path/to/dated_outlines.gpkg
+   SUMMA_GLACIER_THICKNESS_DIR: /path/to/thickness_tiles
+   SUMMA_GLACIER_GRID_RESOLUTION: 100
+
+Thickness files must match ``*thickness.tif`` and contain thickness in metres.
+The preprocessor projects HRUs to a local metric grid, intersects ice outlines,
+reprojects the DEM and thickness, and creates an independent glacier complex per
+GRU. It preserves HRU/GRU IDs, land area and upland soil-layer counts, and writes
+an input report to ``settings/SUMMA/glacier_geometry.json``. Missing thickness
+or DEM coverage raises an error. This path models clean ice with fractional
+land/ice domains; it does not infer debris cover or firn zones. Inventory dates,
+DEM epoch and thickness uncertainty must be documented for each experiment.
 
 Parallel SUMMA for Large Domains
 --------------------------------
