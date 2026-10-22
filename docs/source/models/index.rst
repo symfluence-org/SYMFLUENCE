@@ -77,6 +77,7 @@ Simplified representations using storage-based approaches.
    model_gr
    model_hbv
    model_raven
+   model_sacsma_cryosphere
 
 ----
 

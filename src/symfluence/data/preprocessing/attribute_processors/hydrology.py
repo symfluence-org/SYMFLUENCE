@@ -9,7 +9,7 @@ and river network characteristics.
 """
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, cast
 
 import numpy as np
 import pandas as pd
@@ -187,7 +187,7 @@ class HydrologyProcessor(BaseAttributeProcessor):
                 half_flow = total_flow / 2
                 idx = (group['cumsum'] >= half_flow).idxmax()
                 if idx in group.index:
-                    half_flow_dates.append(group.loc[idx, 'date'].dayofyear)
+                    half_flow_dates.append(group.loc[cast(Any, idx), 'date'].dayofyear)
 
             if half_flow_dates:
                 results["half_flow_date"] = np.mean(half_flow_dates)
