@@ -44,8 +44,9 @@ def glacier_metrics(output_dir, observations, period, scale=1.0):
         raise ModelExecutionError('Invalid glacier storage output')
     observed = pd.read_csv(observations, sep=';', index_col=0)
     rows = []
-    for year, row in observed.iterrows():
-        left, right = pd.Timestamp(int(year) - 1, 9, 30), pd.Timestamp(int(year), 9, 30)
+    for label, row in observed.iterrows():
+        year = int(float(str(label)))
+        left, right = pd.Timestamp(year - 1, 9, 30), pd.Timestamp(year, 9, 30)
         if left < start - pd.Timedelta(days=1) or right > end:
             continue
         if not np.isfinite(row.annual_net_MB) or not np.isfinite(row.g_area_dyn) or row.g_area_dyn <= 0:
@@ -53,7 +54,7 @@ def glacier_metrics(output_dir, observations, period, scale=1.0):
         if left not in daily.index or right not in daily.index:
             raise EvaluationError(f'Missing glacier-balance endpoint for {year}')
         value = (daily.loc[right] - daily.loc[left]) * 1e3 / row.g_area_dyn  # Gt / km2 -> m w.e.
-        rows.append(dict(year=int(year), simulated_mwe=float(value), observed_mwe=float(row.annual_net_MB)))
+        rows.append(dict(year=year, simulated_mwe=float(value), observed_mwe=float(row.annual_net_MB)))
     if not rows:
         raise EvaluationError('No complete glacier-balance years inside calibration')
     rmse = float(np.sqrt(np.mean([(r['simulated_mwe'] - r['observed_mwe']) ** 2 for r in rows])))
