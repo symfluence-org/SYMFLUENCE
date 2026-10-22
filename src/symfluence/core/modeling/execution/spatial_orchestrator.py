@@ -336,6 +336,22 @@ class SpatialOrchestrator(ABC):
         self.logger.debug(f"Converting {input_file} to routing format")
 
         with xr.open_dataset(input_file) as ds:
+            # Native SUMMA runoff is already suitable for mizuRoute. Rebuilding
+            # it as a runoff-only dataset would discard HRU process diagnostics
+            # (snow, soil water, etc.) when converting in place.
+            if (
+                source_var in (None, target_var)
+                and target_var in ds
+                and ds[target_var].dims == ('time', 'gru')
+                and 'gruId' in ds
+                and ds['gruId'].dims == ('gru',)
+            ):
+                if output_file is None or output_file == input_file:
+                    self.logger.debug("Output already has native routing dimensions")
+                    return input_file
+                output_file.parent.mkdir(parents=True, exist_ok=True)
+                ds.to_netcdf(output_file, format='NETCDF4')
+                return output_file
             converted = self._create_routing_dataset(
                 ds,
                 target_var=target_var,

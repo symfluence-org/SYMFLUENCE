@@ -347,8 +347,7 @@ class StreamflowEvaluator(ModelEvaluator):
                     )
                     catchment_area = self._get_catchment_area()
                     return result * catchment_area / 1000.0 / 86400.0
-                from symfluence.core.exceptions import EvaluationError
-                raise EvaluationError(
+                raise ValueError(
                     f"Unrecognized streamflow units {units!r} on FUSE variable "
                     f"'{var_name}' in {sim_file.name}. Expected m³/s or mm/day. "
                     "Set a correct 'units' attribute on the variable — guessing a "
@@ -438,9 +437,23 @@ class StreamflowEvaluator(ModelEvaluator):
         """
         with xr.open_dataset(sim_file) as ds:
             streamflow_vars = ['IRFroutedRunoff', 'KWTroutedRunoff', 'averageRoutedRunoff', 'dlayRunoff']
+            # An explicit SIM_REACH_ID selects that reach; without it the
+            # highest-mean segment is taken as the outlet.
+            requested_reach = self._get_config_value(
+                lambda: self.config.evaluation.sim_reach_id,
+                default=None, dict_key='SIM_REACH_ID',
+            )
             for var_name in streamflow_vars:
                 if var_name in ds.variables:
                     var = ds[var_name]
+                    if requested_reach is not None:
+                        for id_name in ('reachID', 'segId'):
+                            if id_name in ds and ds[id_name].ndim == 1 and ds[id_name].dims[0] in var.dims:
+                                matches = np.flatnonzero(ds[id_name].values == requested_reach)
+                                if len(matches) != 1:
+                                    raise ValueError(f'Requested routing reach {requested_reach} is missing or duplicated')
+                                return cast(pd.Series, var.isel({ds[id_name].dims[0]: int(matches[0])}).to_pandas())
+                        raise ValueError('Explicit routing reach requires a reachID or segId coordinate')
                     if 'seg' in var.dims:
                         segment_means = var.mean(dim='time').values
                         outlet_seg_idx = np.argmax(segment_means)
