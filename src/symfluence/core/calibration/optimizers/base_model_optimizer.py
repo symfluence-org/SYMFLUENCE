@@ -1105,11 +1105,14 @@ class BaseModelOptimizer(
                 'crash_rate': crash_stats['crash_rate'],
             })
             self.record_iteration(iteration, score, params, additional_metrics=merged)
-            if iteration > 0 and iteration % checkpoint_interval == 0:
-                save_checkpoint(iteration)
 
         def update_best(score, params, iteration):
             self.update_best(score, params, iteration)
+            # Algorithms record the current iteration before updating the
+            # best solution. Persist both only after that update, otherwise
+            # an improving checkpoint has a current CSV but stale best JSON.
+            if iteration > 0 and iteration % checkpoint_interval == 0:
+                save_checkpoint(iteration)
 
         def log_progress(alg_name, iteration, best_score, n_improved=None, pop_size=None,
                          secondary_score=None, secondary_label=None, unit='evals',
@@ -1676,11 +1679,19 @@ class BaseModelOptimizer(
 
     def _apply_best_parameters_for_final(self, best_params: Dict[str, float]) -> bool:
         """Apply best parameters for final evaluation."""
+        # Calibration tasks carry the soil depths loaded at startup (TaskBuilder);
+        # without them the worker silently skips the depth update, so the final
+        # run would use uncalibrated depths.
+        extra = {}
+        original_depths = getattr(self.param_manager, 'original_depths', None)
+        if original_depths is not None:
+            extra['original_depths'] = np.asarray(original_depths).tolist()
         try:
             return self.worker.apply_parameters(
                 best_params,
                 self.optimization_settings_dir,
-                config=self.config
+                config=self.config,
+                **extra
             )
         except (ValueError, IOError, RuntimeError) as e:
             self.logger.error(f"Error applying parameters for final evaluation: {e}")
