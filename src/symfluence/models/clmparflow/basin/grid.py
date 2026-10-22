@@ -24,6 +24,8 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
+from symfluence.core.exceptions import GeospatialError
+
 FINE = 10  # sub-cells per cell side for area fractions
 
 
@@ -91,7 +93,7 @@ def d4_slopes(z: np.ndarray, mask: np.ndarray, outlet: Tuple[int, int], dx: floa
     outside = [(dr, dc) for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1))
                if not (0 <= outlet[0] + dr < ny and 0 <= outlet[1] + dc < nx) or not mask[outlet[0] + dr, outlet[1] + dc]]
     if not outside:
-        raise ValueError('outlet cell is not on the domain edge')
+        raise GeospatialError('outlet cell is not on the domain edge')
     zc = np.where(mask, z, np.nan)
     down = np.zeros((ny, nx, 2), int)
     seen = np.zeros_like(mask)
@@ -108,7 +110,7 @@ def d4_slopes(z: np.ndarray, mask: np.ndarray, outlet: Tuple[int, int], dx: floa
                 down[q] = (-dr, -dc)
                 heapq.heappush(queue, (zc[q], q))
     if not seen[mask].all():
-        raise ValueError('mask is not 4-connected to the outlet')
+        raise GeospatialError('mask is not 4-connected to the outlet')
     down[outlet] = outside[0]
     drop = np.zeros((ny, nx))
     for r, c in zip(*np.nonzero(mask)):

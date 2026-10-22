@@ -34,6 +34,13 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 
+from symfluence.core.exceptions import (
+    ConfigurationError,
+    FileOperationError,
+    ModelExecutionError,
+    ValidationError,
+)
+
 from . import pfio
 from .grid import BasinGrid
 
@@ -166,7 +173,7 @@ def open_forcing(path: Path):
     if path.is_dir():
         files = sorted(path.glob('*.nc'))
         if not files:
-            raise FileNotFoundError(f'no NetCDF forcing in {path}')
+            raise FileOperationError(f'no NetCDF forcing in {path}')
         return xr.open_mfdataset(files, combine='by_coords')
     return xr.open_dataset(path)
 
@@ -196,7 +203,7 @@ def write_static(run: Path, grid: BasinGrid, params: BasinParameters, parflow_di
                         '--z-top', str(float(params.nz)), '--dx', str(dx), '--dy', str(dx)],
                        cwd=run, capture_output=True, text=True)
     if r.returncode != 0 or not (run / 'basin.pfsol').exists():
-        raise RuntimeError(f'pfmask-to-pfsol failed: {r.stdout}{r.stderr}')
+        raise ModelExecutionError(f'pfmask-to-pfsol failed: {r.stdout}{r.stderr}')
 
 
 def write_forcing(out: Path, grid: BasinGrid, params: BasinParameters, forcing_file: Path, start: str, end: str,
@@ -220,7 +227,7 @@ def write_forcing(out: Path, grid: BasinGrid, params: BasinParameters, forcing_f
     idx = np.array([col_of[u] if u >= 0 else fill for u in unit.ravel()])
     n = data.sizes['time']
     if n % 24:
-        raise ValueError(f'forcing for {start}..{end} has {n} hours, not whole days')
+        raise ConfigurationError(f'forcing for {start}..{end} has {n} hours, not whole days')
     ny, nx = grid.shape
     for var in MET_VARIABLES:
         if var in names:
@@ -230,10 +237,10 @@ def write_forcing(out: Path, grid: BasinGrid, params: BasinParameters, forcing_f
         elif var == 'VGRD':
             a = np.zeros((n, len(ids)))
         else:
-            raise KeyError(f'no forcing variable mapped to {var}')
+            raise ConfigurationError(f'no forcing variable mapped to {var}')
         a = a[:, idx].reshape(n, ny, nx)
         if not np.isfinite(a).all():
-            raise ValueError(f'non-finite forcing in {var}')
+            raise ValidationError(f'non-finite forcing in {var}')
         for s in range(0, n, 24):
             pfio.write_pfb(out / f'CARRA.{var}.{s + 1:06d}_to_{s + 24:06d}.pfb', a[s:s + 24], dx=grid.dx,
                            dy=grid.dx, P=P, Q=Q)
@@ -252,7 +259,7 @@ def write_clm_files(run: Path, grid: BasinGrid, params: BasinParameters, start: 
         nonlocal txt
         txt, count = re.subn(rf'(?m)^{name}(\s+)\S+', lambda m: f'{name}{m.group(1)}{value}', txt, count=1)
         if count != 1:
-            raise KeyError(name)
+            raise ModelExecutionError(f'CLM template has no {name} entry')
 
     for name, value in [('shr', f'{s.hour:02d}'), ('sda', f'{s.day:02d}'), ('smo', f'{s.month:02d}'), ('syr', s.year),
                         ('ehr', f'{e.hour:02d}'), ('eda', f'{e.day:02d}'), ('emo', f'{e.month:02d}'), ('eyr', e.year),
@@ -330,7 +337,7 @@ def run_segment(run: Path, name: str, grid: BasinGrid, params: BasinParameters, 
     (run / 'meta.json').write_text(json.dumps(meta, indent=1))
     (run / 'run.log').write_text(out)
     if rc != 0 or 'Problem solved' not in out:
-        raise RuntimeError(f'{name} failed (exit {rc}):\n{out[-2000:]}')
+        raise ModelExecutionError(f'{name} failed (exit {rc}):\n{out[-2000:]}')
     if not keep_forcing:
         shutil.rmtree(run / 'forcing')
     for d in CLM_OUTPUT_DIRS:

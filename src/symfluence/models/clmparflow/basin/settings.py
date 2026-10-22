@@ -15,6 +15,8 @@ from typing import Iterable, List, Optional
 
 import pandas as pd
 
+from symfluence.core.exceptions import ConfigurationError, FileOperationError
+
 from .case import BasinParameters
 from .chain import ChainSettings
 
@@ -41,7 +43,7 @@ def _first(directory: Path, patterns: Iterable[str], what: str) -> Path:
         found = sorted(directory.rglob(pattern)) if directory.exists() else []
         if found:
             return found[0]
-    raise FileNotFoundError(f'CLMParFlow basin mode: no {what} found under {directory}; set it explicitly')
+    raise FileOperationError(f'CLMParFlow basin mode: no {what} found under {directory}; set it explicitly')
 
 
 def _path(value: str, default: Path) -> Path:
@@ -51,7 +53,7 @@ def _path(value: str, default: Path) -> Path:
 def basin_inputs(cfg, project_dir: Path, domain_name: str) -> BasinInputs:
     """Resolve the grid and forcing inputs (``cfg`` is ``config.model.clmparflow``)."""
     if not cfg.basin_crs:
-        raise ValueError('CLMParFlow basin mode needs CLMPARFLOW_BASIN_CRS (a projected CRS in metres, e.g. EPSG:3057)')
+        raise ConfigurationError('CLMParFlow basin mode needs CLMPARFLOW_BASIN_CRS (a projected CRS in metres, e.g. EPSG:3057)')
     from symfluence.core.mixins.project import resolve_forcing_basin_path
 
     shp = ('*.shp', '*.gpkg')
@@ -71,7 +73,7 @@ def basin_inputs(cfg, project_dir: Path, domain_name: str) -> BasinInputs:
 def basin_parameters(cfg) -> BasinParameters:
     albedo = cfg.basin_ice_albedo
     if albedo is not None and len(albedo) != 2:
-        raise ValueError('CLMPARFLOW_BASIN_ICE_ALBEDO needs two values: visible and near-infrared')
+        raise ConfigurationError('CLMPARFLOW_BASIN_ICE_ALBEDO needs two values: visible and near-infrared')
     return BasinParameters(soil_k=cfg.basin_soil_k, aquifer_k=cfg.basin_aquifer_k, manning=cfg.basin_manning,
                            glacier_bed_k=cfg.basin_glacier_bed_k, precip_scale=cfg.basin_precip_scale,
                            ice_albedo=tuple(albedo) if albedo is not None else None,
@@ -93,7 +95,7 @@ def chain_settings(cfg, time_start: str, time_end: str, num_procs: int) -> Chain
     first = cfg.basin_first_water_year or (years[0] if years else None)
     last = cfg.basin_last_water_year or (years[-1] if years else None)
     if first is None or last is None or last < first:
-        raise ValueError(f'CLMParFlow basin mode: no complete water year in {time_start}..{time_end}')
+        raise ConfigurationError(f'CLMParFlow basin mode: no complete water year in {time_start}..{time_end}')
     production = list(range(first, last + 1))
     spinup = list(cfg.basin_spinup_years or production[:3])
     initial = cfg.basin_initial_state

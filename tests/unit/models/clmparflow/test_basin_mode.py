@@ -11,6 +11,7 @@ import pandas as pd
 import pytest
 import xarray as xr
 
+from symfluence.core.exceptions import GeospatialError
 from symfluence.models.clmparflow.basin import pfio
 from symfluence.models.clmparflow.basin.case import (
     BasinParameters,
@@ -88,7 +89,7 @@ class TestSlopes:
 
     def test_outlet_off_the_edge_is_rejected(self):
         mask = np.ones((5, 5), bool)
-        with pytest.raises(ValueError, match='edge'):
+        with pytest.raises(GeospatialError, match='edge'):
             d4_slopes(np.zeros((5, 5)), mask, (2, 2), dx=1000.)
 
 

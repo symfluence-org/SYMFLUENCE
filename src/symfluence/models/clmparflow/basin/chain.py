@@ -19,6 +19,8 @@ from typing import Callable, Dict, List, Optional
 import numpy as np
 import pandas as pd
 
+from symfluence.core.exceptions import ConfigurationError, ModelExecutionError
+
 from . import pfio
 from .case import BasinParameters, run_segment
 from .grid import BasinGrid
@@ -73,7 +75,7 @@ def summarise_segment(run: Path, grid: BasinGrid) -> Dict:
 
     days = pd.date_range(meta['start'], periods=hours // 24, freq='D')
     if not len(osum) == len(days) == len(press) - 1:
-        raise RuntimeError(f'{name}: {len(osum)} outflow and {len(press)} pressure dumps for {len(days)} days')
+        raise ModelExecutionError(f'{name}: {len(osum)} outflow and {len(press)} pressure dumps for {len(days)} days')
     q = [float(pfio.read_pfb(f).sum()) / 86400 for f in osum]
     s0, p0 = storage(0)
     s1, p1 = storage(-1)
@@ -149,7 +151,7 @@ def run_chain(runs: Path, grid: BasinGrid, params: BasinParameters, parflow_dir:
     pc = sum(basin_precipitation(grid, forcing_file, f'{y - 1}-10-01', f'{y}-10-01', precip_name,
                                  settings.forcing_unit_variable, params.precip_scale) for y in settings.spinup_years)
     if not settings.spinup_years:
-        raise ValueError('basin mode needs at least one spin-up water year')
+        raise ConfigurationError('basin mode needs at least one spin-up water year')
     prev = settings.initial_state
     cycle = 0
     for cycle in range(1, settings.max_cycles + 1):
