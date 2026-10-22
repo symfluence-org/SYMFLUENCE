@@ -539,6 +539,11 @@ COMMON_SOURCES=$(cd "${SRC_DIR}/common" && ls -1 *.f *.f90 *.for 2>/dev/null | t
 cat > "${SRC_DIR}/common/CMakeLists.txt" << CMAKE_EOF
 project(common Fortran)
 set(COMMON_SOURCES ${COMMON_SOURCES})
+# Both files export read_par_parser. Static archive ordering can select the
+# legacy reader, which does not initialize fpFactor used by modern routing.
+if(EXISTS "\${CMAKE_CURRENT_SOURCE_DIR}/read_par_parser.f90")
+    list(REMOVE_ITEM COMMON_SOURCES read_par_parser.f)
+endif()
 add_library(\${PROJECT_NAME} STATIC \${COMMON_SOURCES})
 add_dependencies(\${PROJECT_NAME} core)
 CMAKE_EOF
