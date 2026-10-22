@@ -9,6 +9,7 @@ import xarray as xr
 from rasterio.transform import from_origin
 from shapely.geometry import box
 
+from symfluence.core.exceptions import ConfigurationError
 from symfluence.models.summa.glacier_geometry import prepare_glacier_geometry
 
 pytestmark = [pytest.mark.unit, pytest.mark.quick]
@@ -66,7 +67,7 @@ def test_two_grus_keep_ids_area_layers_and_independent_storage(geometry_inputs):
 
 def test_missing_thickness_fails_instead_of_inventing_ice(geometry_inputs):
     (geometry_inputs[-1]/'ice_thickness.tif').unlink()
-    with pytest.raises(ValueError, match='No thickness'):
+    with pytest.raises(ConfigurationError, match='No thickness'):
         prepare_glacier_geometry(*geometry_inputs)
 
 

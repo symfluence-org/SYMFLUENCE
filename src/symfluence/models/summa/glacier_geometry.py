@@ -17,6 +17,8 @@ from rasterio.features import rasterize
 from rasterio.transform import from_origin
 from rasterio.warp import Resampling, reproject
 
+from symfluence.core.exceptions import ConfigurationError, GeospatialError, RasterProcessingError
+
 
 def prepare_glacier_geometry(attributes: Path, coldstate: Path, catchment: Path,
                              dem: Path, outlines: Path, thickness_dir: Path,
@@ -38,7 +40,7 @@ def prepare_glacier_geometry(attributes: Path, coldstate: Path, catchment: Path,
     with xr.open_dataset(coldstate) as src:
         base = src.load()
     if 'dom' in base.dims or 'grid' in attrs.dims:
-        raise ValueError('Glacier preparation requires fresh ordinary SUMMA inputs')
+        raise ConfigurationError('Glacier preparation requires fresh ordinary SUMMA inputs')
     hrus = gpd.read_file(catchment)
     hrus.geometry = hrus.geometry.make_valid()
     hrus = hrus.to_crs(hrus.estimate_utm_crs())
@@ -47,7 +49,7 @@ def prepare_glacier_geometry(attributes: Path, coldstate: Path, catchment: Path,
     ice.geometry = ice.geometry.make_valid()
     tiles = sorted(Path(thickness_dir).glob('*thickness.tif'))
     if not tiles:
-        raise ValueError('No thickness rasters supplied')
+        raise ConfigurationError('No thickness rasters supplied')
     ids, grus = attrs.hruId.values, attrs.gruId.values
     areas = attrs.HRUarea.values
     mapping = attrs.hru2gruId.values
@@ -81,11 +83,11 @@ def prepare_glacier_geometry(attributes: Path, coldstate: Path, catchment: Path,
             covered = mask & (thick > 0)
             coverage = covered.sum()/mask.sum()
             if coverage < .95:
-                raise ValueError(f'GRU {gru}: thickness covers only {coverage:.1%} of glacier cells')
+                raise RasterProcessingError(f'GRU {gru}: thickness covers only {coverage:.1%} of glacier cells')
             mask = covered
         surface = warp(dem, shape, transform)
         if not np.isfinite(surface[hid > 0]).all():
-            raise ValueError(f'GRU {gru}: DEM missing inside HRUs')
+            raise RasterProcessingError(f'GRU {gru}: DEM missing inside HRUs')
         surface = np.nan_to_num(surface)
         grids.append(dict(gru=gru, hid=hid, mask=mask, thick=np.where(mask, thick, 0.), surface=surface,
                           nx=nx, ny=ny))
@@ -93,7 +95,7 @@ def prepare_glacier_geometry(attributes: Path, coldstate: Path, catchment: Path,
     if target_area_km2 is not None:
         keep = int(np.floor(target_area_km2*1e6/resolution**2))
         if keep < 1:
-            raise ValueError('target_area_km2 leaves no glacier cells')
+            raise ConfigurationError('target_area_km2 leaves no glacier cells')
         # Rank every ice cell across GRUs by thickness and drop the thinnest beyond `keep`.
         cells = [(j, idx) for j, g in enumerate(grids) for idx in zip(*np.nonzero(g['mask']))]
         thickness = np.array([grids[j]['thick'][idx] for j, idx in cells])
@@ -111,7 +113,7 @@ def prepare_glacier_geometry(attributes: Path, coldstate: Path, catchment: Path,
         coverage_rows.append(dict(gru=int(g['gru']), ice_grid_area_m2=float(g['mask'].sum()*resolution**2),
                                   ice_volume_m3=float(g['thick'].sum()*resolution**2)))
     if not ice_area.any():
-        raise ValueError('No positive glacier area')
+        raise GeospatialError('No positive glacier area')
 
     nx, ny = max(g['nx'] for g in grids), max(g['ny'] for g in grids)
     ng = len(grus)
