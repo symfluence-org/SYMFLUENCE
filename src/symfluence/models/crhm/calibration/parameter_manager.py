@@ -96,7 +96,9 @@ class CRHMParameterManager(BaseParameterManager):
         crhm_bounds = dict(PARAM_BOUNDS)
 
         # Check for config overrides (preserves transform metadata from registry)
-        config_bounds = self._get_config_value(lambda: None, default={}, dict_key='CRHM_PARAM_BOUNDS')
+        config_bounds = self._get_config_value(
+            lambda: self.config.model.crhm.param_bounds,
+            default={}, dict_key='CRHM_PARAM_BOUNDS')
         if config_bounds:
             self._apply_config_bounds_override(crhm_bounds, config_bounds)
 
