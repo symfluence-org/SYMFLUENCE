@@ -17,8 +17,10 @@ import logging
 from pathlib import Path
 from typing import Dict, List
 
+import numpy as np
 import pandas as pd
 
+from symfluence.core.exceptions import ValidationError
 from symfluence.core.modeling.base.base_extractor import ModelResultExtractor
 from symfluence.core.registries import R
 
@@ -73,7 +75,7 @@ class PIHMResultExtractor(ModelResultExtractor):
         else:
             raise ValueError(f"Unknown variable type: {variable_type}")
 
-    def _parse_pihm_txt(self, filepath: Path) -> pd.Series:
+    def _parse_pihm_txt(self, filepath: Path, outlet_segment: int = 1) -> pd.Series:
         """Parse MM-PIHM .txt output file.
 
         Format: "YYYY-MM-DD HH:MM"<tab>value
@@ -81,6 +83,8 @@ class PIHMResultExtractor(ModelResultExtractor):
         """
         times = []
         values = []
+        if not isinstance(outlet_segment, int) or outlet_segment < 1:
+            raise ValidationError("PIHM outlet_segment must be a positive one-based column")
         with open(filepath) as f:
             for line in f:
                 line = line.strip()
@@ -97,14 +101,17 @@ class PIHMResultExtractor(ModelResultExtractor):
                         # 1, so column 1 is total basin discharge either way.
                         # (parts[-1] would grab the LAST segment — a near-dry
                         # headwater on a distributed mesh.)
-                        val = float(parts[1])
+                        val = float(parts[outlet_segment])
                         times.append(pd.Timestamp(ts_str))
                         values.append(val)
-                    except (ValueError, IndexError):
-                        continue
+                    except (ValueError, IndexError) as exc:
+                        raise ValidationError(f"Invalid PIHM output row in {filepath}: {line}") from exc
         if not times:
             return pd.Series(dtype=float)
-        return pd.Series(values, index=pd.DatetimeIndex(times))
+        result = pd.Series(values, index=pd.DatetimeIndex(times))
+        if not result.index.is_unique or not result.index.is_monotonic_increasing or not np.isfinite(result).all():
+            raise ValidationError(f"Invalid PIHM output timestamps or values in {filepath}")
+        return result
 
     def _extract_river_flux(
         self,
@@ -128,11 +135,24 @@ class PIHMResultExtractor(ModelResultExtractor):
         else:
             data_file = output_path
 
-        series = self._parse_pihm_txt(data_file)
+        series = self._parse_pihm_txt(data_file, outlet_segment=kwargs.get('outlet_segment', 1))
         if series.empty:
             return pd.Series(dtype=float, name='river_flux_m3s')
 
-        series = series.abs()
+        # MM-PIHM PrintData writes interval means at the END of the interval.
+        # Preserve the physical sign (DOWNSTREAM is positive out of the basin).
+        interval = kwargs.get('output_interval')
+        if interval is None:
+            if len(series) < 2:
+                raise ValidationError("Single PIHM output row requires output_interval")
+            intervals = series.index.to_series().diff().dropna()
+            interval = intervals.iloc[0]
+            if not (intervals == interval).all():
+                raise ValidationError("PIHM discharge output has time gaps")
+        interval = pd.Timedelta(interval)
+        if interval <= pd.Timedelta(0):
+            raise ValidationError("PIHM output_interval must be positive")
+        series.index -= interval
         series.name = 'river_flux_m3s'
         return series
 

@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from symfluence.core.calibration.parameters.base_parameter_manager import BaseParameterManager
+from symfluence.core.exceptions import ValidationError
 from symfluence.core.registries import R
 
 PIHM_DEFAULT_BOUNDS = {
@@ -162,6 +163,8 @@ class PIHMParameterManager(BaseParameterManager):
         - .lc   (MANNINGS_N surface roughness)
         """
         try:
+            if SNOW17_PARAM_NAMES.intersection(params):
+                raise ValidationError("PIHM Snow17 forcing regeneration is not implemented")
             subsurface_params = {k: v for k, v in params.items() if k not in CALIB_ONLY_PARAM_NAMES}
             lsm_params = {k: v for k, v in params.items() if k in LSM_CALIB_PARAM_NAMES}
             scenario_params = {k: v for k, v in params.items() if k in SCENARIO_PARAM_NAMES}
@@ -216,7 +219,7 @@ class PIHMParameterManager(BaseParameterManager):
             VG_ALPHA   -> ALPHA column
             VG_N       -> BETA column
             MACROPORE_K -> MACHF, MACVF columns
-            SOIL_DEPTH -> DINF keyword line
+            SOIL_DEPTH changes mesh ZMIN, not the surface infiltration depth DINF.
         """
         soil_files = list(self.settings_dir.glob('*.soil'))
         if not soil_files:
@@ -251,10 +254,7 @@ class PIHMParameterManager(BaseParameterManager):
                 continue
 
             # Keyword lines: DINF, KMACV_RO, KMACH_RO
-            if parts[0] == 'DINF' and 'SOIL_DEPTH' in params:
-                new_lines.append(f"DINF\t{params['SOIL_DEPTH']:.2f}")
-                continue
-            elif parts[0] in ('DINF', 'KMACV_RO', 'KMACH_RO'):
+            if parts[0] in ('DINF', 'KMACV_RO', 'KMACH_RO'):
                 new_lines.append(line)
                 continue
 

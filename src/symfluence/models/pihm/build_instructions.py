@@ -32,7 +32,7 @@ def get_pihm_build_instructions():
         'config_path_key': 'PIHM_INSTALL_PATH',
         'config_exe_key': 'PIHM_EXE',
         'default_path_suffix': 'installs/pihm/bin',
-        'default_exe': 'pihm',
+        'default_exe': 'flux-pihm',
         'repository': 'https://github.com/PSUmodeling/MM-PIHM.git',
         'branch': 'main',
         'install_dir': 'pihm',
@@ -119,7 +119,9 @@ if [ "$PLATFORM" != "unknown" ]; then
         if file "$TMPTAR" | grep -q "gzip\|tar"; then
             tar xzf "$TMPTAR" -C "$TMPEXTRACT" 2>/dev/null || true
 
-            PIHM_BIN=$(find "$TMPEXTRACT" -name "pihm" -o -name "mm-pihm" | head -1)
+            # The adapter writes Noah-specific .ic/.lsm files. A plain PIHM
+            # release binary cannot run those inputs.
+            PIHM_BIN=$(find "$TMPEXTRACT" -type f -name "flux-pihm" | head -1)
 
             if [ -n "$PIHM_BIN" ]; then
                 cp "$PIHM_BIN" "${INSTALL_DIR}/bin/pihm"
@@ -240,6 +242,11 @@ if [ "$DOWNLOAD_SUCCESS" = "false" ]; then
         exit 1
     fi
 
+    # Preserve required global tables before removing a temporary source tree.
+    if [ "$SRC_DIR" != "$INSTALL_DIR" ] && [ -d "${SRC_DIR}/input" ]; then
+        cp -a "${SRC_DIR}/input" "${INSTALL_DIR}/input"
+    fi
+
     # Cleanup temp dir if we used one
     if [ -n "${BUILD_TMPDIR:-}" ]; then
         rm -rf "${BUILD_TMPDIR}"
@@ -248,6 +255,12 @@ if [ "$DOWNLOAD_SUCCESS" = "false" ]; then
 fi
 
 # === Verify installation ===
+# Keep the legacy pihm launcher and expose the canonical Noah-enabled name.
+if [ -f "${INSTALL_DIR}/bin/pihm" ]; then
+    cp "${INSTALL_DIR}/bin/pihm" "${INSTALL_DIR}/bin/flux-pihm"
+elif [ -f "${INSTALL_DIR}/bin/pihm.exe" ]; then
+    cp "${INSTALL_DIR}/bin/pihm.exe" "${INSTALL_DIR}/bin/flux-pihm.exe"
+fi
 if [ -f "${INSTALL_DIR}/bin/pihm" ]; then
     echo ""
     echo "=== MM-PIHM Installation Complete ==="
@@ -262,7 +275,7 @@ fi
         'dependencies': ['cmake', 'make'],
         'test_command': '--version',
         'verify_install': {
-            'file_paths': ['bin/pihm', 'bin/pihm.exe'],
+            'file_paths': ['bin/flux-pihm', 'bin/flux-pihm.exe'],
             'check_type': 'exists_any'
         },
         'order': 27,  # After ParFlow (26)
