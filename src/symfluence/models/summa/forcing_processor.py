@@ -166,14 +166,21 @@ class SummaForcingProcessor(BaseForcingProcessor):
             lapse_values.index.name = f'S_1_{self.hruId}'
             self._process_forcing_batches(forcing_files, lapse_values, 0.0)
         else:
-            intersect_csv = self._find_intersection_file()
-            topo_data = self._load_topology_data(intersect_csv)
+            from symfluence.data.preprocessing.resampling.grid_identity import ATTRIBUTE
             forcing_files = self._get_forcing_files()
             self._prepare_forcing_output_dir()
-            lapse_values, lapse_rate = self._precalculate_lapse_corrections(topo_data)
-            del topo_data
-            gc.collect()
-            self._process_forcing_batches(forcing_files, lapse_values, lapse_rate)
+            groups: dict[str | None, list] = {}
+            for file in forcing_files:
+                with xr.open_dataset(self.forcing_basin_path / file) as ds:
+                    signature = ds.attrs.get(ATTRIBUTE)
+                groups.setdefault(signature, []).append(file)
+            for signature, files in groups.items():
+                directory = self.intersect_path / signature if signature else self.intersect_path
+                intersect_csv = self._find_intersection_file(directory)
+                topo_data = self._load_topology_data(intersect_csv)
+                lapse_values, lapse_rate = self._precalculate_lapse_corrections(topo_data)
+                del topo_data
+                self._process_forcing_batches(files, lapse_values, lapse_rate)
 
         del lapse_values
         gc.collect()
@@ -205,15 +212,16 @@ class SummaForcingProcessor(BaseForcingProcessor):
         except Exception:  # noqa: BLE001
             return False
 
-    def _find_intersection_file(self):
+    def _find_intersection_file(self, directory=None):
         """Locate the intersection CSV (or shapefile) for topology weighting."""
+        directory = self.intersect_path if directory is None else Path(directory)
         intersect_base = (
             f"{self.domain_name}_"
             f"{self._get_config_value(lambda: self.config.forcing.dataset)}"
             f"_intersected_shapefile"
         )
-        intersect_csv = self.intersect_path / f"{intersect_base}.csv"
-        intersect_shp = self.intersect_path / f"{intersect_base}.shp"
+        intersect_csv = directory / f"{intersect_base}.csv"
+        intersect_shp = directory / f"{intersect_base}.shp"
 
         # Fallback for legacy naming in data bundle
         if not intersect_csv.exists() and not intersect_shp.exists() and self.domain_name == 'bow_banff_minimal':
@@ -222,11 +230,11 @@ class SummaForcingProcessor(BaseForcingProcessor):
                 f"{self._get_config_value(lambda: self.config.forcing.dataset)}"
                 f"_intersected_shapefile"
             )
-            if (self.intersect_path / f"{legacy_base}.csv").exists():
-                intersect_csv = self.intersect_path / f"{legacy_base}.csv"
+            if (directory / f"{legacy_base}.csv").exists():
+                intersect_csv = directory / f"{legacy_base}.csv"
                 self.logger.debug(f"Using legacy intersection CSV: {intersect_csv.name}")
-            elif (self.intersect_path / f"{legacy_base}.shp").exists():
-                intersect_shp = self.intersect_path / f"{legacy_base}.shp"
+            elif (directory / f"{legacy_base}.shp").exists():
+                intersect_shp = directory / f"{legacy_base}.shp"
                 self.logger.debug(f"Using legacy intersection SHP: {intersect_shp.name}")
 
         # Convert shapefile → CSV if needed
@@ -245,12 +253,12 @@ class SummaForcingProcessor(BaseForcingProcessor):
         elif not intersect_csv.exists() and not intersect_shp.exists():
             hru_id_field = self._get_config_value(lambda: self.config.domain.catchment_shp_hruid)
             case_name = f"{self.domain_name}_{self._get_config_value(lambda: self.config.forcing.dataset)}"
-            remap_file = self.intersect_path / f"{case_name}_{hru_id_field}_remapping.csv"
+            remap_file = directory / f"{case_name}_{hru_id_field}_remapping.csv"
             if remap_file.exists():
                 self.logger.debug(f"Intersected shapefile missing, falling back to remapping weights: {remap_file.name}")
                 intersect_csv = remap_file
             else:
-                self.logger.error(f"Missing both intersected shapefile and remapping weights in {self.intersect_path}")
+                self.logger.error(f"Missing both intersected shapefile and remapping weights in {directory}")
                 self.logger.error(f"Expected intersect base: {intersect_base}")
                 self.logger.error(f"Expected remap file: {remap_file.name}")
                 raise FileOperationError(f"Neither {intersect_csv} nor {intersect_shp} exist")

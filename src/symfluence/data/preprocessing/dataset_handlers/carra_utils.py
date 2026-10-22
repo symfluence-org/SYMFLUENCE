@@ -308,6 +308,17 @@ class CARRAHandler(BaseDatasetHandler):
                 transformer = Transformer.from_crs(carra_proj, wgs84, always_xy=True)
                 transformer_to_carra = Transformer.from_crs(wgs84, carra_proj, always_xy=True)
 
+                projected_cells = None
+                if grid_projection and min(lats.shape) >= 2:
+                    import shapely
+
+                    from ..resampling.grid_geometry import projected_cell_polygons
+                    gx, gy = transformer_to_carra.transform(lons, lats)
+                    projected_cells = gpd.GeoSeries(
+                        shapely.segmentize(projected_cell_polygons(gx, gy), 250),
+                        crs=carra_proj,
+                    ).to_crs(wgs84)
+
                 # Flatten 2D lat/lon arrays to 1D for iteration
                 lats_flat = lats.flatten()
                 lons_flat = lons.flatten()
@@ -371,7 +382,8 @@ class CARRAHandler(BaseDatasetHandler):
                                 lat = lat.item()
                             lat_lon_vertices.append((float(lon), float(lat)))
 
-                        geometries.append(Polygon(lat_lon_vertices))
+                        geometries.append(projected_cells.iloc[i] if projected_cells is not None
+                                          else Polygon(lat_lon_vertices))
                         ids.append(i)
 
                         center_lon, center_lat = transformer.transform(x, y)
