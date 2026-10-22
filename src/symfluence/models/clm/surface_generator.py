@@ -344,6 +344,8 @@ class CLMSurfaceGenerator:
                 setattr(v, k, a)
 
         ds.close()
+        from .surface_layout import canonicalize
+        canonicalize(filepath)
         logger.info(f"Generated CLM surface data: {filepath}")
 
     def copy_default_params(self) -> None:

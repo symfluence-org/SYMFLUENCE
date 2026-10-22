@@ -657,6 +657,8 @@ class ToolInstaller(BaseService):
             tool_install_dir = install_base_dir / tool_info.get("install_dir", tool_name)
             repository_url = tool_info.get("repository")
             branch = branch_override if branch_override else tool_info.get("branch")
+            # Explicit CLI revisions take precedence over a tool's reproducible pin.
+            revision = git_hash or (None if branch_override else tool_info.get("git_hash"))
 
             try:
                 # Check if already installed. The directory alone proves
@@ -686,8 +688,8 @@ class ToolInstaller(BaseService):
                     self._console.indent(f"Would clone: {repository_url}")
                     if branch:
                         self._console.indent(f"Would checkout branch: {branch}")
-                    if git_hash:
-                        self._console.indent(f"Would checkout commit: {git_hash}")
+                    if revision:
+                        self._console.indent(f"Would checkout commit: {revision}")
                     self._console.indent(f"Target directory: {tool_install_dir}")
                     self._console.indent("Would run build commands:")
                     for cmd in tool_info.get("build_commands", []):
@@ -723,7 +725,7 @@ class ToolInstaller(BaseService):
 
                 # Clone repository or create directory
                 if not self._clone_repository(
-                    repository_url, branch, tool_install_dir, git_hash=git_hash,
+                    repository_url, branch, tool_install_dir, git_hash=revision,
                     sparse_exclude=tool_info.get("sparse_exclude"),
                 ):
                     installation_results["failed"].append(tool_name)

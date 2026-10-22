@@ -58,21 +58,22 @@ PARAM_BOUNDS = {
     # -- obs --
     'lapse_rate':       {'min': 0.3,   'max': 1.5},       # temp lapse rate [C/100m]
     'precip_elev_adj':  {'min': 0.0,   'max': 1.0},       # orographic precip gradient
+    'ClimChng_precip':  {'min': 0.8,   'max': 1.5},       # precipitation multiplier; document forcing uncertainty
     'tmax_allrain':     {'min': 0.0,   'max': 8.0},       # all-rain threshold [C]
     'tmax_allsnow':     {'min': -5.0,  'max': 2.0},       # all-snow threshold [C]
     # -- pbsm / snow sublimation --
     'A_S':              {'min': 0.001, 'max': 0.01},      # snow age decay
     'N_S':              {'min': 50.0,  'max': 500.0},     # vegetation density
     'inhibit_subl':     {'min': 0.0,   'max': 1.0},       # 0/1 switch: PBSM blowing-snow sublimation off
-    'Qe_subl_from_SWE': {'min': 0.0,   'max': 1.0},       # fraction of snowpack sublimation (ebsm)
+    'Qe_subl_from_SWE': {'min': 0.0,   'max': 1.0},       # native integer switch, not a continuous fraction
     # -- Soil --
     'Ksat':             {'min': 0.01,  'max': 100.0},     # saturated hydraulic conductivity [mm/hr]
-    'gw_K':             {'min': 0.0001, 'max': 1.0},      # gw recession [1/d]
+    'gw_K':             {'min': 0.0001, 'max': 100.0},    # maximum gw drainage [mm/d]
     'gw_max':           {'min': 50.0,  'max': 500.0},     # max gw storage [mm]
-    'soil_gw_K':        {'min': 0.0001, 'max': 1.0},      # soil-to-gw transfer
+    'soil_gw_K':        {'min': 0.0001, 'max': 100.0},    # maximum excess-soil-to-gw transfer [mm/d]
     'soil_moist_max':   {'min': 50.0,  'max': 500.0},     # max soil moisture [mm]
-    'rechr_ssr_K':      {'min': 0.0001, 'max': 1.0},      # recharge-to-ssr coeff
-    'lower_ssr_K':      {'min': 0.0001, 'max': 1.0},      # lower-to-ssr coeff
+    'rechr_ssr_K':      {'min': 0.0001, 'max': 100.0},    # maximum recharge-zone drainage [mm/d]
+    'lower_ssr_K':      {'min': 0.0001, 'max': 100.0},    # maximum lower-soil drainage [mm/d]
 }
 
 # ---------------------------------------------------------------------------

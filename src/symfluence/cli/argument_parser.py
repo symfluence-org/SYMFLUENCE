@@ -92,7 +92,7 @@ DEFAULT_TOOLS = [
 # explicit request.
 EXPERIMENTAL_TOOLS = [
     'openfews', 'wmfire', 'cfuse', 'droute', 'ignacio',
-    'modflow', 'enzyme',
+    'modflow', 'enzyme', 'summa-glacier',
 ]
 # Exactly the binaries the Paper 3 case studies need (examples/
 # paper_case_studies): TauDEM+SUNDIALS for domains, mizuRoute for
@@ -483,7 +483,7 @@ For more help on a specific command:
         install_parser.add_argument('--force', action='store_true',
                                   help='Force reinstall even if already installed')
         install_parser.add_argument('--patched', action='store_true',
-                                  help='Apply SYMFLUENCE patches (currently: RHESSys GW recharge + NaN guards)')
+                                  help='Apply SYMFLUENCE patches (RHESSys GW recharge/NaN guards; SUMMA glacier diagnostics/snow routing)')
         install_parser.add_argument('--branch', type=str, default=None,
                                   help='Override the default git branch for the tool(s) being installed')
         install_parser.add_argument('--git-hash', type=str, default=None,

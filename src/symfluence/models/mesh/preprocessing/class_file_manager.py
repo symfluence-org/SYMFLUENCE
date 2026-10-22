@@ -17,6 +17,8 @@ from typing import Callable, Optional, Tuple
 
 import numpy as np
 
+from ..errors import MESHInputError
+
 
 class CLASSFileManager:
     """Manages the MESH CLASS parameter file (MESH_parameters_CLASS.ini).
@@ -36,6 +38,19 @@ class CLASSFileManager:
     @property
     def path(self) -> Path:
         return self._path
+
+    @staticmethod
+    def _ice_line_indices(lines: list) -> set:
+        """Protect explicitly configured ice blocks from terrestrial defaults."""
+        starts = [i for i, line in enumerate(lines) if '05 5xFCAN' in line]
+        protected: set[int] = set()
+        for start in starts:
+            end = next((i+1 for i in range(start, len(lines))
+                        if '19 RCAN/SCAN' in lines[i]), len(lines))
+            sand = next((line for line in lines[start:end] if '3xSAND' in line), '')
+            if sand and float(sand.split()[0]) == -4:
+                protected.update(range(start, end))
+        return protected
 
     # ------------------------------------------------------------------
     # Block counting
@@ -434,7 +449,11 @@ class CLASSFileManager:
                 )
 
             current_block = 0
+            protected = self._ice_line_indices(lines)
             for i, line in enumerate(lines):
+                if i in protected:
+                    new_lines.append(line)
+                    continue
                 while (
                     current_block < len(block_starts) - 1
                     and i >= block_starts[current_block + 1]
@@ -524,7 +543,11 @@ class CLASSFileManager:
             modified = False
             new_lines = []
 
-            for line in lines:
+            protected = self._ice_line_indices(lines)
+            for line_index, line in enumerate(lines):
+                if line_index in protected:
+                    new_lines.append(line)
+                    continue
                 if '17 3xTBAR' in line or ('17' in line and 'TBAR' in line):
                     parts = line.split()
                     if len(parts) >= 8:
@@ -700,7 +723,10 @@ class CLASSFileManager:
                 lines = f.readlines()
 
             applied: set = set()
+            protected = self._ice_line_indices(lines)
             for i, line in enumerate(lines):
+                if i in protected:
+                    continue
                 new_line = self._apply_overrides_to_line(line, active, applied)
                 if new_line is not None:
                     lines[i] = new_line + '\n'
@@ -935,6 +961,8 @@ class CLASSFileManager:
         base_block: list, band_index: int, elevation: float, fraction: float
     ) -> list:
         """Create a CLASS block with elevation-adjusted parameters."""
+        if CLASSFileManager._ice_line_indices(base_block):
+            raise MESHInputError('Build elevation units before splitting glacier surfaces')
         block = []
         vegetation_cover = min(1.0, max(0.2, 1.0 - (elevation - 1500) / 3000))
 

@@ -199,12 +199,20 @@ class PIHMWorker(BaseWorker):
 
             river_flux = extractor.extract_variable(
                 pihm_output, 'river_flux',
+                outlet_segment=int(config.get('PIHM_OUTLET_SEGMENT', 1)),
             )
 
             if river_flux.empty:
                 return {'kge': self.penalty_score, 'error': 'No PIHM output'}
 
-            sim_series = river_flux
+            if (river_flux < 0).any():
+                return {'kge': self.penalty_score, 'error': 'Negative PIHM outlet discharge'}
+            interval = river_flux.index.to_series().diff().dropna().iloc[0]
+            samples_per_day = pd.Timedelta(days=1) / interval
+            if (samples_per_day != int(samples_per_day) or
+                    not (river_flux.resample('D').count() == int(samples_per_day)).all()):
+                return {'kge': self.penalty_score, 'error': 'Partial PIHM output day'}
+            sim_series = river_flux.resample('D').mean()
 
             # Load observations
             domain_name = config.get('DOMAIN_NAME')

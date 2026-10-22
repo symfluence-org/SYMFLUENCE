@@ -890,7 +890,10 @@ class DomainDiscretizationRunner:
             # For now, treat delineated subcatchments as HRUs
             # Add HRU_ID and other required fields
             delineated_gdf['HRU_ID'] = range(1, len(delineated_gdf) + 1)
-            delineated_gdf['GRU_ID'] = range(1, len(delineated_gdf) + 1)  # Each subcatchment gets its own ID
+            # Preserve the delineator's network IDs. Renumbering only polygons
+            # disconnects them from non-contiguous TauDEM segment IDs.
+            if 'GRU_ID' not in delineated_gdf or delineated_gdf['GRU_ID'].isna().any() or delineated_gdf['GRU_ID'].duplicated().any():
+                raise ValueError('Routing subcatchments require unique non-null GRU_ID values')
 
             # Calculate fractional areas (avg_subbas) - sum to 1.0
             utm_crs = delineated_gdf.estimate_utm_crs()

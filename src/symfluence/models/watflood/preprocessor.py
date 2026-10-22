@@ -409,7 +409,10 @@ class WATFLOODPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             f.write(f":a8,          {0.000:10.3f},# min temperature time offset\n")
             f.write(f":a9,          {0.500:10.3f},# max heat deficit /swe ratio\n")
             f.write(f":a10,         {1.500:10.3f},# exponent on uz discharge function\n")
-            f.write(f":a11,         {-999.999:10.3f},# bare ground equiv. veg height for ev\n")
+            # The native reader normalizes monthly vegetation factors by the
+            # maximum of IntCap and a11. A missing-value sentinel permits 0/0
+            # for bare classes with zero interception, corrupting soil ET.
+            f.write(f":a11,         {0.100:10.3f},# bare ground equiv. veg height for ev\n")
             f.write(f":a12,         {0.000:10.3f},# min precip rate for smearing\n")
             f.write(f":a13,         {0.000:10.3f},# \n")
             f.write(f":fmadjust,    {0.000:10.3f},# snowmelt ripening rate\n")

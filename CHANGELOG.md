@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Native Raven HBV-EC adapter (experimental)**: `RAVEN` model with elevation-band HRUs, optional
+  glacier HRUs with finite ice storage (patched Raven build pinned in `binary install raven`), run
+  gates for mass balance and ice initialisation, DDS calibration, and an optional LamaH-Ice-style glacier
+  mass-balance score (`RAVEN_GLACIER_CONSTRAINTS`) for composite objectives. Calibratable forcing
+  corrections `PRECIP_CORR` (rain and snow), `SNOW_CORR` (snow only) and `TEMP_CORR` (additive K), and
+  per-parameter bound overrides via `RAVEN_PARAM_BOUNDS`. See `docs/source/models/model_raven.rst`.
+
 ### Changed
 - **Core metrics facade exports repaired**: `StreamflowMetrics` and
   `MetricTransformer`, already part of the documented metrics contract, are

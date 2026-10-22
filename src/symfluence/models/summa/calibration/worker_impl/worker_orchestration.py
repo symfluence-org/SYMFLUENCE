@@ -20,6 +20,7 @@ from typing import Dict
 
 import numpy as np
 
+from symfluence.core.exceptions import ConfigurationError, EvaluationError, SYMFLUENCEError
 from symfluence.core.logging_utils import get_worker_logger
 from symfluence.core.metrics.metric_transformer import MetricTransformer
 
@@ -398,8 +399,14 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
                         'runtime': eval_runtime
                     }
 
+                config = task_data['config']
+                if config.get('SUMMA_GLACIER_MB_OBSERVATIONS'):
+                    metrics.update(_glacier_constraint(summa_dir, config))
+
                 # Extract target metric
                 target_metric = task_data['target_metric']
+                if str(target_metric).upper() == 'COMPOSITE':
+                    metrics['COMPOSITE'] = _composite_score(metrics, config.get('COMPOSITE_METRIC') or {})
                 score = metrics.get(target_metric) or metrics.get(f'Calib_{target_metric}')
 
                 if score is None:
@@ -446,7 +453,7 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
                     }
                 }
 
-            except (ValueError, RuntimeError, IOError) as e:
+            except (ValueError, RuntimeError, IOError, SYMFLUENCEError) as e:
                 error_msg = f"Exception in single-objective calculation: {str(e)}"
                 logger.error(error_msg)
                 logger.error(f"Traceback: {traceback.format_exc()}")
@@ -478,3 +485,35 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
             'full_traceback': error_trace,
             'runtime': eval_runtime
         }
+
+
+def _glacier_constraint(summa_dir, config: Dict) -> Dict[str, float]:
+    """Annual glacier mass-balance metrics (``glacier_score`` and ``GLACIER_SCORE``)."""
+    from ...cryosphere import glacier_metrics
+
+    result = glacier_metrics(summa_dir, config['SUMMA_GLACIER_MB_OBSERVATIONS'],
+                             config.get('CALIBRATION_PERIOD', ''),
+                             config.get('SUMMA_GLACIER_MB_ERROR_SCALE', 1.0))
+    result['GLACIER_SCORE'] = result['glacier_score']
+    return result
+
+
+def _composite_score(metrics: Dict, weights: Dict[str, float]) -> float:
+    """Weighted sum of maximisation-transformed components named in ``COMPOSITE_METRIC``.
+
+    Components are looked up as given, as ``Calib_<name>``, then case-insensitively.
+    A missing component raises, so a broken constraint cannot silently drop out.
+    """
+    total = sum(weights.values())
+    if not weights or total <= 0:
+        raise ConfigurationError('COMPOSITE_METRIC weights missing or non-positive')
+    lower = {str(k).lower(): v for k, v in metrics.items()}
+    score = 0.0
+    for name, weight in weights.items():
+        value = metrics.get(name, metrics.get(f'Calib_{name}', lower.get(f'calib_{name}'.lower(), lower.get(name.lower()))))
+        if value is None or not np.isfinite(value):
+            raise EvaluationError(f'Composite component {name} missing or non-finite')
+        transformed = MetricTransformer.transform_for_maximization(name, value)
+        score += weight / total * (value if transformed is None else transformed)
+    return float(score)
+

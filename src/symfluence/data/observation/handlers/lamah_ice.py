@@ -308,10 +308,11 @@ class LamahIceStreamflowHandler(BaseObservationHandler):
         # We'll keep all for now but log if many are missing
         df = df.dropna(subset=['discharge_cms'])
 
-        # Resample to target timestep
-        resample_freq = self._get_resample_freq()
-        resampled = df['discharge_cms'].resample(resample_freq).mean()
-        resampled = resampled.interpolate(method='time', limit_direction='both', limit=30)
+        # This archive contains daily means. Upsampling and interpolating to
+        # the meteorological timestep changes the daily calibration target
+        # when it is averaged back to daily, and invents observations in gaps.
+        # Keep the native daily series; evaluators align model output to it.
+        resampled = df['discharge_cms'].resample('D').mean()
 
         # Save processed data
         output_dir = self.project_observations_dir / "streamflow" / "preprocessed"

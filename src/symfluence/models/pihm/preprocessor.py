@@ -83,7 +83,7 @@ class PIHMPreProcessor(BaseModelPreProcessor):
                 return self.config.domain.experiment_id
         except (AttributeError, TypeError):
             pass
-        return default
+        return self.config_dict.get(key, default)
 
     def _get_pihm_cfg(self, key, default=None):
         """Get PIHM-specific config value with typed config first."""
@@ -97,7 +97,7 @@ class PIHMPreProcessor(BaseModelPreProcessor):
                         return pydantic_val
         except (AttributeError, TypeError):
             pass
-        return default
+        return self.config_dict.get('PIHM_' + key, default)
 
     def _get_catchment_area_m2(self) -> float:
         """Get catchment area in m2."""
@@ -141,7 +141,7 @@ class PIHMPreProcessor(BaseModelPreProcessor):
         if not forcing_dir.exists():
             self.logger.warning(
                 f"Forcing directory not found: {forcing_dir}. "
-                "Will generate synthetic meteorological data."
+                "Complete real forcing is required."
             )
             return []
 
@@ -149,7 +149,7 @@ class PIHMPreProcessor(BaseModelPreProcessor):
         if not nc_files:
             self.logger.warning(
                 f"No NetCDF files found in {forcing_dir}. "
-                "Will generate synthetic meteorological data."
+                "Complete real forcing is required."
             )
             return []
 
@@ -186,7 +186,7 @@ class PIHMPreProcessor(BaseModelPreProcessor):
         )
         return selected
 
-    def _load_forcing_data(self, forcing_files, start_dt, end_dt):
+    def _load_forcing_data(self, forcing_files, start_dt, end_dt, hru_weights=None):
         """Load and concatenate ERA5 forcing data from NetCDF files.
 
         Returns a DataFrame with columns:
@@ -196,12 +196,11 @@ class PIHMPreProcessor(BaseModelPreProcessor):
         try:
             import xarray as xr  # noqa: F401 — availability guard
         except ImportError:
-            self.logger.warning("xarray not available; using synthetic forcing data")
-            return None
+            raise RuntimeError("PIHM requires xarray to read real forcing") from None
         from symfluence.core.modeling.model_ready.forcing_reader import open_canonical_forcing
 
         if not forcing_files:
-            return None
+            raise ValueError("PIHM requires real meteorological forcing files")
 
         try:
             # Canonical reader: source variables under aliased names (airtemp,
@@ -210,8 +209,7 @@ class PIHMPreProcessor(BaseModelPreProcessor):
             # / NaT artifacts a naive xr.concat(dim='time') produced on these files.
             combined = open_canonical_forcing(sorted(forcing_files))
         except Exception as e:  # noqa: BLE001 — model execution resilience
-            self.logger.warning(f"Could not read forcing via canonical reader: {e}", exc_info=True)
-            return None
+            raise ValueError("Could not read PIHM forcing") from e
 
         # Select time range
         combined = combined.sel(time=slice(str(start_dt), str(end_dt)))
@@ -219,8 +217,13 @@ class PIHMPreProcessor(BaseModelPreProcessor):
         if combined.time.size == 0:
             self.logger.warning("No forcing data within simulation time range")
             combined.close()
-            return None
+            raise ValueError("No PIHM forcing within simulation time range")
 
+        # Materialize and release file handles even if validation below fails.
+        try:
+            combined.load()
+        finally:
+            combined.close()
         times = pd.DatetimeIndex(combined.time.values)
 
         # Each canonical CFIF variable can be NaN for some timesteps when the local
@@ -243,9 +246,20 @@ class PIHMPreProcessor(BaseModelPreProcessor):
             for candidate in [name, *aliases.get(name, [])]:
                 if candidate not in ds:
                     continue
-                arr = ds[candidate].values
+                da = ds[candidate]
+                spatial = [dim for dim in da.dims if dim != 'time']
+                arr = da.transpose('time', *spatial).values
                 if arr.ndim > 1:
-                    arr = arr[:, 0]  # first HRU
+                    arr = arr.reshape(len(times), -1)
+                    if arr.shape[1] == 1:
+                        arr = arr[:, 0]
+                    else:
+                        weights = np.asarray(hru_weights, dtype=float)
+                        if (weights.shape != (arr.shape[1],) or
+                                not np.isfinite(weights).all() or
+                                (weights < 0).any() or weights.sum() <= 0):
+                            raise ValueError("Multiple PIHM forcing HRUs require explicit area weights")
+                        arr = arr @ (weights / weights.sum())
                 arr = np.asarray(arr, dtype=np.float64)
                 if out is None:
                     out = arr
@@ -265,36 +279,49 @@ class PIHMPreProcessor(BaseModelPreProcessor):
         # Using Tetens formula for saturation vapor pressure
         rh = self._spechum_to_rh(spechum, temp, pres)
 
-        # Fill missing/residual-NaN values per variable with a physical default. This
-        # keeps PIHM's .meteo numeric (a NaN beside the Timestamp would otherwise be
-        # coerced to NaT by DataFrame.iterrows and crash .meteo writing) and lets a
-        # partial/mixed store still produce a runnable forcing file.
-        def _filled(arr, default):
+        def _required(arr):
             if arr is None:
-                return np.full(len(times), default, dtype=np.float64)
+                raise ValueError("Missing required PIHM meteorological variable")
             arr = np.asarray(arr, dtype=np.float64)
-            return np.where(np.isnan(arr), default, arr)
+            if not np.isfinite(arr).all():
+                raise ValueError("Nonfinite PIHM meteorological forcing")
+            return arr
 
         # Convert precipitation from mm/s to kg/m2/s (numerically identical for water).
         df = pd.DataFrame({
             'time': times,
-            'prcp': _filled(prcp, 0.0),
-            'temp': _filled(temp, 273.15),
-            'rh': _filled(rh, 50.0),
-            'wind': _filled(wind, 2.0),
-            'solar': _filled(solar, 200.0),
-            'longwave': _filled(longwave, 300.0),
-            'pres': _filled(pres, 101325.0),
+            'prcp': _required(prcp),
+            'temp': _required(temp),
+            'rh': _required(rh),
+            'wind': _required(wind),
+            'solar': _required(solar),
+            'longwave': _required(longwave),
+            'pres': _required(pres),
         })
 
         combined.close()
 
-        # Drop any rows with an invalid (NaT) timestamp so downstream .meteo
-        # writing never formats a NaT (which raises "NaTType does not support
-        # strftime"). Order is preserved.
-        df = df[df['time'].notna()].reset_index(drop=True)
+        self._validate_forcing(df, start_dt, end_dt)
 
         return df
+
+    @staticmethod
+    def _validate_forcing(df, start_dt, end_dt):
+        """Reject gaps and nonphysical values before writing production inputs."""
+        times = pd.DatetimeIndex(df['time'])
+        if len(times) < 2 or times.hasnans or not times.is_unique or not times.is_monotonic_increasing:
+            raise ValueError("PIHM forcing needs unique increasing timestamps")
+        steps = np.diff(times.asi8)
+        if (steps != steps[0]).any() or times[0] != pd.Timestamp(start_dt) or times[-1] != pd.Timestamp(end_dt):
+            raise ValueError("PIHM forcing has gaps or incomplete requested coverage")
+        values = df.drop(columns='time')
+        if not np.isfinite(values.to_numpy()).all():
+            raise ValueError("Nonfinite PIHM forcing")
+        if ((df.prcp < 0).any() or not df.temp.between(180, 330).all() or
+                not df.rh.between(0, 100).all() or (df.wind < 0).any() or
+                (df.solar < 0).any() or (df.longwave < 0).any() or
+                not df.pres.between(30000, 110000).all()):
+            raise ValueError("PIHM forcing values or units outside physical ranges")
 
     @staticmethod
     def _spechum_to_rh(spechum, temp_k, pres_pa):
@@ -409,8 +436,7 @@ class PIHMPreProcessor(BaseModelPreProcessor):
             forcing_df = None
 
         if forcing_df is None or forcing_df.empty:
-            self.logger.warning("Using synthetic forcing data")
-            forcing_df = self._generate_synthetic_forcing(start_dt, end_dt)
+            raise ValueError("PIHM requires complete real forcing; synthetic fallback is disabled")
 
         # Write all MM-PIHM input files
         self._write_mesh(settings_dir, name, area_m2, soil_depth)

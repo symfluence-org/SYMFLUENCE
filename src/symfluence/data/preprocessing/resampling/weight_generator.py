@@ -30,16 +30,10 @@ def _create_easymore_instance():
     from contextlib import redirect_stdout
     from io import StringIO
 
-    import easymore
-
     captured_output = StringIO()
     with redirect_stdout(captured_output):
-        if hasattr(easymore, "Easymore"):
-            instance = easymore.Easymore()
-        elif hasattr(easymore, "easymore"):
-            instance = easymore.easymore()
-        else:
-            raise AttributeError("easymore module does not expose an Easymore class")
+        from ..easymore_compat import NativePointEasymore
+        instance = NativePointEasymore()
     return instance
 
 
@@ -140,6 +134,11 @@ class RemappingWeightGenerator(ConfigMixin):
         grid's cell count. On any read error, return False (regenerate = safe).
         """
         try:
+            from .grid_identity import grid_signature, read_manifest
+            manifest = read_manifest(remap_file)
+            if manifest:
+                return grid_signature(sample_forcing_file, manifest['coordinate_names']) == manifest['grid_signature']
+
             import pandas as pd
 
             w = pd.read_csv(remap_file)

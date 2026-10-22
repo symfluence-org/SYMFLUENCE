@@ -46,6 +46,8 @@ Hands-on workshop exercises for guided learning:
 - **04c** – Logan River from the command line (shell-only SUMMA workflow, no Python)
 - **04d** – [Intelligent Rivers: Himalayan snow](04_workshop_notebooks/04d_intelligent_rivers_snow.ipynb), using the shared [Rohtang config](04_workshop_notebooks/config_rohtang_snow.yaml) for native data acquisition and SUMMA, followed by forcing, snow-storage, MODIS coverage, timing, and native DE calibration exercises with before/after and a second-season holdout comparison and forcing-grid/elevation diagnostics. The notebook runs the full workflow by default; set `RUN_STEPS = False` to inspect prepared outputs during class.
 
+- **04e** – [Intelligent Rivers: Streamflow](04_workshop_notebooks/04e_intelligent_rivers_streamflow.ipynb), comparing lumped SUMMA and a native daily LSTM on Vamanapuram at Ayilam (CAMELS-IND 15007). Includes a small, attributed observation/boundary subset, a shared [configuration](04_workshop_notebooks/config_ayilam_streamflow.yaml), fixed fitting/holdout dates, and climatology benchmarks. Launch with `symfluence example launch 04e`.
+
 Designed for classroom and workshop settings with step-by-step guidance.
 
 ---

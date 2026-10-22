@@ -551,9 +551,13 @@ class InMemoryModelWorker(BaseWorker):
         # Try config
         area_km2 = self._cfg('CATCHMENT_AREA_KM2')
         if area_km2 is None:
+            area_km2 = self._cfg('CATCHMENT_AREA')
+        if area_km2 is None:
             domain_config = self._cfg('DOMAIN', {})
             if isinstance(domain_config, dict):
                 area_km2 = domain_config.get('catchment_area_km2')
+                if area_km2 is None:
+                    area_km2 = domain_config.get('catchment_area')
 
         if area_km2 is not None:
             self._catchment_area_km2 = float(area_km2)

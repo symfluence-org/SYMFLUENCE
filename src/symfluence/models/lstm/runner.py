@@ -10,6 +10,7 @@ and snow water equivalent (SWE).
 from __future__ import annotations
 
 import logging
+import os
 
 # Security rationale: Used for trusted internal model serialization
 import pickle  # nosec B403
@@ -20,7 +21,7 @@ import numpy as np
 import pandas as pd
 import psutil
 
-from symfluence.core.exceptions import OptionalDependencyError
+from symfluence.core.exceptions import OptionalDependencyError, ValidationError
 
 try:
     import torch
@@ -89,7 +90,23 @@ class LSTMRunner(BaseModelRunner, SpatialOrchestrator, MizuRouteConfigMixin, Spa
         # Call base class
         super().__init__(config, logger, reporting_manager=reporting_manager)
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # Device selection. Default is unchanged (CUDA when present, else CPU);
+        # SYMFLUENCE_LSTM_DEVICE opts into another backend explicitly.
+        #
+        # Deliberately opt-in rather than auto-detecting Apple MPS. Measured on
+        # this architecture (3x128 LSTM, seq 700, batch 64) MPS is ~4.5x faster,
+        # and a single forward with identical weights agrees with CPU to
+        # max|diff| 5.7e-07 — ordinary float32 accumulation-order noise. But
+        # that noise feeds back through the optimizer: after 15 training steps
+        # the two devices' weights already differ by mean 0.096. Auto-switching
+        # would therefore silently change calibration results on Apple silicon,
+        # which is the cross-platform-floor problem repro_status/README
+        # documents for BLAS backends, compounding much faster.
+        _requested = os.environ.get("SYMFLUENCE_LSTM_DEVICE", "").strip().lower()
+        if _requested in ("mps", "cuda", "cpu"):
+            self.device = torch.device(_requested)
+        else:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.logger.info(f"Initialized LSTM runner with device: {self.device}")
 
         # Determine spatial mode using mixin
@@ -143,6 +160,11 @@ class LSTMRunner(BaseModelRunner, SpatialOrchestrator, MizuRouteConfigMixin, Spa
             ModelExecutionError: If any step fails (data loading, training, simulation).
         """
         self.logger.info(f"Starting LSTM model run in {self.spatial_mode} mode")
+        seed = self.config.system.random_seed
+        if seed is not None:
+            torch.manual_seed(seed)
+            np.random.seed(seed)
+            self.logger.info("LSTM initialization and training seed: %s", seed)
 
         with symfluence_error_handler(
             "LSTM model execution",
@@ -199,14 +221,30 @@ class LSTMRunner(BaseModelRunner, SpatialOrchestrator, MizuRouteConfigMixin, Spa
                 )
                 if snow_df_input is not None and not snow_df_input.empty:
                     common_times = common_times.intersection(snow_df_input.index)
-                n_timesteps = len(common_times)
-                train_end_idx = int(0.8 * n_timesteps)
-                self.logger.info(f"Training on first {train_end_idx} of {n_timesteps} timesteps (80/20 split)")
-
+                period = self.config.domain.calibration_period
+                training_dates = None
+                scaler_dates = None
+                if period:
+                    if self.spatial_mode != SpatialMode.LUMPED:
+                        raise ValueError("Explicit LSTM calibration windows currently require lumped mode")
+                    start_date, end_date = [pd.Timestamp(v.strip()) for v in period.split(',')]
+                    target_dates = common_times[self.preprocessor.lookback:]
+                    training_dates = target_dates[(target_dates >= start_date) & (target_dates < end_date + pd.Timedelta(days=1))]
+                    if len(training_dates) < 10:
+                        raise ValidationError("Insufficient LSTM target samples in calibration period")
+                    scaler_dates = training_dates[:int(0.8 * len(training_dates))]
+                    self.logger.info(
+                        "LSTM calibration targets %s to %s (%d); scaler/gradient training ends %s; validation remains inside calibration",
+                        training_dates.min(), training_dates.max(), len(training_dates), scaler_dates.max())
+                train_end_idx = int(0.8 * len(common_times))
                 X_tensor, y_tensor, common_dates, features_avg, hru_ids = self.preprocessor.process_data(
                     forcing_df, streamflow_df, snow_df_input, fit_scalers=True,
-                    train_end_idx=train_end_idx
+                    train_end_idx=train_end_idx, scaler_fit_dates=scaler_dates
                 )
+                fit_X, fit_y = X_tensor, y_tensor
+                if training_dates is not None:
+                    mask = torch.as_tensor(common_dates[self.preprocessor.lookback:].isin(training_dates), device=X_tensor.device)
+                    fit_X, fit_y = X_tensor[mask], y_tensor[mask]
                 self.hru_ids = hru_ids
 
                 input_size = X_tensor.shape[-1]
@@ -235,8 +273,8 @@ class LSTMRunner(BaseModelRunner, SpatialOrchestrator, MizuRouteConfigMixin, Spa
                     )
                 elif self.spatial_mode == SpatialMode.LUMPED or X_tensor.ndim == 3:
                     self._train_model(
-                        X_tensor,
-                        y_tensor,
+                        fit_X,
+                        fit_y,
                         epochs=self.lstm_config.epochs,
                         batch_size=self.lstm_config.batch_size,
                         learning_rate=self.lstm_config.learning_rate
@@ -325,6 +363,7 @@ class LSTMRunner(BaseModelRunner, SpatialOrchestrator, MizuRouteConfigMixin, Spa
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10)
 
         best_val_loss = float('inf')
+        best_state = None
         patience = self.lstm_config.learning_patience
         patience_counter = 0
 
@@ -368,6 +407,7 @@ class LSTMRunner(BaseModelRunner, SpatialOrchestrator, MizuRouteConfigMixin, Spa
 
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
+                best_state = {k: v.detach().cpu().clone() for k, v in self.model.state_dict().items()}
                 patience_counter = 0
             else:
                 patience_counter += 1
@@ -380,7 +420,10 @@ class LSTMRunner(BaseModelRunner, SpatialOrchestrator, MizuRouteConfigMixin, Spa
             if (epoch + 1) % 10 == 0:
                 self.logger.info(f'Epoch [{epoch + 1}/{epochs}], Train Loss: {total_loss / n_batches:.4f}, Val Loss: {val_loss:.4f}')
 
-        self.logger.info("LSTM model training completed")
+        if best_state is None:
+            raise ValidationError("LSTM training produced no finite validation loss")
+        self.model.load_state_dict(best_state)
+        self.logger.info("LSTM model training completed; restored best validation weights")
 
     def _train_model_distributed(self, X: torch.Tensor, y: torch.Tensor, epochs: int, batch_size: int, learning_rate: float):
         """

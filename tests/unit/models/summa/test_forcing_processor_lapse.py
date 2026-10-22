@@ -88,3 +88,26 @@ def test_hru_filter_uses_configured_id_column(tmp_path, monkeypatch):
     monkeypatch.setattr('symfluence.models.summa.forcing_processor.gpd.read_file',
                         lambda path: pd.DataFrame({'HRU_ID': [1, 2]}))
     assert processor._filter_forcing_hru_ids([1, 3]) == [1]
+
+
+def test_lapse_batches_follow_each_files_remapping_signature(tmp_path, monkeypatch):
+    import xarray as xr
+
+    from symfluence.data.preprocessing.resampling.grid_identity import ATTRIBUTE
+
+    processor = _make_processor(tmp_path)
+    names = ['june.nc', 'july.nc', 'august.nc']
+    for name, signature in zip(names, ['old', 'new', 'new']):
+        xr.Dataset(attrs={ATTRIBUTE: signature}).to_netcdf(tmp_path / name)
+    monkeypatch.setattr(processor, '_forcing_outputs_are_current', lambda: False)
+    monkeypatch.setattr(processor, '_check_already_corrected', lambda: False)
+    monkeypatch.setattr(processor, '_get_forcing_files', lambda: names)
+    monkeypatch.setattr(processor, '_prepare_forcing_output_dir', lambda: None)
+    monkeypatch.setattr(processor, '_find_intersection_file', lambda directory: directory)
+    monkeypatch.setattr(processor, '_load_topology_data', lambda path: path.name)
+    monkeypatch.setattr(processor, '_precalculate_lapse_corrections', lambda grid: (grid, LAPSE_RATE))
+    batches = []
+    monkeypatch.setattr(processor, '_process_forcing_batches', lambda files, grid, rate: batches.append((files, grid)))
+    monkeypatch.setattr(processor, '_remove_stale_forcing_files', lambda keep: None)
+    processor.apply_datastep_and_lapse_rate()
+    assert batches == [(['june.nc'], 'old'), (['july.nc', 'august.nc'], 'new')]

@@ -82,6 +82,21 @@ def _write_fake_lamah_tree(root: Path, station_id: str):
     return fake
 
 
+def test_daily_observations_preserve_values_and_gaps_with_carra(tmp_path):
+    handler = _make_handler({'FORCING_TIME_STEP_SIZE': 10800}, tmp_path)
+    raw = tmp_path / 'daily.csv'
+    pd.DataFrame({
+        'YYYY': [2015, 2015, 2015], 'MM': [1, 1, 1], 'DD': [1, 2, 4],
+        'qobs': [10.0, 30.0, 50.0],
+    }).to_csv(raw, sep=';', index=False)
+    result = pd.read_csv(handler.process(raw), index_col='datetime', parse_dates=True)
+    assert len(result) == 4
+    assert result.loc['2015-01-01', 'discharge_cms'] == 10.0
+    assert result.loc['2015-01-02', 'discharge_cms'] == 30.0
+    assert pd.isna(result.loc['2015-01-03', 'discharge_cms'])
+    assert result.loc['2015-01-04', 'discharge_cms'] == 50.0
+
+
 def test_lamah_ice_domain_id_is_accepted(tmp_path):
     """The 08_large_sample paper configs use LAMAH_ICE_DOMAIN_ID.
     That must be the primary accepted key."""

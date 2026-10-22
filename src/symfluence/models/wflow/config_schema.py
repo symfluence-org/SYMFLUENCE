@@ -10,6 +10,8 @@ config system through ``R.config_schemas`` (via the model manifest /
 """
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from symfluence.core.config.models.base import FROZEN_CONFIG
@@ -43,4 +45,24 @@ class WflowConfig(BaseModel):
         default='KsatVer,f,SoilThickness,InfiltCapPath,RootingDepth,KsatHorFrac,n_river,PathFrac,thetaS,thetaR,Cfmax,TT,TTI,TTM,WHC',
         alias='WFLOW_PARAMS_TO_CALIBRATE',
     )
+    hru_file: str = Field(default='', alias='WFLOW_HRU_FILE')
+    dem_file: str = Field(default='', alias='WFLOW_DEM_FILE')
+    grid_resolution: float = Field(default=2000.0, gt=0, alias='WFLOW_GRID_RESOLUTION')
+    river_threshold_km2: float = Field(default=20.0, gt=0, alias='WFLOW_RIVER_THRESHOLD_KM2')
+    glacier_fraction: float = Field(default=0.0, ge=0, le=1, alias='WFLOW_GLACIER_FRACTION')
+    glacier_ice_mm: float = Field(default=100000.0, gt=0, alias='WFLOW_GLACIER_ICE_MM')
+    glacier_outline_file: str = Field(default='', alias='WFLOW_GLACIER_OUTLINE_FILE')
+    glacier_thickness_dir: str = Field(default='', alias='WFLOW_GLACIER_THICKNESS_DIR')
+    corrected_routing: bool = Field(default=False, alias='WFLOW_CORRECTED_ROUTING')
+    outlet_mode: Literal['dem_min', 'gauge'] = Field(default='dem_min', alias='WFLOW_OUTLET_MODE')
+    cryosphere_constraints: bool = Field(default=False, alias='WFLOW_CRYOSPHERE_CONSTRAINTS')
+    calibration_only_period: bool = Field(default=False, alias='WFLOW_CALIBRATION_ONLY_PERIOD')
+    snow_cover_error_scale: float = Field(default=0.2, gt=0, alias='WFLOW_SNOW_COVER_ERROR_SCALE')
+    glacier_mb_error_scale: float = Field(default=1.0, gt=0, alias='WFLOW_GLACIER_MB_ERROR_SCALE')
+    snow_cover_threshold_mm: float = Field(default=5.0, gt=0, alias='WFLOW_SNOW_COVER_THRESHOLD_MM')
+    # Fixed seasonal air-temperature corrections (deg C, keys DJF/MAM/JJA/SON); PET is recomputed.
+    temperature_offsets: dict[str, float] = Field(default_factory=dict, alias='WFLOW_TEMPERATURE_OFFSETS')
+    frozen_soil: bool = Field(default=False, alias='WFLOW_FROZEN_SOIL')
+    parameter_bounds: dict[str, dict[str, float]] = Field(default_factory=dict, alias='WFLOW_PARAMETER_BOUNDS')
+    initial_parameters: dict[str, float] = Field(default_factory=dict, alias='WFLOW_INITIAL_PARAMETERS')
     timeout: int = Field(default=7200, alias='WFLOW_TIMEOUT', ge=60, le=86400)

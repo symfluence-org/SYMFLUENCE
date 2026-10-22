@@ -16,6 +16,7 @@ land surface model that uses SUNDIALS for solving differential equations.
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 from symfluence.core.build import get_common_build_environment
 from symfluence.core.registries import R
@@ -442,4 +443,68 @@ done
             'check_type': 'exists'
         },
         'order': 2
+    }
+
+
+@R.build_instructions.add('summa-glacier')
+def get_summa_glacier_build_instructions():
+    """Opt-in glacier fork, isolated from the production SUMMA installation.
+
+    Use the native solver: this revision's glacier pilot was exercised without
+    SUNDIALS. A successful build does not validate glacier geometry or balances.
+    """
+    patch = Path(__file__).with_name('patches') / 'glacier_diagnostics_routing.patch'
+    patch_command = f'''set -e
+if [ "${{SYMFLUENCE_PATCHED:-0}}" = "1" ]; then
+    git apply --check "{patch}"
+    git apply "{patch}"
+    mkdir -p bin
+    cp "{patch}" bin/applied_glacier.patch
+fi
+'''
+    return {
+        'description': 'Experimental SUMMA glacier fork (native solver, pinned source)',
+        'config_path_key': 'SUMMA_INSTALL_PATH',
+        'config_exe_key': 'SUMMA_EXE',
+        'default_path_suffix': 'installs/summa-glacier/bin',
+        'default_exe': 'summa.exe',
+        'repository': 'https://github.com/ashleymedin/summa.git',
+        'branch': 'glacier',
+        'git_hash': 'b851c3df2bdc3fd91c8eeae856ce6098078a4055',
+        'install_dir': 'summa-glacier',
+        'optional': True,
+        'requires': [],
+        'dependencies': ['cmake', 'nf-config'],
+        'build_commands': [get_common_build_environment(), patch_command, r'''
+set -e
+# Respect an explicit LAPACK link specification; discover Homebrew otherwise.
+if [ -z "${LIBRARY_LINKS:-}" ] && command -v brew >/dev/null 2>&1; then
+    _glacier_blas="$(brew --prefix openblas 2>/dev/null || true)"
+    if [ -d "$_glacier_blas/lib" ]; then
+        export LIBRARY_LINKS="-L$_glacier_blas/lib -lopenblas"
+    fi
+fi
+_glacier_lapack=OFF
+if [ -n "${LIBRARY_LINKS:-}" ]; then
+    _glacier_lapack=ON
+fi
+cmake -S build -B cmake_build \
+    -DUSE_SUNDIALS=OFF -DCMAKE_BUILD_TYPE=Release \
+    -DSPECIFY_LAPACK_LINKS="$_glacier_lapack" \
+    -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
+    -DCMAKE_INSTALL_RPATH="$(pwd)/cmake_build"
+cmake --build cmake_build --parallel "${CMAKE_BUILD_PARALLEL_LEVEL:-2}"
+test -x bin/summa.exe
+# The engine embeds a stale upstream hash; retain the actual checkout provenance.
+git rev-parse HEAD > bin/source_revision.txt
+'''.strip()],
+        'test_command': '--version',
+        'verify_install': {
+            'file_paths': [
+                'bin/summa.exe', 'bin/source_revision.txt',
+                'cmake_build/libsumma.' + ('dylib' if sys.platform == 'darwin' else 'so'),
+            ],
+            'check_type': 'exists',
+        },
+        'order': 2,
     }

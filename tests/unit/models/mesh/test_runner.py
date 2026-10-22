@@ -86,6 +86,21 @@ class TestMESHRunnerProcessDirectories:
 class TestMESHRunnerExecution:
     """Tests for MESH runner execution."""
 
+    def test_native_stop_without_outputs_raises(self, mesh_config, mock_logger, setup_mesh_directories):
+        from symfluence.core.exceptions import ModelExecutionError
+        from symfluence.models.mesh.runner import MESHRunner
+
+        runner = MESHRunner(mesh_config, mock_logger)
+        runner.forcing_mesh_path.mkdir(parents=True, exist_ok=True)
+        stale = runner.forcing_mesh_path/'Basin_average_water_balance.csv'
+        stale.write_text('stale results')
+        (runner.forcing_mesh_path/'MESH_input_run_options.ini').write_text('FROZENSOILINFILFLAG 0\n')
+        with patch.object(runner, '_create_run_command', return_value=['mesh']), \
+                patch.object(runner, 'execute_subprocess', return_value=Mock(success=True, return_code=0)):
+            with pytest.raises(ModelExecutionError):
+                runner.run_mesh()
+        assert not stale.exists()
+
     def test_run_mesh_creates_command(self, mesh_config, mock_logger, setup_mesh_directories):
         """Test MESH execution creates proper command."""
         from symfluence.models.mesh.runner import MESHRunner
@@ -178,3 +193,24 @@ class TestMESHModelRegistry:
         assert runner_info is not None
         # The method_name should be stored in the tuple
         assert hasattr(runner_info, '__name__') or 'run_mesh' in str(runner_info)
+
+
+def test_custom_native_executable_is_respected(mesh_config, mock_logger):
+    from symfluence.core.config.models import SymfluenceConfig
+    from symfluence.models.mesh.runner import MESHRunner
+
+    values = mesh_config.to_dict(flatten=True)
+    values['MESH_EXE'] = 'sa_mesh'
+    config = SymfluenceConfig(**values)
+    runner = MESHRunner(config, mock_logger)
+    assert runner.mesh_exe.name == 'sa_mesh'
+
+
+def test_prune_run_logs_keeps_newest(tmp_path):
+    from symfluence.models.mesh.runner import MESHRunner
+    names = [f'mesh_run_20261014_2100{i:02d}.log' for i in range(5)]
+    for name in names:
+        (tmp_path / name).write_text('x')
+    (tmp_path / 'other.log').write_text('x')
+    MESHRunner._prune_run_logs(tmp_path)
+    assert sorted(p.name for p in tmp_path.iterdir()) == sorted(names[-2:] + ['other.log'])

@@ -40,10 +40,10 @@ from typing import Dict, List, Tuple
 # =============================================================================
 
 PARAM_BOUNDS: Dict[str, Dict[str, float]] = {
-    'canopyInterceptionFactor': {'min': 0.1, 'max': 0.4},
+    'canopyInterceptionFactor': {'min': 0.15, 'max': 0.4},
     'snowTreshholdTemperature': {'min': -2.0, 'max': 2.0},         # deg C (mHM spelling)
-    'degreeDayFactor_forest': {'min': 0.0001, 'max': 4.0},         # mm/deg C/hour
-    'degreeDayFactor_pervious': {'min': 0.0, 'max': 2.0},          # mm/deg C/hour
+    'degreeDayFactor_forest': {'min': 0.0001, 'max': 4.0},         # mm/deg C/day (mHM scales by timestep/24)
+    'degreeDayFactor_pervious': {'min': 0.0, 'max': 5.0},          # mm/deg C/day; upstream mHM uses 0-2, too low for Tungnaa
     'PTF_Ks_constant': {'min': -1.2, 'max': -0.285},               # PTF constant
     'interflowRecession_slope': {'min': 0.0, 'max': 10.0},         # unitless
     'rechargeCoefficient': {'min': 0.0, 'max': 50.0},              # unitless
@@ -61,7 +61,21 @@ PARAM_BOUNDS: Dict[str, Dict[str, float]] = {
     'exponentSlowInterflow': {'min': 0.05, 'max': 0.30},        # slow interflow recession shape
     'imperviousStorageCapacity': {'min': 0.0, 'max': 5.0},      # impervious surface retention
     'rechargeFactor_karstic': {'min': -5.0, 'max': 5.0},        # deep groundwater loss adjustment
+    'degreeDayFactor_impervious': {'min': 0.0, 'max': 1.0},
+    'increaseDegreeDayFactorByPrecip': {'min': 0.1, 'max': 0.9},
+    'maxDegreeDayFactor_pervious': {'min': 0.0, 'max': 8.0},
+    'maxDegreeDayFactor_impervious': {'min': 0.0, 'max': 8.0},
+    # Forcing-side pseudo-parameters (FORCING_PARAMS): applied by the
+    # calibration worker to the precipitation input, not written to
+    # mhm_parameter.nml.
+    'precipCorrectionFactor': {'min': 0.8, 'max': 1.8},         # multiplier on precipitation
+    'glacierIceDDF': {'min': 2.0, 'max': 12.0},                 # mm/deg C/day, external ice melt
 }
+
+# Pseudo-parameters with no mHM counterpart. mHM v5.13 has neither a
+# precipitation correction nor a glacier store, so the worker rescales the
+# precipitation grid and adds degree-day ice melt on glacier cells instead.
+FORCING_PARAMS = ('precipCorrectionFactor', 'glacierIceDDF')
 
 
 # =============================================================================
@@ -90,6 +104,12 @@ DEFAULT_PARAMS: Dict[str, float] = {
     'exponentSlowInterflow': 0.125,
     'imperviousStorageCapacity': 0.5,
     'rechargeFactor_karstic': -1.0,
+    'degreeDayFactor_impervious': 0.5,
+    'increaseDegreeDayFactorByPrecip': 0.5,
+    'maxDegreeDayFactor_pervious': 4.0,
+    'maxDegreeDayFactor_impervious': 3.5,
+    'precipCorrectionFactor': 1.0,
+    'glacierIceDDF': 6.0,
 }
 
 
@@ -117,7 +137,7 @@ MHM_PARAMETER_NML_SPEC: List[Tuple[str, List[Tuple[str, float, float, float, int
         ('snowTreshholdTemperature',        -2.0,   2.0,  1.0, 1, 1),
         ('degreeDayFactor_forest',           0.0001, 4.0,  1.5, 1, 1),
         ('degreeDayFactor_impervious',       0.0,    1.0,  0.5, 1, 1),
-        ('degreeDayFactor_pervious',         0.0,    2.0,  0.5, 1, 1),
+        ('degreeDayFactor_pervious',         0.0,    5.0,  0.5, 1, 1),
         ('increaseDegreeDayFactorByPrecip',  0.1,    0.9,  0.5, 1, 1),
         ('maxDegreeDayFactor_forest',        0.0,    8.0,  3.0, 1, 1),
         ('maxDegreeDayFactor_impervious',    0.0,    8.0,  3.5, 1, 1),

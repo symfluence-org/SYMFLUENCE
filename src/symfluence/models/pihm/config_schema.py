@@ -72,6 +72,7 @@ class PIHMConfig(BaseModel):
 
     # Output
     experiment_output: str = Field(default='default', alias='EXPERIMENT_OUTPUT_PIHM')
+    outlet_segment: int = Field(default=1, alias='PIHM_OUTLET_SEGMENT', ge=1)
 
     # Calibration
     params_to_calibrate: str = Field(

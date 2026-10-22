@@ -323,6 +323,12 @@ class HYPEPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         Uses the template method pattern from BaseModelPreProcessor.
         """
         self.logger.info("Starting HYPE preprocessing")
+        if self.config_dict.get('HYPE_CRYOSPHERE_CONSTRAINTS', False):
+            from .cryosphere import ensure_observations
+            station = self.config_dict.get('LAMAH_ICE_DOMAIN_ID') or self.config_dict.get('STREAMFLOW_STATION_ID')
+            if station is None:
+                raise ValueError('HYPE cryosphere constraints require a LamaH-Ice station ID')
+            ensure_observations(self.project_dir, station, self.logger)
         return self.run_preprocessing_template()
 
     def _prepare_forcing(self) -> None:
@@ -374,6 +380,8 @@ class HYPEPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         """
 
         forcing_files = ['Pobs.txt', 'Tobs.txt', 'TMAXobs.txt', 'TMINobs.txt', 'Qobs.txt']
+        if self.config_dict.get('HYPE_SNOW_MELT_MODEL', 0) == 2:
+            forcing_files.append('SWobs.txt')
         for fname in forcing_files:
             src = self.forcing_data_dir / fname
             dst = self.hype_setup_dir / fname

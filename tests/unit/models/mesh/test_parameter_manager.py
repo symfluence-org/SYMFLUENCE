@@ -261,11 +261,12 @@ class TestMESHParameterUpdates:
         assert result is False
 
     def test_update_ini_file_applies_existing_params(
-        self, mesh_config, logger, temp_dir, hydro_ini_content
+        self, mesh_config, logger, temp_dir, hydro_ini_content, class_ini_content
     ):
         """Existing hydrology parameters are updated via regex."""
         hydro_file = temp_dir / 'MESH_parameters_hydrology.ini'
         hydro_file.write_text(hydro_ini_content)
+        (temp_dir / 'MESH_parameters_CLASS.ini').write_text(class_ini_content)
 
         config = {**mesh_config, 'MESH_PARAMS_TO_CALIBRATE': 'FLZ,PWR,ZSNL'}
         mgr = MESHParameterManager(config, logger, temp_dir)
@@ -276,9 +277,9 @@ class TestMESHParameterUpdates:
 
         content = hydro_file.read_text()
         # Verify values were updated
-        assert 'FLZ 0.005000' in content
-        assert 'PWR 2.800000' in content
-        assert 'ZSNL 0.030000' in content
+        assert 'FLZ 0.005' in content
+        assert 'PWR 2.8' in content
+        assert float(next(line.split()[1] for line in content.splitlines() if line.startswith('ZSNL '))) == 0.03
 
     def test_update_ini_file_injects_missing_params(
         self, mesh_config, logger, temp_dir
@@ -301,10 +302,10 @@ class TestMESHParameterUpdates:
 
         content = hydro_file.read_text()
         # ZSNL was already there — should be updated
-        assert 'ZSNL 0.040000' in content
+        assert 'ZSNL 0.04' in content
         # FLZ and PWR were missing — should be injected
-        assert 'FLZ  0.003000' in content
-        assert 'PWR  2.500000' in content
+        assert 'FLZ  0.003' in content
+        assert 'PWR  2.5' in content
 
     def test_update_ini_file_injected_params_updatable_next_call(
         self, mesh_config, logger, temp_dir
@@ -318,15 +319,15 @@ class TestMESHParameterUpdates:
 
         # First call injects FLZ
         mgr._update_ini_file(hydro_file, {'FLZ': 0.002})
-        assert 'FLZ  0.002000' in hydro_file.read_text()
+        assert 'FLZ  0.002' in hydro_file.read_text()
 
         # Second call updates the injected value
         result = mgr._update_ini_file(hydro_file, {'FLZ': 0.007})
         assert result is True
         content = hydro_file.read_text()
-        assert 'FLZ 0.007000' in content
+        assert 'FLZ 0.007' in content
         # Old value should be gone
-        assert '0.002000' not in content
+        assert '0.002' not in content
 
     def test_update_ini_file_returns_false_when_no_updates(
         self, mesh_config, logger, temp_dir
@@ -475,3 +476,13 @@ class TestVegetationColumnTargeting:
         )
         assert pm.class_param_positions['LAMX'][1] == 5   # group_start(5) + index 0
         assert pm.class_param_positions['RSMIN'][1] == 0  # group_start(0) + index 0
+
+
+def test_disabled_multipliers_do_not_require_class_mapping(mesh_config, logger, temp_dir, monkeypatch):
+    mesh_config['MESH_USE_LANDCOVER_MULTIPLIERS'] = False
+    def unexpected_mapping(self):
+        raise AssertionError('Disabled multipliers must not require NALCMS mapping')
+    monkeypatch.setattr(MESHParameterManager, '_build_block_to_nalcms_mapping', unexpected_mapping)
+    manager = MESHParameterManager(mesh_config, logger, temp_dir)
+    assert manager.block_to_nalcms == {}
+    assert manager.use_landcover_multipliers is False

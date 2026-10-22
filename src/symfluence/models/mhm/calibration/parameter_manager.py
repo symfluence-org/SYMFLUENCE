@@ -184,14 +184,14 @@ class MHMParameterManager(BaseParameterManager):
                 if self._is_param_nml:
                     # 5-column format: paramName = lower, upper, VALUE, flag, scaling
                     pattern = re.compile(
-                        r'(\s*' + re.escape(param_name)
+                        r'(^[ \t]*' + re.escape(param_name)
                         + r'\s*=\s*'
                         + r'[^,]+,'        # lower,
                         + r'\s*[^,]+,'     # upper,
                         + r'\s*)'          # whitespace before value
                         + r'([^,]+)'       # VALUE  <-- group to replace
                         + r'(,\s*\d+,\s*\d+)',  # , flag, scaling
-                        re.IGNORECASE
+                        re.MULTILINE
                     )
                     match = pattern.search(content)
                     if match:
@@ -210,8 +210,8 @@ class MHMParameterManager(BaseParameterManager):
                 else:
                     # Legacy single-value format
                     pattern = re.compile(
-                        r'(\s*' + re.escape(param_name) + r'\s*=\s*)([^\s,!/]+)',
-                        re.IGNORECASE
+                        r'(^[ \t]*' + re.escape(param_name) + r'\s*=\s*)([^\s,!/]+)',
+                        re.MULTILINE
                     )
                     match = pattern.search(content)
                     if match:
@@ -265,6 +265,8 @@ class MHMParameterManager(BaseParameterManager):
         (``lower, upper, value, flag, scaling``) and the legacy single-value
         format in ``mhm.nml``.
         """
+        from ..parameters import DEFAULT_PARAMS
+
         try:
             if not self.namelist_path.exists():
                 return self._get_default_initial_values()
@@ -278,13 +280,13 @@ class MHMParameterManager(BaseParameterManager):
                 if self._is_param_nml:
                     # 5-column: paramName = lower, upper, VALUE, flag, scaling
                     pattern = re.compile(
-                        r'\s*' + re.escape(param_name)
+                        r'^[ \t]*' + re.escape(param_name)
                         + r'\s*=\s*'
                         + r'[^,]+,'        # lower,
                         + r'\s*[^,]+,'     # upper,
                         + r'\s*([^,]+)'    # VALUE  <-- capture group
                         + r',\s*\d+,\s*\d+',
-                        re.IGNORECASE
+                        re.MULTILINE
                     )
                     match = pattern.search(content)
                     if match:
@@ -297,8 +299,8 @@ class MHMParameterManager(BaseParameterManager):
                 if extracted is None:
                     # Fall back to single-value pattern
                     pattern = re.compile(
-                        r'\s*' + re.escape(param_name) + r'\s*=\s*([^\s,!/]+)',
-                        re.IGNORECASE
+                        r'^[ \t]*' + re.escape(param_name) + r'\s*=\s*([^\s,!/]+)',
+                        re.MULTILINE
                     )
                     match = pattern.search(content)
                     if match:
@@ -310,6 +312,9 @@ class MHMParameterManager(BaseParameterManager):
 
                 if extracted is not None:
                     params[param_name] = extracted
+                elif param_name in DEFAULT_PARAMS:
+                    # Forcing pseudo-parameters are not in the namelist.
+                    params[param_name] = DEFAULT_PARAMS[param_name]
                 else:
                     # Use midpoint of bounds
                     bounds = self.param_bounds.get(param_name, {'min': 0.1, 'max': 10.0})

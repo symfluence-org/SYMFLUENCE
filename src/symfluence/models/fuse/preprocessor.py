@@ -1062,8 +1062,9 @@ class FUSEPreProcessor(BaseModelPreProcessor, PETCalculatorMixin, GeospatialUtil
                 obs_ds = obs_ds.assign_coords(time=pd.to_datetime('1970-01-01') + pd.to_timedelta(obs_ds.time.values, unit='D'))
             to_align.append(obs_ds)
 
-        # Join='inner' finds the overlapping period
-        aligned = xr.align(*to_align, join='inner')
+        # Keep the forcing clock even when discharge observations end earlier.
+        # Missing observations remain NaN and must not truncate a transfer run.
+        aligned = xr.align(*to_align, join='left')
         ds_a, pet_a = aligned[0], aligned[1]
         obs_ds_a = aligned[2] if obs_ds is not None else None
 

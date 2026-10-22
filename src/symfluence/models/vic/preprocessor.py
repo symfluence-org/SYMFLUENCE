@@ -144,41 +144,22 @@ class VICPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         Returns:
             Dict with centroid lat/lon, area, and elevation
         """
-        try:
-            catchment_path = self.get_catchment_path()
-            if catchment_path.exists():
-                gdf = gpd.read_file(catchment_path)
-
-                # Get centroid
-                centroid = gdf.geometry.centroid.iloc[0]
-                lon, lat = centroid.x, centroid.y
-
-                # Project to UTM for accurate area
-                utm_zone = int((lon + 180) / 6) + 1
-                hemisphere = 'north' if lat >= 0 else 'south'
-                utm_crs = f"EPSG:{32600 + utm_zone if hemisphere == 'north' else 32700 + utm_zone}"
-                gdf_proj = gdf.to_crs(utm_crs)
-                area_m2 = gdf_proj.geometry.area.sum()
-
-                # Get elevation if available
-                elev = float(gdf.get('elev_mean', [1000])[0]) if 'elev_mean' in gdf.columns else 1000.0
-
-                return {
-                    'lat': lat,
-                    'lon': lon,
-                    'area_m2': area_m2,
-                    'elev': elev
-                }
-        except Exception as e:  # noqa: BLE001 — model execution resilience
-            logger.warning(f"Could not read catchment properties: {e}", exc_info=True)
-
-        # Defaults
-        return {
-            'lat': 51.0,
-            'lon': -115.0,
-            'area_m2': 1e8,
-            'elev': 1000.0
-        }
+        catchment_path = self._find_basin_shapefile(required=True)
+        gdf = gpd.read_file(catchment_path)
+        if gdf.empty or gdf.crs is None:
+            raise ValueError("VIC requires nonempty catchment geometry with a CRS")
+        geographic = gdf.to_crs(4326)
+        projected = geographic.to_crs(geographic.estimate_utm_crs())
+        center = gpd.GeoSeries([projected.geometry.union_all().centroid], crs=projected.crs).to_crs(4326).iloc[0]
+        areas = projected.geometry.area.to_numpy()
+        if not np.isfinite(areas).all() or (areas <= 0).any():
+            raise ValueError("VIC catchment area must be finite and positive")
+        if 'elev_mean' not in gdf:
+            raise ValueError("VIC catchment geometry requires elev_mean")
+        elev = float(np.average(gdf.elev_mean.to_numpy(), weights=areas))
+        if not np.isfinite(elev):
+            raise ValueError("VIC catchment elevation is nonfinite")
+        return {'lat': center.y, 'lon': center.x, 'area_m2': float(areas.sum()), 'elev': elev}
 
     def _compute_elevation_bands(self, n_bands: int = 5) -> Dict:
         """
@@ -498,7 +479,10 @@ class VICPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         }
 
         # VIC 5 image driver dimensions
-        nveg = 1       # Single vegetation class (simplified)
+        # The image driver reserves the last library class for bare soil.
+        # Keep the existing simplified grass tile plus a zero-area bare class;
+        # Nveg counts active vegetated tiles, not library entries.
+        nveg = 2
         nroot = 2      # Root zones
 
         # Compute elevation bands from DEM
@@ -551,7 +535,7 @@ class VICPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             params[var] = arr
 
         # Vegetation tiling parameters (veg_class dimension)
-        params['Nveg'] = np.full((nlat, nlon), nveg, dtype=np.int32)
+        params['Nveg'] = np.ones((nlat, nlon), dtype=np.int32)
         params['Cv'] = np.zeros((nveg, nlat, nlon))
         params['Cv'][0, :, :] = 1.0  # Single veg class covers 100%
 
@@ -583,6 +567,13 @@ class VICPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             params['albedo'][0, m, :, :] = monthly_albedo[m]
             params['veg_rough'][0, m, :, :] = monthly_veg_rough[m]
             params['displacement'][0, m, :, :] = monthly_displacement[m]
+
+        # Reserved bare-soil library entry: no canopy or roots. A nonzero
+        # roughness avoids invalid aerodynamic inputs even at zero tile area.
+        params['albedo'][-1, :, :, :] = 0.2
+        params['veg_rough'][-1, :, :, :] = defaults['rough']
+        params['rarc'][-1, :, :] = 0.0
+        params['rmin'][-1, :, :] = 0.0
 
         # Root zone parameters (veg_class × root_zone)
         params['root_depth'] = np.zeros((nveg, nroot, nlat, nlon))
@@ -819,6 +810,13 @@ class VICPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                     data = self._broadcast_to_grid(data, shape, times, mask, lat, lon)
                     out_ds[vic_var] = (['time', 'lat', 'lon'], data[:len(times)])
 
+        # Derivation above uses Pa; the VIC image driver reads kPa and multiplies
+        # both pressure fields by 1000 before computing density and humidity.
+        for var in ('PRESSURE', 'VP'):
+            if var in out_ds:
+                out_ds[var] = out_ds[var] / 1000.0
+                out_ds[var].attrs['units'] = 'kPa'
+
         # Apply mask
         for var in self.VIC_VAR_MAP:
             if var in out_ds:
@@ -885,10 +883,23 @@ class VICPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                     data = data / dt_seconds
                     logger.info(f"Converted {candidate} from {src_units} to W/m²")
 
-            elif vic_var == 'PRESSURE':
-                if src_units == 'kPa' or np.nanmean(data) < 200:
+            elif vic_var in ('PRESSURE', 'VP'):
+                units = src_units.strip().lower()
+                if units in ('kpa', 'kilopascal', 'kilopascals'):
                     data = data * 1000.0
                     logger.info(f"Converted {candidate} from kPa to Pa")
+                elif units in ('hpa', 'mbar', 'millibar', 'millibars'):
+                    data = data * 100.0
+                elif units in ('pa', 'pascal', 'pascals'):
+                    pass
+                elif not units:
+                    # Retain the legacy atmospheric-pressure inference. Untagged
+                    # vapour pressure defaults to Pa: its magnitude is ambiguous.
+                    if vic_var == 'PRESSURE' and np.nanmean(data) < 200:
+                        data = data * 1000.0
+                    logger.warning(f"Missing units for {candidate}; inferring pressure units")
+                else:
+                    raise ValueError(f"Unsupported pressure units for {candidate}: {src_units!r}")
 
             return data
 
@@ -1016,6 +1027,10 @@ class VICPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             }
         )
 
+        for var in ('PRESSURE', 'VP'):
+            ds[var] = ds[var] / 1000.0
+            ds[var].attrs['units'] = 'kPa'
+
         # VIC expects one forcing file per year
         encoding = {'time': {'calendar': 'standard', 'units': 'hours since 1900-01-01'}}
         for year, year_ds in ds.groupby('time.year'):
@@ -1130,6 +1145,8 @@ class VICPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             "OUTVAR                 OUT_SWE",
             "OUTVAR                 OUT_SOIL_MOIST",
             "OUTVAR                 OUT_PREC        *.      *       *.      AGG_TYPE_SUM",
+            "OUTVAR                 OUT_WATER_ERROR *.      *       *.      AGG_TYPE_SUM",
+            "OUTVAR                 OUT_ENERGY_ERROR",
             "",
         ]
 

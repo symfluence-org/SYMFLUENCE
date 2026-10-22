@@ -5,10 +5,14 @@
 CLM Parameter Manager
 
 Handles CLM5 parameter bounds, normalization, and file updates.
-Manages 26 parameters across 3 target files:
-- namelist (user_nl_clm): hydrology scalar knobs
+Parameters act on 3 target files:
+- namelist (lnd_in, mirrored in user_nl_clm): hydrology scalar knobs
 - params.nc (clm5_params.nc): snow + PFT parameters
-- surfdata (surfdata_clm.nc): soil hydraulic multipliers
+- surfdata (surfdata_clm.nc): FMAX, organic matter and soil texture
+
+CTSM 5.3 derives watsat, hksat, sucsat and bsw from PCT_SAND, PCT_CLAY and
+ORGANIC (pedotransfer functions); it never reads those four fields from
+surfdata, so soil hydraulics are calibrated through texture, not multipliers.
 """
 from __future__ import annotations
 
@@ -21,14 +25,15 @@ import numpy as np
 import xarray as xr
 
 from symfluence.core.calibration.parameters.base_parameter_manager import BaseParameterManager
+from symfluence.core.exceptions import ConfigurationError
 from symfluence.core.registries import R
 
 # CLM5 parameter definitions:
 # (target_file, nc_variable_or_None, transform)
-# target_file: 'namelist' | 'params' | 'surfdata' | 'routing'
-# For surfdata multipliers (*_mult), value is multiplied with base values.
+# target_file: 'namelist' | 'params' | 'surfdata'
 # For 'namelist' params, nc_variable stores the lnd_in section name.
-# 'routing' params are applied post-hoc to CLM output (not written to files).
+# Every surfdata target must be a field CTSM actually reads (see
+# CLM_SURFDATA_FIELDS_READ); *_offset params add percentage points.
 CLM_PARAM_DEFS = {
     # --- Hydrology (params.nc scalars) ---
     'baseflow_scalar':  ('namelist', 'soilhydrology_inparm', 'log'),
@@ -40,13 +45,11 @@ CLM_PARAM_DEFS = {
     'perched_baseflow_scalar': ('params', 'perched_baseflow_scalar', 'log'),
     'interception_fraction':   ('params', 'interception_fraction', 'linear'),
     'max_leaf_wetted_frac':    ('params', 'maximum_leaf_wetted_fraction', 'linear'),
-    # --- Surfdata (soil hydraulic multipliers) ---
+    # --- Surfdata (fields CTSM reads; texture drives soil hydraulics) ---
     'fmax':             ('surfdata', 'FMAX', 'linear'),
-    'bsw_mult':         ('surfdata', 'bsw', 'linear'),
-    'sucsat_mult':      ('surfdata', 'sucsat', 'linear'),
-    'watsat_mult':      ('surfdata', 'watsat', 'linear'),
-    'hksat_mult':       ('surfdata', 'hksat', 'log'),
     'organic_max':      ('surfdata', 'ORGANIC', 'linear'),
+    'sand_offset':      ('surfdata', 'PCT_SAND', 'linear'),
+    'clay_offset':      ('surfdata', 'PCT_CLAY', 'linear'),
     # --- Snow (params.nc) ---
     'fresh_snw_rds_max': ('params', 'fresh_snw_rds_max', 'linear'),
     'snw_aging_bst':     ('params', 'snw_aging_bst', 'linear'),
@@ -63,11 +66,25 @@ CLM_PARAM_DEFS = {
     'flnr':             ('params', 'flnr', 'linear'),
     'froot_leaf':       ('params', 'froot_leaf', 'linear'),
     'stem_leaf':        ('params', 'stem_leaf', 'linear'),
-    # --- Routing (post-processing, not written to CLM files) ---
-    # Linear reservoir: Q_out(t) = (1 - 1/K) * Q_out(t-1) + (1/K) * Q_in(t)
-    # K=1 means no routing (passthrough), K>1 introduces storage delay.
-    # Physically justified: basin travel time for 2210 km² catchment.
-    'route_k':          ('routing', None, 'linear'),
+}
+
+# Surface-dataset fields CTSM 5.3 reads that calibration may edit.
+CLM_SURFDATA_FIELDS_READ = frozenset({'FMAX', 'ORGANIC', 'PCT_SAND', 'PCT_CLAY'})
+
+# Former parameters that are rejected with an explanation instead of being
+# silently accepted.
+CLM_REMOVED_PARAMS: Dict[str, str] = {
+    **{name: (
+        f"'{name}' was removed: CTSM 5.3 computes {name[:-5]} from PCT_SAND/PCT_CLAY/"
+        "ORGANIC and never reads it from surfdata, so the multiplier had no effect. "
+        "Calibrate soil hydraulics with 'sand_offset'/'clay_offset' (and 'organic_max')."
+    ) for name in ('hksat_mult', 'watsat_mult', 'bsw_mult', 'sucsat_mult')},
+    'route_k': (
+        "'route_k' was removed: it applied a linear reservoir to CLM runoff after the "
+        "model ran, which is not CLM physics. Represent slow flow inside CLM "
+        "(baseflow_scalar, n_baseflow, e_ice, soil texture, bedrock depth) or route "
+        "with a routing model."
+    ),
 }
 
 # Default bounds for all parameters
@@ -84,11 +101,9 @@ CLM_DEFAULT_BOUNDS: Dict[str, Dict[str, Any]] = {
     'max_leaf_wetted_frac':    {'min': 0.01, 'max': 0.2},
     # Surfdata
     'fmax':             {'min': 0.0, 'max': 1.0},
-    'bsw_mult':         {'min': 0.5, 'max': 2.0},
-    'sucsat_mult':      {'min': 0.5, 'max': 2.0},
-    'watsat_mult':      {'min': 0.8, 'max': 1.2},
-    'hksat_mult':       {'min': 0.1, 'max': 10.0, 'transform': 'log'},
     'organic_max':      {'min': 0.0, 'max': 130.0},
+    'sand_offset':      {'min': -20.0, 'max': 20.0},
+    'clay_offset':      {'min': -10.0, 'max': 10.0},
     # Snow
     'fresh_snw_rds_max': {'min': 50.0, 'max': 200.0},
     'snw_aging_bst':     {'min': 0.0, 'max': 200.0},
@@ -104,9 +119,27 @@ CLM_DEFAULT_BOUNDS: Dict[str, Dict[str, Any]] = {
     'flnr':             {'min': 0.05, 'max': 0.25},
     'froot_leaf':       {'min': 0.5, 'max': 3.0},
     'stem_leaf':        {'min': 0.5, 'max': 3.0},
-    # Routing
-    'route_k':          {'min': 1.0, 'max': 40.0},
 }
+
+
+def apply_texture_offsets(sand: np.ndarray, clay: np.ndarray,
+                          sand_offset: float = 0.0, clay_offset: float = 0.0):
+    """Shift PCT_SAND/PCT_CLAY by percentage points, keeping a valid texture.
+
+    Each fraction stays within [0, 100] and sand + clay never exceeds 100
+    (clay yields first, since sand is the primary hydraulic control).
+    """
+    new_sand = np.clip(np.asarray(sand, dtype=float) + sand_offset, 0.0, 100.0)
+    new_clay = np.clip(np.asarray(clay, dtype=float) + clay_offset, 0.0, 100.0)
+    new_clay = np.minimum(new_clay, 100.0 - new_sand)
+    return new_sand, new_clay
+
+
+def check_removed_params(names: List[str]) -> None:
+    """Raise for parameters that no longer act on CLM."""
+    removed = [n for n in names if n in CLM_REMOVED_PARAMS]
+    if removed:
+        raise ConfigurationError(' '.join(CLM_REMOVED_PARAMS[n] for n in removed))
 
 
 @R.parameter_managers.add('CLM')
@@ -128,7 +161,7 @@ class CLMParameterManager(BaseParameterManager):
         clm_params_str = self._get_config_value(lambda: self.config.model.clm.params_to_calibrate, default=None, dict_key='CLM_PARAMS_TO_CALIBRATE')
 
         if clm_params_str is None:
-            # Default: all 26 parameters
+            # Default: all parameters
             clm_params_str = ','.join(CLM_DEFAULT_BOUNDS.keys())
             logger.warning(
                 f"CLM_PARAMS_TO_CALIBRATE missing; using all {len(CLM_DEFAULT_BOUNDS)} params"
@@ -137,6 +170,7 @@ class CLMParameterManager(BaseParameterManager):
         self.clm_params = [
             p.strip() for p in str(clm_params_str).split(',') if p.strip()
         ]
+        check_removed_params(self.clm_params)
 
         # Setup paths
         self.data_dir = Path(self._get_config_value(lambda: self.config.system.data_dir, dict_key='SYMFLUENCE_DATA_DIR'))
@@ -332,23 +366,17 @@ class CLMParameterManager(BaseParameterManager):
                 self.logger.debug(f"Capped ORGANIC at {value:.1f}")
                 continue
 
-            if name == 'zsapric':
-                self.logger.debug(f"zsapric = {value:.4f} (no-op)")
-                continue
-
-            if name.endswith('_mult') and nc_var and nc_var in ds.variables:
-                base_vals = ds.variables[nc_var][:].copy()
-                new_vals = base_vals * value
-
-                if name == 'watsat_mult':
-                    new_vals = np.clip(new_vals, 0.01, 0.95)
-                elif name == 'hksat_mult':
-                    new_vals = np.maximum(new_vals, 1e-10)
-
-                ds.variables[nc_var][:] = new_vals
-                self.logger.debug(
-                    f"Applied {name} = {value:.4f} to {nc_var}"
-                )
+        if {'sand_offset', 'clay_offset'} & set(params) and \
+                {'PCT_SAND', 'PCT_CLAY'} <= set(ds.variables):
+            sand, clay = apply_texture_offsets(
+                ds.variables['PCT_SAND'][:], ds.variables['PCT_CLAY'][:],
+                params.get('sand_offset', 0.0), params.get('clay_offset', 0.0))
+            ds.variables['PCT_SAND'][:] = sand
+            ds.variables['PCT_CLAY'][:] = clay
+            self.logger.debug(
+                f"Applied texture offsets sand={params.get('sand_offset', 0.0):+.2f} "
+                f"clay={params.get('clay_offset', 0.0):+.2f}"
+            )
 
         ds.close()
         return True
@@ -368,13 +396,11 @@ class CLMParameterManager(BaseParameterManager):
         'perched_baseflow_scalar': 6.87e-6,
         'interception_fraction': 0.508,
         'max_leaf_wetted_frac': 0.096,
-        # Surfdata — v3 best values
+        # Surfdata — v3 best values; texture starts at the dataset values
         'fmax': 0.549,
-        'bsw_mult': 1.042,
-        'sucsat_mult': 0.968,
-        'watsat_mult': 0.990,
-        'hksat_mult': 0.357,
         'organic_max': 44.6,
+        'sand_offset': 0.0,
+        'clay_offset': 0.0,
         # Snow — v3 best (snow physics independent of soil state)
         'fresh_snw_rds_max': 165.7,
         'snw_aging_bst': 152.0,
@@ -392,8 +418,6 @@ class CLMParameterManager(BaseParameterManager):
         'stem_leaf': 1.426,
         # Frozen soil impedance
         'e_ice': 3.5,
-        # Routing
-        'route_k': 15.0,
     }
 
     def get_initial_parameters(self) -> Optional[Dict[str, float]]:

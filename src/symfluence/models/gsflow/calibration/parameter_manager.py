@@ -59,8 +59,19 @@ class GSFLOWParameterManager(BaseParameterManager):
     def _load_parameter_bounds(self) -> Dict[str, Dict[str, float]]:
         """Load parameter bounds from GSFLOW parameter definitions."""
         from ..parameters import PARAM_BOUNDS
-        return {p: PARAM_BOUNDS.get(p, {'min': 0.001, 'max': 10.0})
-                for p in self.gsflow_params}
+        bounds = {p: dict(PARAM_BOUNDS.get(p, {'min': 0.001, 'max': 10.0}))
+                  for p in self.gsflow_params}
+        overrides = self._get_config_value(lambda: None, default={}, dict_key='GSFLOW_PARAM_BOUNDS') or {}
+        for name, values in overrides.items():
+            if name in bounds:
+                bounds[name].update(values)
+        if 'SY' in bounds:
+            thts = self._get_config_value(lambda: None, default=0.30,
+                                         dict_key='GSFLOW_UZF_SATURATED_WATER_CONTENT')
+            bounds['SY']['max'] = min(bounds['SY']['max'], float(thts) - 0.01)
+            if bounds['SY']['max'] <= bounds['SY']['min']:
+                raise ValueError('GSFLOW UZF porosity leaves no valid specific-yield range')
+        return bounds
 
     def update_model_files(self, params: Dict[str, Any]) -> bool:
         """Write denormalized parameters to GSFLOW model files."""

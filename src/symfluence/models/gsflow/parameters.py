@@ -44,7 +44,7 @@ PARAM_BOUNDS: Mapping = CALIBRATION_BOUNDS
 DEFAULT_PARAMS: Dict[str, float] = {
     'soil_moist_max': 6.0,
     'ssr2gw_rate': 0.1,
-    'K': 50.0,
+    'K': 1.0,
     'SY': 0.15,
     'slowcoef_lin': 0.015,
     'carea_max': 0.6,

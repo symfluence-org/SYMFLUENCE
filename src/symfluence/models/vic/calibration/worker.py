@@ -24,6 +24,7 @@ from symfluence.core.constants import ModelDefaults
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
+from symfluence.models.vic.constants import target_snow_constants
 
 
 @R.workers.add('VIC')
@@ -169,12 +170,12 @@ class VICWorker(BaseWorker):
                 self.logger.debug(f"Parameter validation failed: {validation_error}")
                 return False
 
-            # Store global-file params for later injection into the VIC global parameter file
+            # Store snow constants for the worker-local VIC constants file
             self._global_file_params = {}
             if 'min_rain_temp' in params:
-                self._global_file_params['MIN_RAIN_TEMP'] = params['min_rain_temp']
+                self._global_file_params['SNOW_MIN_RAIN_TEMP'] = params['min_rain_temp']
             if 'max_snow_temp' in params:
-                self._global_file_params['MAX_SNOW_TEMP'] = params['max_snow_temp']
+                self._global_file_params['SNOW_MAX_SNOW_TEMP'] = params['max_snow_temp']
 
             # Handle elev_offset: shift snow band elevations to control snowmelt timing
             # Positive offset raises band elevations → cooler bands → delayed snowmelt
@@ -444,48 +445,21 @@ class VICWorker(BaseWorker):
         with open(original_global, 'r', encoding='utf-8') as f:
             content = f.read()
 
-        # Update RESULT_DIR, PARAMETERS, and inject calibration-specific global params
-        lines = content.split('\n')
+        content = target_snow_constants(
+            content, vic_settings_dir, settings_dir,
+            getattr(self, '_global_file_params', {}),
+        )
         new_lines = []
-        # Track which global-file params we've already written (to avoid duplicates)
-        global_params_written = set()
-        global_file_params = getattr(self, '_global_file_params', {})
-
-        for line in lines:
-            stripped = line.strip()
-            if stripped.startswith('RESULT_DIR'):
-                new_lines.append(f'RESULT_DIR             {output_dir}')
-            elif stripped.startswith('PARAMETERS'):
-                # Always point to worker-specific params if available
+        for line in content.splitlines():
+            parts = line.split()
+            key = parts[0] if parts else ''
+            if key == 'RESULT_DIR':
+                new_lines.append(f'RESULT_DIR {output_dir}')
+            elif key == 'PARAMETERS':
                 worker_params = settings_dir / 'parameters' / 'vic_params.nc'
-                if worker_params.exists():
-                    new_lines.append(f'PARAMETERS             {worker_params}')
-                else:
-                    new_lines.append(line)
-            elif any(stripped.startswith(gp) for gp in global_file_params):
-                # Replace existing global-file param with calibrated value
-                for gp, val in global_file_params.items():
-                    if stripped.startswith(gp):
-                        new_lines.append(f'{gp}            {val:.4f}')
-                        global_params_written.add(gp)
-                        break
+                new_lines.append(f'PARAMETERS {worker_params}' if worker_params.exists() else line)
             else:
                 new_lines.append(line)
-
-        # Inject any global-file params that weren't already in the file
-        for gp, val in global_file_params.items():
-            if gp not in global_params_written:
-                # Insert before the output section
-                insert_line = f'{gp}            {val:.4f}'
-                # Find the output settings section to insert before it
-                for i, line in enumerate(new_lines):
-                    if '#-- Output Settings' in line:
-                        new_lines.insert(i, insert_line)
-                        new_lines.insert(i + 1, '')
-                        break
-                else:
-                    # Fallback: append before last line
-                    new_lines.insert(-1, insert_line)
 
         with open(worker_global, 'w', encoding='utf-8') as f:
             f.write('\n'.join(new_lines))
@@ -606,9 +580,20 @@ class VICWorker(BaseWorker):
 
             obs_series = pd.Series(obs_values, index=obs_index)
 
+            period = kwargs.get('period') or config.get('CALIBRATION_PERIOD') or config.get('domain', {}).get('calibration_period')
+            calibration_period = None
+            if period:
+                parts = period.split(',') if isinstance(period, str) else period
+                if len(parts) != 2:
+                    raise ValueError('Invalid VIC scoring period')
+                start, end = (pd.Timestamp(str(value).strip()) for value in parts)
+                if pd.isna(start) or pd.isna(end) or start > end:
+                    raise ValueError('Invalid VIC scoring period')
+                calibration_period = (start, end)
+
             # Align and calculate metrics
             obs_aligned, sim_aligned = self._streamflow_metrics.align_timeseries(
-                sim_series, obs_series
+                sim_series, obs_series, calibration_period=calibration_period
             )
 
             results = self._streamflow_metrics.calculate_metrics(
