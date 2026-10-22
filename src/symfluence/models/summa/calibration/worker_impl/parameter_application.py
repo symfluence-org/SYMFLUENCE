@@ -25,6 +25,8 @@ import xarray as xr
 
 from symfluence.core.profiling import get_profiler
 
+from ..forcing_scaling import FORCING_PARAMS, PRECIP_MULT_PARAM, apply_precip_multiplier
+
 
 def _apply_parameters_worker(params: Dict, task_data: Dict, settings_dir: Path, logger, debug_info: Dict) -> bool:
     """Apply parameters consistently with sequential approach"""
@@ -61,9 +63,16 @@ def _apply_parameters_worker(params: Dict, task_data: Dict, settings_dir: Path, 
             if not _update_mizuroute_params_worker(params, task_data, logger, debug_info):
                 return False
 
-        # 3. Generate trial parameters file (same exclusion logic as ParameterManager)
+        # 3. Rescale forcing precipitation (pseudo-parameter, not in trialParams)
+        if PRECIP_MULT_PARAM in params:
+            file_manager = config.get('SETTINGS_SUMMA_FILEMANAGER') or 'fileManager.txt'
+            if not apply_precip_multiplier(settings_dir, params[PRECIP_MULT_PARAM], logger, file_manager):
+                debug_info['errors'].append(f"Failed to apply {PRECIP_MULT_PARAM}")
+                return False
+
+        # 4. Generate trial parameters file (same exclusion logic as ParameterManager)
         hydrological_params = {k: v for k, v in params.items()
-                          if k not in depth_params + mizuroute_params}
+                          if k not in depth_params + mizuroute_params + list(FORCING_PARAMS)}
 
         if hydrological_params:
             logger.debug(f"Generating trial parameters file with: {list(hydrological_params.keys())} (consistent)")

@@ -101,6 +101,9 @@ class SUMMAWorker(BaseWorker):
                 task_data['config'] = self.config
             if 'params' not in task_data:
                 task_data['params'] = params
+            # Final evaluation does not go through TaskBuilder. Resolve the
+            # same sibling routing directory used by run_model in that path.
+            task_data.setdefault('mizuroute_settings_dir', str(Path(settings_dir).parent / 'mizuRoute'))
 
             # Worker logger at the root's effective level (no hard-coded
             # WARNING gate — that used to hide parameter-application detail)
