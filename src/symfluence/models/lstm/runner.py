@@ -10,6 +10,7 @@ and snow water equivalent (SWE).
 from __future__ import annotations
 
 import logging
+import os
 
 # Security rationale: Used for trusted internal model serialization
 import pickle  # nosec B403
@@ -89,7 +90,21 @@ class LSTMRunner(BaseModelRunner, SpatialOrchestrator, MizuRouteConfigMixin, Spa
         # Call base class
         super().__init__(config, logger, reporting_manager=reporting_manager)
 
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        # Device selection. Default is unchanged (CUDA when present, else CPU);
+        # SYMFLUENCE_LSTM_DEVICE opts into another backend explicitly.
+        #
+        # Deliberately opt-in rather than auto-detecting Apple MPS. Measured on
+        # this architecture (3x128 LSTM, seq 700, batch 64) MPS is ~4.5x faster,
+        # and a single forward with identical weights agrees with CPU to
+        # max|diff| 5.7e-07 — ordinary float32 accumulation-order noise. But
+        # that noise feeds back through the optimizer: after 15 training steps
+        # the two devices' weights already differ by mean 0.096. Auto-switching
+        # would therefore silently change calibration results on Apple silicon.
+        _requested = os.environ.get("SYMFLUENCE_LSTM_DEVICE", "").strip().lower()
+        if _requested in ("mps", "cuda", "cpu"):
+            self.device = torch.device(_requested)
+        else:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.logger.info(f"Initialized LSTM runner with device: {self.device}")
 
         # Determine spatial mode using mixin
