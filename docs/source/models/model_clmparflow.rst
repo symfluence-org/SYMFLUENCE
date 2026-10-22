@@ -104,7 +104,7 @@ Tungnaá at Maríufossar
 
 On a 1 km grid (1,140 cells, 139 glacier) with the values above, one spin-up cycle (drift −0.6 % of
 precipitation) and 2 ranks at ~2 h per simulated year: KGE 0.867 (WY2013–16), 0.880 (WY2017–21), 0.680
-(WY2022–23); glacier net balance r 0.84, RMSE 0.49 m w.e. against LamaH-Ice, under-melting in warm years.
+(WY2022–23); glacier net balance r 0.82, RMSE 0.53 m w.e. against LamaH-Ice, under-melting in warm years.
 The setting that mattered most is the near-impermeable glacier bed: without it, melt recharges the aquifer
 and drains in autumn instead of reaching the river in summer.
 
