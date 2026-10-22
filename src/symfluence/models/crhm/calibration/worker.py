@@ -102,7 +102,17 @@ class CRHMWorker(BaseWorker):
                     self.logger.error(f"CRHM project file not found in {settings_dir}")
                     return False
 
-            # Update project file with new parameters
+            # Keep nested recharge storage within total soil storage, and
+            # initialize within each trial's capacities during model spinup.
+            params = dict(params)
+            if 'soil_moist_max' in params and 'soil_rechr_max' in params:
+                params['soil_rechr_max'] = min(params['soil_rechr_max'], params['soil_moist_max'])
+                params['soil_moist_init'] = 0.5 * params['soil_moist_max']
+                params['soil_rechr_init'] = 0.5 * params['soil_rechr_max']
+            if 'Sdmax' in params:
+                params['Sdinit'] = 0.0
+            if 'tmax_allrain' in params and 'tmax_allsnow' in params:
+                params['tmax_allsnow'] = min(params['tmax_allsnow'], params['tmax_allrain'] - 0.1)
             return self._update_prj_file(prj_file, params)
 
         except Exception as e:  # noqa: BLE001 — calibration resilience
@@ -151,7 +161,7 @@ class CRHMWorker(BaseWorker):
                         formatted = f"{value:.2f}"
                     else:
                         formatted = f"{value:.6f}"
-                    new_lines.append(formatted)
+                    new_lines.append(' '.join([formatted] * max(1, len(line.split()))))
                     self.logger.debug(f"Updated {pending_param} = {formatted}")
                     skip_next = False
                     pending_param = None
@@ -397,6 +407,8 @@ class CRHMWorker(BaseWorker):
                 if dt > 0:
                     interval_seconds = dt
             sim_series = sim_series / interval_seconds  # Convert to m^3/s
+            # Native CRHM output is labelled at the end of each interval.
+            sim_series.index = sim_series.index - pd.Timedelta(seconds=interval_seconds)
             sim_series = sim_series.resample('D').mean()
 
             # Skip warmup period

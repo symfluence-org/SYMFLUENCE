@@ -38,11 +38,20 @@ class CRHMConfig(BaseModel):
     spatial_mode: SpatialModeType = Field(default='lumped', alias='CRHM_SPATIAL_MODE')
     experiment_output: str = Field(default='default', alias='EXPERIMENT_OUTPUT_CRHM')
     params_to_calibrate: str = Field(
-        default='Ht,Asnow,inhibit_evap,Ksat,soil_rechr_max,soil_moist_max,soil_gw_K,Sdmax,fetch,inhibit_subl,Qe_subl_from_SWE,N_S,Kstorage,gw_K,tfactor,nfactor,delay_melt,gwKstorage,gwLag',
+        default='Ht,Asnow,inhibit_evap,Ksat,soil_rechr_max,soil_moist_max,soil_gw_K,Sdmax,fetch,inhibit_subl,N_S,Kstorage,gw_K,tfactor,delay_melt,gwKstorage,gwLag',
         alias='CRHM_PARAMS_TO_CALIBRATE'
     )
     timeout: int = Field(default=3600, alias='CRHM_TIMEOUT', ge=60, le=86400)
+    param_bounds: dict[str, dict[str, float | str]] = Field(
+        default_factory=dict, alias='CRHM_PARAM_BOUNDS',
+        description='Basin-specific calibration bounds and optional linear/log transforms.')
     elevation_bands: bool = Field(default=False, alias='CRHM_ELEVATION_BANDS')
     elevation_band_size: float = Field(
         default=200.0, alias='CRHM_ELEVATION_BAND_SIZE', gt=0.0)
     terrain_radiation: bool = Field(default=False, alias='CRHM_TERRAIN_RADIATION')
+    sublimation_from_swe: bool = Field(default=False, alias='CRHM_SUBLIMATION_FROM_SWE',
+                                     description='Use the native ebsm explicit SWE sublimation option (Qe_subl_from_SWE=1).')
+    blowing_snow: bool = Field(default=True, alias='CRHM_BLOWING_SNOW',
+                               description='Enable PBSM wind transport and blowing-snow sublimation; requires defensible HRU transport connectivity.')
+
+    route_groundwater_to_stream: bool = Field(default=False, alias='CRHM_ROUTE_GROUNDWATER_TO_STREAM')
