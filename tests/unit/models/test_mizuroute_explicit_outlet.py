@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 import xarray as xr
 
+from symfluence.core.exceptions import EvaluationError
 from symfluence.core.modeling.evaluators.streamflow import StreamflowEvaluator
 
 
@@ -17,5 +18,5 @@ def test_explicit_reach_is_selected_and_missing_reach_rejected(tmp_path):
     evaluator.config = SimpleNamespace(evaluation=SimpleNamespace(sim_reach_id=65))
     assert evaluator._extract_mizuroute_streamflow(path).tolist() == [2., 3.]
     evaluator.config.evaluation.sim_reach_id = 999
-    with pytest.raises(ValueError, match='missing'):
+    with pytest.raises(EvaluationError, match='missing'):
         evaluator._extract_mizuroute_streamflow(path)

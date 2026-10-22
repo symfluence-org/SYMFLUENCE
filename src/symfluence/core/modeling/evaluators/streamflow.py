@@ -347,7 +347,8 @@ class StreamflowEvaluator(ModelEvaluator):
                     )
                     catchment_area = self._get_catchment_area()
                     return result * catchment_area / 1000.0 / 86400.0
-                raise ValueError(
+                from symfluence.core.exceptions import EvaluationError
+                raise EvaluationError(
                     f"Unrecognized streamflow units {units!r} on FUSE variable "
                     f"'{var_name}' in {sim_file.name}. Expected m³/s or mm/day. "
                     "Set a correct 'units' attribute on the variable — guessing a "
@@ -443,17 +444,20 @@ class StreamflowEvaluator(ModelEvaluator):
                 lambda: self.config.evaluation.sim_reach_id,
                 default=None, dict_key='SIM_REACH_ID',
             )
+            if not isinstance(requested_reach, (int, np.integer)) or isinstance(requested_reach, bool):
+                requested_reach = None
             for var_name in streamflow_vars:
                 if var_name in ds.variables:
                     var = ds[var_name]
                     if requested_reach is not None:
+                        from symfluence.core.exceptions import EvaluationError
                         for id_name in ('reachID', 'segId'):
                             if id_name in ds and ds[id_name].ndim == 1 and ds[id_name].dims[0] in var.dims:
                                 matches = np.flatnonzero(ds[id_name].values == requested_reach)
                                 if len(matches) != 1:
-                                    raise ValueError(f'Requested routing reach {requested_reach} is missing or duplicated')
+                                    raise EvaluationError(f'Requested routing reach {requested_reach} is missing or duplicated')
                                 return cast(pd.Series, var.isel({ds[id_name].dims[0]: int(matches[0])}).to_pandas())
-                        raise ValueError('Explicit routing reach requires a reachID or segId coordinate')
+                        raise EvaluationError('Explicit routing reach requires a reachID or segId coordinate')
                     if 'seg' in var.dims:
                         segment_means = var.mean(dim='time').values
                         outlet_seg_idx = np.argmax(segment_means)
