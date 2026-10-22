@@ -19,7 +19,7 @@ import geopandas as gpd
 import netCDF4 as nc4
 import numpy as np
 
-from symfluence.core.exceptions import FileOperationError
+from symfluence.core.exceptions import FileOperationError, ValidationError
 from symfluence.core.path_resolver import find_catchment_subfile
 
 if TYPE_CHECKING:
@@ -73,14 +73,14 @@ class MizuRouteTopologyGenerator:
             self._create_point_topology_file()
             return
 
-        river_network_path = self.pp._get_config_value(lambda: self.pp.config.paths.river_network_shp_path, default='default')
-        river_network_name = self.pp._get_config_value(lambda: self.pp.config.paths.river_network_shp_name, default='default')
+        river_network_path = self.pp._get_config_value(lambda: self.pp.config.paths.river_network_path, default='default')
+        river_network_name = self.pp._get_config_value(lambda: self.pp.config.paths.river_network_name, default='default')
         method_suffix = self.pp._get_method_suffix()
 
         # Check if this is lumped domain with distributed routing
         # If so, use the delineated river network (from distributed delineation)
         routing_delineation = self.pp._get_config_value(
-            lambda: self.pp.config.domain.routing,
+            lambda: self.pp.config.domain.delineation.routing,
             default='lumped',
             dict_key='ROUTING_DELINEATION',
         )
@@ -158,7 +158,9 @@ class MizuRouteTopologyGenerator:
             num_seg = len(shp_river)
             num_hru = len(shp_catchments)
 
-            hru_to_seg_ids = shp_catchments['GRU_ID'].values.astype(int)  # Each GRU drains to segment with same ID
+            hru_to_seg_ids = shp_catchments[self.pp.basin_hru_to_seg_col].values.astype(int)
+            if not np.isin(hru_to_seg_ids, shp_river[self.pp.river_segid_col].values).all():
+                raise ValidationError('Delineated routing subcatchments reference missing river segments')
 
             # Convert fractional areas to actual areas (multiply by total basin area)
             total_basin_area = shp_basin[self.pp.basin_area_col].sum()

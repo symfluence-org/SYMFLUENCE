@@ -57,6 +57,27 @@ class MizuRouteRunner(BaseModelRunner):  # type: ignore[misc]
         """MizuRoute creates directories on-demand."""
         return False
 
+    @staticmethod
+    def _normalize_time_units(units: str) -> str:
+        """Keep the same CF epoch while spelling it for the Fortran parser."""
+        import re
+
+        parts = re.split(r'\s+since\s+', units, maxsplit=1, flags=re.IGNORECASE)
+        if len(parts) != 2:
+            return units
+        reference = pd.Timestamp(parts[1])
+        if reference.tzinfo is not None:
+            reference = reference.tz_convert('UTC').tz_localize(None)
+        return f"{parts[0]} since {reference.isoformat(sep=' ')}"
+
+    @staticmethod
+    def _validate_routing_output(log_path: Path, output_path: Path) -> None:
+        """Fortran STOP may return zero after fatal initialization errors."""
+        if 'FATAL ERROR' in log_path.read_text(errors='replace').upper():
+            raise ModelExecutionError(f'mizuRoute reported a fatal error; see {log_path}')
+        if not any(output_path.glob('*.nc')):
+            raise ModelExecutionError(f'mizuRoute produced no NetCDF output in {output_path}')
+
     def _get_time_rounding_freq(self) -> Optional[str]:
         """Get time rounding frequency from config.
 
@@ -264,6 +285,21 @@ class MizuRouteRunner(BaseModelRunner):  # type: ignore[misc]
 
             self.logger.debug(f"Detected time format: {time_format_detected}")
             self.logger.debug(f"Needs time precision fix: {needs_fix}")
+
+            # A perfectly aligned numeric axis can still have an ISO epoch
+            # ('T', timezone suffix) that mizuRoute's Fortran parser rejects.
+            old_units = time_attrs.get('units', '')
+            normalized_units = self._normalize_time_units(old_units)
+            if normalized_units != old_units:
+                ds.time.attrs['units'] = normalized_units
+                ds.load()
+                temp_filepath = runoff_filepath.with_suffix('.tmp.nc')
+                ds.to_netcdf(temp_filepath, format='NETCDF4')
+                ds.close()
+                temp_filepath.replace(runoff_filepath)
+                # Re-enter with the normalized epoch so time arithmetic also
+                # preserves non-midnight references and timezone offsets.
+                return self.fix_time_precision()
 
             if not needs_fix:
                 self.logger.debug("Time precision is already correct")
@@ -569,8 +605,13 @@ class MizuRouteRunner(BaseModelRunner):  # type: ignore[misc]
             self.execute_subprocess(
                 mizu_command,
                 mizu_log_path / mizu_log_name,
-                success_message="mizuRoute run completed successfully",
+                success_message="mizuRoute process exited",
                 env=mizu_env,
             )
+
+            # Fortran STOP can return zero even after a fatal initialization
+            # error. Exit status alone is not evidence of a routed result.
+            self._validate_routing_output(mizu_log_path / mizu_log_name, mizu_out_path)
+            self.logger.info('mizuRoute run completed successfully')
 
             return mizu_out_path
