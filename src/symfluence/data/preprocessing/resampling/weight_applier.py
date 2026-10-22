@@ -109,6 +109,14 @@ class RemappingWeightApplier(ConfigMixin):
         worker_str = f"Worker {worker_id}: " if worker_id is not None else ""
 
         try:
+            from .grid_identity import grid_signature, output_matches, read_manifest
+            manifest = read_manifest(remap_file)
+            if manifest:
+                actual = grid_signature(file, manifest['coordinate_names'])
+                if actual != manifest['grid_signature']:
+                    raise ValueError(f'Remapping weights do not match coordinates of {file}')
+                overwrite = overwrite or not output_matches(output_file, manifest['signature'])
+
             # Check if output already exists
             if output_file.exists() and not overwrite:
                 file_size = output_file.stat().st_size
@@ -140,6 +148,14 @@ class RemappingWeightApplier(ConfigMixin):
                     self.logger.warning(f"{worker_str}EASYMORE reported 'empty' for {file.name}")
 
                 # Find and move output file
+                # Stamp provenance before atomic publication, never afterward.
+                if manifest:
+                    from netCDF4 import Dataset
+
+                    from .grid_identity import ATTRIBUTE
+                    for candidate in temp_dir.glob('*.nc'):
+                        with Dataset(candidate, 'a') as nc:
+                            nc.setncattr(ATTRIBUTE, manifest['signature'])
                 success = self._move_output_file(temp_dir, output_file, file, worker_str)
                 if not success:
                     return False
@@ -426,9 +442,6 @@ class RemappingWeightApplier(ConfigMixin):
             self.logger.debug(f"{worker_str}Published {temp_output.name} as {output_file.name}")
             return True
 
-        elif output_file.exists():
-            self.logger.debug(f"{worker_str}Output file already exists: {output_file.name}")
-            return True
         else:
             self.logger.error(
                 f"{worker_str}EASYMORE created NO valid output files for input {input_file.name}. "
