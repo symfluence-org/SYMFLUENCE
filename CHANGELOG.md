@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **ParFlow-CLM basin mode with glacier water (opt-in)**: `CLMPARFLOW_BASIN_MODE` builds a regular grid over
+  the real basin (`CLMPARFLOW_BASIN_DX`, projected `CLMPARFLOW_BASIN_CRS`; mask from the outline, forcing unit and
+  glacier flag per cell from the HRU/unit polygons, D4 priority-flood overland slopes to the gauge cell, solid
+  file from the mask) and runs October–September segments chained by ParFlow pressure and CLM restarts:
+  spin-up cycles over `CLMPARFLOW_BASIN_SPINUP_YEARS` until storage drift < `CLMPARFLOW_BASIN_DRIFT_TOL` of
+  precipitation, then the production years (resumable). Outlet discharge is ParFlow's own overland outflow.
+  Knobs: precipitation multiplier, land-ice albedo, glacier-bed and soil/aquifer permeability, Manning.
+  `symfluence binary install clmparflow --patched` builds ParFlow v3.15.0 + hypre with three CLM patches
+  (`models/clmparflow/patches/README.md`): land-ice tiles pass rain, snowpack outflow and ice melt to ParFlow
+  (upstream loses all glacier water), the restart reader reads the snow-age fields the writer stores, and the
+  ice albedo is settable per run. Reproduces the Tungnaá ensemble member (KGE 0.867/0.880/0.680) bit for bit.
+  Default (lumped placeholder) runs are unchanged.
 - **GR forcing corrections and lumped glacier melt (opt-in)**: calibratable `PCORR` (precipitation
   multiplier) and `TCORR` (additive temperature offset) for GR4J + CemaNeige; `GR_SNOW_LAYERS` sets the
   CemaNeige layer count. `GR_GLACIER_ENABLED` runs CemaNeige and GR4J separately and adds degree-day ice

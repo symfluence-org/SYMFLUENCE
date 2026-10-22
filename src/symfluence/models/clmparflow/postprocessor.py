@@ -64,6 +64,15 @@ class CLMParFlowPostProcessor(StandardModelPostProcessor):
                 / self.config.domain.experiment_id / "CLMPARFLOW"
             )
 
+        basin_outlet = output_dir / 'clmparflow_basin_outlet.csv'
+        if basin_outlet.exists():
+            # Basin mode: ParFlow routes overland flow to the outlet itself (PrintOverlandSum, daily m3/s)
+            streamflow = pd.read_csv(basin_outlet, index_col='date', parse_dates=True)['discharge_cms']
+            streamflow.name = 'streamflow_m3s'
+            self.save_streamflow_to_results(streamflow)
+            return streamflow, {'units': 'm3/s', 'source': 'CLMParFlow basin-mode outlet overland flow',
+                                'mode': 'basin'}
+
         try:
             from .extractor import CLMParFlowResultExtractor
             extractor = CLMParFlowResultExtractor()

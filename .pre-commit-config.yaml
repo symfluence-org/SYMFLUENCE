@@ -10,10 +10,11 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
     hooks:
+      # Upstream-source patches and vendored model inputs must stay byte-exact
       - id: trailing-whitespace
-        exclude: ^(docs/|examples/.*\.ipynb$)
+        exclude: ^(docs/|examples/.*\.ipynb$|src/symfluence/models/[^/]+/patches/.*\.patch$|src/symfluence/models/clmparflow/basin/templates/)
       - id: end-of-file-fixer
-        exclude: ^(docs/|examples/.*\.ipynb$)
+        exclude: ^(docs/|examples/.*\.ipynb$|src/symfluence/models/[^/]+/patches/.*\.patch$|src/symfluence/models/clmparflow/basin/templates/)
       - id: check-yaml
         args: [--unsafe]  # Allow custom YAML tags
       - id: check-toml
