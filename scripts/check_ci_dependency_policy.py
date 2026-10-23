@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github" / "workflows"
 
 X86_HDF5_POLICY = "'h5py>=3.16' netCDF4"
-ARM_HDF5_POLICY = "'h5py<3.16' netCDF4"
+ARM_HDF5_POLICY = "'h5py<3.16' 'netCDF4<1.7.5'"
 
 
 def _uses_uv_sync(job: dict) -> bool:
