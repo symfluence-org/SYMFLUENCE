@@ -579,9 +579,12 @@ verify_netcdf4_import() {
         return 0
     fi
 
-    local import_output
-    import_output=$(python -c "import netCDF4; print(f'netCDF4 {netCDF4.__version__}')" 2>&1)
-    local rc=$?
+    # The script runs under `set -e`, and a failing command substitution in a
+    # plain assignment aborts it — silently, before any diagnostic below is
+    # printed. Capture the status explicitly so a broken import is reported
+    # and the install continues, as documented above.
+    local import_output rc=0
+    import_output=$(python -c "import netCDF4; print(f'netCDF4 {netCDF4.__version__}')" 2>&1) || rc=$?
 
     if [[ $rc -eq 0 ]]; then
         print_success "Verified: $import_output"
