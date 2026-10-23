@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -39,7 +40,11 @@ def executable(tmp_path):
         pytest.skip('Native ledger tests require gfortran')
     (tmp_path/'test.f90').write_text(DRIVER)
     exe = tmp_path/'test'
-    subprocess.run([compiler, '-fcheck=all', '-ffree-line-length-none', str(SOURCE),
+    # On Windows the gfortran on PATH need not ship its runtime DLLs alongside
+    # it, so a dynamically linked driver dies with STATUS_DLL_NOT_FOUND before
+    # reaching the ledger. Link the runtime statically there.
+    static = ['-static'] if sys.platform == 'win32' else []
+    subprocess.run([compiler, '-fcheck=all', '-ffree-line-length-none', *static, str(SOURCE),
                     'test.f90', '-o', str(exe)], cwd=tmp_path, check=True, capture_output=True)
     return exe
 
