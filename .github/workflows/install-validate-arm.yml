@@ -205,11 +205,12 @@ jobs:
           pip install -e ".[test]"
           # Force wheel-based h5py/netCDF4 (bootstrap may rebuild from source
           # against system libnetcdf w/ PnetCDF dispatch -> import-time failures).
-          # Pin h5py<3.16: 3.16.0 bundles HDF5 2.0.0, but netCDF4 1.7.4 still
-          # bundles 1.14.6. Loading both into one process dual-loads two libhdf5
-          # builds and corrupts netCDF4's HDF5 state. h5py 3.15.x bundles 1.14.6,
-          # matching netCDF4. Lift this cap once netCDF4 wheels also ship HDF5 2.0.
-          pip install --force-reinstall --only-binary :all: 'h5py<3.16' netCDF4
+          # Pin both to wheels that bundle HDF5 1.14.6: h5py 3.16.0 bundles
+          # HDF5 2.0.0 and netCDF4 1.7.5 bundles 2.2.0. Loading two libhdf5
+          # builds into one process corrupts netCDF4's HDF5 state (the smoke
+          # check below asserts they match). Lift both caps together once a
+          # pair of wheels ships the same HDF5 again.
+          pip install --force-reinstall --only-binary :all: 'h5py<3.16' 'netCDF4<1.7.5'
 
       - name: Activate venv for subsequent steps
         run: |

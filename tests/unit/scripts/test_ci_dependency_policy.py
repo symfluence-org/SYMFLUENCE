@@ -14,7 +14,7 @@ def _write_required_hdf_workflows(root: Path) -> None:
     )
     (root / "install-validate-arm.yml").write_text(
         "jobs:\n  install:\n    steps:\n"
-        "      - run: pip install 'h5py<3.16' netCDF4\n",
+        "      - run: pip install 'h5py<3.16' 'netCDF4<1.7.5'\n",
         encoding="utf-8",
     )
 
