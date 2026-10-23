@@ -83,6 +83,17 @@ jobs:
           miniconda-version: "latest"
           channels: conda-forge,defaults
 
+      - name: Pin netCDF4 for the conda env (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        # pip's netCDF4 1.7.5 wheel (bundled HDF5 2.2.0) fails to load inside
+        # this conda env ("DLL load failed while importing _netCDF4"); 1.7.4
+        # loads. PIP_CONSTRAINT reaches every later pip call, including the
+        # bootstrap's. Lift with the matching cap in install-validate-arm.yml.
+        run: |
+          echo 'netCDF4<1.7.5' > "$RUNNER_TEMP/windows-conda-constraints.txt"
+          echo "PIP_CONSTRAINT=$RUNNER_TEMP/windows-conda-constraints.txt" >> "$GITHUB_ENV"
+
       - name: Install minimal system dependencies
         shell: bash
         # See the matching step in ci.yml for the full account: three of this
@@ -318,6 +329,17 @@ jobs:
           activate-environment: "test-env"
           miniconda-version: "latest"
           channels: conda-forge,defaults
+
+      - name: Pin netCDF4 for the conda env (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        # pip's netCDF4 1.7.5 wheel (bundled HDF5 2.2.0) fails to load inside
+        # this conda env ("DLL load failed while importing _netCDF4"); 1.7.4
+        # loads. PIP_CONSTRAINT reaches every later pip call, including the
+        # bootstrap's. Lift with the matching cap in install-validate-arm.yml.
+        run: |
+          echo 'netCDF4<1.7.5' > "$RUNNER_TEMP/windows-conda-constraints.txt"
+          echo "PIP_CONSTRAINT=$RUNNER_TEMP/windows-conda-constraints.txt" >> "$GITHUB_ENV"
 
       - name: Free up disk space (Linux)
         if: runner.os == 'Linux'
@@ -665,6 +687,17 @@ jobs:
           activate-environment: "test-env"
           miniconda-version: "latest"
           channels: conda-forge,defaults
+
+      - name: Pin netCDF4 for the conda env (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        # pip's netCDF4 1.7.5 wheel (bundled HDF5 2.2.0) fails to load inside
+        # this conda env ("DLL load failed while importing _netCDF4"); 1.7.4
+        # loads. PIP_CONSTRAINT reaches every later pip call, including the
+        # bootstrap's. Lift with the matching cap in install-validate-arm.yml.
+        run: |
+          echo 'netCDF4<1.7.5' > "$RUNNER_TEMP/windows-conda-constraints.txt"
+          echo "PIP_CONSTRAINT=$RUNNER_TEMP/windows-conda-constraints.txt" >> "$GITHUB_ENV"
 
       - name: Free up disk space (Linux)
         if: runner.os == 'Linux'
