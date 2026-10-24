@@ -86,12 +86,15 @@ jobs:
       - name: Pin netCDF4 for the conda env (Windows)
         if: runner.os == 'Windows'
         shell: bash
-        # pip's netCDF4 1.7.5 wheel (bundled HDF5 2.2.0) fails to load inside
-        # this conda env ("DLL load failed while importing _netCDF4"); 1.7.4
-        # loads. PIP_CONSTRAINT reaches every later pip call, including the
-        # bootstrap's. Lift with the matching cap in install-validate-arm.yml.
+        # conda's GDAL brings HDF5 1.14.6 into this env. pip wheels that bundle
+        # a different HDF5 fail to load once a process has the conda one:
+        # netCDF4 1.7.5 (HDF5 2.2.0, "DLL load failed while importing
+        # _netCDF4") and h5py 3.16 (HDF5 2.0.0, "procedure could not be found",
+        # order-dependent under xdist). netCDF4 1.7.4 and h5py 3.15 bundle
+        # 1.14.6. PIP_CONSTRAINT reaches every later pip call, including the
+        # bootstrap's. Lift with the matching caps in install-validate-arm.yml.
         run: |
-          echo 'netCDF4<1.7.5' > "$RUNNER_TEMP/windows-conda-constraints.txt"
+          printf '%s\n' 'netCDF4<1.7.5' 'h5py<3.16' > "$RUNNER_TEMP/windows-conda-constraints.txt"
           echo "PIP_CONSTRAINT=$RUNNER_TEMP/windows-conda-constraints.txt" >> "$GITHUB_ENV"
 
       - name: Install minimal system dependencies
@@ -333,12 +336,15 @@ jobs:
       - name: Pin netCDF4 for the conda env (Windows)
         if: runner.os == 'Windows'
         shell: bash
-        # pip's netCDF4 1.7.5 wheel (bundled HDF5 2.2.0) fails to load inside
-        # this conda env ("DLL load failed while importing _netCDF4"); 1.7.4
-        # loads. PIP_CONSTRAINT reaches every later pip call, including the
-        # bootstrap's. Lift with the matching cap in install-validate-arm.yml.
+        # conda's GDAL brings HDF5 1.14.6 into this env. pip wheels that bundle
+        # a different HDF5 fail to load once a process has the conda one:
+        # netCDF4 1.7.5 (HDF5 2.2.0, "DLL load failed while importing
+        # _netCDF4") and h5py 3.16 (HDF5 2.0.0, "procedure could not be found",
+        # order-dependent under xdist). netCDF4 1.7.4 and h5py 3.15 bundle
+        # 1.14.6. PIP_CONSTRAINT reaches every later pip call, including the
+        # bootstrap's. Lift with the matching caps in install-validate-arm.yml.
         run: |
-          echo 'netCDF4<1.7.5' > "$RUNNER_TEMP/windows-conda-constraints.txt"
+          printf '%s\n' 'netCDF4<1.7.5' 'h5py<3.16' > "$RUNNER_TEMP/windows-conda-constraints.txt"
           echo "PIP_CONSTRAINT=$RUNNER_TEMP/windows-conda-constraints.txt" >> "$GITHUB_ENV"
 
       - name: Free up disk space (Linux)
@@ -691,12 +697,15 @@ jobs:
       - name: Pin netCDF4 for the conda env (Windows)
         if: runner.os == 'Windows'
         shell: bash
-        # pip's netCDF4 1.7.5 wheel (bundled HDF5 2.2.0) fails to load inside
-        # this conda env ("DLL load failed while importing _netCDF4"); 1.7.4
-        # loads. PIP_CONSTRAINT reaches every later pip call, including the
-        # bootstrap's. Lift with the matching cap in install-validate-arm.yml.
+        # conda's GDAL brings HDF5 1.14.6 into this env. pip wheels that bundle
+        # a different HDF5 fail to load once a process has the conda one:
+        # netCDF4 1.7.5 (HDF5 2.2.0, "DLL load failed while importing
+        # _netCDF4") and h5py 3.16 (HDF5 2.0.0, "procedure could not be found",
+        # order-dependent under xdist). netCDF4 1.7.4 and h5py 3.15 bundle
+        # 1.14.6. PIP_CONSTRAINT reaches every later pip call, including the
+        # bootstrap's. Lift with the matching caps in install-validate-arm.yml.
         run: |
-          echo 'netCDF4<1.7.5' > "$RUNNER_TEMP/windows-conda-constraints.txt"
+          printf '%s\n' 'netCDF4<1.7.5' 'h5py<3.16' > "$RUNNER_TEMP/windows-conda-constraints.txt"
           echo "PIP_CONSTRAINT=$RUNNER_TEMP/windows-conda-constraints.txt" >> "$GITHUB_ENV"
 
       - name: Free up disk space (Linux)
