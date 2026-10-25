@@ -57,7 +57,7 @@ MESH supports multiple physics options:
 - Alternative to CLASS
 - Multi-layer soil and snow
 - Urban physics
-- Glacier representation
+- Glacier representation (opt-in native ice surfaces; see :doc:`model_mesh_glacier`)
 
 Spatial Discretization
 ----------------------
@@ -640,6 +640,7 @@ Additional Resources
 - :doc:`../configuration`: MESH parameter reference
 - :doc:`../calibration`: Calibration best practices
 - :doc:`model_summa`: Comparison with SUMMA
+- :doc:`model_mesh_glacier`: Staging native MESH glacier surfaces
 - :doc:`../troubleshooting`: General troubleshooting
 
 **Canadian Datasets:**
@@ -660,3 +661,8 @@ Additional Resources
 - Used in Canada's operational flood forecasting
 - Provincial water resource management (Saskatchewan, Alberta)
 - Climate change impact studies across Canada
+
+.. toctree::
+   :hidden:
+
+   model_mesh_glacier
