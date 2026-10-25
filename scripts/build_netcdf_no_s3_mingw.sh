@@ -42,15 +42,19 @@
 #   scripts/build_netcdf_no_s3_mingw.sh [work_dir]
 #
 # Environment:
-#   MINGW_PREFIX     mingw64 prefix to build against and install into
-#                    (default: C:/msys64/mingw64)
+#   SYMFLUENCE_MINGW_PREFIX
+#                    mingw64 prefix to build against and install into
+#                    (default: C:/msys64/mingw64). Deliberately not
+#                    MINGW_PREFIX: every MSYS2/Git login shell exports that for
+#                    its own toolchain (Git Bash: /ucrt64), which would
+#                    silently redirect the build away from the MSYS2 prefix.
 #   NETCDF_VERSION   override the netCDF-C version to build. By default the
 #                    version is read from the installed MSYS2 package so the
 #                    replacement always matches the ABI the rest of the prefix
 #                    (netcdf-fortran, nc-config, headers) was built against.
 #   NETCDF_JOBS      ninja parallelism (default: nproc)
 #   NETCDF_INSTALL_PREFIX
-#                    where to install the result (default: MINGW_PREFIX, i.e.
+#                    where to install the result (default: the mingw64 prefix, i.e.
 #                    replace the stock package in place). Point this elsewhere
 #                    to rehearse the whole build + verification without
 #                    modifying a working MSYS2 installation.
@@ -61,7 +65,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-MINGW_PREFIX="${MINGW_PREFIX:-C:/msys64/mingw64}"
+MINGW_PREFIX="${SYMFLUENCE_MINGW_PREFIX:-C:/msys64/mingw64}"
 # Unix-style view of the same prefix, for shell file tests.
 if command -v cygpath >/dev/null 2>&1; then
     MINGW_UNIX="$(cygpath -u "$MINGW_PREFIX")"

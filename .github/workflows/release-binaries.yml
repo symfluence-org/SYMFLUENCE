@@ -349,7 +349,7 @@ jobs:
         run: |
           set -e
           chmod +x ./scripts/build_netcdf_no_s3_mingw.sh
-          # MINGW_PREFIX is left to the script's default (C:/msys64/mingw64)
+          # The prefix is left to the script's default (C:/msys64/mingw64)
           # rather than passed as a command prefix: a `VAR=x script` assignment
           # is silently dropped when the caller and the script's interpreter
           # come from different msys2 runtimes, and a dropped prefix here would
