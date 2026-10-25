@@ -298,6 +298,11 @@ jobs:
             if [ "$_try" = 5 ]; then echo "pacman failed after 5 attempts" >&2; exit 1; fi
             echo "retrying after mirror failure..."; sleep 15
           done
+          # Hand the installed netCDF-C version to the no-S3 rebuild below. That
+          # step runs in Git Bash, where this MSYS2 pacman is not reachable.
+          NC_VER="$(pacman -Q mingw-w64-x86_64-netcdf | awk '{print $2}' | cut -d- -f1)"
+          [ -n "$NC_VER" ] || { echo "could not read mingw-w64-x86_64-netcdf version" >&2; exit 1; }
+          echo "NETCDF_VERSION=$NC_VER" >> $GITHUB_ENV
 
           # pip still needed for the Python-packaged tools (troute, ngen helpers)
           conda install -y pip numpy

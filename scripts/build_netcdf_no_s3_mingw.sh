@@ -150,7 +150,11 @@ fi
 if [ -z "$VER" ] && [ -f "$MINGW_UNIX/lib/pkgconfig/netcdf.pc" ]; then
     VER="$(sed -n 's/^Version:[[:space:]]*//p' "$MINGW_UNIX/lib/pkgconfig/netcdf.pc" | tr -d '\r')"
 fi
-[ -n "$VER" ] || fail "could not determine netCDF version (set NETCDF_VERSION)"
+if [ -z "$VER" ]; then
+    echo "  pacman: ${PACMAN:-not found}" >&2
+    echo "  pkg-config file: $MINGW_UNIX/lib/pkgconfig/netcdf.pc ($([ -f "$MINGW_UNIX/lib/pkgconfig/netcdf.pc" ] && echo present || echo missing))" >&2
+    fail "could not determine netCDF version (set NETCDF_VERSION)"
+fi
 
 say "Building netCDF-C $VER without the AWS S3 SDK"
 echo "build against:  $MINGW_PREFIX"
