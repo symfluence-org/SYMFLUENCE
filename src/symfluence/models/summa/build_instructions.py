@@ -157,7 +157,17 @@ case "$(uname -s 2>/dev/null)" in
             echo "Using openlibm for fast transcendentals (exp/log/pow)"
             OPENLIBM_LINK="-lopenlibm;"
         fi
-        if [ -f "${CONDA_LIB_PREFIX}/bin/openblas.dll" ]; then
+        if _ob="$("${FC:-gfortran}" -print-file-name=libopenblas.dll.a 2>/dev/null)" \
+             && [ "$_ob" != "libopenblas.dll.a" ] && [ -f "$_ob" ]; then
+            # MSYS2/mingw-w64 OpenBLAS first: it bundles the full LAPACK API,
+            # so a single -lopenblas satisfies BLAS and LAPACK, and its DLL
+            # lives in the mingw tree the release packager bundles from.
+            # Conda's liblapack.dll (MKL-backed on win-64) is never bundled,
+            # so a SUMMA linked against it fails the DLL closure check.
+            echo "Using MSYS2 OpenBLAS (Windows/MinGW): -lopenblas"
+            SPECIFY_LINKS=ON
+            export LIBRARY_LINKS="${OPENLIBM_LINK}-lopenblas"
+        elif [ -f "${CONDA_LIB_PREFIX}/bin/openblas.dll" ]; then
             echo "Using OpenBLAS DLL directly (Windows/MinGW)"
             SPECIFY_LINKS=ON
             export LIBRARY_LINKS="${OPENLIBM_LINK}${CONDA_LIB_PREFIX}/bin/openblas.dll"
@@ -165,14 +175,6 @@ case "$(uname -s 2>/dev/null)" in
             echo "Using manual LAPACK specification (Windows/MinGW)"
             SPECIFY_LINKS=ON
             export LIBRARY_LINKS="${OPENLIBM_LINK}${CONDA_LIB_PREFIX}/bin/liblapack.dll;${CONDA_LIB_PREFIX}/bin/libblas.dll"
-        elif _ob="$("${FC:-gfortran}" -print-file-name=libopenblas.dll.a 2>/dev/null)" \
-             && [ "$_ob" != "libopenblas.dll.a" ] && [ -f "$_ob" ]; then
-            # MSYS2/mingw-w64: no conda, no lib{lapack,blas} — OpenBLAS ships
-            # libopenblas.dll.a and bundles the full LAPACK API, so a single
-            # -lopenblas satisfies both BLAS and LAPACK references.
-            echo "Using MSYS2 OpenBLAS (Windows/MinGW): -lopenblas"
-            SPECIFY_LINKS=ON
-            export LIBRARY_LINKS="${OPENLIBM_LINK}-lopenblas"
         else
             echo "Using manual LAPACK specification (Windows fallback)"
             SPECIFY_LINKS=ON
