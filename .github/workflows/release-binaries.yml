@@ -102,6 +102,15 @@ jobs:
           # python:3.11-slim-bullseye already provides Python 3.11 built against
           # glibc 2.31, so we only need the OS build toolchain + the utilities
           # later steps rely on (git/sudo/file/...).
+          # Debian 11 (bullseye) has left deb.debian.org: since Sep 2026 its
+          # security index still lists packages whose .debs are gone (404). Point apt
+          # at archive.debian.org, which carries the complete suites.
+          if grep -q '^VERSION_CODENAME=bullseye' /etc/os-release; then
+            for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+              [ -f "$f" ] && sed -i -e 's#https\?://deb\.debian\.org#http://archive.debian.org#g' \
+                                    -e 's#https\?://security\.debian\.org#http://archive.debian.org#g' "$f"
+            done
+          fi
           # Retry transient mirror hiccups ("Connection reset by peer") instead
           # of failing the whole job on a single dropped .deb.
           apt-get -o Acquire::Retries=5 update
