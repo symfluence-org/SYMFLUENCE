@@ -127,17 +127,28 @@ done
 # .cmake/.pc files in the prefix all come from that package; building a
 # different netCDF version here would leave the prefix internally inconsistent.
 VER="${NETCDF_VERSION:-}"
-if [ -z "$VER" ] && command -v pacman >/dev/null 2>&1; then
+# The release workflow runs this from Git Bash, where MSYS2's pacman is not on
+# PATH; fall back to the one that sits beside the mingw64 prefix.
+PACMAN="$(command -v pacman 2>/dev/null || true)"
+if [ -z "$PACMAN" ] && [ -x "$MINGW_UNIX/../usr/bin/pacman.exe" ]; then
+    PACMAN="$MINGW_UNIX/../usr/bin/pacman.exe"
+fi
+if [ -z "$VER" ] && [ -n "$PACMAN" ]; then
     # Bounded: a wedged pacman would otherwise hang here until the job's
     # timeout, with nothing on stdout to say why.
     _pacman_q() {
         if command -v timeout >/dev/null 2>&1; then
-            timeout 120 pacman -Q mingw-w64-x86_64-netcdf 2>/dev/null || true
+            timeout 120 "$PACMAN" -Q mingw-w64-x86_64-netcdf 2>/dev/null || true
         else
-            pacman -Q mingw-w64-x86_64-netcdf 2>/dev/null || true
+            "$PACMAN" -Q mingw-w64-x86_64-netcdf 2>/dev/null || true
         fi
     }
     VER="$(_pacman_q | awk '{print $2}' | cut -d- -f1)"
+fi
+# Last resort: the installed package's own pkg-config file carries the same
+# upstream version.
+if [ -z "$VER" ] && [ -f "$MINGW_UNIX/lib/pkgconfig/netcdf.pc" ]; then
+    VER="$(sed -n 's/^Version:[[:space:]]*//p' "$MINGW_UNIX/lib/pkgconfig/netcdf.pc" | tr -d '\r')"
 fi
 [ -n "$VER" ] || fail "could not determine netCDF version (set NETCDF_VERSION)"
 
