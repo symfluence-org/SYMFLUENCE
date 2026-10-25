@@ -434,17 +434,9 @@ class ToolInstaller(BaseService):
             # — it compiles cleanly from a non-MSYS shell). MSYSTEM=MINGW64 picks
             # the mingw64 subsystem; MSYS2_PATH_TYPE=inherit keeps the PATH we
             # assembled above instead of resetting it to the mingw64 defaults.
-            # Assigned, not defaulted: Git for Windows' bash launcher exports its
-            # own MSYSTEM (UCRT64 on current releases), and a build started from
-            # Git Bash would otherwise run the mingw64 gcc under that subsystem.
             if os.path.isdir(r"C:\msys64\mingw64"):
-                inherited = env.get("MSYSTEM")
-                if inherited and inherited != "MINGW64":
-                    self._console.indent(
-                        f"Windows: overriding inherited MSYSTEM={inherited} with MINGW64"
-                    )
-                env["MSYSTEM"] = "MINGW64"
-                env["MSYS2_PATH_TYPE"] = "inherit"
+                env.setdefault("MSYSTEM", "MINGW64")
+                env.setdefault("MSYS2_PATH_TYPE", "inherit")
 
             # Ensure temp directory is set for Fortran compiler backends
             # (cc1.exe/f951.exe). Without TMP/TEMP, gfortran falls back to
