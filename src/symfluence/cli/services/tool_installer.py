@@ -21,6 +21,13 @@ from ..console import Console
 from .base import BaseService
 
 
+def _move_to_front(path: str, entry: str, sep: str) -> str:
+    """Return *path* with *entry* first and any other copies of it removed."""
+    key = os.path.normcase(os.path.normpath(entry))
+    rest = [p for p in path.split(sep) if p and os.path.normcase(os.path.normpath(p)) != key]
+    return sep.join([entry, *rest])
+
+
 class ToolInstaller(BaseService):
     """
     Service for installing external tools from source.
@@ -378,10 +385,13 @@ class ToolInstaller(BaseService):
                  if os.path.isdir(os.path.join(r, "bin"))),
                 None,
             )
+            # Move, don't skip, when already present: CI puts the mingw64 bin on
+            # PATH behind conda's Library\mingw-w64\bin, and gcc's helpers
+            # (cc1.exe) then load conda's older runtime DLLs and die silently.
             if mingw_root:
                 for d in (r"C:\msys64\usr\bin", os.path.join(mingw_root, "bin")):
-                    if os.path.isdir(d) and d not in env.get("PATH", ""):
-                        env["PATH"] = d + sep + env.get("PATH", "")
+                    if os.path.isdir(d):
+                        env["PATH"] = _move_to_front(env.get("PATH", ""), d, sep)
 
             # Conda's m2-bash only ships bash + make.  Standard Unix utils
             # (awk, mkdir, rm, ls, uname, tar, ...) must come from Git Bash,

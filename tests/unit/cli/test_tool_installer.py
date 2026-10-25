@@ -253,3 +253,19 @@ def test_install_marks_verification_failure_as_failed(mock_external_tools, tmp_p
     assert "taudem" in result["failed"]
     assert "taudem" not in result["successful"]
     assert any("taudem: installation verification failed" in e for e in result["errors"])
+
+
+def test_move_to_front_promotes_an_existing_path_entry():
+    """An entry already on PATH is moved ahead, not skipped.
+
+    In the Windows release job the MSYS2 mingw64 bin sat behind conda's
+    Library\\mingw-w64\\bin; skipping it because it was "already on PATH" made
+    cc1.exe load conda's older runtime DLLs, and gcc failed CMake's compiler
+    test with no diagnostic.
+    """
+    from symfluence.cli.services.tool_installer import _move_to_front
+
+    path = ";".join(["usr", "conda-mingw", "windows", "mingw64", "mingw64"])
+    assert _move_to_front(path, "mingw64", ";").split(";") == [
+        "mingw64", "usr", "conda-mingw", "windows"]
+    assert _move_to_front("", "mingw64", ";") == "mingw64"
