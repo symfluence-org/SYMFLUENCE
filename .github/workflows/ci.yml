@@ -153,9 +153,9 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/apt-debs
-          key: apt-debs-v1-${{ runner.os }}-${{ env.ImageOS }}-${{ env.ImageVersion }}-gdal-bin-libgdal-dev-cdo
+          key: apt-debs-v1-${{ runner.os }}-${{ env.ImageOS }}-gdal-bin-libgdal-dev-cdo-${{ env.ImageVersion }}
           restore-keys: |
-            apt-debs-v1-${{ runner.os }}-${{ env.ImageOS }}-
+            apt-debs-v1-${{ runner.os }}-${{ env.ImageOS }}-gdal-bin-libgdal-dev-cdo-
 
       - name: Install system dependencies
         # Bounded and retried, and given its own timeout, because THIS step is
