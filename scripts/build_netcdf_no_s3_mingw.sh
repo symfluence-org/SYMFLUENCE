@@ -245,6 +245,7 @@ if [ ! -d "netcdf-c-$VER" ]; then
     # release must keep working), but it is called out in the log.
     case "$VER" in
         4.9.3) EXPECT_SHA=990f46d49525d6ab5dc4249f8684c6deeaf54de6fec63a187e9fb382cc0ffdff ;;
+        4.10.1) EXPECT_SHA=33c27231c478c3b35da7c7758fbdd02da1fe407abcb16ddfe195f69d164f930d ;;
         *)     EXPECT_SHA="" ;;
     esac
     if [ -n "$EXPECT_SHA" ]; then
@@ -256,7 +257,7 @@ if [ ! -d "netcdf-c-$VER" ]; then
 
     tar xzf "$TARBALL"
 
-    # The MSYS2 PKGBUILD applies two patches that this build needs just as much.
+    # The MSYS2 PKGBUILD applies patches that this build needs just as much.
     # Both go through a dry-run gate so the script keeps working once a netCDF
     # release absorbs them upstream; each logs which branch it took.
     #
@@ -268,6 +269,9 @@ if [ ! -d "netcdf-c-$VER" ]; then
     #    MINGW-packages master so CI does not depend on a moving reference.
     #  * hdf5-2.x compat: netCDF 4.9.3 does not compile against HDF5 >= 2.0,
     #    which MSYS2 now ships. Immutable upstream commit URL.
+    #  * export-nc4-symbols: MSYS2's 4.10.1 package exports NC4_get_vars,
+    #    NC4_put_vars and NC4_show_metadata; without the same patch the rebuilt
+    #    DLL drops them and fails the export-table check below. Vendored.
     say "Applying mingw-w64 build patches"
     _apply_patch() {
         local name="$1" file="$2"
@@ -285,6 +289,8 @@ if [ ! -d "netcdf-c-$VER" ]; then
     curl -fL --retry 5 -o hdf5-2.0-compat.patch \
         "https://github.com/Unidata/netcdf-c/commit/741c4b4a.patch"
     _apply_patch hdf5-2.0-compat "$SRC_DIR/hdf5-2.0-compat.patch"
+    _apply_patch export-nc4-symbols \
+        "$SCRIPT_DIR/patches/netcdf-mingw-export-nc4-symbols.patch"
 fi
 
 # ---------------------------------------------------------------------------
