@@ -97,12 +97,13 @@ echo "=== Configuring Makefile ==="
 perl -i -pe "s|^FC\s*=.*$|FC = gnu|" Makefile
 perl -i -pe "s|^FC_EXE\s*=.*$|FC_EXE = ${FC:-gfortran}|" Makefile
 perl -i -pe "s|^EXE\s*=.*$|EXE = mizuRoute.exe|" Makefile
-# Pass the path via the environment and read it with $ENV{...} in a
-# single-quoted perl program.  Interpolating the path directly into a
-# double-quoted perl replacement string treats an '@' (e.g. in a Google
-# Drive path like GoogleDrive-user@gmail.com) as an array interpolation
-# and silently deletes it.  $ENV{...} is a plain value lookup, immune to that.
-SYMF_F_MASTER="$F_MASTER_PATH/" perl -i -pe 's|^F_MASTER\s*=.*$|F_MASTER = $ENV{SYMF_F_MASTER}|' Makefile
+# Pass the path as an argument (shifted off @ARGV in BEGIN) to a
+# single-quoted perl program.  Interpolating it into a double-quoted perl
+# replacement treats an '@' (e.g. a Google Drive path like
+# GoogleDrive-user@gmail.com) as an array and silently deletes it.  Not via
+# the environment either: on Windows, Git for Windows' perl started from
+# MSYS2's bash drops per-command env vars, which left F_MASTER empty.
+perl -i -pe 'BEGIN { $v = shift } s|^F_MASTER\s*=.*$|F_MASTER = $v|' -- "$F_MASTER_PATH/" Makefile
 perl -i -pe "s|^\s*NCDF_PATH\s*=.*$|NCDF_PATH = ${NETCDF_FORTRAN}|" Makefile
 perl -i -pe "s|^isOpenMP\s*=.*$|isOpenMP = ${MIZUROUTE_OPENMP:-no}|" Makefile
 
@@ -171,9 +172,8 @@ esac
 # not survive the Git-bash -> MSYS2-make runtime hop, and without a
 # usable TMPDIR gfortran fails with "Cannot create temporary file in
 # C:\Windows\".  Empty (expands to nothing) on non-Windows.
-# F_MASTER also goes on the command line (as FUSE does): on the Windows
-# release runner the perl $ENV{} edit above leaves it empty, and make then
-# looks for the sources at a relative build/src/.
+# F_MASTER also goes on the command line (as FUSE does), so a Makefile edit
+# that silently fails cannot send make to a relative build/src/.
 make clean || true
 echo "Building mizuRoute..."
 make "${SYMF_MAKE_TMP[@]}" F_MASTER="$F_MASTER_PATH/" 2>&1 | tee build.log || true

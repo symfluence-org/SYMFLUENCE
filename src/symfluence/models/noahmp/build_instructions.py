@@ -67,14 +67,15 @@ fi
 if [ -f user_build_options ] && command -v nf-config >/dev/null 2>&1; then
     _NF_INC="$(nf-config --includedir 2>/dev/null)"
     _NF_LIBS="$(nf-config --flibs 2>/dev/null) $(nc-config --libs 2>/dev/null)"
-    # Pass the (possibly '@'-containing) NetCDF paths via the environment and
-    # read them with $ENV{...} in a single-quoted perl program. Interpolating
-    # them into a double-quoted replacement would treat an '@' — e.g. in a
+    # Pass the (possibly '@'-containing) NetCDF flags as an argument (shifted
+    # off @ARGV in BEGIN) to a single-quoted perl program. Interpolating them
+    # into a double-quoted replacement would treat an '@' — e.g. in a
     # conda/nf-config prefix under a Google Drive mount
     # (GoogleDrive-user@gmail.com) — as an array interpolation and silently
-    # delete it, corrupting the NetCDF include/lib flags.
-    SYMF_NF_MOD="-I${_NF_INC}" perl -pi -e 's|^\s*NETCDFMOD\s*=.*|NETCDFMOD = $ENV{SYMF_NF_MOD}|' user_build_options
-    SYMF_NF_LIB="${_NF_LIBS}" perl -pi -e 's|^\s*NETCDFLIB\s*=.*|NETCDFLIB = $ENV{SYMF_NF_LIB}|' user_build_options
+    # delete it. Not via the environment either: on Windows, Git for Windows'
+    # perl started from MSYS2's bash drops per-command env vars.
+    perl -pi -e 'BEGIN { $v = shift } s|^\s*NETCDFMOD\s*=.*|NETCDFMOD = $v|' -- "-I${_NF_INC}" user_build_options
+    perl -pi -e 'BEGIN { $v = shift } s|^\s*NETCDFLIB\s*=.*|NETCDFLIB = $v|' -- "${_NF_LIBS}" user_build_options
     perl -pi -e "s|^\s*COMPILERF90\s*=.*|COMPILERF90 = gfortran|" user_build_options
 fi
 
