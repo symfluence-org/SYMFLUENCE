@@ -102,6 +102,15 @@ jobs:
           # python:3.11-slim-bullseye already provides Python 3.11 built against
           # glibc 2.31, so we only need the OS build toolchain + the utilities
           # later steps rely on (git/sudo/file/...).
+          # Debian 11 (bullseye) has left deb.debian.org: since Sep 2026 its
+          # security index still lists packages whose .debs are gone (404). Point apt
+          # at archive.debian.org, which carries the complete suites.
+          if grep -q '^VERSION_CODENAME=bullseye' /etc/os-release; then
+            for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+              [ -f "$f" ] && sed -i -e 's#https\?://deb\.debian\.org#http://archive.debian.org#g' \
+                                    -e 's#https\?://security\.debian\.org#http://archive.debian.org#g' "$f"
+            done
+          fi
           # Retry transient mirror hiccups ("Connection reset by peer") instead
           # of failing the whole job on a single dropped .deb.
           apt-get -o Acquire::Retries=5 update
@@ -289,6 +298,11 @@ jobs:
             if [ "$_try" = 5 ]; then echo "pacman failed after 5 attempts" >&2; exit 1; fi
             echo "retrying after mirror failure..."; sleep 15
           done
+          # Hand the installed netCDF-C version to the no-S3 rebuild below. That
+          # step runs in Git Bash, where this MSYS2 pacman is not reachable.
+          NC_VER="$(pacman -Q mingw-w64-x86_64-netcdf | awk '{print $2}' | cut -d- -f1)"
+          [ -n "$NC_VER" ] || { echo "could not read mingw-w64-x86_64-netcdf version" >&2; exit 1; }
+          echo "NETCDF_VERSION=$NC_VER" >> $GITHUB_ENV
 
           # pip still needed for the Python-packaged tools (troute, ngen helpers)
           conda install -y pip numpy
@@ -335,7 +349,7 @@ jobs:
         run: |
           set -e
           chmod +x ./scripts/build_netcdf_no_s3_mingw.sh
-          # MINGW_PREFIX is left to the script's default (C:/msys64/mingw64)
+          # The prefix is left to the script's default (C:/msys64/mingw64)
           # rather than passed as a command prefix: a `VAR=x script` assignment
           # is silently dropped when the caller and the script's interpreter
           # come from different msys2 runtimes, and a dropped prefix here would

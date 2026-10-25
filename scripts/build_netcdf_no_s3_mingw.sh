@@ -42,15 +42,19 @@
 #   scripts/build_netcdf_no_s3_mingw.sh [work_dir]
 #
 # Environment:
-#   MINGW_PREFIX     mingw64 prefix to build against and install into
-#                    (default: C:/msys64/mingw64)
+#   SYMFLUENCE_MINGW_PREFIX
+#                    mingw64 prefix to build against and install into
+#                    (default: C:/msys64/mingw64). Deliberately not
+#                    MINGW_PREFIX: every MSYS2/Git login shell exports that for
+#                    its own toolchain (Git Bash: /ucrt64), which would
+#                    silently redirect the build away from the MSYS2 prefix.
 #   NETCDF_VERSION   override the netCDF-C version to build. By default the
 #                    version is read from the installed MSYS2 package so the
 #                    replacement always matches the ABI the rest of the prefix
 #                    (netcdf-fortran, nc-config, headers) was built against.
 #   NETCDF_JOBS      ninja parallelism (default: nproc)
 #   NETCDF_INSTALL_PREFIX
-#                    where to install the result (default: MINGW_PREFIX, i.e.
+#                    where to install the result (default: the mingw64 prefix, i.e.
 #                    replace the stock package in place). Point this elsewhere
 #                    to rehearse the whole build + verification without
 #                    modifying a working MSYS2 installation.
@@ -61,7 +65,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-MINGW_PREFIX="${MINGW_PREFIX:-C:/msys64/mingw64}"
+MINGW_PREFIX="${SYMFLUENCE_MINGW_PREFIX:-C:/msys64/mingw64}"
 # Unix-style view of the same prefix, for shell file tests.
 if command -v cygpath >/dev/null 2>&1; then
     MINGW_UNIX="$(cygpath -u "$MINGW_PREFIX")"
@@ -127,19 +131,34 @@ done
 # .cmake/.pc files in the prefix all come from that package; building a
 # different netCDF version here would leave the prefix internally inconsistent.
 VER="${NETCDF_VERSION:-}"
-if [ -z "$VER" ] && command -v pacman >/dev/null 2>&1; then
+# The release workflow runs this from Git Bash, where MSYS2's pacman is not on
+# PATH; fall back to the one that sits beside the mingw64 prefix.
+PACMAN="$(command -v pacman 2>/dev/null || true)"
+if [ -z "$PACMAN" ] && [ -x "$MINGW_UNIX/../usr/bin/pacman.exe" ]; then
+    PACMAN="$MINGW_UNIX/../usr/bin/pacman.exe"
+fi
+if [ -z "$VER" ] && [ -n "$PACMAN" ]; then
     # Bounded: a wedged pacman would otherwise hang here until the job's
     # timeout, with nothing on stdout to say why.
     _pacman_q() {
         if command -v timeout >/dev/null 2>&1; then
-            timeout 120 pacman -Q mingw-w64-x86_64-netcdf 2>/dev/null || true
+            timeout 120 "$PACMAN" -Q mingw-w64-x86_64-netcdf 2>/dev/null || true
         else
-            pacman -Q mingw-w64-x86_64-netcdf 2>/dev/null || true
+            "$PACMAN" -Q mingw-w64-x86_64-netcdf 2>/dev/null || true
         fi
     }
     VER="$(_pacman_q | awk '{print $2}' | cut -d- -f1)"
 fi
-[ -n "$VER" ] || fail "could not determine netCDF version (set NETCDF_VERSION)"
+# Last resort: the installed package's own pkg-config file carries the same
+# upstream version.
+if [ -z "$VER" ] && [ -f "$MINGW_UNIX/lib/pkgconfig/netcdf.pc" ]; then
+    VER="$(sed -n 's/^Version:[[:space:]]*//p' "$MINGW_UNIX/lib/pkgconfig/netcdf.pc" | tr -d '\r')"
+fi
+if [ -z "$VER" ]; then
+    echo "  pacman: ${PACMAN:-not found}" >&2
+    echo "  pkg-config file: $MINGW_UNIX/lib/pkgconfig/netcdf.pc ($([ -f "$MINGW_UNIX/lib/pkgconfig/netcdf.pc" ] && echo present || echo missing))" >&2
+    fail "could not determine netCDF version (set NETCDF_VERSION)"
+fi
 
 say "Building netCDF-C $VER without the AWS S3 SDK"
 echo "build against:  $MINGW_PREFIX"
@@ -226,6 +245,7 @@ if [ ! -d "netcdf-c-$VER" ]; then
     # release must keep working), but it is called out in the log.
     case "$VER" in
         4.9.3) EXPECT_SHA=990f46d49525d6ab5dc4249f8684c6deeaf54de6fec63a187e9fb382cc0ffdff ;;
+        4.10.1) EXPECT_SHA=33c27231c478c3b35da7c7758fbdd02da1fe407abcb16ddfe195f69d164f930d ;;
         *)     EXPECT_SHA="" ;;
     esac
     if [ -n "$EXPECT_SHA" ]; then
@@ -237,7 +257,7 @@ if [ ! -d "netcdf-c-$VER" ]; then
 
     tar xzf "$TARBALL"
 
-    # The MSYS2 PKGBUILD applies two patches that this build needs just as much.
+    # The MSYS2 PKGBUILD applies patches that this build needs just as much.
     # Both go through a dry-run gate so the script keeps working once a netCDF
     # release absorbs them upstream; each logs which branch it took.
     #
@@ -249,6 +269,9 @@ if [ ! -d "netcdf-c-$VER" ]; then
     #    MINGW-packages master so CI does not depend on a moving reference.
     #  * hdf5-2.x compat: netCDF 4.9.3 does not compile against HDF5 >= 2.0,
     #    which MSYS2 now ships. Immutable upstream commit URL.
+    #  * export-nc4-symbols: MSYS2's 4.10.1 package exports NC4_get_vars,
+    #    NC4_put_vars and NC4_show_metadata; without the same patch the rebuilt
+    #    DLL drops them and fails the export-table check below. Vendored.
     say "Applying mingw-w64 build patches"
     _apply_patch() {
         local name="$1" file="$2"
@@ -266,6 +289,8 @@ if [ ! -d "netcdf-c-$VER" ]; then
     curl -fL --retry 5 -o hdf5-2.0-compat.patch \
         "https://github.com/Unidata/netcdf-c/commit/741c4b4a.patch"
     _apply_patch hdf5-2.0-compat "$SRC_DIR/hdf5-2.0-compat.patch"
+    _apply_patch export-nc4-symbols \
+        "$SCRIPT_DIR/patches/netcdf-mingw-export-nc4-symbols.patch"
 fi
 
 # ---------------------------------------------------------------------------

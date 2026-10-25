@@ -264,6 +264,13 @@ if [ -d "$NGEN_DIR" ]; then
         ngen_lib_name="$(basename "$ngen_lib")"
         stage_library "$ngen_lib" "$ngen_lib_name" "NGEN" || true
     done < <(find "$NGEN_DIR/cmake_build" "$NGEN_DIR/extern" \( -name "*.dylib" -o -name "*.so" \) -not -type d 2>/dev/null || true)
+    # Windows: ngen.exe imports libiso_c_bmi.dll (and the BMI DLLs) at load
+    # time, and the loader looks next to the .exe, not in lib/.
+    while IFS= read -r ngen_dll; do
+        [ -f "$ngen_dll" ] || continue
+        cp "$ngen_dll" "bin/$(basename "$ngen_dll")"
+        print_success "Staged NGEN DLL → bin/$(basename "$ngen_dll")"
+    done < <(find "$NGEN_DIR/cmake_build" "$NGEN_DIR/extern" -name "*.dll" -not -type d 2>/dev/null || true)
 
     stage_license "$NGEN_DIR" "NGEN"
 else

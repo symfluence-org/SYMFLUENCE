@@ -171,9 +171,12 @@ esac
 # not survive the Git-bash -> MSYS2-make runtime hop, and without a
 # usable TMPDIR gfortran fails with "Cannot create temporary file in
 # C:\Windows\".  Empty (expands to nothing) on non-Windows.
+# F_MASTER also goes on the command line (as FUSE does): on the Windows
+# release runner the perl $ENV{} edit above leaves it empty, and make then
+# looks for the sources at a relative build/src/.
 make clean || true
 echo "Building mizuRoute..."
-make "${SYMF_MAKE_TMP[@]}" 2>&1 | tee build.log || true
+make "${SYMF_MAKE_TMP[@]}" F_MASTER="$F_MASTER_PATH/" 2>&1 | tee build.log || true
 
 if [ -f "../bin/mizuRoute.exe" ]; then
     echo "Build successful - executable at ../bin/mizuRoute.exe"
