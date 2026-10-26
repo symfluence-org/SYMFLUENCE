@@ -97,6 +97,26 @@ jobs:
           printf '%s\n' 'netCDF4<1.7.5' 'h5py<3.16' > "$RUNNER_TEMP/windows-conda-constraints.txt"
           echo "PIP_CONSTRAINT=$RUNNER_TEMP/windows-conda-constraints.txt" >> "$GITHUB_ENV"
 
+      - name: Compute apt cache key
+        id: aptkey
+        if: matrix.os == 'ubuntu-24.04'
+        # ImageOS/ImageVersion are runner shell variables, not part of the
+        # workflow `env` context, so ${{ env.ImageVersion }} is empty.
+        run: echo "image=${ImageOS}-${ImageVersion}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore cached apt packages
+        if: matrix.os == 'ubuntu-24.04'
+        # As in ci.yml: a crawling mirror (~80 kB/s on run 40232275315) cannot
+        # deliver the download however the step is retried, so keep the .debs in
+        # actions/cache, keyed on the runner image whose package versions they
+        # must match. A new image falls back to the previous cache.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/apt-debs
+          key: apt-debs-v1-${{ runner.os }}-minimal-gdal-cdo-${{ steps.aptkey.outputs.image }}
+          restore-keys: |
+            apt-debs-v1-${{ runner.os }}-minimal-gdal-cdo-
+
       - name: Install minimal system dependencies
         shell: bash
         # See the matching step in ci.yml for the full account: three of this
@@ -119,6 +139,11 @@ jobs:
           if [[ "${{ matrix.os }}" == "ubuntu-24.04" ]]; then
             printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' \
               | sudo tee /etc/apt/apt.conf.d/99symfluence-timeouts > /dev/null
+            # Seed apt from the cached .debs (see "Restore cached apt packages").
+            if compgen -G "$HOME/apt-debs/*.deb" > /dev/null; then
+              echo "Seeding $(ls "$HOME"/apt-debs/*.deb | wc -l) cached .debs"
+              sudo cp "$HOME"/apt-debs/*.deb /var/cache/apt/archives/
+            fi
             for attempt in 1 2; do
               if timeout 2m sudo apt-get update \
                  && timeout 8m sudo apt-get install -y --no-install-recommends \
@@ -138,6 +163,10 @@ jobs:
               # partial downloads, forcing the retry to re-fetch 249 MB from zero.
               sleep 15
             done
+            # Refresh the cache dir (saved at job end on a key miss).
+            mkdir -p "$HOME/apt-debs"
+            rm -f "$HOME"/apt-debs/*.deb
+            cp /var/cache/apt/archives/*.deb "$HOME/apt-debs/" 2>/dev/null || true
           elif [[ "${{ matrix.os }}" == "macos-"* ]]; then
             brew install gdal cdo
           elif [[ "${{ matrix.os }}" == "windows-latest" ]]; then
@@ -276,9 +305,34 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Compute apt cache key
+        id: aptkey
+        if: runner.os == 'Linux'
+        # ImageOS/ImageVersion are runner shell variables, not part of the
+        # workflow `env` context, so ${{ env.ImageVersion }} is empty.
+        run: echo "image=${ImageOS}-${ImageVersion}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore cached apt packages
+        if: runner.os == 'Linux'
+        # As in ci.yml: a crawling mirror (~80 kB/s on run 40232275315) cannot
+        # deliver the download however the step is retried, so keep the .debs in
+        # actions/cache, keyed on the runner image whose package versions they
+        # must match. A new image falls back to the previous cache.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/apt-debs
+          key: apt-debs-v1-${{ runner.os }}-full-toolchain-${{ steps.aptkey.outputs.image }}
+          restore-keys: |
+            apt-debs-v1-${{ runner.os }}-full-toolchain-
+
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
+          # Seed apt from the cached .debs (see "Restore cached apt packages").
+          if compgen -G "$HOME/apt-debs/*.deb" > /dev/null; then
+            echo "Seeding $(ls "$HOME"/apt-debs/*.deb | wc -l) cached .debs"
+            sudo cp "$HOME"/apt-debs/*.deb /var/cache/apt/archives/
+          fi
           sudo apt-get update
           sudo apt-get install -y \
             build-essential gfortran cmake \
@@ -289,6 +343,10 @@ jobs:
             libexpat1-dev cdo \
             libopenblas-dev liblapack-dev \
             libproj-dev libgeos-dev
+          # Refresh the cache dir (saved at job end on a key miss).
+          mkdir -p "$HOME/apt-debs"
+          rm -f "$HOME"/apt-debs/*.deb
+          cp /var/cache/apt/archives/*.deb "$HOME/apt-debs/" 2>/dev/null || true
 
       - name: Install system dependencies (macOS)
         if: runner.os == 'macOS'
@@ -637,9 +695,34 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Compute apt cache key
+        id: aptkey
+        if: matrix.os == 'ubuntu-24.04'
+        # ImageOS/ImageVersion are runner shell variables, not part of the
+        # workflow `env` context, so ${{ env.ImageVersion }} is empty.
+        run: echo "image=${ImageOS}-${ImageVersion}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore cached apt packages
+        if: matrix.os == 'ubuntu-24.04'
+        # As in ci.yml: a crawling mirror (~80 kB/s on run 40232275315) cannot
+        # deliver the download however the step is retried, so keep the .debs in
+        # actions/cache, keyed on the runner image whose package versions they
+        # must match. A new image falls back to the previous cache.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/apt-debs
+          key: apt-debs-v1-${{ runner.os }}-full-toolchain-${{ steps.aptkey.outputs.image }}
+          restore-keys: |
+            apt-debs-v1-${{ runner.os }}-full-toolchain-
+
       - name: Install system dependencies (Linux)
         if: matrix.os == 'ubuntu-24.04'
         run: |
+          # Seed apt from the cached .debs (see "Restore cached apt packages").
+          if compgen -G "$HOME/apt-debs/*.deb" > /dev/null; then
+            echo "Seeding $(ls "$HOME"/apt-debs/*.deb | wc -l) cached .debs"
+            sudo cp "$HOME"/apt-debs/*.deb /var/cache/apt/archives/
+          fi
           sudo apt-get update
           sudo apt-get install -y \
             build-essential gfortran cmake \
@@ -650,6 +733,10 @@ jobs:
             libexpat1-dev cdo \
             libopenblas-dev liblapack-dev \
             libproj-dev libgeos-dev
+          # Refresh the cache dir (saved at job end on a key miss).
+          mkdir -p "$HOME/apt-debs"
+          rm -f "$HOME"/apt-debs/*.deb
+          cp /var/cache/apt/archives/*.deb "$HOME/apt-debs/" 2>/dev/null || true
 
       - name: Install system dependencies (macOS)
         if: runner.os == 'macOS'

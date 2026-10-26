@@ -142,6 +142,27 @@ jobs:
         with:
           version: "0.10.4"
 
+      - name: Compute apt cache key
+        id: aptkey
+        # ImageOS/ImageVersion are runner shell variables, not part of the
+        # workflow `env` context, so ${{ env.ImageVersion }} is empty.
+        run: echo "image=${ImageOS}-${ImageVersion}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore cached apt packages
+        # Even bounded and retried, the install step still failed whenever the
+        # mirror crawled: on run 40232275315 it delivered ~80 kB/s, so the 163 MB
+        # download could not finish inside two 8-minute attempts. Caching the
+        # .debs takes the mirror out of the hot path, leaving only `apt-get
+        # update`. The key is tied to the runner image, whose package versions are
+        # what the cached .debs must match. A new image falls back to the previous
+        # cache, so only the packages that changed are re-downloaded.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/apt-debs
+          key: apt-debs-v1-${{ runner.os }}-gdal-bin-libgdal-dev-cdo-${{ steps.aptkey.outputs.image }}
+          restore-keys: |
+            apt-debs-v1-${{ runner.os }}-gdal-bin-libgdal-dev-cdo-
+
       - name: Install system dependencies
         # Bounded and retried, and given its own timeout, because THIS step is
         # what has actually been killing this job — not the test suite.
@@ -184,10 +205,20 @@ jobs:
         run: |
           printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' \
             | sudo tee /etc/apt/apt.conf.d/99symfluence-timeouts > /dev/null
+          # Seed apt's archive dir from the cache. apt only reuses a .deb whose
+          # version and checksum match the index, so stale ones are harmless.
+          if compgen -G "$HOME/apt-debs/*.deb" > /dev/null; then
+            echo "Seeding $(ls "$HOME"/apt-debs/*.deb | wc -l) cached .debs"
+            sudo cp "$HOME"/apt-debs/*.deb /var/cache/apt/archives/
+          fi
           for attempt in 1 2; do
             if timeout 2m sudo apt-get update \
                && timeout 8m sudo apt-get install -y --no-install-recommends \
                     gdal-bin libgdal-dev cdo; then
+              # Refresh the cache dir (saved at job end on a key miss).
+              mkdir -p "$HOME/apt-debs"
+              rm -f "$HOME"/apt-debs/*.deb
+              cp /var/cache/apt/archives/*.deb "$HOME/apt-debs/" 2>/dev/null || true
               exit 0
             fi
             echo "::warning::apt attempt ${attempt}/2 failed or stalled; retrying"
