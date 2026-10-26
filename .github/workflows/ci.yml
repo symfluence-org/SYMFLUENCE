@@ -142,6 +142,12 @@ jobs:
         with:
           version: "0.10.4"
 
+      - name: Compute apt cache key
+        id: aptkey
+        # ImageOS/ImageVersion are runner shell variables, not part of the
+        # workflow `env` context, so ${{ env.ImageVersion }} is empty.
+        run: echo "image=${ImageOS}-${ImageVersion}" >> "$GITHUB_OUTPUT"
+
       - name: Restore cached apt packages
         # Even bounded and retried, the install step still failed whenever the
         # mirror crawled: on run 40232275315 it delivered ~80 kB/s, so the 163 MB
@@ -153,9 +159,9 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/apt-debs
-          key: apt-debs-v1-${{ runner.os }}-${{ env.ImageOS }}-gdal-bin-libgdal-dev-cdo-${{ env.ImageVersion }}
+          key: apt-debs-v1-${{ runner.os }}-gdal-bin-libgdal-dev-cdo-${{ steps.aptkey.outputs.image }}
           restore-keys: |
-            apt-debs-v1-${{ runner.os }}-${{ env.ImageOS }}-gdal-bin-libgdal-dev-cdo-
+            apt-debs-v1-${{ runner.os }}-gdal-bin-libgdal-dev-cdo-
 
       - name: Install system dependencies
         # Bounded and retried, and given its own timeout, because THIS step is
