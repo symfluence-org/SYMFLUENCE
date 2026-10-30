@@ -121,6 +121,14 @@ class HYPEConfig(BaseModel):
         description='Soil layer depths (m) for GeoData generation'
     )
     param_bounds: Optional[Dict[str, Any]] = Field(default=None, alias='HYPE_PARAM_BOUNDS')
+    outlet_lakes: Optional[Dict[str, Dict[str, float]]] = Field(
+        default=None, alias='HYPE_OUTLET_LAKES',
+        description='Outlet lakes: sub-basin id -> {depth: mean depth (m), fraction: lake share (default 1)}')
+    lake_landuse: int = Field(default=17, alias='HYPE_LAKE_LANDUSE', description='Land use id of the lake class')
+    lake_gratk: float = Field(default=100.0, alias='HYPE_LAKE_GRATK', gt=0,
+                              description='Outlet-lake general rating coefficient (gratk) when lakes are set')
+    lake_gratp: float = Field(default=1.5, alias='HYPE_LAKE_GRATP', gt=0,
+                              description='Outlet-lake general rating exponent (gratp) when lakes are set')
 
 
 # Legacy flat config keys accepted for backward compatibility, mapped to
