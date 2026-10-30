@@ -5540,6 +5540,55 @@ MODFLOW_SEEPAGE_LEAKANCE: 0.1
 #   Description: Head output in basin mode
 MODFLOW_SAVE_HEADS: last
 
+# MODFLOW_LAKE_SHAPEFILE
+#   Type:        Optional[str]
+#   Default:     None
+#   Source:      MODFLOWConfig (models/modflow/config_schema.py)
+#   Description: Lake polygon(s) held as a head boundary (GHB) in basin mode
+MODFLOW_LAKE_SHAPEFILE: null
+
+# MODFLOW_LAKE_STAGE
+#   Type:        Optional[float] (m)
+#   Default:     None
+#   Source:      MODFLOWConfig (models/modflow/config_schema.py)
+#   Description: Lake stage in the DEM's datum; required with MODFLOW_LAKE_SHAPEFILE
+MODFLOW_LAKE_STAGE: null
+
+# MODFLOW_LAKE_LEAKANCE
+#   Type:        float (1/d)
+#   Default:     1.0
+#   Source:      MODFLOWConfig (models/modflow/config_schema.py)
+#   Description: Lake-bed conductance per lake area (basin mode); calibration name LAKE_LEAKANCE
+MODFLOW_LAKE_LEAKANCE: 1.0
+
+# MODFLOW_K_ANISOTROPY
+#   Type:        float (-)
+#   Default:     1.0
+#   Source:      MODFLOWConfig (models/modflow/config_schema.py)
+#   Description: Horizontal anisotropy K22/K (basin mode); calibration name K_ANISOTROPY
+MODFLOW_K_ANISOTROPY: 1.0
+
+# MODFLOW_K_ANGLE
+#   Type:        float (degrees)
+#   Default:     0.0
+#   Source:      MODFLOWConfig (models/modflow/config_schema.py)
+#   Description: Direction of K, counter-clockwise from the grid x axis (basin mode); calibration name K_ANGLE
+MODFLOW_K_ANGLE: 0.0
+
+# MODFLOW_REDUCED_RECHARGE_ZONES
+#   Type:        Optional[List[int]]
+#   Default:     None
+#   Source:      MODFLOWConfig (models/modflow/config_schema.py)
+#   Description: Land-model recharge zones scaled by MODFLOW_ZONE_RECHARGE_FACTOR, e.g. glacier beds (basin mode)
+MODFLOW_REDUCED_RECHARGE_ZONES: null
+
+# MODFLOW_ZONE_RECHARGE_FACTOR
+#   Type:        float (0-1)
+#   Default:     1.0
+#   Source:      MODFLOWConfig (models/modflow/config_schema.py)
+#   Description: Share of recharge kept in the reduced zones; the rest returns to the river the same day; calibration name ZONE_RECHARGE_FACTOR
+MODFLOW_ZONE_RECHARGE_FACTOR: 1.0
+
 # MODFLOW_LAND_ZONE_SHAPEFILE
 #   Type:        Optional[str]
 #   Default:     None

@@ -242,6 +242,11 @@ class MODFLOWPreProcessor(BaseModelPreProcessor):
         cell = float(cfg.cell_size or 2000.0)
         geo = build_basin_geometry(sub, net, dem, crs, cell_size=cell, channel_depth=cfg.channel_depth)
         grid = grid_from_basin_geometry(geo)
+        if cfg.lake_shapefile:
+            if cfg.lake_stage is None:
+                raise ConfigurationError('MODFLOW_LAKE_SHAPEFILE needs MODFLOW_LAKE_STAGE')
+            grid.set_lake(gpd.read_file(cfg.lake_shapefile), cfg.lake_stage)
+        grid.reduced_zones = [int(z) for z in (cfg.reduced_recharge_zones or [])]
 
         land = str(cfg.coupling_source or '').upper()
         if land in ('', 'NONE', 'DEFAULT'):

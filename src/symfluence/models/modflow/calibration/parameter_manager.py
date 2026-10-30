@@ -59,6 +59,26 @@ MODFLOW_DEFAULT_BOUNDS = {
         'transform': 'log',
         'description': 'Land-surface seepage drain conductance per area (1/d)',
     },
+    'LAKE_LEAKANCE': {
+        'min': 1e-3, 'max': 100.0,
+        'transform': 'log',
+        'description': 'Lake-bed conductance per lake area (1/d)',
+    },
+    'K_ANISOTROPY': {
+        'min': 0.01, 'max': 1.0,
+        'transform': 'log',
+        'description': 'Horizontal anisotropy K22/K (-), K22 across the K_ANGLE direction',
+    },
+    'K_ANGLE': {
+        'min': 0.0, 'max': 90.0,
+        'transform': 'linear',
+        'description': 'Direction of K, degrees counter-clockwise from the grid x axis',
+    },
+    'ZONE_RECHARGE_FACTOR': {
+        'min': 0.0, 'max': 1.0,
+        'transform': 'linear',
+        'description': 'Share of recharge kept in MODFLOW_REDUCED_RECHARGE_ZONES (e.g. glacier beds)',
+    },
 }
 
 
@@ -309,7 +329,10 @@ class CoupledGWParameterManager(BaseParameterManager):
         if mf is not None:
             modflow_defaults.update(AQUIFER_THICKNESS=float(mf.aquifer_thickness),
                                     RIVER_LEAKANCE=float(mf.river_leakance),
-                                    SEEPAGE_LEAKANCE=float(mf.seepage_leakance))
+                                    SEEPAGE_LEAKANCE=float(mf.seepage_leakance),
+                                    LAKE_LEAKANCE=float(mf.lake_leakance),
+                                    K_ANISOTROPY=float(mf.k_anisotropy), K_ANGLE=float(mf.k_angle),
+                                    ZONE_RECHARGE_FACTOR=float(mf.zone_recharge_factor))
         for p in self.modflow_params:
             if p in modflow_defaults:
                 params[p] = modflow_defaults[p]

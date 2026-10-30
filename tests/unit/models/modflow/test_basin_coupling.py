@@ -256,3 +256,125 @@ def test_mf6_run_conserves_recharge(grid, tmp_path):
     expected = (rec * pd.Series(area)).sum(axis=1)
     np.testing.assert_allclose(b.recharge.to_numpy(), expected.to_numpy(), rtol=1e-5)
     np.testing.assert_allclose(b.recharge - b.discharge - b.storage_change, 0.0, atol=1e-3 * expected.mean())
+
+
+# ---------------------------------------------------------------- lake, anisotropy, reduced recharge
+def _lake():
+    """A 3 x 2 km lake at the downstream (west) end, on the river."""
+    return gpd.GeoDataFrame(geometry=[box(X0, Y0 - 4000, X0 + 3000, Y0 - 2000)], crs=CRS)
+
+
+def test_lake_ghb_replaces_drains_under_the_lake(grid, tmp_path):
+    grid.set_lake(_lake(), 520.0)
+    assert grid.has_lake and grid.lake_frac.sum() * grid.cell_area == pytest.approx(6e6, rel=1e-6)
+    grid.to_json(tmp_path / 'g.json')
+    back = MF6BasinGrid.from_json(tmp_path / 'g.json')
+    np.testing.assert_allclose(back.lake_frac, grid.lake_frac)
+    assert back.lake_stage == 520.0
+    write_simulation(tmp_path, grid, zone_cell_weights(grid, _zones()), 5, MF6BasinParams(lake_leakance=2.0))
+    assert 'GHB6 gwf.lake.ghb LAKE' in (tmp_path / 'gwf.nam').read_text()
+    ghb = [line.split() for line in (tmp_path / 'gwf.lake.ghb').read_text().split('BEGIN PERIOD 1\n')[1].splitlines()
+           if line.strip() and not line.startswith('END')]
+    cond = sum(float(c[4]) for c in ghb)
+    assert cond == pytest.approx(2.0 * 6e6, rel=1e-6) and all(float(c[3]) == 520.0 for c in ghb)
+    # no river reach in a mostly-lake cell; seepage only on the land part
+    riv = (tmp_path / 'gwf.riv.drn').read_text()
+    for r, c in zip(*np.nonzero(grid.lake_frac >= 0.5)):
+        assert f'  1 {r + 1} {c + 1} ' not in riv
+    seep = (tmp_path / 'gwf.seep.drn').read_text().split('BEGIN PERIOD 1\n')[1]
+    seep_cond = sum(float(line.split()[4]) for line in seep.splitlines() if line.startswith('  1 '))
+    land = (grid.basin_frac - grid.lake_frac)[grid.active].sum() * grid.cell_area
+    assert seep_cond == pytest.approx(0.1 * land, rel=1e-6)
+
+
+def test_no_lake_keeps_previous_packages(grid, tmp_path):
+    write_simulation(tmp_path, grid, zone_cell_weights(grid, _zones()), 5, MF6BasinParams())
+    assert 'GHB6' not in (tmp_path / 'gwf.nam').read_text()
+    assert not (tmp_path / 'gwf.lake.ghb').exists()
+    npf = (tmp_path / 'gwf.npf').read_text()
+    assert 'K22' not in npf and 'ANGLE1' not in npf
+
+
+def test_anisotropy_and_parameter_names(grid, tmp_path):
+    write_simulation(tmp_path, grid, zone_cell_weights(grid, _zones()), 5, MF6BasinParams())
+    assert apply_basin_parameters(tmp_path, {'K': 20.0, 'K_ANISOTROPY': 0.1, 'K_ANGLE': 45.0}, MF6BasinParams())
+    npf = (tmp_path / 'gwf.npf').read_text()
+    assert 'K22\n    CONSTANT 2\n' in npf and 'ANGLE1\n    CONSTANT 45\n' in npf
+    for bad in ({'K_ANISOTROPY': 0.0}, {'ZONE_RECHARGE_FACTOR': 1.5}, {'K_ANGLE': 200.0}):
+        with pytest.raises(ConfigurationError):
+            MF6BasinParams().updated(bad)
+
+
+def test_reduced_zone_recharge_multipliers(grid, tmp_path):
+    grid.reduced_zones = [13]
+    w = zone_cell_weights(grid, _zones())
+    write_simulation(tmp_path, grid, w, 5, MF6BasinParams(zone_recharge_factor=0.25))
+    rows = [line.split() for line in (tmp_path / 'gwf.rch').read_text().split('BEGIN PERIOD 1\n')[1].splitlines()
+            if line.startswith('  1 ')]
+    got = {(r[3], int(r[1]), int(r[2])): float(r[4]) for r in rows}
+    for x in w.itertuples():
+        f = 0.25 if x.zone_id == 13 else 1.0
+        assert got[(f'z{x.zone_id}', x.row, x.col)] == pytest.approx(x.mult * f, rel=1e-7)
+
+
+@pytest.mark.skipif(_mf6() is None, reason='mf6 not installed')
+def test_mf6_run_with_lake_anisotropy_and_reduced_recharge_conserves_water(grid, tmp_path):
+    from symfluence.models.modflow.basin_model import check_run
+    zones = _zones()
+    area = dict(zip(zones.zone_id, zones.to_crs(CRS).area))
+    grid.set_lake(_lake(), 515.0)
+    grid.reduced_zones = [13]
+    w = zone_cell_weights(grid, zones, area)
+    days = pd.date_range('2010-01-01', periods=90, freq='D')
+    rng = np.random.default_rng(1)
+    rec = pd.DataFrame({z: rng.uniform(0, 4e-3, len(days)) for z in area}, index=days)
+    params = MF6BasinParams(k=10.0, sy=0.05, k_anisotropy=0.2, k_angle=30.0, zone_recharge_factor=0.4)
+    write_simulation(tmp_path, grid, w, len(days), params, save_heads='none')
+    write_recharge_timeseries(tmp_path, rec, sorted(area))
+    r = subprocess.run([_mf6()], cwd=tmp_path, capture_output=True, text=True, timeout=300)
+    assert r.returncode == 0, r.stdout[-2000:]
+    check_run(tmp_path)
+    b = read_budget(tmp_path, days[0])
+    land = (rec * pd.Series(area)).sum(axis=1)
+    rejected = 0.6 * rec[13] * area[13]
+    np.testing.assert_allclose(b.rejected_recharge.to_numpy(), rejected.to_numpy(), rtol=1e-5)
+    np.testing.assert_allclose((b.recharge + b.rejected_recharge).to_numpy(), land.to_numpy(), rtol=1e-5)
+    assert (b.lake != 0).any()
+    # everything the land model passed down leaves as discharge or goes into storage
+    np.testing.assert_allclose(land - b.discharge - b.storage_change, 0.0, atol=1e-3 * land.mean())
+
+
+# ---------------------------------------------------------------- MODPATH travel times
+def _mp7():
+    exe = shutil.which('mp7')
+    m = _mf6()
+    if not exe and m and Path(m).with_name('mp7').exists():
+        exe = str(Path(m).with_name('mp7'))
+    return exe
+
+
+@pytest.mark.skipif(_mf6() is None or _mp7() is None, reason='mf6 or mp7 not installed')
+def test_modpath_travel_times(grid, tmp_path):
+    from symfluence.models.modflow.particle_tracking import track_steady_state, weighted_quantiles
+    zones = _zones()
+    area = dict(zip(zones.zone_id, zones.to_crs(CRS).area))
+    grid.set_lake(_lake(), 515.0)
+    w = zone_cell_weights(grid, zones, area)
+    days = pd.date_range('2010-01-01', periods=10, freq='D')
+    rec = pd.DataFrame({z: np.full(len(days), 2e-3) for z in area}, index=days)
+    sim = tmp_path / 'sim'
+    write_simulation(sim, grid, w, len(days), MF6BasinParams(k=10.0, sy=0.1, k_anisotropy=0.5, k_angle=0.0))
+    write_recharge_timeseries(sim, rec, sorted(area))
+    tt = track_steady_state(sim, tmp_path / 'mp', _mf6(), _mp7())
+    assert len(tt) == int(grid.active.sum())
+    assert tt.discharged.all()                             # every particle reached a sink
+    assert (tt.travel_days >= 0).all() and tt.travel_days.max() > 0
+    assert set(tt.end) <= {'lake', 'river', 'seepage'}
+    assert tt.recharge_m3d.sum() == pytest.approx(2e-3 * sum(area.values()), rel=1e-6)
+    # flow is westward (DEM falls west): particles end no further east than they start
+    assert (tt.x <= tt.x0 + 1e-6).all()
+    # halving porosity halves every travel time (MODPATH is linear in porosity)
+    tt2 = track_steady_state(sim, tmp_path / 'mp2', _mf6(), _mp7(), porosity=0.05)
+    np.testing.assert_allclose(tt2.travel_days, tt.travel_days / 2, rtol=1e-4, atol=1e-6)
+    q = weighted_quantiles(tt, by='end')
+    assert (q.recharge_m3d.sum() == pytest.approx(tt.recharge_m3d.sum()))
