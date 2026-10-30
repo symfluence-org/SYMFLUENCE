@@ -115,10 +115,10 @@ def cell_recharge(sim_dir: Path, grid: MF6BasinGrid) -> np.ndarray:
         raise ValidationError(f'No time-0 (record mean) row in {d / RECHARGE_TS}')
     params = json.loads((d / PARAMS_FILE).read_text()) if (d / PARAMS_FILE).exists() else {}
     f = float(params.get('zone_recharge_factor', 1.0))
+    keep = np.where(w.zone_id.isin(grid.reduced_zones), f, 1.0)
+    vol = w.zone_id.map(lambda z: mean[_ts_name(z)]).to_numpy(float) * w.mult.to_numpy(float) * keep * grid.cell_area
     out = np.zeros((grid.nrow, grid.ncol))
-    for x in w.itertuples():
-        keep = f if x.zone_id in grid.reduced_zones else 1.0
-        out[int(x.row) - 1, int(x.col) - 1] += mean[_ts_name(x.zone_id)] * x.mult * keep * grid.cell_area
+    np.add.at(out, (w.row.to_numpy(int) - 1, w.col.to_numpy(int) - 1), vol)
     return out
 
 
@@ -159,7 +159,7 @@ def track_steady_state(sim_dir: Path, work_dir: Path, mf6: str, mp7: str,
 
     r0, c0 = rc(ep.node0)
     r1, c1 = rc(ep.node)
-    lake = grid.lake_frac if grid.has_lake else np.zeros((grid.nrow, grid.ncol))
+    lake = grid.lake_array()
     river = np.zeros((grid.nrow, grid.ncol), bool)
     river[grid.river.row.to_numpy(int) - 1, grid.river.col.to_numpy(int) - 1] = True
     end_class = np.where(lake[r1 - 1, c1 - 1] >= 0.5, 'lake',

@@ -118,6 +118,10 @@ class MF6BasinGrid:
     def has_lake(self) -> bool:
         return self.lake_frac is not None and bool((self.lake_frac > 0).any())
 
+    def lake_array(self) -> np.ndarray:
+        """Per-cell lake fraction; zeros when there is no lake."""
+        return self.lake_frac if self.lake_frac is not None else np.zeros((self.nrow, self.ncol))
+
     @property
     def cell_area(self) -> float:
         return self.cell_size * self.cell_size
@@ -225,7 +229,7 @@ def write_parameter_packages(sim_dir: Path, grid: MF6BasinGrid, params: MF6Basin
     params.validate()
     d = Path(sim_dir)
     top = np.where(grid.active, grid.top, 0.0)
-    lake = grid.lake_frac if grid.has_lake else np.zeros(top.shape)
+    lake = grid.lake_array()
     # Thickness is measured below the lower of land surface and streambed, so
     # deeply incised reaches stay inside the aquifer.
     base = top.copy()
@@ -264,7 +268,7 @@ def write_parameter_packages(sim_dir: Path, grid: MF6BasinGrid, params: MF6Basin
         'BEGIN PERIOD 1\n  STEADY-STATE\nEND PERIOD 1\n\nBEGIN PERIOD 2\n  TRANSIENT\nEND PERIOD 2\n')
     riv = grid.river
     # Reaches drawn through a lake are the lake itself: the GHB handles them
-    riv = riv[[lake[int(r.row) - 1, int(r.col) - 1] < 0.5 for r in riv.itertuples()]]
+    riv = riv[lake[riv.row.to_numpy(int) - 1, riv.col.to_numpy(int) - 1] < 0.5]
     lines = [f'  1 {int(r.row)} {int(r.col)} {r.strtop:.3f} {params.river_leakance * r.length:.6g}'
              for r in riv.itertuples()]
     (d / 'gwf.riv.drn').write_text(
