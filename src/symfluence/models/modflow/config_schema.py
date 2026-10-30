@@ -10,7 +10,7 @@ config system through ``R.config_schemas`` (via the model manifest /
 """
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -55,6 +55,19 @@ class MODFLOWConfig(BaseModel):
     seepage_leakance: float = Field(default=0.1, alias='MODFLOW_SEEPAGE_LEAKANCE', gt=0,
                                     description='Land-surface seepage drain conductance per area (1/d)')
     save_heads: Literal['none', 'last', 'all'] = Field(default='last', alias='MODFLOW_SAVE_HEADS')
+    # Basin mode: optional lake as a head boundary (GHB) at a fixed stage in the DEM's datum
+    lake_shapefile: Optional[str] = Field(default=None, alias='MODFLOW_LAKE_SHAPEFILE')
+    lake_stage: Optional[float] = Field(default=None, alias='MODFLOW_LAKE_STAGE',
+                                        description='Lake stage (m, same datum as the DEM)')
+    lake_leakance: float = Field(default=1.0, alias='MODFLOW_LAKE_LEAKANCE', gt=0,
+                                 description='Lake-bed conductance per lake area (1/d)')
+    # Basin mode: horizontal anisotropy (K22 = K * ratio, major axis at k_angle degrees CCW from grid x)
+    k_anisotropy: float = Field(default=1.0, alias='MODFLOW_K_ANISOTROPY', gt=0)
+    k_angle: float = Field(default=0.0, alias='MODFLOW_K_ANGLE', ge=-180, le=180)
+    # Basin mode: recharge zones (land-model ids) scaled by zone_recharge_factor, e.g. glacier beds;
+    # the rejected recharge returns to the river the same day
+    reduced_recharge_zones: Optional[List[int]] = Field(default=None, alias='MODFLOW_REDUCED_RECHARGE_ZONES')
+    zone_recharge_factor: float = Field(default=1.0, alias='MODFLOW_ZONE_RECHARGE_FACTOR', ge=0, le=1)
     # Land-model recharge zones (basin mode): shapefile whose id field matches
     # the land model's spatial units (HYPE subid, SUMMA hruId)
     land_zone_shapefile: Optional[str] = Field(default=None, alias='MODFLOW_LAND_ZONE_SHAPEFILE')
@@ -94,7 +107,7 @@ class MODFLOWConfig(BaseModel):
     # Calibration
     params_to_calibrate: str = Field(
         default='K,SY,DRAIN_CONDUCTANCE',
-        description='Lumped: K,SY,DRAIN_CONDUCTANCE. Basin: any of K,SY,AQUIFER_THICKNESS,RIVER_LEAKANCE,SEEPAGE_LEAKANCE',
+        description='Lumped: K,SY,DRAIN_CONDUCTANCE. Basin: any of K,SY,AQUIFER_THICKNESS,RIVER_LEAKANCE,SEEPAGE_LEAKANCE,LAKE_LEAKANCE,K_ANISOTROPY,K_ANGLE,ZONE_RECHARGE_FACTOR',
         alias='MODFLOW_PARAMS_TO_CALIBRATE'
     )
 
