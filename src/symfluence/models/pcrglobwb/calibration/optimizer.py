@@ -99,7 +99,7 @@ class PCRGLOBWBModelOptimizer(BaseModelOptimizer):
             return
 
         cal_period = self._get_config_value(
-            lambda: self.config.optimization.calibration_period,
+            lambda: self.config.domain.calibration_period,
             dict_key='CALIBRATION_PERIOD',
         )
         if not cal_period:

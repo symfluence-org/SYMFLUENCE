@@ -105,7 +105,7 @@ class JRCWaterAcquirer(BaseAcquisitionHandler):
 
         # Get dataset type from config
         dataset = self._get_config_value(
-            lambda: self.config.evaluation.jrc_water.dataset,
+            lambda: None,
             default='occurrence',
             dict_key='JRC_WATER_DATASET'
         )

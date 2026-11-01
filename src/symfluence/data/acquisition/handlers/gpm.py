@@ -96,7 +96,7 @@ class GPMIMERGAcquirer(BaseAcquisitionHandler):
 
         # Get product type from config
         product_type = self._get_config_value(
-            lambda: self.config.evaluation.gpm.product,
+            lambda: None,
             default='final',
             dict_key='GPM_PRODUCT'
         )
@@ -246,7 +246,7 @@ class GPMIMERGAcquirer(BaseAcquisitionHandler):
             session.auth = (user, password)
 
         max_granules = self._get_config_value(
-            lambda: self.config.evaluation.gpm.max_granules,
+            lambda: None,
             default=None,
             dict_key='GPM_MAX_GRANULES'
         )

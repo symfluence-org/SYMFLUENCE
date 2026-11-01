@@ -251,7 +251,7 @@ class SummaForcingProcessor(BaseForcingProcessor):
                 self.logger.error(f"Failed to convert shapefile to CSV: {str(e)}")
                 raise
         elif not intersect_csv.exists() and not intersect_shp.exists():
-            hru_id_field = self._get_config_value(lambda: self.config.domain.catchment_shp_hruid)
+            hru_id_field = self._get_config_value(lambda: self.config.paths.catchment_hruid, dict_key='CATCHMENT_SHP_HRUID')
             case_name = f"{self.domain_name}_{self._get_config_value(lambda: self.config.forcing.dataset)}"
             remap_file = directory / f"{case_name}_{hru_id_field}_remapping.csv"
             if remap_file.exists():

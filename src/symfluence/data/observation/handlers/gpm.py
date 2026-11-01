@@ -60,8 +60,8 @@ class GPMIMERGHandler(BaseObservationHandler):
 
         # Determine data directory
         gpm_path = self._get_config_value(
-            lambda: self.config.evaluation.gpm.path,
-            default='default'
+            lambda: None,
+            default='default', dict_key='GPM_PATH'
         )
         if isinstance(gpm_path, str) and gpm_path.lower() == 'default':
             gpm_dir = self.project_observations_dir / "precipitation" / "gpm_imerg"

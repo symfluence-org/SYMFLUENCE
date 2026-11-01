@@ -69,11 +69,11 @@ class CNESGRGSHandler(BaseObservationHandler):
 
         # Re-reference anomaly to baseline period
         baseline_start = self._get_config_value(
-            lambda: self.config.evaluation.cnes_grgs.baseline_start,
-            default='2004-01-01')
+            lambda: None,
+            default='2004-01-01', dict_key='CNES_GRGS_BASELINE_START')
         baseline_end = self._get_config_value(
-            lambda: self.config.evaluation.cnes_grgs.baseline_end,
-            default='2009-12-31')
+            lambda: None,
+            default='2009-12-31', dict_key='CNES_GRGS_BASELINE_END')
 
         if 'tws_anomaly_cm' in df.columns:
             baseline = df.loc[baseline_start:baseline_end, 'tws_anomaly_cm']

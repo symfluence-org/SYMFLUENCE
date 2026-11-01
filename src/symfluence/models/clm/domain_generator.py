@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, Tuple
 import numpy as np
 import xarray as xr
 
+from symfluence.core.exceptions import ConfigurationError
+
 if TYPE_CHECKING:
     from .preprocessor import CLMPreProcessor
 
@@ -45,7 +47,7 @@ class CLMDomainGenerator:
     def get_catchment_centroid(self) -> Tuple[float, float, float]:
         """Get catchment centroid lat/lon and area from shapefile."""
         shapefile_path = self.pp._get_config_value(
-            lambda: self.pp.config.domain.shapefile_path,
+            lambda: self.pp.config.paths.catchment_shp_path,
             default=None, dict_key='CATCHMENT_SHP_PATH'
         )
 
@@ -63,35 +65,39 @@ class CLMDomainGenerator:
             centroid = gdf.geometry.unary_union.centroid
             area_km2 = self._get_catchment_area_from_gdf(gdf)
             return centroid.y, centroid.x, area_km2
-        else:
-            lat = float(self.pp._get_config_value(
-                lambda: self.pp.config.domain.latitude,
-                default=51.17, dict_key='LATITUDE'
-            ))
-            lon = float(self.pp._get_config_value(
-                lambda: self.pp.config.domain.longitude,
-                default=-115.57, dict_key='LONGITUDE'
-            ))
-            area = float(self.pp._get_config_value(
-                lambda: self.pp.config.domain.catchment_area,
-                default=2210.0, dict_key='CATCHMENT_AREA'
-            ))
-            return lat, lon, area
+        lat = self.pp._get_config_value(
+            lambda: None, default=None, dict_key='LATITUDE')
+        lon = self.pp._get_config_value(
+            lambda: None, default=None, dict_key='LONGITUDE')
+        area = self.pp._get_config_value(
+            lambda: self.pp.config.domain.catchment_area, default=None, dict_key='CATCHMENT_AREA')
+        if lat is None or lon is None or area is None:
+            # No silent default location: this used to fall back to Bow at
+            # Banff (51.17, -115.57, 2210 km2) and build the wrong domain.
+            raise ConfigurationError(
+                f"CLM: catchment shapefile not found ({shapefile}) and LATITUDE/"
+                "LONGITUDE/CATCHMENT_AREA are not all set in the config."
+            )
+        return float(lat), float(lon), float(area)
 
     @staticmethod
     def _get_catchment_area_from_gdf(gdf) -> float:
-        """Calculate catchment area in km2 from GeoDataFrame."""
-        try:
-            for col in ['Area_km2', 'area_km2', 'AREA_KM2', 'Area']:
-                if col in gdf.columns:
-                    area_attr = float(gdf[col].iloc[0])
-                    if area_attr > 0:
-                        return area_attr
-            gdf_proj = gdf.to_crs(epsg=3857)
-            area_m2 = gdf_proj.geometry.area.sum()
-            return area_m2 / 1e6
-        except Exception:  # noqa: BLE001 — model execution resilience
-            return 2210.0
+        """Calculate catchment area in km2 from GeoDataFrame.
+
+        Sums an area attribute over all features if present, otherwise
+        computes the projected (UTM) area. (Previously this read only the
+        first feature's attribute, measured area in Web Mercator -- inflated
+        by 1/cos^2(lat), ~5x at 64N -- and fell back to Bow at Banff's area
+        on any error.)
+        """
+        from symfluence.core.geometry_utils import calculate_catchment_area_km2
+
+        for col in ['Area_km2', 'area_km2', 'AREA_KM2']:
+            if col in gdf.columns:
+                area_attr = float(gdf[col].sum())
+                if area_attr > 0:
+                    return area_attr
+        return calculate_catchment_area_km2(gdf)
 
     def get_mean_elevation(self) -> float:
         """Get mean elevation from HRU shapefile or DEM (GeoTIFF/NetCDF)."""

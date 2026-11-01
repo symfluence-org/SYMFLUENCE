@@ -127,6 +127,21 @@ class TestAliases:
         reg.add("CANON", _DummyRunner)
         assert reg.get("ALIAS") is _DummyRunner
 
+    @pytest.mark.parametrize("alias_first", [True, False])
+    def test_real_entry_wins_over_alias_of_same_name(self, reg, alias_first):
+        # model_manifest() declares aliases without checking reg.keys() (which
+        # would force the lazy seeders), so precedence must hold at lookup
+        # time whichever was declared first.
+        if alias_first:
+            reg.alias("XINANJIANG", "XAJ")
+        reg.add("XAJ", _DummyPreprocessor)
+        reg.add("XINANJIANG", _DummyRunner)
+        if not alias_first:
+            reg.alias("XINANJIANG", "XAJ")
+        assert reg.get("XINANJIANG") is _DummyRunner
+        assert reg["XINANJIANG"] is _DummyRunner
+        assert reg.get("XAJ") is _DummyPreprocessor
+
 
 # ======================================================================
 # Lazy imports

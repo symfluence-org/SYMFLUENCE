@@ -45,7 +45,7 @@ class NgenStreamflowTarget(StreamflowEvaluator):
         )
         # Get warm-up period in days (default 30 days for model spin-up)
         self._warmup_days = self._get_config_value(
-            lambda: self.config.calibration.warmup_days,
+            lambda: None,
             default=30,
             dict_key='CALIBRATION_WARMUP_DAYS'
         )

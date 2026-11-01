@@ -218,8 +218,8 @@ class ProjectManager(ConfigurableMixin):
             # Determine output path
             output_path = self.project_dir / "shapefiles" / "pour_point"
             shp_path = self._get_config_value(
-                lambda: self.config.paths.pour_point_shp_path,
-                'default'
+                lambda: self.config.paths.pour_point_path,
+                'default', dict_key='POUR_POINT_SHP_PATH'
             )
             if shp_path != 'default' and shp_path is not None:
                 output_path = Path(shp_path)
@@ -227,8 +227,8 @@ class ProjectManager(ConfigurableMixin):
             # Determine shapefile name
             pour_point_shp_name = f"{self.domain_name}_pourPoint.shp"
             shp_name = self._get_config_value(
-                lambda: self.config.paths.pour_point_shp_name,
-                'default'
+                lambda: self.config.paths.pour_point_name,
+                'default', dict_key='POUR_POINT_SHP_NAME'
             )
             if shp_name != 'default' and shp_name is not None:
                 pour_point_shp_name = shp_name

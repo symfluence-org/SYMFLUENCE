@@ -149,7 +149,7 @@ class DataManager(BaseManager):
         """
         from pathlib import Path
         obs_dir = self._get_config_value(
-            lambda: self.config.evaluation.multi_gauge.obs_dir,
+            lambda: self.config.optimization.multi_gauge.obs_dir,
             dict_key='MULTI_GAUGE_OBS_DIR',
         )
         if not obs_dir:
@@ -530,7 +530,7 @@ class DataManager(BaseManager):
         # don't double-extract (the backend is canonical). Plugin names are
         # lowercased (e.g. 'cas'); provider ids likewise lowercased above.
         existing_exclude = self._get_config_value(
-            lambda: self.config.attributes.plugins_exclude, default=[],
+            lambda: None, default=[],
             dict_key='ATTRIBUTE_PLUGINS_EXCLUDE') or []
         ap._plugin_exclude_override = set(existing_exclude) | set(exclude_providers)
 

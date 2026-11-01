@@ -5,17 +5,26 @@ Fixtures specific to unit tests (fast, isolated tests).
 """
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
-
 # Auto-apply the "unit" marker to every test collected under tests/unit/
 # so that ``pytest -m unit`` picks up the full suite without requiring
 # each test file to declare the marker explicitly.
+#
+# The hook receives *every* collected item for the session (not just those
+# under this directory), so it must filter by path; otherwise ``pytest -m unit
+# tests/`` would also select integration and e2e tests.
+_UNIT_ROOT = Path(__file__).resolve().parent
+
+
 def pytest_collection_modifyitems(items):
     unit_marker = pytest.mark.unit
     for item in items:
+        if not Path(str(item.path)).resolve().is_relative_to(_UNIT_ROOT):
+            continue
         if "unit" not in {m.name for m in item.iter_markers()}:
             item.add_marker(unit_marker)
 
