@@ -6,6 +6,14 @@ on:
   pull_request:
     branches: [ main, develop ]
 
+
+# Supersede stale runs on PRs (each push to a PR branch cancels the previous
+# run). Pushes to develop/main always run to completion so every merge gets a
+# full signal.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
