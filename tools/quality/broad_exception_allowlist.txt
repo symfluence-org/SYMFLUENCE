@@ -734,7 +734,7 @@ src/symfluence/models/gr/postprocessor.py:GRPostProcessor.extract_streamflow:exc
 src/symfluence/models/gr/preprocessor.py:GRPreProcessor._apply_area_weighted_aggregation:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/gr/preprocessor.py:GRPreProcessor.prepare_forcing_data:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/gr/r_environment.py:verify_gr_r_runtime:except Exception as exc:  # noqa: BLE001 - Broad exception required for rpy2 import failures
-src/symfluence/models/gr/runner.py:<module>:except Exception:  # noqa: BLE001 - Broad exception required for rpy2 import failures
+src/symfluence/models/gr/runner.py:_load_rpy2:except Exception:  # noqa: BLE001 - Broad exception required for rpy2 import failures
 src/symfluence/models/gr/runner.py:GRRunner._calculate_and_log_metrics:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/gr/runner.py:GRRunner._execute_gr_distributed:except Exception as cleanup_error:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/gr/runner.py:GRRunner._execute_gr_distributed:except Exception as e:  # noqa: BLE001 — model execution resilience
