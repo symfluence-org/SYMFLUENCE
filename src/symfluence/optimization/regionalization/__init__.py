@@ -22,7 +22,7 @@ Strategies:
 """
 from __future__ import annotations
 
-from symfluence.optimization.regionalization.strategies import (
+from symfluence.core.calibration.regionalization.strategies import (
     DistributedRegionalization,
     LumpedRegionalization,
     ParameterRegionalization,
@@ -31,7 +31,7 @@ from symfluence.optimization.regionalization.strategies import (
     ZoneRegionalization,
     get_regionalization_info,
 )
-from symfluence.optimization.regionalization.transfer_functions import (
+from symfluence.core.calibration.regionalization.transfer_functions import (
     ConstantTF,
     ExponentialTF,
     FlexiblePowerTF,

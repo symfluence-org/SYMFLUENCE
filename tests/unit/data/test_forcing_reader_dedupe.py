@@ -21,7 +21,7 @@ import pandas as pd
 import pytest
 import xarray as xr
 
-from symfluence.data.model_ready.forcing_reader import _dedupe_forcing_time
+from symfluence.core.modeling.model_ready.forcing_reader import _dedupe_forcing_time
 
 
 def _ds(times, values):

@@ -27,7 +27,7 @@ def concrete_acquirer_class():
 
     Returns the class, not an instance.
     """
-    from symfluence.data.acquisition.handlers.earthaccess_base import (
+    from symfluence.data.acquisition.earthaccess_base import (
         BaseEarthaccessAcquirer,
     )
 
@@ -109,7 +109,7 @@ class TestBaseEarthaccessConstants:
 class TestSearchGranulesCMR:
     """Tests for _search_granules_cmr method."""
 
-    @patch("symfluence.data.acquisition.handlers.earthaccess_base.requests.get")
+    @patch("symfluence.data.acquisition.earthaccess_base.requests.get")
     def test_search_returns_granules(
         self, mock_get, acquirer_instance, sample_cmr_response
     ):
@@ -125,7 +125,7 @@ class TestSearchGranulesCMR:
         assert len(result) == 2
         assert result[0]["id"] == "granule_1"
 
-    @patch("symfluence.data.acquisition.handlers.earthaccess_base.requests.get")
+    @patch("symfluence.data.acquisition.earthaccess_base.requests.get")
     def test_search_empty_response(
         self, mock_get, acquirer_instance, empty_cmr_response
     ):
@@ -140,7 +140,7 @@ class TestSearchGranulesCMR:
 
         assert result == []
 
-    @patch("symfluence.data.acquisition.handlers.earthaccess_base.requests.get")
+    @patch("symfluence.data.acquisition.earthaccess_base.requests.get")
     def test_search_uses_instance_dates(self, mock_get, acquirer_instance):
         """Search should use instance start_date/end_date by default."""
         mock_response = Mock()
@@ -159,7 +159,7 @@ class TestSearchGranulesCMR:
         assert "temporal" in params
         assert "bounding_box" in params
 
-    @patch("symfluence.data.acquisition.handlers.earthaccess_base.requests.get")
+    @patch("symfluence.data.acquisition.earthaccess_base.requests.get")
     def test_search_handles_network_error(self, mock_get, acquirer_instance):
         """Search should handle network errors gracefully."""
         mock_get.side_effect = ConnectionError("Network error")
@@ -168,7 +168,7 @@ class TestSearchGranulesCMR:
 
         assert result == []
 
-    @patch("symfluence.data.acquisition.handlers.earthaccess_base.requests.get")
+    @patch("symfluence.data.acquisition.earthaccess_base.requests.get")
     def test_search_paginates(self, mock_get, acquirer_instance):
         """Search should paginate when page is full."""
         page1_response = Mock()
@@ -190,7 +190,7 @@ class TestSearchGranulesCMR:
         assert len(result) == 11
         assert mock_get.call_count == 2
 
-    @patch("symfluence.data.acquisition.handlers.earthaccess_base.requests.get")
+    @patch("symfluence.data.acquisition.earthaccess_base.requests.get")
     def test_search_includes_version_when_provided(self, mock_get, acquirer_instance):
         """Search should include version in CMR params if specified."""
         mock_response = Mock()
@@ -399,7 +399,7 @@ class TestDownloadGranulesEarthaccess:
 class TestCountAvailableGranules:
     """Tests for _count_available_granules method."""
 
-    @patch("symfluence.data.acquisition.handlers.earthaccess_base.requests.get")
+    @patch("symfluence.data.acquisition.earthaccess_base.requests.get")
     def test_returns_count_from_header(self, mock_get, acquirer_instance):
         """Should return count from CMR-Hits header."""
         mock_response = Mock()
@@ -410,7 +410,7 @@ class TestCountAvailableGranules:
 
         assert count == 42
 
-    @patch("symfluence.data.acquisition.handlers.earthaccess_base.requests.get")
+    @patch("symfluence.data.acquisition.earthaccess_base.requests.get")
     def test_returns_zero_on_error(self, mock_get, acquirer_instance):
         """Should return 0 on network error."""
         mock_get.side_effect = ConnectionError("fail")
@@ -419,7 +419,7 @@ class TestCountAvailableGranules:
 
         assert count == 0
 
-    @patch("symfluence.data.acquisition.handlers.earthaccess_base.requests.get")
+    @patch("symfluence.data.acquisition.earthaccess_base.requests.get")
     def test_returns_zero_when_header_missing(self, mock_get, acquirer_instance):
         """Should return 0 when CMR-Hits header is absent."""
         mock_response = Mock()

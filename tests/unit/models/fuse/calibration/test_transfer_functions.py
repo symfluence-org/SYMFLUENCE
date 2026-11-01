@@ -68,7 +68,7 @@ class TestLinearTF:
 
     def test_apply_linear(self):
         """Should compute a + b * attr."""
-        from symfluence.optimization.regionalization.transfer_functions import LinearTF
+        from symfluence.core.calibration.regionalization.transfer_functions import LinearTF
 
         tf = LinearTF(a_bounds=(0, 100), b_bounds=(-10, 10))
         attr = np.array([0.0, 0.5, 1.0])
@@ -80,7 +80,7 @@ class TestLinearTF:
 
     def test_coefficient_bounds(self):
         """Should return 2 sets of bounds."""
-        from symfluence.optimization.regionalization.transfer_functions import LinearTF
+        from symfluence.core.calibration.regionalization.transfer_functions import LinearTF
 
         tf = LinearTF(a_bounds=(0, 100), b_bounds=(-10, 10))
         bounds = tf.get_coefficient_bounds()
@@ -91,14 +91,14 @@ class TestLinearTF:
 
     def test_name_is_linear(self):
         """Name should be 'linear'."""
-        from symfluence.optimization.regionalization.transfer_functions import LinearTF
+        from symfluence.core.calibration.regionalization.transfer_functions import LinearTF
 
         tf = LinearTF(a_bounds=(0, 1), b_bounds=(0, 1))
         assert tf.name == 'linear'
 
     def test_n_coefficients(self):
         """Should have 2 coefficients."""
-        from symfluence.optimization.regionalization.transfer_functions import LinearTF
+        from symfluence.core.calibration.regionalization.transfer_functions import LinearTF
 
         tf = LinearTF(a_bounds=(0, 1), b_bounds=(0, 1))
         assert tf.n_coefficients == 2
@@ -113,7 +113,7 @@ class TestPowerTF:
 
     def test_apply_power(self):
         """Should compute a * (attr + 0.01)^b."""
-        from symfluence.optimization.regionalization.transfer_functions import PowerTF
+        from symfluence.core.calibration.regionalization.transfer_functions import PowerTF
 
         tf = PowerTF(a_bounds=(0, 100), b_bounds=(-2, 2))
         attr = np.array([1.0, 2.0, 4.0])
@@ -127,7 +127,7 @@ class TestPowerTF:
 
     def test_handles_zero_attribute(self):
         """Should handle zero attributes (via +0.01 offset)."""
-        from symfluence.optimization.regionalization.transfer_functions import PowerTF
+        from symfluence.core.calibration.regionalization.transfer_functions import PowerTF
 
         tf = PowerTF(a_bounds=(0, 100), b_bounds=(-2, 2))
         attr = np.array([0.0])
@@ -139,7 +139,7 @@ class TestPowerTF:
 
     def test_name_is_power(self):
         """Name should be 'power'."""
-        from symfluence.optimization.regionalization.transfer_functions import PowerTF
+        from symfluence.core.calibration.regionalization.transfer_functions import PowerTF
 
         tf = PowerTF(a_bounds=(0, 1), b_bounds=(0, 1))
         assert tf.name == 'power'
@@ -154,7 +154,7 @@ class TestExponentialTF:
 
     def test_apply_exponential(self):
         """Should compute a * exp(b * attr)."""
-        from symfluence.optimization.regionalization.transfer_functions import ExponentialTF
+        from symfluence.core.calibration.regionalization.transfer_functions import ExponentialTF
 
         tf = ExponentialTF(a_bounds=(0, 100), b_bounds=(-2, 2))
         attr = np.array([0.0, 1.0])
@@ -167,7 +167,7 @@ class TestExponentialTF:
 
     def test_name_is_exponential(self):
         """Name should be 'exponential'."""
-        from symfluence.optimization.regionalization.transfer_functions import ExponentialTF
+        from symfluence.core.calibration.regionalization.transfer_functions import ExponentialTF
 
         tf = ExponentialTF(a_bounds=(0, 1), b_bounds=(0, 1))
         assert tf.name == 'exponential'
@@ -182,7 +182,7 @@ class TestConstantTF:
 
     def test_apply_constant(self):
         """Should return uniform value regardless of attribute."""
-        from symfluence.optimization.regionalization.transfer_functions import ConstantTF
+        from symfluence.core.calibration.regionalization.transfer_functions import ConstantTF
 
         tf = ConstantTF(a_bounds=(0, 100))
         attr = np.array([0.0, 0.5, 1.0, 100.0])
@@ -194,7 +194,7 @@ class TestConstantTF:
 
     def test_single_coefficient(self):
         """Should have exactly 1 coefficient."""
-        from symfluence.optimization.regionalization.transfer_functions import ConstantTF
+        from symfluence.core.calibration.regionalization.transfer_functions import ConstantTF
 
         tf = ConstantTF(a_bounds=(0, 100))
         assert tf.n_coefficients == 1
@@ -202,7 +202,7 @@ class TestConstantTF:
 
     def test_name_is_constant(self):
         """Name should be 'constant'."""
-        from symfluence.optimization.regionalization.transfer_functions import ConstantTF
+        from symfluence.core.calibration.regionalization.transfer_functions import ConstantTF
 
         tf = ConstantTF(a_bounds=(0, 1))
         assert tf.name == 'constant'
@@ -217,21 +217,21 @@ class TestFlexiblePowerTF:
 
     def test_with_calibrated_exponent(self):
         """When calibrate_exponent=True, should use both a and b."""
-        from symfluence.optimization.regionalization.transfer_functions import FlexiblePowerTF
+        from symfluence.core.calibration.regionalization.transfer_functions import FlexiblePowerTF
 
         tf = FlexiblePowerTF(a_bounds=(0, 100), calibrate_exponent=True)
         assert tf.n_coefficients == 2
 
     def test_without_calibrated_exponent(self):
         """When calibrate_exponent=False, should use fixed exponent."""
-        from symfluence.optimization.regionalization.transfer_functions import FlexiblePowerTF
+        from symfluence.core.calibration.regionalization.transfer_functions import FlexiblePowerTF
 
         tf = FlexiblePowerTF(a_bounds=(0, 100), calibrate_exponent=False, fixed_exponent=0.0)
         assert tf.n_coefficients == 1
 
     def test_fixed_exponent_zero_gives_constant(self):
         """b=0 should give constant output equal to a."""
-        from symfluence.optimization.regionalization.transfer_functions import FlexiblePowerTF
+        from symfluence.core.calibration.regionalization.transfer_functions import FlexiblePowerTF
 
         tf = FlexiblePowerTF(a_bounds=(0, 100), calibrate_exponent=False, fixed_exponent=0.0)
         attr = np.array([0.5, 1.0, 2.0])
@@ -243,7 +243,7 @@ class TestFlexiblePowerTF:
 
     def test_calibrated_b_zero_gives_constant(self):
         """Even with calibrate_exponent=True, b~0 gives constant."""
-        from symfluence.optimization.regionalization.transfer_functions import FlexiblePowerTF
+        from symfluence.core.calibration.regionalization.transfer_functions import FlexiblePowerTF
 
         tf = FlexiblePowerTF(a_bounds=(0, 100), calibrate_exponent=True)
         attr = np.array([0.5, 1.0, 2.0])
@@ -255,7 +255,7 @@ class TestFlexiblePowerTF:
 
     def test_positive_exponent_increases_with_attribute(self):
         """b > 0 should give increasing output with increasing attr."""
-        from symfluence.optimization.regionalization.transfer_functions import FlexiblePowerTF
+        from symfluence.core.calibration.regionalization.transfer_functions import FlexiblePowerTF
 
         tf = FlexiblePowerTF(a_bounds=(0, 100), calibrate_exponent=True)
         attr = np.array([0.1, 0.5, 1.0])
@@ -268,7 +268,7 @@ class TestFlexiblePowerTF:
 
     def test_handles_zero_attribute_safely(self):
         """Should handle zero attributes without error."""
-        from symfluence.optimization.regionalization.transfer_functions import FlexiblePowerTF
+        from symfluence.core.calibration.regionalization.transfer_functions import FlexiblePowerTF
 
         tf = FlexiblePowerTF(a_bounds=(0, 100), calibrate_exponent=True)
         attr = np.array([0.0, 0.0])

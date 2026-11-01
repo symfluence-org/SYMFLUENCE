@@ -2,7 +2,7 @@
 Unit Tests for model-agnostic parameter regionalization strategies.
 
 Tests the shared regionalization framework at
-symfluence.optimization.regionalization.strategies.
+symfluence.core.calibration.regionalization.strategies.
 """
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ def test_logger():
 
 class TestParameterRegionalizationABC:
     def test_cannot_instantiate_directly(self, param_bounds, test_logger):
-        from symfluence.optimization.regionalization.strategies import (
+        from symfluence.core.calibration.regionalization.strategies import (
             ParameterRegionalization,
         )
         with pytest.raises(TypeError):
@@ -62,21 +62,21 @@ class TestParameterRegionalizationABC:
 
 class TestLumpedRegionalization:
     def test_name_property(self, param_bounds, test_logger):
-        from symfluence.optimization.regionalization.strategies import (
+        from symfluence.core.calibration.regionalization.strategies import (
             LumpedRegionalization,
         )
         reg = LumpedRegionalization(param_bounds, 5, test_logger)
         assert reg.name == "lumped"
 
     def test_calibration_params_match_original_bounds(self, param_bounds, test_logger):
-        from symfluence.optimization.regionalization.strategies import (
+        from symfluence.core.calibration.regionalization.strategies import (
             LumpedRegionalization,
         )
         reg = LumpedRegionalization(param_bounds, 5, test_logger)
         assert reg.get_calibration_parameters() == param_bounds
 
     def test_to_distributed_replicates_values(self, param_bounds, test_logger):
-        from symfluence.optimization.regionalization.strategies import (
+        from symfluence.core.calibration.regionalization.strategies import (
             LumpedRegionalization,
         )
         n_units = 5
@@ -90,7 +90,7 @@ class TestLumpedRegionalization:
             )
 
     def test_returns_correct_names(self, param_bounds, test_logger):
-        from symfluence.optimization.regionalization.strategies import (
+        from symfluence.core.calibration.regionalization.strategies import (
             LumpedRegionalization,
         )
         reg = LumpedRegionalization(param_bounds, 3, test_logger)
@@ -101,7 +101,7 @@ class TestLumpedRegionalization:
 
 class TestTransferFunctionRegionalization:
     def test_name_property(self, param_bounds, param_config, unit_attributes, test_logger):
-        from symfluence.optimization.regionalization.strategies import (
+        from symfluence.core.calibration.regionalization.strategies import (
             TransferFunctionRegionalization,
         )
         reg = TransferFunctionRegionalization(
@@ -110,7 +110,7 @@ class TestTransferFunctionRegionalization:
         assert reg.name == "transfer_function"
 
     def test_normalizes_attributes(self, param_bounds, param_config, unit_attributes, test_logger):
-        from symfluence.optimization.regionalization.strategies import (
+        from symfluence.core.calibration.regionalization.strategies import (
             TransferFunctionRegionalization,
         )
         reg = TransferFunctionRegionalization(
@@ -123,7 +123,7 @@ class TestTransferFunctionRegionalization:
     def test_calibration_params_include_coefficients(
         self, param_bounds, unit_attributes, test_logger,
     ):
-        from symfluence.optimization.regionalization.strategies import (
+        from symfluence.core.calibration.regionalization.strategies import (
             TransferFunctionRegionalization,
         )
         pc = {
@@ -140,7 +140,7 @@ class TestTransferFunctionRegionalization:
         assert 'BASERTE_b' not in cal_params
 
     def test_produces_spatial_variation(self, param_bounds, unit_attributes, test_logger):
-        from symfluence.optimization.regionalization.strategies import (
+        from symfluence.core.calibration.regionalization.strategies import (
             TransferFunctionRegionalization,
         )
         pc = {'MAXWATR_1': {'attribute': 'precip_mm_yr', 'calibrate_b': True}}
@@ -153,7 +153,7 @@ class TestTransferFunctionRegionalization:
         assert param_array[:, 0].std() > 0
 
     def test_clips_to_bounds(self, param_bounds, unit_attributes, test_logger):
-        from symfluence.optimization.regionalization.strategies import (
+        from symfluence.core.calibration.regionalization.strategies import (
             TransferFunctionRegionalization,
         )
         pc = {'MAXWATR_1': {'attribute': 'precip_mm_yr', 'calibrate_b': True}}
@@ -167,7 +167,7 @@ class TestTransferFunctionRegionalization:
         assert param_array[:, 0].min() >= p_min
 
     def test_b_zero_gives_uniform(self, param_bounds, unit_attributes, test_logger):
-        from symfluence.optimization.regionalization.strategies import (
+        from symfluence.core.calibration.regionalization.strategies import (
             TransferFunctionRegionalization,
         )
         pc = {'MAXWATR_1': {'attribute': 'precip_mm_yr', 'calibrate_b': True}}
@@ -179,7 +179,7 @@ class TestTransferFunctionRegionalization:
         np.testing.assert_array_almost_equal(param_array[:, 0], 200.0)
 
     def test_coefficient_transforms(self, param_bounds, unit_attributes, test_logger):
-        from symfluence.optimization.regionalization.strategies import (
+        from symfluence.core.calibration.regionalization.strategies import (
             TransferFunctionRegionalization,
         )
         pc = {
@@ -197,7 +197,7 @@ class TestTransferFunctionRegionalization:
 
 class TestZoneRegionalization:
     def test_name_property(self, param_bounds, test_logger):
-        from symfluence.optimization.regionalization.strategies import (
+        from symfluence.core.calibration.regionalization.strategies import (
             ZoneRegionalization,
         )
         zones = np.array([0, 0, 1, 1, 2])
@@ -205,7 +205,7 @@ class TestZoneRegionalization:
         assert reg.name == "zones"
 
     def test_detects_number_of_zones(self, param_bounds, test_logger):
-        from symfluence.optimization.regionalization.strategies import (
+        from symfluence.core.calibration.regionalization.strategies import (
             ZoneRegionalization,
         )
         zones = np.array([0, 0, 1, 1, 2])
@@ -213,7 +213,7 @@ class TestZoneRegionalization:
         assert reg.n_zones == 3
 
     def test_calibration_params_per_zone(self, param_bounds, test_logger):
-        from symfluence.optimization.regionalization.strategies import (
+        from symfluence.core.calibration.regionalization.strategies import (
             ZoneRegionalization,
         )
         zones = np.array([0, 0, 1])
@@ -224,7 +224,7 @@ class TestZoneRegionalization:
         assert 'MAXWATR_1_z1' in cal_params
 
     def test_maps_zone_values(self, param_bounds, test_logger):
-        from symfluence.optimization.regionalization.strategies import (
+        from symfluence.core.calibration.regionalization.strategies import (
             ZoneRegionalization,
         )
         zones = np.array([0, 0, 1, 1, 1])
@@ -243,14 +243,14 @@ class TestZoneRegionalization:
 
 class TestDistributedRegionalization:
     def test_name_property(self, param_bounds, test_logger):
-        from symfluence.optimization.regionalization.strategies import (
+        from symfluence.core.calibration.regionalization.strategies import (
             DistributedRegionalization,
         )
         reg = DistributedRegionalization(param_bounds, 3, logger=test_logger)
         assert reg.name == "distributed"
 
     def test_calibration_params_per_unit(self, param_bounds, test_logger):
-        from symfluence.optimization.regionalization.strategies import (
+        from symfluence.core.calibration.regionalization.strategies import (
             DistributedRegionalization,
         )
         reg = DistributedRegionalization(param_bounds, 3, logger=test_logger)
@@ -260,7 +260,7 @@ class TestDistributedRegionalization:
         assert 'MAXWATR_1_s2' in cal_params
 
     def test_direct_mapping(self, param_bounds, test_logger):
-        from symfluence.optimization.regionalization.strategies import (
+        from symfluence.core.calibration.regionalization.strategies import (
             DistributedRegionalization,
         )
         reg = DistributedRegionalization(param_bounds, 2, logger=test_logger)
@@ -277,7 +277,7 @@ class TestDistributedRegionalization:
 
 class TestRegionalizationFactory:
     def test_creates_lumped(self, param_bounds, test_logger):
-        from symfluence.optimization.regionalization.strategies import (
+        from symfluence.core.calibration.regionalization.strategies import (
             LumpedRegionalization,
             RegionalizationFactory,
         )
@@ -285,7 +285,7 @@ class TestRegionalizationFactory:
         assert isinstance(reg, LumpedRegionalization)
 
     def test_creates_transfer_function(self, param_bounds, param_config, unit_attributes, test_logger):
-        from symfluence.optimization.regionalization.strategies import (
+        from symfluence.core.calibration.regionalization.strategies import (
             RegionalizationFactory,
             TransferFunctionRegionalization,
         )
@@ -297,7 +297,7 @@ class TestRegionalizationFactory:
         assert isinstance(reg, TransferFunctionRegionalization)
 
     def test_transfer_function_requires_attributes(self, param_bounds, param_config, test_logger):
-        from symfluence.optimization.regionalization.strategies import RegionalizationFactory
+        from symfluence.core.calibration.regionalization.strategies import RegionalizationFactory
         config = {'TRANSFER_FUNCTION_PARAM_CONFIG': param_config}
         with pytest.raises(ValueError, match="requires 'attributes'"):
             RegionalizationFactory.create(
@@ -305,7 +305,7 @@ class TestRegionalizationFactory:
             )
 
     def test_transfer_function_requires_param_config(self, param_bounds, unit_attributes, test_logger):
-        from symfluence.optimization.regionalization.strategies import RegionalizationFactory
+        from symfluence.core.calibration.regionalization.strategies import RegionalizationFactory
         with pytest.raises(ValueError, match="TRANSFER_FUNCTION_PARAM_CONFIG"):
             RegionalizationFactory.create(
                 'transfer_function', param_bounds, 5,
@@ -313,7 +313,7 @@ class TestRegionalizationFactory:
             )
 
     def test_creates_zones(self, param_bounds, test_logger):
-        from symfluence.optimization.regionalization.strategies import (
+        from symfluence.core.calibration.regionalization.strategies import (
             RegionalizationFactory,
             ZoneRegionalization,
         )
@@ -322,7 +322,7 @@ class TestRegionalizationFactory:
         assert isinstance(reg, ZoneRegionalization)
 
     def test_creates_distributed(self, param_bounds, test_logger):
-        from symfluence.optimization.regionalization.strategies import (
+        from symfluence.core.calibration.regionalization.strategies import (
             DistributedRegionalization,
             RegionalizationFactory,
         )
@@ -330,12 +330,12 @@ class TestRegionalizationFactory:
         assert isinstance(reg, DistributedRegionalization)
 
     def test_unknown_method_raises(self, param_bounds, test_logger):
-        from symfluence.optimization.regionalization.strategies import RegionalizationFactory
+        from symfluence.core.calibration.regionalization.strategies import RegionalizationFactory
         with pytest.raises(ValueError, match="Unknown regionalization method"):
             RegionalizationFactory.create('nonexistent', param_bounds, 5, logger=test_logger)
 
     def test_handles_hyphenated_name(self, param_bounds, param_config, test_logger):
-        from symfluence.optimization.regionalization.strategies import (
+        from symfluence.core.calibration.regionalization.strategies import (
             RegionalizationFactory,
             TransferFunctionRegionalization,
         )
@@ -352,7 +352,7 @@ class TestRegionalizationFactory:
 
 class TestGetRegionalizationInfo:
     def test_returns_all_methods(self):
-        from symfluence.optimization.regionalization.strategies import get_regionalization_info
+        from symfluence.core.calibration.regionalization.strategies import get_regionalization_info
         info = get_regionalization_info()
         assert 'lumped' in info
         assert 'transfer_function' in info

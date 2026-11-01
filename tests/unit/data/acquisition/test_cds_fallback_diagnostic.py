@@ -210,7 +210,7 @@ def test_make_cds_client_preflight_raises_with_diagnostic(tmp_path, monkeypatch)
     when :func:`diagnose_cds_credentials` returns a problem, and the
     raised error must carry the diagnostic so the user sees it
     without a stack-trace hunt."""
-    from symfluence.data.acquisition.handlers import cds_datasets
+    from symfluence.data.acquisition import cds_datasets
 
     _isolate_cds_env(monkeypatch, tmp_path)
     with pytest.raises(RuntimeError) as excinfo:

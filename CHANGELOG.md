@@ -125,20 +125,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   serially. Final streamflow scoring of distributed Wflow reads the native outlet `output.csv` instead of
   the cryosphere state NetCDF.
 
+### Removed
+- **73 unused back-compat shim modules** (ADR-0011): every shim that neither
+  in-tree code nor an installed external plugin imports, including
+  `symfluence.models.{templates,coupled,config_resolution,model_manager}`, the
+  per-file submodules of `models.{base,mixins,execution,state,utilities,adapters}`,
+  `symfluence.optimization.{mixins,multi_gauge,optimizers.algorithms,
+  optimizers.lifecycle,workers.summa,regionalization.transfer_functions}`,
+  `symfluence.optimization.calibration_targets.*_calibration_targets`,
+  `symfluence.evaluation.{metric_transformer,metrics_core,metrics_hydrograph,
+  metrics_registry,metrics_types,output_file_locator,registry,structure_ensemble,
+  utilities.streamflow_metrics}`, the `data/` shims (`model_ready.*` readers,
+  `preprocessing.cfif.variables`, `utils.variable_utils`,
+  `acquisition.handlers.{appeears_base,cds_datasets,earthaccess_base}`),
+  `symfluence.cli.services.build_snippet*` and
+  `symfluence.core.config.models.model_configs_{hydrology,integrated,ml_fire,routing}`.
+  Import from the canonical `symfluence.core.*` / `symfluence.project.*` /
+  `symfluence.models.<model>.config_schema` homes instead.
+
 ### Deprecated
-- **Back-compat shim import paths** left by the service-decomposition
-  promotions (`symfluence.models.{base,mixins,execution,state,templates,
-  utilities,adapters,spatial_modes,model_manager,coupled.calibration.*}`,
-  `symfluence.optimization.{optimizers,
-  mixins,workers.base_worker,workers.inmemory_worker,workers.summa,
-  core.base_parameter_manager,core.parameter_bounds_registry,
-  parameter_managers}`, `symfluence.evaluation.metrics*`,
-  `symfluence.cli.services.build_snippets*`,
-  `symfluence.geospatial.geometry_utils`,
-  `symfluence.resources.{get_base_settings_dir,copy_base_settings_to_project}`):
-  external packages should migrate
-  to the canonical `symfluence.core.*` / `symfluence.project.*` paths. The
-  shims will be removed at 2.0. In-tree code no longer uses them
+- **Back-compat shim import paths still used by external plugins** (ADR-0011):
+  `symfluence.models.{base,base.base_config,base.standard_postprocessor,
+  execution,mixins,mixins.pet_calculator,spatial_modes,state,utilities,
+  utilities.base_topology_generator,utilities.runoff_loader,adapters}`,
+  `symfluence.optimization.{optimizers.base_model_optimizer,
+  workers.base_worker,workers.inmemory_worker,core.base_parameter_manager,
+  core.parameter_bounds_registry,regionalization.strategies}`,
+  `symfluence.evaluation.metrics`, `symfluence.data.utils.netcdf_utils`,
+  `symfluence.geospatial.geometry_utils`. Each now emits a
+  `DeprecationWarning` naming its canonical module, and they will be removed
+  **before 1.0** once the plugins migrate (this replaces the earlier "removed
+  at 2.0" plan). `symfluence.optimization.parameter_managers` and
+  `symfluence.resources.{get_base_settings_dir,copy_base_settings_to_project}`
+  remain deprecated as before. In-tree code no longer uses any of them
   (guard-enforced).
 
   Note `symfluence.optimization.core.parameter_bounds_registry` was listed

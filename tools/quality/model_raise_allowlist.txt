@@ -3,8 +3,6 @@
 # Format: relative/path.py:enclosing.scope:source
 # Existing debt in non-adapter model packages is grandfathered here;
 # the migrated adapters (summa/fuse/ngen/mizuroute) must stay clean.
-src/symfluence/models/adapters/adapter_registry.py:ForcingAdapterRegistry.get_adapter:raise ValueError(
-src/symfluence/models/adapters/base_adapter.py:ForcingAdapter._validate_input:raise ValueError(
 src/symfluence/models/clm/config.py:CLMConfigAdapter.validate:raise ValueError(
 src/symfluence/models/clm/extractor.py:CLMResultExtractor.extract_variable:raise ValueError(
 src/symfluence/models/clm/extractor.py:CLMResultExtractor.extract_variable:raise ValueError(f"Could not open CLM output: {output_file}")

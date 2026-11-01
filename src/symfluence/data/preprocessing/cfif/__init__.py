@@ -25,16 +25,7 @@ Architecture:
 """
 from __future__ import annotations
 
-from .units import (
-    UnitConverter,
-    convert_humidity,
-    convert_precipitation,
-    convert_pressure,
-    convert_radiation,
-    convert_temperature,
-    convert_wind,
-)
-from .variables import (
+from symfluence.core.modeling.cfif.variables import (
     CFIF_TO_SUMMA_MAPPING,
     CFIF_VARIABLES,
     SUMMA_TO_CFIF_MAPPING,
@@ -43,6 +34,16 @@ from .variables import (
     get_cfif_variable,
     normalize_to_cfif,
     validate_cfif_dataset,
+)
+
+from .units import (
+    UnitConverter,
+    convert_humidity,
+    convert_precipitation,
+    convert_pressure,
+    convert_radiation,
+    convert_temperature,
+    convert_wind,
 )
 
 __all__ = [

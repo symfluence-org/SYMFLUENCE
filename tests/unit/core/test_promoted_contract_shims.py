@@ -18,37 +18,6 @@ def test_core_metrics_facade_exports_promoted_classes():
     assert StreamflowMetrics is CanonicalStreamflowMetrics
 
 
-def test_output_locator_compatibility_path_preserves_identity():
-    from symfluence.core.modeling.output_file_locator import (
-        OutputFileLocator as CanonicalLocator,
-    )
-    from symfluence.core.modeling.output_file_locator import (
-        get_output_file_locator as canonical_factory,
-    )
-    from symfluence.evaluation.output_file_locator import OutputFileLocator, get_output_file_locator
-
-    assert OutputFileLocator is CanonicalLocator
-    assert get_output_file_locator is canonical_factory
-
-
-def test_cfif_variable_compatibility_path_preserves_identity():
-    from symfluence.core.modeling.cfif.variables import CFIF_VARIABLES as canonical_variables
-    from symfluence.core.modeling.cfif.variables import normalize_to_cfif as canonical_normalize
-    from symfluence.data.preprocessing.cfif.variables import CFIF_VARIABLES, normalize_to_cfif
-
-    assert CFIF_VARIABLES is canonical_variables
-    assert normalize_to_cfif is canonical_normalize
-
-
-def test_variable_handler_compatibility_path_preserves_identity():
-    from symfluence.core.modeling.variable_utils import VariableHandler as CanonicalHandler
-    from symfluence.core.modeling.variable_utils import VariableStandardizer as CanonicalStandardizer
-    from symfluence.data.utils.variable_utils import VariableHandler, VariableStandardizer
-
-    assert VariableHandler is CanonicalHandler
-    assert VariableStandardizer is CanonicalStandardizer
-
-
 def test_netcdf_utility_compatibility_path_preserves_identity():
     from symfluence.core.modeling.netcdf_utils import create_minimal_encoding as canonical_minimal
     from symfluence.core.modeling.netcdf_utils import create_netcdf_encoding as canonical_encoding
@@ -58,39 +27,15 @@ def test_netcdf_utility_compatibility_path_preserves_identity():
     assert create_netcdf_encoding is canonical_encoding
 
 
-def test_time_and_alignment_compatibility_paths_preserve_identity():
-    from symfluence.core.modeling.utilities import DatasetAlignmentManager as CanonicalAlignment
-    from symfluence.core.modeling.utilities import TimeWindowManager as CanonicalTimeWindow
-    from symfluence.core.modeling.utilities import align_forcing_datasets as canonical_align
-    from symfluence.data.preprocessing.dataset_alignment_manager import (
-        DatasetAlignmentManager,
-        align_forcing_datasets,
-    )
-    from symfluence.data.preprocessing.time_window_manager import TimeWindowManager
-
-    assert DatasetAlignmentManager is CanonicalAlignment
-    assert TimeWindowManager is CanonicalTimeWindow
-    assert align_forcing_datasets is canonical_align
-
-
-def test_model_ready_forcing_compatibility_paths_preserve_identity():
-    from symfluence.core.modeling.model_ready.cf_conventions import CANONICAL_FORCING as canonical_schema
-    from symfluence.core.modeling.model_ready.forcing_reader import (
-        open_canonical_forcing as canonical_open,
-    )
-    from symfluence.data.model_ready.cf_conventions import CANONICAL_FORCING
-    from symfluence.data.model_ready.forcing_reader import open_canonical_forcing
-
-    assert CANONICAL_FORCING is canonical_schema
-    assert open_canonical_forcing is canonical_open
-
-
 def test_model_ready_attribute_compatibility_paths_preserve_identity():
     from symfluence.core.modeling.model_ready import AttributesReader as CanonicalReader
     from symfluence.core.modeling.model_ready import open_canonical_attributes as canonical_open
     from symfluence.core.modeling.model_ready import resolve_model_ready_path as canonical_resolve
-    from symfluence.data.model_ready import AttributesReader, open_canonical_attributes
-    from symfluence.data.model_ready.path_resolver import resolve_model_ready_path
+    from symfluence.data.model_ready import (
+        AttributesReader,
+        open_canonical_attributes,
+        resolve_model_ready_path,
+    )
 
     assert AttributesReader is CanonicalReader
     assert open_canonical_attributes is canonical_open
@@ -102,8 +47,7 @@ def test_evaluation_contract_compatibility_paths_preserve_identity():
     from symfluence.core.modeling.structure_ensemble import (
         BaseStructureEnsembleAnalyzer as CanonicalAnalyzer,
     )
-    from symfluence.evaluation.registry import EvaluationRegistry
-    from symfluence.evaluation.structure_ensemble import BaseStructureEnsembleAnalyzer
+    from symfluence.evaluation import BaseStructureEnsembleAnalyzer, EvaluationRegistry
 
     assert EvaluationRegistry is CanonicalRegistry
     assert BaseStructureEnsembleAnalyzer is CanonicalAnalyzer
@@ -185,22 +129,7 @@ def test_regionalization_compatibility_paths_preserve_identity():
     from symfluence.core.calibration.regionalization.transfer_functions import (
         LinearTF as CanonicalLinearTF,
     )
-    from symfluence.optimization.regionalization.strategies import RegionalizationFactory
-    from symfluence.optimization.regionalization.transfer_functions import LinearTF
+    from symfluence.optimization.regionalization import LinearTF, RegionalizationFactory
 
     assert RegionalizationFactory is CanonicalFactory
     assert LinearTF is CanonicalLinearTF
-
-
-def test_multi_gauge_compatibility_path_preserves_identity():
-    from symfluence.core.calibration.multi_gauge.gauge_mapping import (
-        ensure_gauge_mapping as canonical_mapping,
-    )
-    from symfluence.core.calibration.multi_gauge.metrics import (
-        MultiGaugeMetrics as CanonicalMetrics,
-    )
-    from symfluence.optimization.multi_gauge.gauge_mapping import ensure_gauge_mapping
-    from symfluence.optimization.multi_gauge.metrics import MultiGaugeMetrics
-
-    assert MultiGaugeMetrics is CanonicalMetrics
-    assert ensure_gauge_mapping is canonical_mapping

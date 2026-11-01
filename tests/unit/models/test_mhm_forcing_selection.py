@@ -130,7 +130,7 @@ def test_selection_prevents_silent_shape_contamination(tmp_path):
     set outright, so the blind path fails loudly and actionably; per-model
     selection remains the way to obtain the right file from a shared store.
     """
-    from symfluence.data.model_ready.forcing_reader import open_canonical_forcing
+    from symfluence.core.modeling.model_ready.forcing_reader import open_canonical_forcing
 
     store = tmp_path / "store"
     good = _write_forcing(store / "test_domain_ERA5_remapped_CDS.nc", hru=1)

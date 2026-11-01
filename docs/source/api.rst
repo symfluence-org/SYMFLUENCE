@@ -242,7 +242,7 @@ Model Manager
 
 Coordinates model preprocessing, execution, and postprocessing.
 
-.. automodule:: symfluence.models.model_manager
+.. automodule:: symfluence.project.model_manager
    :members:
    :undoc-members:
    :show-inheritance:
@@ -251,7 +251,7 @@ Coordinates model preprocessing, execution, and postprocessing.
 
 .. code-block:: python
 
-   from symfluence.models.model_manager import ModelManager
+   from symfluence.project.model_manager import ModelManager
 
    mm = ModelManager(config, logger)
 

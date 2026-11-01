@@ -31,7 +31,6 @@ SYMFLUENCE follows a modular, manager-based architecture with clear separation o
    │   ├── domain_manager.py   # Domain operations
    │   └── discretization/     # HRU generation
    ├── models/                  # Model integrations
-   │   ├── model_manager.py    # Model execution coordination
    │   ├── registry.py         # Plugin registration system
    │   └── {model}/            # Model-specific implementations
    ├── optimization/           # Calibration and optimization
@@ -81,7 +80,7 @@ the appropriate base class:
 .. code-block:: python
 
    # src/symfluence/models/mymodel/preprocessor.py
-   from symfluence.models.base import BaseModelPreProcessor
+   from symfluence.core.modeling.base import BaseModelPreProcessor
 
    class MyModelPreProcessor(BaseModelPreProcessor):
 

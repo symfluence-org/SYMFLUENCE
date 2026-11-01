@@ -12,11 +12,11 @@ from __future__ import annotations
 
 import pytest
 
+from symfluence.core.modeling.variable_utils import VariableStandardizer
 from symfluence.data.acquisition.handlers.nldas import (
     _DEFAULT_VARIABLES,
     _EXTENDED_VARIABLES,
 )
-from symfluence.data.utils.variable_utils import VariableStandardizer
 
 pytestmark = [pytest.mark.unit, pytest.mark.data]
 

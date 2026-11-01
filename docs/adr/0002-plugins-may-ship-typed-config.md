@@ -59,5 +59,6 @@ through this path with zero plugin-side changes.
 
 - PR #139 — typed-config plumbing; PR #178 — adapter bridging
 - `core/config/config_resolution.py` — `get_config_schema`
-  (re-exported at `models/config_resolution.py`)
+  (formerly re-exported at `models/config_resolution.py`; that shim was removed
+  under ADR-0011)
 - GOVERNANCE.md §3 (Plugins First), §4.1 (configuration schema keys)

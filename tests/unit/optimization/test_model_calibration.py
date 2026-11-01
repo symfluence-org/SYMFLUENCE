@@ -419,7 +419,7 @@ class TestFUSECalibrationTargets:
 
     def test_load_fuse_observations(self, fuse_config, test_logger, mock_observations, temp_project_dir):
         """Test loading FUSE streamflow observations."""
-        from symfluence.optimization.calibration_targets.fuse_calibration_targets import FUSEStreamflowTarget
+        from symfluence.models.fuse.calibration.targets import FUSEStreamflowTarget
 
         target = FUSEStreamflowTarget(fuse_config, temp_project_dir, test_logger)
 
@@ -591,7 +591,7 @@ class TestCrossModelCalibration:
             from symfluence.optimization.calibration_targets import StreamflowTarget
             target = StreamflowTarget(config, temp_project_dir, test_logger)
         elif model_name == 'FUSE':
-            from symfluence.optimization.calibration_targets.fuse_calibration_targets import FUSEStreamflowTarget
+            from symfluence.models.fuse.calibration.targets import FUSEStreamflowTarget
             target = FUSEStreamflowTarget(config, temp_project_dir, test_logger)
         elif model_name == 'NGEN':
             from symfluence.optimization.calibration_targets import NgenStreamflowTarget

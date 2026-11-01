@@ -46,10 +46,10 @@ except ImportError:
 # likewise lazy (PEP 562) — plugin config adapters import this package at
 # `import symfluence` and must not pay for the optimizer stack.
 _LAZY_IMPORTS = {
-    'BaseModelOptimizer': ('.optimizers.base_model_optimizer', 'BaseModelOptimizer'),
-    'BaseWorker': ('.workers.base_worker', 'BaseWorker'),
-    'WorkerResult': ('.workers.base_worker', 'WorkerResult'),
-    'WorkerTask': ('.workers.base_worker', 'WorkerTask'),
+    'BaseModelOptimizer': ('symfluence.core.calibration.optimizers.base_model_optimizer', 'BaseModelOptimizer'),
+    'BaseWorker': ('symfluence.core.calibration.workers.base_worker', 'BaseWorker'),
+    'WorkerResult': ('symfluence.core.calibration.workers.base_worker', 'WorkerResult'),
+    'WorkerTask': ('symfluence.core.calibration.workers.base_worker', 'WorkerTask'),
     'EMA': ('.gradient', 'EMA'),
     'AdamW': ('.gradient', 'AdamW'),
     'CosineAnnealingWarmRestarts': ('.gradient', 'CosineAnnealingWarmRestarts'),
@@ -73,9 +73,10 @@ def __dir__():
 
 
 if TYPE_CHECKING:
+    from symfluence.core.calibration.optimizers.base_model_optimizer import BaseModelOptimizer
+    from symfluence.core.calibration.workers.base_worker import BaseWorker, WorkerResult, WorkerTask
+
     from .gradient import EMA, AdamW, CosineAnnealingWarmRestarts, CosineDecay
-    from .optimizers.base_model_optimizer import BaseModelOptimizer
-    from .workers.base_worker import BaseWorker, WorkerResult, WorkerTask
 
 __all__ = [
     # Registries

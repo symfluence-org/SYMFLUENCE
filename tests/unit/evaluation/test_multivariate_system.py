@@ -7,8 +7,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from symfluence.core.modeling.evaluation_registry import EvaluationRegistry
 from symfluence.data.observation.registry import ObservationRegistry
-from symfluence.evaluation.registry import EvaluationRegistry
 from symfluence.optimization.objectives import ObjectiveRegistry
 
 
