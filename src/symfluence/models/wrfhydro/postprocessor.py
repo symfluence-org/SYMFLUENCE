@@ -153,7 +153,7 @@ class WRFHydroPostProcessor(StandardModelPostProcessor):
         import netCDF4
 
         catchment_area_km2 = self._get_config_value(
-            lambda: self.config.model.wrfhydro.catchment_area_km2,
+            lambda: None,
             default=2210.0,
             dict_key='CATCHMENT_AREA_KM2'
         )

@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from symfluence.core.calibration.workers.base_worker import BaseWorker, run_worker_task
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.registries import R
 
 logger = logging.getLogger(__name__)
@@ -90,7 +91,7 @@ class CoupledGWWorker(BaseWorker):
 
     def _use_dcoupler(self, config: Dict[str, Any]) -> bool:
         """Determine if dCoupler should be used for coupling."""
-        mode = config.get('COUPLING_MODE', 'auto')
+        mode = resolve_config_value(config, lambda: config.model.coupling_mode, 'auto', 'COUPLING_MODE')
         if mode == 'dcoupler':
             return True
         if mode == 'sequential':
@@ -113,7 +114,7 @@ class CoupledGWWorker(BaseWorker):
 
         config = kwargs.get('config', self.config or {})
         modflow_param_names = set(MODFLOW_DEFAULT_BOUNDS.keys())
-        modflow_params_str = config.get('MODFLOW_PARAMS_TO_CALIBRATE', '')
+        modflow_params_str = resolve_config_value(config, lambda: config.model.modflow.params_to_calibrate, '', 'MODFLOW_PARAMS_TO_CALIBRATE')
         if modflow_params_str:
             modflow_param_names.update(
                 p.strip() for p in str(modflow_params_str).split(',') if p.strip()
@@ -188,7 +189,7 @@ class CoupledGWWorker(BaseWorker):
 
         if 'SY' in params:
             sy = float(params['SY'])
-            ss = float(config.get('MODFLOW_SS', 1e-5))
+            ss = float(resolve_config_value(config, lambda: config.model.modflow.ss, 1e-5, 'MODFLOW_SS'))
             (modflow_dir / "gwf.sto").write_text(
                 "BEGIN OPTIONS\n  SAVE_FLOWS\nEND OPTIONS\n\n"
                 "BEGIN GRIDDATA\n  ICONVERT\n    CONSTANT 1\n"
@@ -197,10 +198,10 @@ class CoupledGWWorker(BaseWorker):
             )
 
         if 'DRAIN_CONDUCTANCE' in params:
-            drain_elev = config.get('MODFLOW_DRAIN_ELEVATION')
+            drain_elev = resolve_config_value(config, lambda: config.model.modflow.drain_elevation, None, 'MODFLOW_DRAIN_ELEVATION')
             if drain_elev is None:
-                top = float(config.get('MODFLOW_TOP', 1500.0))
-                bot = float(config.get('MODFLOW_BOT', 1400.0))
+                top = float(resolve_config_value(config, lambda: config.model.modflow.top, 1500.0, 'MODFLOW_TOP'))
+                bot = float(resolve_config_value(config, lambda: config.model.modflow.bot, 1400.0, 'MODFLOW_BOT'))
                 drain_elev = (top + bot) / 2.0
             else:
                 drain_elev = float(drain_elev)
@@ -349,8 +350,8 @@ class CoupledGWWorker(BaseWorker):
         try:
             from .targets import CoupledGWStreamflowTarget
 
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
-            domain_name = config.get('DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
             project_dir = data_dir / f"domain_{domain_name}"
 
             target = CoupledGWStreamflowTarget(config, project_dir, self.logger)
@@ -388,8 +389,8 @@ class CoupledGWWorker(BaseWorker):
     ) -> None:
         """Regenerate settings from project-level source if deleted by concurrent cleanup."""
         import shutil
-        data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
-        domain_name = config.get('DOMAIN_NAME')
+        data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
+        domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
         project_dir = data_dir / f"domain_{domain_name}"
 
         # Regenerate land surface settings

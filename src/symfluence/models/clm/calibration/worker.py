@@ -27,6 +27,7 @@ from symfluence.core.calibration.workers.base_worker import (
 )
 from symfluence.core.logging_utils import log_once
 from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.registries import R
 
 
@@ -73,7 +74,7 @@ class CLMWorker(BaseWorker):
             self.logger.debug(f"Applying CLM parameters to {settings_dir}")
 
             config = kwargs.get('config', self.config) or {}
-            domain_name = config.get('DOMAIN_NAME', '')
+            domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
             data_dir_raw = config.get('SYMFLUENCE_DATA_DIR', '.')
             self.logger.debug(
                 f"CLM worker config: DOMAIN_NAME={domain_name}, "
@@ -444,17 +445,17 @@ class CLMWorker(BaseWorker):
             self._cleanup_stale_output(output_dir)
 
             # Get executable
-            install_path = config.get('CLM_INSTALL_PATH', 'default')
+            install_path = resolve_config_value(config, lambda: config.model.clm.install_path, 'default', 'CLM_INSTALL_PATH')
             if install_path == 'default':
                 # Installs are at SYMFLUENCE_CODE_DIR + _data/installs/clm
-                code_dir = Path(config.get('SYMFLUENCE_CODE_DIR', '.'))
+                code_dir = Path(resolve_config_value(config, lambda: config.system.code_dir, '.', 'SYMFLUENCE_CODE_DIR'))
                 install_path = str(code_dir.parent / (code_dir.name + '_data') / 'installs' / 'clm')
                 if not Path(install_path).exists():
                     # Fallback: try standard data dir structure
-                    data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+                    data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
                     install_path = str(data_dir.parent / 'installs' / 'clm')
 
-            exe_name = config.get('CLM_EXE', 'cesm.exe')
+            exe_name = resolve_config_value(config, lambda: config.model.clm.exe, 'cesm.exe', 'CLM_EXE')
             clm_exe = Path(install_path) / 'bin' / exe_name
             if not clm_exe.exists():
                 clm_exe = Path(install_path) / exe_name
@@ -482,7 +483,7 @@ class CLMWorker(BaseWorker):
 
             # Execute — use a short timeout since single-point CLM
             # finishes in ~7 min but can hang in ESMF finalization
-            timeout = int(config.get('CLM_TIMEOUT', 900))
+            timeout = int(resolve_config_value(config, lambda: config.model.clm.timeout, 900, 'CLM_TIMEOUT'))
             env = os.environ.copy()
             env.update({
                 'OMP_NUM_THREADS': '1',
@@ -699,8 +700,8 @@ class CLMWorker(BaseWorker):
             ds.close()
 
             # Convert mm/s → m3/s
-            domain_name = config.get('DOMAIN_NAME')
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             project_dir = data_dir / f'domain_{domain_name}'
 
             area_km2 = self._streamflow_metrics.get_catchment_area(
@@ -712,7 +713,7 @@ class CLMWorker(BaseWorker):
             sim_series = pd.Series(streamflow_m3s, index=times)
 
             # Skip warmup
-            warmup_days = int(config.get('CLM_WARMUP_DAYS', 365))
+            warmup_days = int(resolve_config_value(config, lambda: config.model.clm.warmup_days, 365, 'CLM_WARMUP_DAYS'))
             if warmup_days > 0 and len(sim_series) > warmup_days:
                 sim_series = sim_series.iloc[warmup_days:]
                 self.logger.debug(
@@ -729,7 +730,7 @@ class CLMWorker(BaseWorker):
             obs_series = pd.Series(obs_values, index=obs_index)
 
             # Align over calibration period only (not evaluation)
-            cal_period_str = config.get('CALIBRATION_PERIOD')
+            cal_period_str = resolve_config_value(config, lambda: config.domain.calibration_period, None, 'CALIBRATION_PERIOD')
             calibration_period = None
             if cal_period_str:
                 parts = [s.strip() for s in str(cal_period_str).split(',')]

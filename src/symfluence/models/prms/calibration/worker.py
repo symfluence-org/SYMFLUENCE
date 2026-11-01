@@ -22,6 +22,7 @@ from symfluence.core.calibration.workers.base_worker import (
     run_worker_task,
 )
 from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -70,8 +71,8 @@ class PRMSWorker(BaseWorker):
             self.logger.debug(f"Applying PRMS parameters to {settings_dir}")
 
             config = kwargs.get('config', self.config) or {}
-            domain_name = config.get('DOMAIN_NAME', '')
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             original_settings_dir = data_dir / f'domain_{domain_name}' / 'settings' / 'PRMS'
 
             if original_settings_dir.exists() and original_settings_dir.resolve() != settings_dir.resolve():
@@ -87,7 +88,7 @@ class PRMSWorker(BaseWorker):
                 return False
 
             # Find parameter file
-            param_file_name = config.get('PRMS_PARAMETER_FILE', 'params.dat')
+            param_file_name = resolve_config_value(config, lambda: config.model.prms.parameter_file, 'params.dat', 'PRMS_PARAMETER_FILE')
             param_file = settings_dir / param_file_name
             if not param_file.exists():
                 # Try any .dat file that isn't control or data
@@ -225,7 +226,7 @@ class PRMSWorker(BaseWorker):
             settings_dir: Worker's PRMS settings directory
             config: Configuration dictionary
         """
-        control_file = config.get('PRMS_CONTROL_FILE', 'control.dat')
+        control_file = resolve_config_value(config, lambda: config.model.prms.control_file, 'control.dat', 'PRMS_CONTROL_FILE')
         control_path = settings_dir / control_file
         if not control_path.exists():
             return
@@ -275,7 +276,7 @@ class PRMSWorker(BaseWorker):
             True if model ran successfully
         """
         try:
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
 
             prms_output_dir = Path(kwargs.get('sim_dir', output_dir))
             prms_output_dir.mkdir(parents=True, exist_ok=True)
@@ -287,7 +288,7 @@ class PRMSWorker(BaseWorker):
                 return False
 
             # Get control file
-            control_file = config.get('PRMS_CONTROL_FILE', 'control.dat')
+            control_file = resolve_config_value(config, lambda: config.model.prms.control_file, 'control.dat', 'PRMS_CONTROL_FILE')
             control_path = settings_dir / control_file
             if not control_path.exists():
                 self.logger.error(f"PRMS control file not found: {control_path}")
@@ -299,7 +300,7 @@ class PRMSWorker(BaseWorker):
             env = os.environ.copy()
             env['MallocStackLogging'] = '0'
 
-            timeout = config.get('PRMS_TIMEOUT', 3600)
+            timeout = resolve_config_value(config, lambda: config.model.prms.timeout, 3600, 'PRMS_TIMEOUT')
 
             stdout_file = prms_output_dir / 'prms_stdout.log'
             stderr_file = prms_output_dir / 'prms_stderr.log'
@@ -340,11 +341,11 @@ class PRMSWorker(BaseWorker):
                 self.logger.error(self._last_error)
                 return False
 
-            tolerance = config.get('PRMS_WATER_BALANCE_TOLERANCE_MM')
+            tolerance = resolve_config_value(config, lambda: config.model.prms.water_balance_tolerance_mm, None, 'PRMS_WATER_BALANCE_TOLERANCE_MM')
             if tolerance is not None:
                 from ..balance import check_water_balance
-                check_water_balance(output_files[0], settings_dir / config.get('PRMS_PARAMETER_FILE', 'params.dat'),
-                                    float(tolerance), bool(config.get('PRMS_GLACIER_FLAG', False)))
+                check_water_balance(output_files[0], settings_dir / resolve_config_value(config, lambda: config.model.prms.parameter_file, 'params.dat', 'PRMS_PARAMETER_FILE'),
+                                    float(tolerance), bool(resolve_config_value(config, lambda: config.model.prms.glacier_flag, False, 'PRMS_GLACIER_FLAG')))
             return True
 
         except Exception as e:  # noqa: BLE001 — calibration resilience
@@ -354,8 +355,8 @@ class PRMSWorker(BaseWorker):
 
     def _get_prms_executable(self, config: Dict[str, Any], data_dir: Path) -> Path:
         """Get PRMS executable path."""
-        install_path = config.get('PRMS_INSTALL_PATH', 'default')
-        exe_name = config.get('PRMS_EXE', 'prms')
+        install_path = resolve_config_value(config, lambda: config.model.prms.install_path, 'default', 'PRMS_INSTALL_PATH')
+        exe_name = resolve_config_value(config, lambda: config.model.prms.exe, 'prms', 'PRMS_EXE')
 
         if install_path == 'default':
             exe = data_dir / "installs" / "prms" / "bin" / exe_name
@@ -402,8 +403,8 @@ class PRMSWorker(BaseWorker):
                 output_files = list(Path(settings_dir).glob('statvar*'))
 
             if not output_files:
-                domain_name = config.get('DOMAIN_NAME', '')
-                data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+                domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
+                data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
                 prms_settings = data_dir / f'domain_{domain_name}' / 'settings' / 'PRMS'
                 if prms_settings.exists():
                     output_files = list(prms_settings.glob('statvar*'))
@@ -420,8 +421,8 @@ class PRMSWorker(BaseWorker):
                 return {'kge': self.penalty_score, 'error': 'No streamflow data extracted'}
 
             # Load observations
-            domain_name = config.get('DOMAIN_NAME')
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             project_dir = data_dir / f'domain_{domain_name}'
 
             obs_values, obs_index = self._streamflow_metrics.load_observations(
@@ -433,7 +434,7 @@ class PRMSWorker(BaseWorker):
             obs_series = pd.Series(obs_values, index=obs_index)
 
             # Parse calibration period
-            cal_period_str = config.get('CALIBRATION_PERIOD', '')
+            cal_period_str = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
             cal_period_tuple = None
             if cal_period_str and ',' in str(cal_period_str):
                 parts = str(cal_period_str).split(',')
@@ -447,13 +448,13 @@ class PRMSWorker(BaseWorker):
             results = self._streamflow_metrics.calculate_metrics(
                 obs_aligned, sim_aligned, metrics=['kge', 'nse']
             )
-            if config.get('PRMS_CRYOSPHERE_CONSTRAINTS', False):
+            if resolve_config_value(config, lambda: config.model.prms.cryosphere_constraints, False, 'PRMS_CRYOSPHERE_CONSTRAINTS'):
                 from ..cryosphere import calculate_constraints
                 parameter_file = Path(settings_dir) / 'params.dat' if settings_dir else project_dir / 'settings/PRMS/params.dat'
                 results.update(calculate_constraints(
                     statvar_file, parameter_file, project_dir, cal_period_str,
-                    config.get('PRMS_SNOW_COVER_ERROR_SCALE', 0.2),
-                    config.get('PRMS_GLACIER_MB_ERROR_SCALE', 1.0)))
+                    resolve_config_value(config, lambda: config.model.prms.snow_cover_error_scale, 0.2, 'PRMS_SNOW_COVER_ERROR_SCALE'),
+                    resolve_config_value(config, lambda: config.model.prms.glacier_mb_error_scale, 1.0, 'PRMS_GLACIER_MB_ERROR_SCALE')))
             return results
 
         except Exception as e:  # noqa: BLE001 — calibration resilience

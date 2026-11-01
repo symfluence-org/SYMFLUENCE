@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from symfluence.core.calibration.optimizers.base_model_optimizer import BaseModelOptimizer
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.registries import R
 
 from .worker import CLMWorker  # noqa: F401 - Import to trigger worker registration
@@ -37,9 +38,9 @@ class CLMModelOptimizer(BaseModelOptimizer):
         optimization_settings_dir: Optional[Path] = None,
         reporting_manager: Optional[Any] = None,
     ):
-        self.experiment_id = config.get('EXPERIMENT_ID')
-        self.data_dir = Path(config.get('SYMFLUENCE_DATA_DIR'))
-        self.domain_name = config.get('DOMAIN_NAME')
+        self.experiment_id = resolve_config_value(config, lambda: config.domain.experiment_id, None, 'EXPERIMENT_ID')
+        self.data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, None, 'SYMFLUENCE_DATA_DIR'))
+        self.domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
         self.project_dir = self.data_dir / f"domain_{self.domain_name}"
 
         self.clm_setup_dir = self.project_dir / 'settings' / 'CLM'

@@ -14,6 +14,7 @@ from typing import Optional
 
 import pandas as pd
 
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.modeling.base import StandardModelPostProcessor
 
 logger = logging.getLogger(__name__)
@@ -57,7 +58,7 @@ class GSFLOWPostProcessor(StandardModelPostProcessor):
         """Extract streamflow from GSFLOW statvar output in a specific directory."""
         # Search multiple locations
         search_dirs = [output_dir]
-        settings_path = config.get('SETTINGS_GSFLOW_PATH')
+        settings_path = resolve_config_value(config, lambda: config.model.gsflow.settings_path, None, 'SETTINGS_GSFLOW_PATH')
         if settings_path and settings_path != 'default':
             search_dirs.append(Path(settings_path))
 

@@ -23,6 +23,7 @@ from symfluence.core.calibration.workers.base_worker import (
     run_worker_task,
 )
 from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -41,11 +42,11 @@ class WATFLOODWorker(BaseWorker):
         import re
         try:
             config = kwargs.get('config', self.config) or {}
-            domain_name = config.get('DOMAIN_NAME', '')
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             original_dir = data_dir / f'domain_{domain_name}' / 'WATFLOOD_input' / 'settings'
 
-            par_file = config.get('WATFLOOD_PAR_FILE', 'bow.par')
+            par_file = resolve_config_value(config, lambda: config.model.watflood.par_file, 'bow.par', 'WATFLOOD_PAR_FILE')
             if original_dir.exists() and original_dir.resolve() != settings_dir.resolve():
                 settings_dir.mkdir(parents=True, exist_ok=True)
                 # Copy the WATFLOOD settings tree (subdirectories included) when the
@@ -100,12 +101,12 @@ class WATFLOODWorker(BaseWorker):
     def run_model(self, config: Dict[str, Any], settings_dir: Path, output_dir: Path, **kwargs) -> bool:
         """Run WATFLOOD model (native binary or Wine for .exe)."""
         try:
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             sim_dir = Path(kwargs.get('sim_dir', output_dir))
             sim_dir.mkdir(parents=True, exist_ok=True)
 
-            install_path = config.get('WATFLOOD_INSTALL_PATH', 'default')
-            exe_name = config.get('WATFLOOD_EXE', 'watflood')
+            install_path = resolve_config_value(config, lambda: config.model.watflood.install_path, 'default', 'WATFLOOD_INSTALL_PATH')
+            exe_name = resolve_config_value(config, lambda: config.model.watflood.exe, 'watflood', 'WATFLOOD_EXE')
             if install_path == 'default':
                 install_dir = data_dir / "installs" / "watflood" / "bin"
             else:
@@ -144,7 +145,7 @@ class WATFLOODWorker(BaseWorker):
             env['MallocStackLogging'] = '0'
             if not is_native:
                 env['WINEDEBUG'] = '-all'
-            timeout = config.get('WATFLOOD_TIMEOUT', 3600)
+            timeout = resolve_config_value(config, lambda: config.model.watflood.timeout, 3600, 'WATFLOOD_TIMEOUT')
 
             try:
                 with open(sim_dir / 'watflood_stdout.log', 'w') as out, \
@@ -226,8 +227,8 @@ class WATFLOODWorker(BaseWorker):
             if sim_series is None or len(sim_series) == 0:
                 return {'kge': self.penalty_score, 'error': 'No streamflow data'}
 
-            domain_name = config.get('DOMAIN_NAME')
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             project_dir = data_dir / f'domain_{domain_name}'
 
             obs_values, obs_index = self._streamflow_metrics.load_observations(
@@ -237,7 +238,7 @@ class WATFLOODWorker(BaseWorker):
                 return {'kge': self.penalty_score, 'error': 'No observations'}
 
             obs_series = pd.Series(obs_values, index=obs_index)
-            cal_period_str = config.get('CALIBRATION_PERIOD', '')
+            cal_period_str = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
             cal_period_tuple = None
             if cal_period_str and ',' in str(cal_period_str):
                 parts = str(cal_period_str).split(',')

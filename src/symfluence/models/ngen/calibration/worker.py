@@ -17,6 +17,7 @@ from pydantic import BaseModel as PydanticBaseModel
 
 from symfluence.core.calibration.workers.base_worker import BaseWorker, run_worker_task
 from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.registries import R
 
 logger = logging.getLogger(__name__)
@@ -201,8 +202,8 @@ class NgenWorker(BaseWorker):
                 config = kwargs.get('config', self.config)
                 if config:
                     import shutil
-                    data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
-                    domain_name = config.get('DOMAIN_NAME', '')
+                    data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
+                    domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
                     source_ngen = data_dir / f"domain_{domain_name}" / 'settings' / 'NGEN'
                     if source_ngen.exists():
                         self.logger.warning(
@@ -228,8 +229,8 @@ class NgenWorker(BaseWorker):
                 # Sync critical config files if source has updates
                 config = kwargs.get('config', self.config)
                 if config:
-                    data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
-                    domain_name = config.get('DOMAIN_NAME', '')
+                    data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
+                    domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
                     source_ngen = data_dir / f"domain_{domain_name}" / 'settings' / 'NGEN'
 
                     # Sync realization_config.json if source has updated forcing mappings
@@ -339,7 +340,7 @@ class NgenWorker(BaseWorker):
             if isinstance(config, PydanticBaseModel):
                 experiment_id = getattr(getattr(config, 'domain', None), 'experiment_id', None)
             else:
-                experiment_id = config.get('EXPERIMENT_ID')
+                experiment_id = resolve_config_value(config, lambda: config.domain.experiment_id, None, 'EXPERIMENT_ID')
 
             # Initialize runner with isolated directories as constructor kwargs
             runner = NgenRunner(
@@ -379,9 +380,9 @@ class NgenWorker(BaseWorker):
             # Try to use calibration target
             from symfluence.models.ngen.calibration.targets import NgenStreamflowTarget
 
-            domain_name = config.get('DOMAIN_NAME')
-            experiment_id = config.get('EXPERIMENT_ID')
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+            experiment_id = resolve_config_value(config, lambda: config.domain.experiment_id, None, 'EXPERIMENT_ID')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             project_dir = data_dir / f"domain_{domain_name}"
 
             # Create calibration target
@@ -422,7 +423,7 @@ class NgenWorker(BaseWorker):
 
             from symfluence.core.metrics import kge, nse
 
-            domain_name = config.get('DOMAIN_NAME')
+            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
 
             # Find ngen output in isolated output_dir
             output_files = list(output_dir.glob('*.csv')) + list(output_dir.glob('*.nc'))
@@ -445,7 +446,7 @@ class NgenWorker(BaseWorker):
                     sim = ds[var].values.flatten()
 
             # Load observations — store-first via the shared loader, CSV fallback.
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             project_dir = data_dir / f"domain_{domain_name}"
             obs_values, obs_index = StreamflowMetrics().load_observations(
                 config, project_dir, domain_name, resample_freq=None,
