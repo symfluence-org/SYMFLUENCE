@@ -9,6 +9,11 @@ __pycache__/
 # git and every fresh clone got a bare namespace package).
 /build/
 
+# Local run artefacts at the repo root (model output, scratch). output/ can
+# hold tens of GB; an un-ignored one is a single `git add -A` from disaster.
+/output/
+/tmp/
+
 # Requirements - auto-generated from pyproject.toml
 /requirements.txt
 develop-eggs/
