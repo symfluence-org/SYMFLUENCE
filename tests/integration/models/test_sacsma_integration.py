@@ -7,8 +7,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from symfluence.core.config.config_resolution import get_config_adapter
 from symfluence.core.registries import R
-from symfluence.models.config_resolution import get_config_adapter
 
 jsacsma = pytest.importorskip("jsacsma", reason="jsacsma package not installed")
 

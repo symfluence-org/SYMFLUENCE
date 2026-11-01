@@ -54,14 +54,3 @@ def test_select_forcing_files_falls_back_for_legacy_untokened_store():
     ]
     assert [p.name for p in select_forcing_files(legacy, "lumped")] == legacy
     assert [p.name for p in select_forcing_files(legacy, None)] == legacy
-
-
-def test_forcing_reader_reexports_the_same_objects():
-    """The data-layer read entry point external adapters build against keeps
-    exposing the contract, so promoting it into core is not a breaking move."""
-    from symfluence.data.model_ready import forcing_reader
-
-    assert forcing_reader.select_forcing_files is select_forcing_files
-    assert forcing_reader.discretization_token is discretization_token
-    assert forcing_reader.forcing_name_matches_discretization is forcing_name_matches_discretization
-    assert forcing_reader.discretization_key_from_name is discretization_key_from_name

@@ -50,7 +50,7 @@ except ImportError as e:
 
 # Variable utilities
 try:
-    from .variable_utils import VariableHandler, VariableStandardizer
+    from symfluence.core.modeling.variable_utils import VariableHandler, VariableStandardizer
 except ImportError as e:
     _logger.warning("Failed to import variable_utils: %s", e)
     VariableHandler: Any = None  # type: ignore[no-redef]

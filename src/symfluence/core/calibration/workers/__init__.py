@@ -4,7 +4,7 @@
 """Generic calibration worker bases (model-agnostic)."""
 from __future__ import annotations
 
-from .base_worker import BaseWorker, WorkerResult, WorkerTask
+from .base_worker import BaseWorker, WorkerResult, WorkerTask, run_worker_task
 from .inmemory_worker import InMemoryModelWorker
 
-__all__ = ['BaseWorker', 'WorkerResult', 'WorkerTask', 'InMemoryModelWorker']
+__all__ = ['BaseWorker', 'WorkerResult', 'WorkerTask', 'InMemoryModelWorker', 'run_worker_task']

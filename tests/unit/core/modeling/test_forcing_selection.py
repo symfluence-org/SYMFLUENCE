@@ -28,10 +28,3 @@ def test_selection_prefers_matching_namespace_and_preserves_legacy_fallback():
 
     assert select_forcing_files(files, 'lumped') == [lumped]
     assert select_forcing_files(files, 'soilclass') == files
-
-
-def test_data_reader_exports_the_core_contract_objects():
-    from symfluence.data.model_ready import forcing_reader
-
-    assert forcing_reader.discretization_token is discretization_token
-    assert forcing_reader.select_forcing_files is select_forcing_files

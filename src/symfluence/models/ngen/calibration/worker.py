@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional
 
 from pydantic import BaseModel as PydanticBaseModel
 
-from symfluence.core.calibration.workers.base_worker import BaseWorker, WorkerTask
+from symfluence.core.calibration.workers.base_worker import BaseWorker, run_worker_task
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.registries import R
 
@@ -502,16 +502,10 @@ class NgenWorker(BaseWorker):
 
 
 def _evaluate_ngen_parameters_worker(task_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Module-level worker function for MPI/ProcessPool execution.
-
-    Args:
-        task_data: Task dictionary
-
-    Returns:
-        Result dictionary
-    """
-    worker = NgenWorker(config=task_data.get('config'))
-    task = WorkerTask.from_legacy_dict(task_data)
-    result = worker.evaluate(task)
-    return result.to_legacy_dict()
+    """Module-level worker function for MPI/ProcessPool execution (delegates to ``run_worker_task``)."""
+    return run_worker_task(
+        NgenWorker,
+        task_data,
+        isolate=False,
+        catch_exceptions=False,
+    )

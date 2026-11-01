@@ -128,13 +128,13 @@ Check in this order:
 | Worker base, `evaluate`, retry, score transform | `optimization/workers/base_worker.py` |
 | `WorkerTask` / `WorkerResult` dataclasses | `optimization/workers/base_worker.py` |
 | Parameter normalize/denormalize/bounds | `optimization/core/base_parameter_manager.py` |
-| Optimizer algorithms (loop, callbacks) | `optimization/optimizers/algorithms/{dds,pso,sce_ua,de,nsga2,moead}.py` |
-| Process-dir creation & settings copy | `optimization/mixins/parallel/directory_manager.py` |
+| Optimizer algorithms (loop, callbacks) | `core/calibration/optimizers/algorithms/{dds,pso,sce_ua,de,nsga2,moead}.py` |
+| Process-dir creation & settings copy | `core/calibration/mixins/parallel/directory_manager.py` |
 | Calibration targets (sim file location, extraction) | `optimization/calibration_targets/`, `models/<m>/calibration/targets.py` |
 | Regionalization strategies | `optimization/regionalization/strategies.py` |
 | Model-specific worker / param manager | `models/<model>/calibration/{worker,parameter_manager}.py` |
 | Optimizer/worker registration | `model_manifest(worker=, parameter_manager=)` |
-| Optimization algorithms | `ALGORITHM_REGISTRY` in `optimization/optimizers/algorithms/__init__.py` |
+| Optimization algorithms | `ALGORITHM_REGISTRY` in `core/calibration/optimizers/algorithms/__init__.py` |
 
 ## 5. Config keys that affect calibration behavior
 

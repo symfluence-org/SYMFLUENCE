@@ -157,7 +157,7 @@ class ConfigMixin:
         Identifies which catchment discretization this run uses (``lumped``,
         ``elevation``, ``grus``, ...) — i.e. the HRU set its forcing was remapped
         onto. Pass it to
-        :func:`symfluence.data.model_ready.forcing_reader.open_canonical_forcing`
+        :func:`symfluence.core.modeling.model_ready.forcing_reader.open_canonical_forcing`
         so a model reads only the forcing matching ITS discretization when a
         domain's store holds more than one (issue #339).
         """

@@ -38,6 +38,7 @@ Keep them short — an ADR is a record, not a design document.
 | [0006](0006-config-unknown-keys-warn-by-default.md) | Unknown config keys: warn by default, strict opt-in | Accepted |
 | [0007](0007-gui-single-user-localhost.md) | The web GUI is a single-user localhost tool | Accepted |
 | [0008](0008-coverage-gate-raise-and-ratchet.md) | Coverage policy: ratcheted global gate plus core-spine gate | Accepted |
+| [0011](0011-retire-unused-back-compat-shims.md) | Unused back-compat shim modules are deleted; plugin-used ones warn and go before 1.0 | Accepted |
 
 ADR-0000 records the baseline decisions the codebase was built on, written
 down retroactively when the ADR practice was adopted; ADR-0001 onward record

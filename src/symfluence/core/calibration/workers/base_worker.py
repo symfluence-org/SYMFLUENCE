@@ -850,13 +850,10 @@ class BaseWorker(ABC):
         import os
 
         env_vars = {
-            'OMP_NUM_THREADS': '1',
-            'MKL_NUM_THREADS': '1',
-            'OPENBLAS_NUM_THREADS': '1',
+            **WORKER_THREAD_ENV,
             'VECLIB_MAXIMUM_THREADS': '1',
             'NUMEXPR_NUM_THREADS': '1',
-            'NETCDF_DISABLE_LOCKING': '1',
-            'HDF5_USE_FILE_LOCKING': 'FALSE',
+            **WORKER_FILE_LOCKING_ENV,
             'HDF5_DISABLE_VERSION_CHECK': '1',
         }
 
@@ -979,3 +976,128 @@ class BaseWorker(ABC):
             f"{self.__class__.__name__} does not support native gradients. "
             "Override evaluate_with_gradient() or use finite differences."
         )
+
+
+# =============================================================================
+# Shared module-level worker entry point
+# =============================================================================
+
+#: One thread per process: parallelism is across the pool, not inside a run.
+WORKER_THREAD_ENV: Dict[str, str] = {
+    'OMP_NUM_THREADS': '1',
+    'MKL_NUM_THREADS': '1',
+    'OPENBLAS_NUM_THREADS': '1',
+}
+
+#: Disable HDF5/NetCDF file locking so concurrent workers can read shared
+#: forcing/attribute files (same values as ``BaseWorker.setup_worker_isolation``).
+WORKER_FILE_LOCKING_ENV: Dict[str, str] = {
+    'NETCDF_DISABLE_LOCKING': '1',
+    'HDF5_USE_FILE_LOCKING': 'FALSE',
+}
+
+#: Suppress macOS malloc stack-logging noise in child processes.
+MACOS_MALLOC_QUIET_ENV: Dict[str, str] = {'MallocStackLogging': '0'}
+
+#: Default random start-up jitter (seconds) to stagger file access across workers.
+DEFAULT_WORKER_START_JITTER: Tuple[float, float] = (0.1, 0.5)
+
+
+def _exit_on_signal(signum, frame) -> None:  # pragma: no cover - exercised via signals
+    """Signal handler installed in worker processes: exit promptly on SIGTERM/SIGINT."""
+    import sys
+    sys.exit(1)
+
+
+def _install_worker_signal_handlers() -> None:
+    """Install SIGTERM/SIGINT handlers in the current (worker) process.
+
+    ``signal.signal`` raises ``ValueError`` outside the main thread (e.g. when a
+    pool runs tasks in threads); handlers are then simply not installed.
+    """
+    import signal
+
+    try:
+        signal.signal(signal.SIGTERM, _exit_on_signal)
+        signal.signal(signal.SIGINT, _exit_on_signal)
+    except ValueError:
+        pass
+
+
+def run_worker_task(
+    worker_cls: type,
+    task_data: Dict[str, Any],
+    *,
+    model_name: str = '',
+    isolate: bool = True,
+    extra_env: Optional[Dict[str, str]] = None,
+    start_jitter: Optional[Tuple[float, float]] = DEFAULT_WORKER_START_JITTER,
+    catch_exceptions: bool = True,
+    error_prefix: Optional[str] = None,
+    pass_config: bool = True,
+) -> Dict[str, Any]:
+    """Evaluate one legacy task dict with ``worker_cls`` inside a worker process.
+
+    Shared body of the per-model ``_evaluate_<model>_parameters_worker``
+    functions. Those must stay thin module-level ``def`` wrappers (with their
+    original names) because the MPI strategies import them by
+    ``__module__``/``__name__`` and process pools pickle them by reference.
+
+    Args:
+        worker_cls: ``BaseWorker`` subclass to instantiate.
+        task_data: Legacy task dictionary (see ``WorkerTask.from_legacy_dict``).
+        model_name: Label used in the default error prefix.
+        isolate: When True, install SIGTERM/SIGINT handlers in this process,
+            set single-thread and HDF5/NetCDF no-locking env vars (plus
+            ``extra_env``), and sleep a random ``start_jitter`` interval.
+        extra_env: Additional env vars set when ``isolate`` is True.
+        start_jitter: ``(low, high)`` seconds for the random start-up delay,
+            or None for no delay. Only used when ``isolate`` is True.
+        catch_exceptions: When True, any exception becomes a penalty result
+            dict instead of propagating to the pool/MPI runner.
+        error_prefix: Prefix for the ``error`` message of the penalty dict;
+            defaults to ``"<model_name> worker exception"``.
+        pass_config: Construct the worker as ``worker_cls(config=...)`` from
+            ``task_data['config']``; when False, ``worker_cls()``.
+
+    Returns:
+        Legacy result dictionary.
+    """
+    if isolate:
+        import os
+        import random
+
+        _install_worker_signal_handlers()
+        os.environ.update(WORKER_THREAD_ENV)
+        os.environ.update(WORKER_FILE_LOCKING_ENV)
+        if extra_env:
+            os.environ.update(extra_env)
+        if start_jitter is not None:
+            time.sleep(random.uniform(*start_jitter))
+
+    if not catch_exceptions:
+        return _evaluate_task_dict(worker_cls, task_data, pass_config)
+
+    try:
+        return _evaluate_task_dict(worker_cls, task_data, pass_config)
+    except Exception as e:  # noqa: BLE001 — calibration resilience
+        import traceback
+
+        prefix = error_prefix or f'{model_name} worker exception'
+        return {
+            'individual_id': task_data.get('individual_id', -1),
+            'params': task_data.get('params', {}),
+            'score': ModelDefaults.PENALTY_SCORE,
+            'error': f'{prefix}: {str(e)}\n{traceback.format_exc()}',
+            'proc_id': task_data.get('proc_id', -1),
+        }
+
+
+def _evaluate_task_dict(
+    worker_cls: type, task_data: Dict[str, Any], pass_config: bool
+) -> Dict[str, Any]:
+    """Instantiate ``worker_cls``, evaluate the task and return the legacy dict."""
+    worker = worker_cls(config=task_data.get('config')) if pass_config else worker_cls()
+    task = WorkerTask.from_legacy_dict(task_data)
+    result = worker.evaluate(task)
+    return result.to_legacy_dict()

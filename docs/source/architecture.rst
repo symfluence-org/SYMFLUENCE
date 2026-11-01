@@ -123,7 +123,6 @@ Directory Structure
    │
    ├── models/                    # Model adapters + their data (extraction-
    │   │                          # ready: nothing imports it at module level)
-   │   ├── model_manager.py      # Model execution coordinator
    │   └── {model}/              # One adapter package per model
    │       ├── preprocessor.py   #   (subclasses core.modeling bases,
    │       ├── runner.py         #    registers via model_manifest /
@@ -145,11 +144,13 @@ Directory Structure
        ├── reporting_manager.py
        └── plotters/             # Specialized plot generators
 
-Historical import paths for everything promoted into ``core`` (e.g.
-``symfluence.models.base``, ``symfluence.optimization.optimizers``,
-``symfluence.evaluation.metrics``) remain available as back-compat shims for
-external packages; in-tree code imports the canonical ``core`` paths only
-(enforced by a guard test). Shims are scheduled for removal at 2.0.
+A few historical import paths for code promoted into ``core`` (e.g.
+``symfluence.models.base``, ``symfluence.optimization.optimizers.base_model_optimizer``,
+``symfluence.evaluation.metrics``) remain as back-compat shims because external
+model plugins still import them. Each emits a ``DeprecationWarning`` naming its
+canonical module and will be removed before 1.0; in-tree code imports the
+canonical ``core`` paths only (enforced by a guard test). See
+``docs/adr/0011-retire-unused-back-compat-shims.md`` for the list.
 
 Contract families
 =================

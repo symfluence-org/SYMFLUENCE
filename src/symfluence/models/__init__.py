@@ -15,7 +15,7 @@ This module provides:
 from __future__ import annotations
 
 try:
-    from .execution import (
+    from symfluence.core.modeling.execution import (
         ExecutionResult,
         ModelExecutor,
         RoutingConfig,
@@ -38,7 +38,7 @@ except ImportError:
 
 # Import template components
 try:
-    from .templates import (
+    from symfluence.core.modeling.templates import (
         ModelRunResult,
         UnifiedModelRunner,
     )

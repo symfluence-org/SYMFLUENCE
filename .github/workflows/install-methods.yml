@@ -2,7 +2,8 @@ name: Install Methods
 
 # Review item 16: build SYMFLUENCE via each documented install method in a clean
 # environment and smoke-test it (`symfluence --version` + `import symfluence`).
-# Tiered (not on PRs): runs after merge to develop, weekly, and on demand.
+# Tiered (not on PRs): nightly, on demand, and after merges to develop/main that
+# touch install-relevant paths (see on.push.paths).
 #
 # Methods proven to work in CI gate the matrix; methods that still hit the §8
 # install gaps (G1–G7) are marked experimental (continue-on-error) so the grid
@@ -11,8 +12,24 @@ name: Install Methods
 on:
   push:
     branches: [ main, develop ]
+    # Only when something that affects installation changed; everything else
+    # is covered nightly. (Running on every develop push added ~13 jobs and the
+    # 2 h ARM build to each merge regardless of what changed.)
+    paths:
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'pixi.toml'
+      - 'pixi.lock'
+      - 'MANIFEST.in'
+      - 'scripts/**'
+      - 'npm/**'
+      - 'src/symfluence/cli/services/**'
+      - 'src/symfluence/core/build/**'
+      - 'src/symfluence/models/**/build_instructions*.py'
+      - 'src/symfluence/models/**/patches/**'
+      - '.github/workflows/install-methods.yml'
   schedule:
-    - cron: '0 4 * * 0'  # weekly (Sundays)
+    - cron: '0 4 * * *'  # nightly
   workflow_dispatch:
 
 permissions:

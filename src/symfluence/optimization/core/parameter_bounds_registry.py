@@ -22,8 +22,17 @@ a strict superset of the copy's public surface (it additionally exports the
 """
 from __future__ import annotations
 
+import warnings as _warnings
+
 import symfluence.core.calibration.parameters.parameter_bounds_registry as _impl
 from symfluence.core.calibration.parameters.parameter_bounds_registry import *  # noqa: F401,F403
+
+_warnings.warn(
+    "symfluence.optimization.core.parameter_bounds_registry is deprecated; import from symfluence.core.calibration.parameters.parameter_bounds_registry instead. "
+    "This back-compat shim will be removed before SYMFLUENCE 1.0 (see docs/adr/0011-retire-unused-back-compat-shims.md).",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 def __getattr__(name: str):

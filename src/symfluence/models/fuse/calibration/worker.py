@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from symfluence.core.calibration.multi_gauge.metrics import MultiGaugeMetrics
-from symfluence.core.calibration.workers.base_worker import BaseWorker, WorkerTask
+from symfluence.core.calibration.workers.base_worker import BaseWorker, run_worker_task
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.modeling.utilities.routing_decider import RoutingDecider
 from symfluence.core.process_exec import run as run_subprocess
@@ -684,8 +684,10 @@ class FUSEWorker(BaseWorker):
 
 
 def _evaluate_fuse_parameters_worker(task_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Module-level worker function for MPI/ProcessPool execution."""
-    worker = FUSEWorker(config=task_data.get('config'))
-    task = WorkerTask.from_legacy_dict(task_data)
-    result = worker.evaluate(task)
-    return result.to_legacy_dict()
+    """Module-level worker function for MPI/ProcessPool execution (delegates to ``run_worker_task``)."""
+    return run_worker_task(
+        FUSEWorker,
+        task_data,
+        isolate=False,
+        catch_exceptions=False,
+    )

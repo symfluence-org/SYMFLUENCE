@@ -28,6 +28,12 @@ import importlib
 import logging
 import pkgutil
 
+#: Back-compat shim packages under ``symfluence.models`` (see
+#: docs/adr/0011-retire-unused-back-compat-shims.md). They are not models and
+#: have no ``calibration`` subpackage; importing them only to find that out
+#: would fire their ``DeprecationWarning`` on every ``import symfluence``.
+_SHIM_PACKAGES = frozenset({'adapters', 'base', 'execution', 'mixins', 'state', 'utilities'})
+
 
 def discover_calibration_components(component: str, logger: logging.Logger) -> None:
     """Import every model's ``calibration.<component>`` module to fire its decorator.
@@ -46,7 +52,7 @@ def discover_calibration_components(component: str, logger: logging.Logger) -> N
         return
 
     for _importer, model_name, is_pkg in pkgutil.iter_modules(models_pkg.__path__):
-        if not is_pkg:
+        if not is_pkg or model_name in _SHIM_PACKAGES:
             continue
 
         module_path = f'symfluence.models.{model_name}.calibration.{component}'

@@ -90,7 +90,7 @@ def test_both_builders_agree_on_the_name(tmp_path):
 
 def test_names_are_selectable_by_the_reader(tmp_path):
     """The generated names round-trip through the reader's selection helper."""
-    from symfluence.data.model_ready.forcing_reader import select_forcing_files
+    from symfluence.core.modeling.model_ready.forcing_reader import select_forcing_files
 
     src = Path("domain_Bow_ERA5_20020101.nc")
     lumped = _fp("lumped", tmp_path).determine_output_filename(src)

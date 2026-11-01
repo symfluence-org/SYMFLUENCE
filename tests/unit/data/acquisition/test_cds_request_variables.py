@@ -24,7 +24,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from symfluence.data.acquisition.handlers.cds_datasets import (
+from symfluence.data.acquisition.cds_datasets import (
     CARRAAcquirer,
     CERRAAcquirer,
 )

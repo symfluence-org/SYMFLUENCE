@@ -176,16 +176,16 @@ class TestModelManagerFallback:
         # not be called (condition: len(workflow) > 1)
         import inspect
 
-        from symfluence.models.model_manager import ModelManager
+        from symfluence.project.model_manager import ModelManager
         source = inspect.getsource(ModelManager.run_models)
         assert "len(workflow) > 1" in source
 
     def test_sequential_method_exists(self):
         """Verify _run_sequential method exists on ModelManager."""
-        from symfluence.models.model_manager import ModelManager
+        from symfluence.project.model_manager import ModelManager
         assert hasattr(ModelManager, '_run_sequential')
 
     def test_try_dcoupler_method_exists(self):
         """Verify _try_dcoupler_execution method exists on ModelManager."""
-        from symfluence.models.model_manager import ModelManager
+        from symfluence.project.model_manager import ModelManager
         assert hasattr(ModelManager, '_try_dcoupler_execution')

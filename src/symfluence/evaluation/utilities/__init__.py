@@ -8,6 +8,6 @@ Utility classes and functions for model evaluation and metric calculation.
 """
 from __future__ import annotations
 
-from .streamflow_metrics import StreamflowMetrics
+from symfluence.core.metrics.streamflow_metrics import StreamflowMetrics
 
 __all__ = ['StreamflowMetrics']
