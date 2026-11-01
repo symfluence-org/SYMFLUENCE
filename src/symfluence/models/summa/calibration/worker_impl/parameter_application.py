@@ -23,6 +23,7 @@ import netCDF4 as nc
 import numpy as np
 import xarray as xr
 
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.profiling import get_profiler
 
 from ..forcing_scaling import FORCING_PARAMS, PRECIP_MULT_PARAM, apply_precip_multiplier
@@ -35,9 +36,9 @@ def _apply_parameters_worker(params: Dict, task_data: Dict, settings_dir: Path, 
         logger.debug(f"Applying parameters: {list(params.keys())} (consistent method)")
 
         # Parse parameter lists EXACTLY as ParameterManager does
-        [p.strip() for p in (config.get('PARAMS_TO_CALIBRATE') or '').split(',') if p.strip()]
-        [p.strip() for p in (config.get('BASIN_PARAMS_TO_CALIBRATE') or '').split(',') if p.strip()]
-        depth_params = ['total_mult', 'shape_factor'] if config.get('CALIBRATE_DEPTH', False) else []
+        [p.strip() for p in (resolve_config_value(config, lambda: config.model.summa.params_to_calibrate, None, 'PARAMS_TO_CALIBRATE') or '').split(',') if p.strip()]
+        [p.strip() for p in (resolve_config_value(config, lambda: config.model.summa.basin_params_to_calibrate, None, 'BASIN_PARAMS_TO_CALIBRATE') or '').split(',') if p.strip()]
+        depth_params = ['total_mult', 'shape_factor'] if resolve_config_value(config, lambda: config.model.summa.calibrate_depth, False, 'CALIBRATE_DEPTH') else []
 
         # Add support for new multiplier
         if 'total_soil_depth_multiplier' in params:
@@ -46,8 +47,8 @@ def _apply_parameters_worker(params: Dict, task_data: Dict, settings_dir: Path, 
 
         mizuroute_params = []
 
-        if config.get('CALIBRATE_MIZUROUTE', False):
-            mizuroute_params_str = config.get('MIZUROUTE_PARAMS_TO_CALIBRATE', 'velo,diff')
+        if resolve_config_value(config, lambda: config.model.mizuroute.calibrate, False, 'CALIBRATE_MIZUROUTE'):
+            mizuroute_params_str = resolve_config_value(config, lambda: config.model.mizuroute.params_to_calibrate, 'velo,diff', 'MIZUROUTE_PARAMS_TO_CALIBRATE')
             mizuroute_params = [p.strip() for p in mizuroute_params_str.split(',') if p.strip()]
 
         # 1. Handle soil depth parameters
@@ -65,7 +66,7 @@ def _apply_parameters_worker(params: Dict, task_data: Dict, settings_dir: Path, 
 
         # 3. Rescale forcing precipitation (pseudo-parameter, not in trialParams)
         if PRECIP_MULT_PARAM in params:
-            file_manager = config.get('SETTINGS_SUMMA_FILEMANAGER') or 'fileManager.txt'
+            file_manager = resolve_config_value(config, lambda: config.model.summa.filemanager, None, 'SETTINGS_SUMMA_FILEMANAGER') or 'fileManager.txt'
             if not apply_precip_multiplier(settings_dir, params[PRECIP_MULT_PARAM], logger, file_manager):
                 debug_info['errors'].append(f"Failed to apply {PRECIP_MULT_PARAM}")
                 return False
@@ -173,7 +174,7 @@ def _update_mizuroute_params_worker(params: Dict, task_data: Dict, logger, debug
 
     try:
         config = task_data['config']
-        mizuroute_params = [p.strip() for p in config.get('MIZUROUTE_PARAMS_TO_CALIBRATE', '').split(',') if p.strip()]
+        mizuroute_params = [p.strip() for p in resolve_config_value(config, lambda: config.model.mizuroute.params_to_calibrate, '', 'MIZUROUTE_PARAMS_TO_CALIBRATE').split(',') if p.strip()]
 
         mizuroute_settings_dir = Path(task_data['mizuroute_settings_dir'])
         param_file = mizuroute_settings_dir / "param.nml.default"

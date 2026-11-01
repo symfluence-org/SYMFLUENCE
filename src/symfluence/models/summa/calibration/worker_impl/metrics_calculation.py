@@ -35,6 +35,7 @@ from symfluence.core.metrics import (
 from symfluence.core.metrics import (
     rmse as calc_rmse,
 )
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.mixins.project import resolve_data_subdir
 
 
@@ -116,8 +117,8 @@ def _get_catchment_area_worker(config: Dict, logger) -> float:
             logger.debug(f"Using fixed catchment area from config: {fixed_area} m²")
             return float(fixed_area)
 
-        domain_name = config.get('DOMAIN_NAME')
-        project_dir = Path(config.get('SYMFLUENCE_DATA_DIR')) / f"domain_{domain_name}"
+        domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+        project_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, None, 'SYMFLUENCE_DATA_DIR')) / f"domain_{domain_name}"
 
         # Priority 1: Try SUMMA attributes file first (most reliable)
         attrs_file = project_dir / 'settings' / 'SUMMA' / 'attributes.nc'
@@ -145,7 +146,7 @@ def _get_catchment_area_worker(config: Dict, logger) -> float:
             try:
                 import geopandas as gpd
                 gdf = gpd.read_file(basin_files[0])
-                area_col = config.get('RIVER_BASIN_SHP_AREA', 'GRU_area')
+                area_col = resolve_config_value(config, lambda: config.paths.river_basin_area, 'GRU_area', 'RIVER_BASIN_SHP_AREA')
 
                 logger.debug(f"Found basin shapefile: {basin_files[0]}")
                 logger.debug(f"Looking for area column: {area_col}")
@@ -185,7 +186,7 @@ def _get_catchment_area_worker(config: Dict, logger) -> float:
             try:
                 import geopandas as gpd
                 gdf = gpd.read_file(catchment_files[0])
-                area_col = config.get('CATCHMENT_SHP_AREA', 'HRU_area')
+                area_col = resolve_config_value(config, lambda: config.paths.catchment_area, 'HRU_area', 'CATCHMENT_SHP_AREA')
 
                 if area_col in gdf.columns:
                     total_area = gdf[area_col].sum()
@@ -228,17 +229,17 @@ def _calculate_metrics_with_target(summa_dir: Path, mizuroute_dir: Path, config:
 
         # Use provided project_dir, or reconstruct from config if not provided
         if project_dir is None:
-            project_dir = PathType(config.get('SYMFLUENCE_DATA_DIR', '.')) / f"domain_{config.get('DOMAIN_NAME')}"
+            project_dir = PathType(config.get('SYMFLUENCE_DATA_DIR', '.')) / f"domain_{resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')}"
         else:
             project_dir = PathType(project_dir)
 
         # Determine the calibration target type
-        calibration_var = config.get('CALIBRATION_VARIABLE', 'streamflow')
-        optimization_target = config.get('OPTIMIZATION_TARGET', calibration_var).lower()
+        calibration_var = resolve_config_value(config, lambda: config.optimization.calibration_variable, 'streamflow', 'CALIBRATION_VARIABLE')
+        optimization_target = resolve_config_value(config, lambda: config.optimization.target, calibration_var, 'OPTIMIZATION_TARGET').lower()
 
         logger.debug(f"[METRICS_CALC] Config keys: {list(config.keys())[:10]}")
-        logger.debug(f"[METRICS_CALC] OPTIMIZATION_TARGET in config: {config.get('OPTIMIZATION_TARGET')}")
-        logger.debug(f"[METRICS_CALC] CALIBRATION_VARIABLE in config: {config.get('CALIBRATION_VARIABLE')}")
+        logger.debug(f"[METRICS_CALC] OPTIMIZATION_TARGET in config: {resolve_config_value(config, lambda: config.optimization.target, None, 'OPTIMIZATION_TARGET')}")
+        logger.debug(f"[METRICS_CALC] CALIBRATION_VARIABLE in config: {resolve_config_value(config, lambda: config.optimization.calibration_variable, None, 'CALIBRATION_VARIABLE')}")
         logger.debug(f"Creating calibration target for: {optimization_target}")
 
         known_targets = {
@@ -255,8 +256,8 @@ def _calculate_metrics_with_target(summa_dir: Path, mizuroute_dir: Path, config:
 
         # Validate mizuRoute output exists when routing is required for streamflow
         if optimization_target in ['streamflow', 'flow', 'discharge']:
-            domain_method = config.get('DOMAIN_DEFINITION_METHOD', 'lumped')
-            routing_delineation = config.get('ROUTING_DELINEATION', 'lumped')
+            domain_method = resolve_config_value(config, lambda: config.domain.definition_method, 'lumped', 'DOMAIN_DEFINITION_METHOD')
+            routing_delineation = resolve_config_value(config, lambda: config.domain.delineation.routing, 'lumped', 'ROUTING_DELINEATION')
 
             # Check if routing is required (non-lumped domain or river_network routing)
             needs_routing = (
@@ -361,7 +362,7 @@ def _calculate_metrics_inline_worker(summa_dir: Path, mizuroute_dir: Path, confi
             return None
 
         obs_period, sim_period = _filter_inline_calibration_period(
-            obs_data, sim_data, config.get('CALIBRATION_PERIOD', ''), logger
+            obs_data, sim_data, resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD'), logger
         )
         aligned = _align_inline_timeseries(obs_period, sim_period, config, logger)
         if aligned is None:
@@ -401,8 +402,8 @@ def _select_inline_simulation_source(
             logger.debug("Using mizuRoute files (already in m³/s)")
             return mizu_files[0], True, 0.0
 
-    domain_method = config.get('DOMAIN_DEFINITION_METHOD', 'lumped')
-    routing_delineation = config.get('ROUTING_DELINEATION', 'lumped')
+    domain_method = resolve_config_value(config, lambda: config.domain.definition_method, 'lumped', 'DOMAIN_DEFINITION_METHOD')
+    routing_delineation = resolve_config_value(config, lambda: config.domain.delineation.routing, 'lumped', 'ROUTING_DELINEATION')
     if domain_method not in ['lumped', 'point'] or routing_delineation != 'lumped':
         logger.error(
             "No mizuRoute output found and domain/routing not both lumped "
@@ -536,7 +537,7 @@ def _try_inline_area_weighted_aggregation(
     try:
         possible_attr_paths = [
             summa_dir.parent.parent.parent / 'settings' / 'SUMMA' / 'attributes.nc',
-            Path(config.get('SYMFLUENCE_DATA_DIR')) / f"domain_{config.get('DOMAIN_NAME')}" / 'settings' / 'SUMMA' / 'attributes.nc'
+            Path(resolve_config_value(config, lambda: config.system.data_dir, None, 'SYMFLUENCE_DATA_DIR')) / f"domain_{resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')}" / 'settings' / 'SUMMA' / 'attributes.nc'
         ]
         attrs_file = next((path for path in possible_attr_paths if path.exists()), None)
         if attrs_file is None:
@@ -591,8 +592,8 @@ def _inline_extract_first_series(var) -> pd.Series:
 
 def _load_inline_observations(config: Dict, logger) -> Optional[pd.Series]:
     try:
-        domain_name = config.get('DOMAIN_NAME')
-        project_dir = Path(config.get('SYMFLUENCE_DATA_DIR')) / f"domain_{domain_name}"
+        domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+        project_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, None, 'SYMFLUENCE_DATA_DIR')) / f"domain_{domain_name}"
         obs_path = resolve_data_subdir(project_dir, 'observations') / "streamflow" / "preprocessed" / f"{domain_name}_streamflow_processed.csv"
 
         logger.debug(f"Looking for observations at: {obs_path}")
@@ -659,7 +660,7 @@ def _align_inline_timeseries(
     elif obs_period.index.tz is None and sim_period.index.tz is not None:
         obs_period.index = obs_period.index.tz_localize(sim_period.index.tz)
 
-    calibration_timestep = config.get('CALIBRATION_TIMESTEP', 'native').lower()
+    calibration_timestep = resolve_config_value(config, lambda: config.optimization.calibration_timestep, 'native', 'CALIBRATION_TIMESTEP').lower()
     if calibration_timestep != 'native':
         obs_period = resample_to_timestep(obs_period, calibration_timestep, logger)
         sim_period = resample_to_timestep(sim_period, calibration_timestep, logger)

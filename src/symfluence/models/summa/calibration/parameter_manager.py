@@ -183,7 +183,7 @@ class SUMMAParameterManager(BaseParameterManager):
         # Build extra_config for factory options (b_bounds, etc.)
         extra_config: Dict[str, Any] = {}
         b_bounds = self._get_config_value(
-            lambda: self.config.model.summa.transfer_function_b_bounds,
+            lambda: self.config.optimization.transfer_function_b_bounds,
             default=None, dict_key='TRANSFER_FUNCTION_B_BOUNDS'
         )
         if b_bounds:

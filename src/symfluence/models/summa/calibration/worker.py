@@ -16,6 +16,7 @@ from typing import Any, Dict, Optional
 from symfluence.core.calibration.workers.base_worker import BaseWorker, WorkerTask
 from symfluence.core.logging_utils import get_worker_logger
 from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -56,13 +57,13 @@ class SUMMAWorker(BaseWorker):
         Returns:
             True if routing is needed
         """
-        calibration_var = config.get('CALIBRATION_VARIABLE', 'streamflow')
+        calibration_var = resolve_config_value(config, lambda: config.optimization.calibration_variable, 'streamflow', 'CALIBRATION_VARIABLE')
 
         if calibration_var != 'streamflow':
             return False
 
-        domain_method = config.get('DOMAIN_DEFINITION_METHOD', 'lumped')
-        routing_delineation = config.get('ROUTING_DELINEATION', 'lumped')
+        domain_method = resolve_config_value(config, lambda: config.domain.definition_method, 'lumped', 'DOMAIN_DEFINITION_METHOD')
+        routing_delineation = resolve_config_value(config, lambda: config.domain.delineation.routing, 'lumped', 'ROUTING_DELINEATION')
 
         if domain_method not in ['point', 'lumped']:
             return True
@@ -146,7 +147,7 @@ class SUMMAWorker(BaseWorker):
             trial_param_file = settings_dir / 'trialParams.nc'
             if not trial_param_file.exists():
                 # Try alternate name
-                experiment_id = config.get('EXPERIMENT_ID', 'default')
+                experiment_id = resolve_config_value(config, lambda: config.domain.experiment_id, 'default', 'EXPERIMENT_ID')
                 trial_param_file = settings_dir / f'{experiment_id}_trialParams.nc'
 
             if not trial_param_file.exists():
@@ -190,10 +191,10 @@ class SUMMAWorker(BaseWorker):
             # Import existing functions
             from .worker_impl import _run_mizuroute_worker, _run_summa_worker
 
-            summa_install_path = config.get('SUMMA_INSTALL_PATH', 'default')
-            summa_exe = config.get("SUMMA_EXE", "summa_sundials.exe")
+            summa_install_path = resolve_config_value(config, lambda: config.model.summa.install_path, 'default', 'SUMMA_INSTALL_PATH')
+            summa_exe = resolve_config_value(config, lambda: config.model.summa.exe, "summa_sundials.exe", 'SUMMA_EXE')
             if summa_install_path == 'default':
-                data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+                data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
                 summa_exe = data_dir / 'installs' / 'summa' / 'bin' / summa_exe
             else:
                 summa_install_path = Path(summa_install_path)
@@ -202,7 +203,7 @@ class SUMMAWorker(BaseWorker):
             file_manager = settings_dir / 'fileManager.txt'
             if not file_manager.exists():
                 # Try alternate names
-                experiment_id = config.get('EXPERIMENT_ID', 'default')
+                experiment_id = resolve_config_value(config, lambda: config.domain.experiment_id, 'default', 'EXPERIMENT_ID')
                 file_manager = settings_dir / f'{experiment_id}_fileManager.txt'
 
             summa_dir = output_dir
@@ -220,7 +221,7 @@ class SUMMAWorker(BaseWorker):
             }
 
             # Run SUMMA
-            summa_timeout = int(config.get('SUMMA_TIMEOUT', 7200))
+            summa_timeout = int(resolve_config_value(config, lambda: config.model.summa.timeout, 7200, 'SUMMA_TIMEOUT'))
             success = _run_summa_worker(
                 summa_exe, file_manager, summa_dir, internal_logger, debug_info, settings_dir,
                 timeout=summa_timeout, config=config
@@ -302,10 +303,10 @@ class SUMMAWorker(BaseWorker):
         """
         try:
 
-            summa_install_path = config.get('SUMMA_INSTALL_PATH', 'default')
-            summa_exe_name = config.get('SUMMA_EXE', 'summa_sundials.exe')
+            summa_install_path = resolve_config_value(config, lambda: config.model.summa.install_path, 'default', 'SUMMA_INSTALL_PATH')
+            summa_exe_name = resolve_config_value(config, lambda: config.model.summa.exe, 'summa_sundials.exe', 'SUMMA_EXE')
             if summa_install_path == 'default':
-                data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+                data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
                 summa_exe = data_dir / 'installs' / 'summa' / 'bin' / summa_exe_name
             else:
                 summa_exe = Path(summa_install_path) / summa_exe_name
@@ -321,7 +322,7 @@ class SUMMAWorker(BaseWorker):
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=config.get('SUMMA_TIMEOUT', 600)
+                timeout=resolve_config_value(config, lambda: config.model.summa.timeout, 600, 'SUMMA_TIMEOUT')
             )
 
             return result.returncode == 0
@@ -348,7 +349,7 @@ class SUMMAWorker(BaseWorker):
             Dictionary of metric names to values
         """
         try:
-            multi_gauge_enabled = config.get('MULTI_GAUGE_CALIBRATION', False)
+            multi_gauge_enabled = resolve_config_value(config, lambda: config.optimization.multi_gauge.calibration, False, 'MULTI_GAUGE_CALIBRATION')
             if multi_gauge_enabled and self.needs_routing(config):
                 mizuroute_dir = kwargs.get('mizuroute_dir')
                 if not mizuroute_dir:
@@ -356,8 +357,8 @@ class SUMMAWorker(BaseWorker):
                     mizuroute_dir = sim_dir / 'mizuRoute'
                 mizuroute_output = self._find_mizuroute_output(Path(mizuroute_dir))
                 if mizuroute_output is not None:
-                    data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
-                    domain_name = config.get('DOMAIN_NAME', '')
+                    data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
+                    domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
                     project_dir = data_dir / f'domain_{domain_name}'
                     return self._calculate_multi_gauge_metrics(
                         config=config,
@@ -378,9 +379,9 @@ class SUMMAWorker(BaseWorker):
                 # optimization-dir path has no output (e.g. final evaluation
                 # redirects SUMMA output but mizuRoute still writes to simulations/)
                 if not list(mizuroute_dir.glob('*.nc')):
-                    experiment_id = config.get('EXPERIMENT_ID', '')
+                    experiment_id = resolve_config_value(config, lambda: config.domain.experiment_id, '', 'EXPERIMENT_ID')
                     data_dir = config.get('SYMFLUENCE_DATA_DIR', '')
-                    domain_name = config.get('DOMAIN_NAME', '')
+                    domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
                     if experiment_id and data_dir and domain_name:
                         fallback = Path(data_dir) / f"domain_{domain_name}" / 'simulations' / experiment_id / 'mizuRoute'
                         if list(fallback.glob('*.nc')):
@@ -425,12 +426,12 @@ class SUMMAWorker(BaseWorker):
         try:
             from symfluence.core.calibration.multi_gauge.metrics import MultiGaugeMetrics
 
-            gauge_mapping_path = config.get('GAUGE_SEGMENT_MAPPING')
-            obs_dir = config.get('MULTI_GAUGE_OBS_DIR')
-            gauge_ids = config.get('MULTI_GAUGE_IDS')
-            exclude_ids = config.get('MULTI_GAUGE_EXCLUDE_IDS', [])
-            aggregation = config.get('MULTI_GAUGE_AGGREGATION', 'mean')
-            min_gauges = config.get('MULTI_GAUGE_MIN_GAUGES', 5)
+            gauge_mapping_path = resolve_config_value(config, lambda: config.optimization.multi_gauge.gauge_segment_mapping, None, 'GAUGE_SEGMENT_MAPPING')
+            obs_dir = resolve_config_value(config, lambda: config.optimization.multi_gauge.obs_dir, None, 'MULTI_GAUGE_OBS_DIR')
+            gauge_ids = resolve_config_value(config, lambda: config.optimization.multi_gauge.gauge_ids, None, 'MULTI_GAUGE_IDS')
+            exclude_ids = resolve_config_value(config, lambda: config.optimization.multi_gauge.exclude_ids, [], 'MULTI_GAUGE_EXCLUDE_IDS')
+            aggregation = resolve_config_value(config, lambda: config.optimization.multi_gauge.aggregation, 'mean', 'MULTI_GAUGE_AGGREGATION')
+            min_gauges = resolve_config_value(config, lambda: config.optimization.multi_gauge.min_gauges, 5, 'MULTI_GAUGE_MIN_GAUGES')
 
             # Auto-generate gauge mapping if not configured
             if not gauge_mapping_path:
@@ -477,8 +478,8 @@ class SUMMAWorker(BaseWorker):
                 if val is not None:
                     filter_config[key] = float(val)
 
-            min_overlap = int(config.get('MULTI_GAUGE_MIN_OVERLAP_DAYS', 10))
-            kge_floor = config.get('MULTI_GAUGE_KGE_FLOOR')
+            min_overlap = int(resolve_config_value(config, lambda: config.optimization.multi_gauge.min_overlap_days, 10, 'MULTI_GAUGE_MIN_OVERLAP_DAYS'))
+            kge_floor = resolve_config_value(config, lambda: config.optimization.multi_gauge.kge_floor, None, 'MULTI_GAUGE_KGE_FLOOR')
             if kge_floor is not None:
                 kge_floor = float(kge_floor)
 
@@ -522,7 +523,7 @@ class SUMMAWorker(BaseWorker):
         project_dir: Path,
     ) -> Optional[Path]:
         """Auto-generate gauge-segment mapping if it doesn't exist."""
-        lamah_path = config.get('LAMAH_ICE_PATH')
+        lamah_path = resolve_config_value(config, lambda: config.evaluation.lamah_ice.path, None, 'LAMAH_ICE_PATH')
         if not lamah_path:
             data_dir = config.get('SYMFLUENCE_DATA_DIR')
             if data_dir:
@@ -535,7 +536,7 @@ class SUMMAWorker(BaseWorker):
             if data_dir:
                 lamah_path = Path(data_dir) / 'lamah_ice'
 
-        domain_name = config.get('DOMAIN_NAME', '')
+        domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
         try:
             from symfluence.core.calibration.multi_gauge.gauge_mapping import ensure_gauge_mapping
             return ensure_gauge_mapping(
@@ -573,12 +574,12 @@ class SUMMAWorker(BaseWorker):
 
     def _parse_calibration_period(self, config: Dict[str, Any]) -> tuple:
         """Parse calibration period from config."""
-        cal_period = config.get('CALIBRATION_PERIOD', '')
+        cal_period = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
         if isinstance(cal_period, str) and ',' in cal_period:
             parts = [p.strip() for p in cal_period.split(',')]
             return parts[0], parts[1]
-        start = config.get('EXPERIMENT_TIME_START', '')
-        end = config.get('EXPERIMENT_TIME_END', '')
+        start = resolve_config_value(config, lambda: config.domain.time_start, '', 'EXPERIMENT_TIME_START')
+        end = resolve_config_value(config, lambda: config.domain.time_end, '', 'EXPERIMENT_TIME_END')
         return str(start).strip(), str(end).strip()
 
     def _calculate_metrics_direct(
@@ -616,8 +617,8 @@ class SUMMAWorker(BaseWorker):
                     return {'kge': self.penalty_score, 'error': 'No runoff variable found'}
 
             # Convert runoff depth (m/s) to discharge (m³/s) using catchment area
-            domain_name = config.get('DOMAIN_NAME')
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
 
             # Try to get area from SUMMA attributes file first (more reliable)
             attrs_file = data_dir / f'domain_{domain_name}' / 'settings' / 'SUMMA' / 'attributes.nc'

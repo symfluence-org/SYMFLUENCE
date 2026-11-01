@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Dict
 
 from symfluence.core.logging_utils import log_once
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.profiling import get_system_profiler
 
 from .netcdf_utilities import fix_summa_time_precision
@@ -136,12 +137,12 @@ def _ensure_coupling_output_vars(output_control_path: Path, config, logger) -> N
     """
     if not config:
         return
-    gw_model = str(config.get('GROUNDWATER_MODEL', '') or '').upper()
+    gw_model = str(resolve_config_value(config, lambda: config.model.groundwater_model, '', 'GROUNDWATER_MODEL') or '').upper()
     if gw_model in ('', 'NONE'):
         return
     if not output_control_path.exists():
         return
-    recharge_var = (config.get('MODFLOW_RECHARGE_VARIABLE')
+    recharge_var = (resolve_config_value(config, lambda: config.model.modflow.recharge_variable, None, 'MODFLOW_RECHARGE_VARIABLE')
                     or 'scalarSoilDrainage')
     needed = [v for v in (recharge_var, 'scalarSurfaceRunoff') if v]
     try:
@@ -375,12 +376,12 @@ def _run_summa_worker(summa_exe: Path, file_manager: Path, summa_dir: Path, logg
             # Continue anyway, hoping it works or fails later
 
         # Check for intra-iteration parallel GRU execution
-        use_parallel = config.get('SETTINGS_SUMMA_USE_PARALLEL_SUMMA', False) if config else False
+        use_parallel = resolve_config_value(config, lambda: config.model.summa.use_parallel, False, 'SETTINGS_SUMMA_USE_PARALLEL_SUMMA') if config else False
         logger.debug(f"Parallel SUMMA check: config={config is not None}, use_parallel={use_parallel}, settings_dir={summa_settings_dir}")
         if use_parallel and summa_settings_dir is not None:
             from symfluence.models.summa.parallel_gru_execution import run_summa_gru_parallel
 
-            num_parallel = int(config.get('SETTINGS_SUMMA_CPUS_PER_TASK', 8))
+            num_parallel = int(resolve_config_value(config, lambda: config.model.summa.cpus_per_task, 8, 'SETTINGS_SUMMA_CPUS_PER_TASK'))
             logger.debug(f"Launching parallel SUMMA with {num_parallel} processes")
             result = run_summa_gru_parallel(
                 summa_exe=Path(summa_exe_str),
@@ -562,13 +563,13 @@ def _run_mizuroute_worker(task_data: Dict, mizuroute_dir: Path, logger, debug_in
 
         logger.debug(f"Found {len(expected_files)} SUMMA output files for mizuRoute")
         config = task_data['config']
-        mizu_timeout = int(config.get('MIZUROUTE_TIMEOUT', 3600))
+        mizu_timeout = int(resolve_config_value(config, lambda: config.model.mizuroute.timeout, 3600, 'MIZUROUTE_TIMEOUT'))
 
         # Get mizuRoute executable (canonical keys first, then deprecated aliases)
         mizu_path = config.get('MIZUROUTE_INSTALL_PATH',
                                config.get('INSTALL_PATH_MIZUROUTE', 'default'))
         if mizu_path == 'default':
-            mizu_path = Path(config.get('SYMFLUENCE_DATA_DIR')) / 'installs' / 'mizuRoute' / 'route' / 'bin'
+            mizu_path = Path(resolve_config_value(config, lambda: config.system.data_dir, None, 'SYMFLUENCE_DATA_DIR')) / 'installs' / 'mizuRoute' / 'route' / 'bin'
         else:
             mizu_path = Path(mizu_path)
 
@@ -611,7 +612,7 @@ def _run_mizuroute_worker(task_data: Dict, mizuroute_dir: Path, logger, debug_in
 
         # Set OpenMP thread count for mizuRoute (if compiled with OpenMP)
         mizu_env = os.environ.copy()
-        mizu_num_threads = str(config.get('MIZUROUTE_NUM_THREADS', 1))
+        mizu_num_threads = str(resolve_config_value(config, lambda: config.model.mizuroute.num_threads, 1, 'MIZUROUTE_NUM_THREADS'))
         mizu_env['OMP_NUM_THREADS'] = mizu_num_threads
 
         logger.debug(f"Executing mizuRoute command: {cmd_str} (OMP_NUM_THREADS={mizu_num_threads})")
@@ -674,8 +675,8 @@ def _run_mizuroute_worker(task_data: Dict, mizuroute_dir: Path, logger, debug_in
 
 def _needs_mizuroute_routing_worker(config: Dict) -> bool:
     """Check if mizuRoute routing is needed"""
-    domain_method = config.get('DOMAIN_DEFINITION_METHOD', 'lumped')
-    routing_delineation = config.get('ROUTING_DELINEATION', 'lumped')
+    domain_method = resolve_config_value(config, lambda: config.domain.definition_method, 'lumped', 'DOMAIN_DEFINITION_METHOD')
+    routing_delineation = resolve_config_value(config, lambda: config.domain.delineation.routing, 'lumped', 'ROUTING_DELINEATION')
 
     if domain_method not in ['point', 'lumped']:
         return True

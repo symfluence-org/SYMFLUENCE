@@ -29,6 +29,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from symfluence.core.mixins.config import resolve_config_value
+
 
 class ErrorLogger:
     """Centralized error logging for calibration runs.
@@ -55,18 +57,18 @@ class ErrorLogger:
 
         # Determine error logging mode
         # PARAMS_KEEP_TRIALS is a convenience flag that enables 'failures' mode
-        params_keep_trials = config.get('PARAMS_KEEP_TRIALS', False)
+        params_keep_trials = resolve_config_value(config, lambda: config.optimization.params_keep_trials, False, 'PARAMS_KEEP_TRIALS')
 
         if params_keep_trials:
             # PARAMS_KEEP_TRIALS enables failure logging by default
-            self.mode = config.get('ERROR_LOGGING_MODE', 'failures')
+            self.mode = resolve_config_value(config, lambda: config.optimization.error_logging_mode, 'failures', 'ERROR_LOGGING_MODE')
         else:
-            self.mode = config.get('ERROR_LOGGING_MODE', 'none')
+            self.mode = resolve_config_value(config, lambda: config.optimization.error_logging_mode, 'none', 'ERROR_LOGGING_MODE')
 
-        self.stop_on_failure = config.get('STOP_ON_MODEL_FAILURE', False)
+        self.stop_on_failure = resolve_config_value(config, lambda: config.optimization.stop_on_model_failure, False, 'STOP_ON_MODEL_FAILURE')
 
         # Set up error log directory
-        error_log_subdir = config.get('ERROR_LOG_DIR', 'error_logs')
+        error_log_subdir = resolve_config_value(config, lambda: config.optimization.error_log_dir, 'error_logs', 'ERROR_LOG_DIR')
         self.error_log_dir = base_output_dir / error_log_subdir
 
         # Track if we've had a failure (for STOP_ON_MODEL_FAILURE)
@@ -365,8 +367,8 @@ def log_worker_failure(
 
     # Check if error logging is disabled in config
     if config:
-        params_keep_trials = config.get('PARAMS_KEEP_TRIALS', False)
-        error_mode = config.get('ERROR_LOGGING_MODE', 'none')
+        params_keep_trials = resolve_config_value(config, lambda: config.optimization.params_keep_trials, False, 'PARAMS_KEEP_TRIALS')
+        error_mode = resolve_config_value(config, lambda: config.optimization.error_logging_mode, 'none', 'ERROR_LOGGING_MODE')
         if not params_keep_trials and error_mode == 'none':
             return None
 

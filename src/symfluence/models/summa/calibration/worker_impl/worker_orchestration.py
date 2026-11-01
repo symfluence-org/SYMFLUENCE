@@ -23,6 +23,7 @@ import numpy as np
 from symfluence.core.exceptions import ConfigurationError, EvaluationError, SYMFLUENCEError
 from symfluence.core.logging_utils import get_worker_logger
 from symfluence.core.metrics.metric_transformer import MetricTransformer
+from symfluence.core.mixins.config import resolve_config_value
 
 from .error_logging import log_worker_failure
 from .metrics_calculation import _calculate_metrics_with_target, _calculate_multitarget_objectives
@@ -58,7 +59,7 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
         # otherwise the symfluence root's effective level). Never ERROR-gated:
         # that used to hide worker failures.
         config = task_data.get('config', {})
-        level_name = str(config.get('LOG_LEVEL', '') or '').upper()
+        level_name = str(resolve_config_value(config, lambda: config.system.log_level, '', 'LOG_LEVEL') or '').upper()
         level = getattr(logging, level_name, None) if level_name else None
         if not isinstance(level, int):
             level = None
@@ -90,8 +91,8 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
         has_streamflow_target = any(t.lower() in streamflow_aliases for t in targets_to_check if t)
 
         if has_streamflow_target:
-            domain_method = config.get('DOMAIN_DEFINITION_METHOD', 'lumped')
-            routing_delineation = config.get('ROUTING_DELINEATION', 'lumped')
+            domain_method = resolve_config_value(config, lambda: config.domain.definition_method, 'lumped', 'DOMAIN_DEFINITION_METHOD')
+            routing_delineation = resolve_config_value(config, lambda: config.domain.delineation.routing, 'lumped', 'ROUTING_DELINEATION')
 
             if domain_method not in ['point', 'lumped'] or (domain_method == 'lumped' and routing_delineation == 'river_network'):
                 needs_routing = True
@@ -157,7 +158,7 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
 
         # Run SUMMA
         debug_info['stage'] = 'summa_execution'
-        summa_timeout = int(config.get('SUMMA_TIMEOUT', 7200))
+        summa_timeout = int(resolve_config_value(config, lambda: config.model.summa.timeout, 7200, 'SUMMA_TIMEOUT'))
         logger.debug("Running SUMMA")
         summa_start = time.time()
         if not _run_summa_worker(summa_exe, file_manager, summa_dir, logger, debug_info, summa_settings_dir, timeout=summa_timeout, config=config):
@@ -196,8 +197,8 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
             # Check if we need lumped-to-distributed conversion
             debug_info['stage'] = 'lumped_to_distributed_conversion'
             config = task_data['config']
-            domain_method = config.get('DOMAIN_DEFINITION_METHOD', 'lumped')
-            routing_delineation = config.get('ROUTING_DELINEATION', 'river_network')
+            domain_method = resolve_config_value(config, lambda: config.domain.definition_method, 'lumped', 'DOMAIN_DEFINITION_METHOD')
+            routing_delineation = resolve_config_value(config, lambda: config.domain.delineation.routing, 'river_network', 'ROUTING_DELINEATION')
 
             # ONLY convert if domain is lumped but routing expects a network
             if domain_method in ['lumped', 'point'] and routing_delineation == 'river_network':
@@ -400,13 +401,13 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
                     }
 
                 config = task_data['config']
-                if config.get('SUMMA_GLACIER_MB_OBSERVATIONS'):
+                if resolve_config_value(config, lambda: config.model.summa.glacier_mb_observations, None, 'SUMMA_GLACIER_MB_OBSERVATIONS'):
                     metrics.update(_glacier_constraint(summa_dir, config))
 
                 # Extract target metric
                 target_metric = task_data['target_metric']
                 if str(target_metric).upper() == 'COMPOSITE':
-                    metrics['COMPOSITE'] = _composite_score(metrics, config.get('COMPOSITE_METRIC') or {})
+                    metrics['COMPOSITE'] = _composite_score(metrics, resolve_config_value(config, lambda: config.optimization.composite_metric, None, 'COMPOSITE_METRIC') or {})
                 score = metrics.get(target_metric) or metrics.get(f'Calib_{target_metric}')
 
                 if score is None:
@@ -492,8 +493,8 @@ def _glacier_constraint(summa_dir, config: Dict) -> Dict[str, float]:
     from ...cryosphere import glacier_metrics
 
     result = glacier_metrics(summa_dir, config['SUMMA_GLACIER_MB_OBSERVATIONS'],
-                             config.get('CALIBRATION_PERIOD', ''),
-                             config.get('SUMMA_GLACIER_MB_ERROR_SCALE', 1.0))
+                             resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD'),
+                             resolve_config_value(config, lambda: config.model.summa.glacier_mb_error_scale, 1.0, 'SUMMA_GLACIER_MB_ERROR_SCALE'))
     result['GLACIER_SCORE'] = result['glacier_score']
     return result
 
