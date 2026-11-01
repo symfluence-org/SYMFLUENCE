@@ -75,7 +75,7 @@ class BaseAttributeProcessor(ConfigMixin):
         self.logger.info(f'catchment path: {catchment_path}')
 
         catchment_name = self._get_config_value(
-            lambda: self.config.paths.catchment_shp_name,
+            lambda: self.config.paths.catchment_name,
             dict_key='CATCHMENT_SHP_NAME'
         )
         self.logger.info(f'catchment name: {catchment_name}')

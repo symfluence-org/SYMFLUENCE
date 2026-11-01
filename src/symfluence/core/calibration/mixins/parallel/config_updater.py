@@ -380,7 +380,7 @@ class ConfigurationUpdater(ConfigMixin):
             elif '<seg_outlet>' in line:
                 # Check if multi-gauge calibration is enabled
                 multi_gauge = self._get_config_value(
-                    lambda: self.config.calibration.multi_gauge,
+                    lambda: self.config.optimization.multi_gauge.calibration,
                     default=False,
                     dict_key='MULTI_GAUGE_CALIBRATION'
                 )

@@ -101,22 +101,9 @@ class PCRGLOBWBPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         )
 
     def _get_catchment_properties(self) -> Dict:
-        props = {'lat': 51.17, 'lon': -115.57, 'area_m2': 2.21e9}
-        try:
-            import geopandas as gpd
-            catchment_path = self.get_catchment_path()
-            if catchment_path.exists():
-                gdf = gpd.read_file(catchment_path)
-                centroid = gdf.geometry.centroid.iloc[0]
-                props['lat'] = centroid.y
-                props['lon'] = centroid.x
-                utm_zone = int((centroid.x + 180) / 6) + 1
-                hemisphere = 'north' if centroid.y >= 0 else 'south'
-                epsg = 32600 + utm_zone if hemisphere == 'north' else 32700 + utm_zone
-                props['area_m2'] = gdf.to_crs(f"EPSG:{epsg}").geometry.area.sum()
-        except Exception as e:  # noqa: BLE001
-            self.logger.warning(f"Could not read catchment properties: {e}")
-        return props
+        # Raises if the catchment shapefile is missing; never fall back to a
+        # default location (that silently builds the model somewhere else).
+        return self.get_catchment_location()
 
     def _build_domain_grid(self) -> None:
         """Build the model grid from the catchment bounding box.
@@ -533,7 +520,7 @@ class PCRGLOBWBPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
     def _get_forcing_path(self) -> Path:
         forcing_path = self._get_config_value(
-            lambda: self.config.data.forcing_path,
+            lambda: self.config.paths.forcing_path,
             default=None, dict_key='FORCING_PATH',
         )
         if forcing_path and forcing_path != 'default':

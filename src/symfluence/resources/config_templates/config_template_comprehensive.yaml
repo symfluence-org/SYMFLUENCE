@@ -198,35 +198,35 @@ HYPE_SPINUP_DAYS: 365
 # HYPE_INFILTRATION_MODEL
 #   Type:        Optional
 #   Default:     None
-#   Source:      HYPEConfig (model_configs_hydrology.py)
+#   Source:      HYPEConfig (models/hype/config_schema.py)
 #   Description: HYPE infiltration model option (info.txt modeloption)
 HYPE_INFILTRATION_MODEL: null
 
 # HYPE_PET_MODEL
 #   Type:        Optional
 #   Default:     None
-#   Source:      HYPEConfig (model_configs_hydrology.py)
+#   Source:      HYPEConfig (models/hype/config_schema.py)
 #   Description: HYPE potential evapotranspiration model option
 HYPE_PET_MODEL: null
 
 # HYPE_FROZEN_SOIL_MODEL
 #   Type:        Optional
 #   Default:     None
-#   Source:      HYPEConfig (model_configs_hydrology.py)
+#   Source:      HYPEConfig (models/hype/config_schema.py)
 #   Description: HYPE frozen soil model option
 HYPE_FROZEN_SOIL_MODEL: null
 
 # HYPE_SNOW_EVAPORATION
 #   Type:        Optional
 #   Default:     None
-#   Source:      HYPEConfig (model_configs_hydrology.py)
+#   Source:      HYPEConfig (models/hype/config_schema.py)
 #   Description: HYPE snow evaporation option
 HYPE_SNOW_EVAPORATION: null
 
 # HYPE_DEEP_GROUND
 #   Type:        Optional
 #   Default:     None
-#   Source:      HYPEConfig (model_configs_hydrology.py)
+#   Source:      HYPEConfig (models/hype/config_schema.py)
 #   Description: HYPE deep groundwater option
 HYPE_DEEP_GROUND: null
 
@@ -240,28 +240,28 @@ HYPE_GROUNDWATER_EXPORT: null
 # HYPE_SURFACE_RUNOFF
 #   Type:        Optional
 #   Default:     None
-#   Source:      HYPEConfig (model_configs_hydrology.py)
+#   Source:      HYPEConfig (models/hype/config_schema.py)
 #   Description: HYPE surface runoff option
 HYPE_SURFACE_RUNOFF: null
 
 # HYPE_SOIL_INIT_WET
 #   Type:        Optional
 #   Default:     None
-#   Source:      HYPEConfig (model_configs_hydrology.py)
+#   Source:      HYPEConfig (models/hype/config_schema.py)
 #   Description: Initialize soil moisture at field capacity
 HYPE_SOIL_INIT_WET: null
 
 # HYPE_SOIL_LAYER_DEPTHS
 #   Type:        Optional
 #   Default:     None
-#   Source:      HYPEConfig (model_configs_hydrology.py)
+#   Source:      HYPEConfig (models/hype/config_schema.py)
 #   Description: Soil layer depths (m) for GeoData generation
 HYPE_SOIL_LAYER_DEPTHS: null
 
 # HYPE_PARAM_BOUNDS
 #   Type:        Optional
 #   Default:     None
-#   Source:      HYPEConfig (model_configs_hydrology.py)
+#   Source:      HYPEConfig (models/hype/config_schema.py)
 #   Description: Hype Param Bounds
 HYPE_PARAM_BOUNDS: null
 
@@ -375,28 +375,28 @@ NGEN_MODULES_SELECTED: "SLOTH,PET,CFE"
 # SETTINGS_NGEN_REALIZATION
 #   Type:        Optional
 #   Default:     None
-#   Source:      NGENConfig (model_configs_hydrology.py)
+#   Source:      NGENConfig (models/ngen/config_schema.py)
 #   Description: Realization config filename (default realization_config.json)
 SETTINGS_NGEN_REALIZATION: null
 
 # CALIBRATION_NEXUS_ID
 #   Type:        Optional
 #   Default:     None
-#   Source:      NGENConfig (model_configs_hydrology.py)
+#   Source:      NGENConfig (models/ngen/config_schema.py)
 #   Description: Nexus ID whose output is used for calibration
 CALIBRATION_NEXUS_ID: null
 
 # CALIBRATION_WARMUP_DAYS
 #   Type:        Optional
 #   Default:     None
-#   Source:      NGENConfig (model_configs_hydrology.py)
+#   Source:      NGENConfig (models/ngen/config_schema.py)
 #   Description: Warmup days excluded from calibration metrics
 CALIBRATION_WARMUP_DAYS: null
 
 # EXPERIMENT_OUTPUT_NGEN
 #   Type:        str
 #   Default:     default
-#   Source:      NGENConfig (model_configs_hydrology.py)
+#   Source:      NGENConfig (models/ngen/config_schema.py)
 #   Description: Experiment Output Ngen
 EXPERIMENT_OUTPUT_NGEN: "default"
 
@@ -463,7 +463,7 @@ MESH_DS_MAIN_ID: default
 # MESH_RUNMODE
 #   Type:        str
 #   Default:     default
-#   Source:      MESHConfig (model_configs_hydrology.py)
+#   Source:      MESHConfig (models/mesh/config_schema.py)
 #   Usage:      1
 MESH_RUNMODE: default
 
@@ -659,91 +659,91 @@ MESH_DAILY_TOLERANCE_DAYS: 1
 # MESH_PARAM_BOUNDS
 #   Type:        Optional
 #   Default:     None
-#   Source:      MESHConfig (model_configs_hydrology.py)
+#   Source:      MESHConfig (models/mesh/config_schema.py)
 #   Description: Mesh Param Bounds
 MESH_PARAM_BOUNDS: null
 
 # MESH_SOIL_SAND
 #   Type:        Optional[List[float]]
 #   Default:     None
-#   Source:      MESHConfig (model_configs_hydrology.py)
+#   Source:      MESHConfig (models/mesh/config_schema.py)
 #   Description: Override per-layer soil SAND percentage (CLASS line 14) across all GRU blocks.
 MESH_SOIL_SAND: null
 
 # MESH_SOIL_CLAY
 #   Type:        Optional[List[float]]
 #   Default:     None
-#   Source:      MESHConfig (model_configs_hydrology.py)
+#   Source:      MESHConfig (models/mesh/config_schema.py)
 #   Description: Override per-layer soil CLAY percentage (CLASS line 15).
 MESH_SOIL_CLAY: null
 
 # MESH_SOIL_ORGM
 #   Type:        Optional[List[float]]
 #   Default:     None
-#   Source:      MESHConfig (model_configs_hydrology.py)
+#   Source:      MESHConfig (models/mesh/config_schema.py)
 #   Description: Override per-layer soil organic matter fraction (CLASS line 16).
 MESH_SOIL_ORGM: null
 
 # MESH_DD
 #   Type:        Optional[float]
 #   Default:     None
-#   Source:      MESHConfig (model_configs_hydrology.py)
+#   Source:      MESHConfig (models/mesh/config_schema.py)
 #   Description: Override CLASS drainage density DD (line 12, DRN/SDEP/FARE/DD).
 MESH_DD: null
 
 # MESH_MID
 #   Type:        Optional[int]
 #   Default:     None
-#   Source:      MESHConfig (model_configs_hydrology.py)
+#   Source:      MESHConfig (models/mesh/config_schema.py)
 #   Description: Override CLASS MID soil-layer flag (line 13, XSLP/XDRAINH/MANN/KSAT/MID).
 MESH_MID: null
 
 # MESH_INIT_TBAR
 #   Type:        Optional[List[float]]
 #   Default:     None
-#   Source:      MESHConfig (model_configs_hydrology.py)
+#   Source:      MESHConfig (models/mesh/config_schema.py)
 #   Description: Override initial soil-layer temperatures TBAR (CLASS line 17).
 MESH_INIT_TBAR: null
 
 # MESH_INIT_THLQ
 #   Type:        Optional[List[float]]
 #   Default:     None
-#   Source:      MESHConfig (model_configs_hydrology.py)
+#   Source:      MESHConfig (models/mesh/config_schema.py)
 #   Description: Override initial liquid soil-moisture THLQ (CLASS line 18).
 MESH_INIT_THLQ: null
 
 # MESH_VEG_CMAS
 #   Type:        Optional[float]
 #   Default:     None
-#   Source:      MESHConfig (model_configs_hydrology.py)
+#   Source:      MESHConfig (models/mesh/config_schema.py)
 #   Description: Override CLASS canopy mass CMAS (line 07, 4xCMAS).
 MESH_VEG_CMAS: null
 
 # MESH_VEG_QA50
 #   Type:        Optional[float]
 #   Default:     None
-#   Source:      MESHConfig (model_configs_hydrology.py)
+#   Source:      MESHConfig (models/mesh/config_schema.py)
 #   Description: Override CLASS reference VPD QA50 (line 09, 4xQA50).
 MESH_VEG_QA50: null
 
 # MESH_VEG_VPDA
 #   Type:        Optional[float]
 #   Default:     None
-#   Source:      MESHConfig (model_configs_hydrology.py)
+#   Source:      MESHConfig (models/mesh/config_schema.py)
 #   Description: Override CLASS VPD slope VPDA (line 10, 4xVPDA).
 MESH_VEG_VPDA: null
 
 # MESH_VEG_VPDB
 #   Type:        Optional[float]
 #   Default:     None
-#   Source:      MESHConfig (model_configs_hydrology.py)
+#   Source:      MESHConfig (models/mesh/config_schema.py)
 #   Description: Override CLASS VPD exponent VPDB (line 10, 4xVPDB).
 MESH_VEG_VPDB: null
 
 # MESH_IWF
 #   Type:        Optional[int]
 #   Default:     None
-#   Source:      MESHConfig (model_configs_hydrology.py)
+#   Source:      MESHConfig (models/mesh/config_schema.py)
 #   Description: Override interflow flag IWF in hydrology.ini (0=off, 1=on).
 MESH_IWF: null
 
@@ -946,7 +946,7 @@ MIZUROUTE_TIMEOUT: 3600
 # MIZUROUTE_NUM_THREADS
 #   Type:        Optional
 #   Default:     None
-#   Source:      MizuRouteConfig (model_configs_routing.py)
+#   Source:      MizuRouteConfig (models/mizuroute/config_schema.py)
 #   Description: OpenMP thread count for the mizuRoute subprocess
 MIZUROUTE_NUM_THREADS: null
 
@@ -1181,14 +1181,14 @@ LSTM_TRAIN_THROUGH_ROUTING: false
 # LSTM_PARAMS_TO_CALIBRATE
 #   Type:        Optional
 #   Default:     None
-#   Source:      LSTMConfig (model_configs_ml_fire.py)
+#   Source:      LSTMConfig (models/lstm/config_schema.py)
 #   Description: Comma-separated parameter names for LSTM calibration
 LSTM_PARAMS_TO_CALIBRATE: null
 
 # LSTM_PARAMETER_BOUNDS
 #   Type:        Optional
 #   Default:     None
-#   Source:      LSTMConfig (model_configs_ml_fire.py)
+#   Source:      LSTMConfig (models/lstm/config_schema.py)
 #   Description: Lstm Parameter Bounds
 LSTM_PARAMETER_BOUNDS: null
 
@@ -3312,28 +3312,28 @@ DATATOOL_PATH: default
 #   Type:        str
 #   Default:     None
 #   Source:      DataConfig (data.py)
-#   Usage:      MAF / datatool job submission account (acquisition.maf_processor)
+#   Usage:      MAF / datatool job submission account (unused; legacy key)
 TOOL_ACCOUNT: default
 
 # UNIFY_SOIL
 #   Type:        bool
 #   Default:     false
 #   Source:      DataConfig (data.py)
-#   Usage:      Collapse soil majority to a single class (acquisition.cleanup_processor)
+#   Usage:      Collapse soil majority to a single class (unused; legacy key)
 UNIFY_SOIL: false
 
 # MINIMUM_LAND_FRACTION
 #   Type:        float
 #   Default:     0.01
 #   Source:      DataConfig (data.py)
-#   Usage:      Drop land-cover fractions below this threshold (acquisition.cleanup_processor)
+#   Usage:      Drop land-cover fractions below this threshold (unused; legacy key)
 MINIMUM_LAND_FRACTION: 0.01
 
 # NUM_LAND_COVER
 #   Type:        int
 #   Default:     20
 #   Source:      DataConfig (data.py)
-#   Usage:      Number of land-cover classes to pad to (acquisition.cleanup_processor)
+#   Usage:      Number of land-cover classes to pad to (unused; legacy key)
 NUM_LAND_COVER: 20
 
 # EASYMORE_CACHE
@@ -5011,14 +5011,14 @@ FUSE_TIMEOUT: 3600
 # FUSE_RUN_MODE
 #   Type:        Optional
 #   Default:     None
-#   Source:      FUSEConfig (model_configs_hydrology.py)
+#   Source:      FUSEConfig (models/fuse/config_schema.py)
 #   Description: FUSE execution mode (e.g. 'run_pre', 'run_def')
 FUSE_RUN_MODE: null
 
 # FUSE_TEMPLATE_PATH
 #   Type:        Optional
 #   Default:     None
-#   Source:      FUSEConfig (model_configs_hydrology.py)
+#   Source:      FUSEConfig (models/fuse/config_schema.py)
 #   Description: Path to FUSE settings template directory
 FUSE_TEMPLATE_PATH: null
 
@@ -5074,28 +5074,28 @@ TRANSFER_FUNCTION_COEFF_BOUNDS: null
 # TRANSFER_FUNCTION_ATTRIBUTES
 #   Type:        str | None
 #   Default:     None
-#   Source:      SUMMAConfig (model_configs_hydrology.py)
+#   Source:      SUMMAConfig (models/summa/config_schema.py)
 #   Description: Path to attributes file used by transfer functions for parameter regionalization
 TRANSFER_FUNCTION_ATTRIBUTES: null
 
 # TRANSFER_FUNCTION_PARAM_CONFIG
 #   Type:        dict | None
 #   Default:     None
-#   Source:      SUMMAConfig (model_configs_hydrology.py)
+#   Source:      SUMMAConfig (models/summa/config_schema.py)
 #   Description: Configuration dictionary mapping parameters to transfer function specifications
 TRANSFER_FUNCTION_PARAM_CONFIG: null
 
 # FUSE_SOLUTION_METHOD
 #   Type:        int | None
 #   Default:     None
-#   Source:      FUSEConfig (model_configs_hydrology.py)
+#   Source:      FUSEConfig (models/fuse/config_schema.py)
 #   Description: Numerical solver: 0=explicit Euler (fast), 1=implicit Euler (stable). Default: 0
 FUSE_SOLUTION_METHOD: null
 
 # FUSE_TIMESTEP_TYPE
 #   Type:        int | None
 #   Default:     None
-#   Source:      FUSEConfig (model_configs_hydrology.py)
+#   Source:      FUSEConfig (models/fuse/config_schema.py)
 #   Description: Timestep control: 0=fixed, 1=adaptive. Default: 0
 FUSE_TIMESTEP_TYPE: null
 
@@ -5198,7 +5198,7 @@ GR_INITIAL_PARAMS: "default"
 # GR_MODEL_TYPE
 #   Type:        Optional
 #   Default:     None
-#   Source:      GRConfig (model_configs_hydrology.py)
+#   Source:      GRConfig (models/gr/config_schema.py)
 #   Description: GR model variant (e.g. 'GR4J', 'GR5J'); default GR4J
 GR_MODEL_TYPE: null
 
@@ -5328,7 +5328,7 @@ VIC_TIMEOUT: 7200
 # VIC_PARAM_BOUNDS
 #   Type:        Optional
 #   Default:     None
-#   Source:      VICConfig (model_configs_hydrology.py)
+#   Source:      VICConfig (models/vic/config_schema.py)
 #   Description: Vic Param Bounds
 VIC_PARAM_BOUNDS: null
 
@@ -5430,7 +5430,7 @@ CLM_WARMUP_DAYS: 365
 # CLM_PARAM_BOUNDS
 #   Type:        Optional
 #   Default:     None
-#   Source:      CLMConfig (model_configs_hydrology.py)
+#   Source:      CLMConfig (models/clm/config_schema.py)
 #   Description: Clm Param Bounds
 CLM_PARAM_BOUNDS: null
 
@@ -5933,7 +5933,7 @@ PARFLOW_TIMEOUT: 3600
 # PARFLOW_PARAM_BOUNDS
 #   Type:        Optional
 #   Default:     None
-#   Source:      ParFlowConfig (model_configs_integrated.py)
+#   Source:      ParFlowConfig (models/parflow/config_schema.py)
 #   Description: Parflow Param Bounds
 PARFLOW_PARAM_BOUNDS: null
 
@@ -6397,7 +6397,7 @@ RHESSYS_USE_GROW_MODE: true
 # RHESSYS_PARAM_BOUNDS
 #   Type:        Optional
 #   Default:     None
-#   Source:      RHESSysConfig (model_configs_hydrology.py)
+#   Source:      RHESSysConfig (models/rhessys/config_schema.py)
 #   Description: Rhessys Param Bounds
 RHESSYS_PARAM_BOUNDS: null
 
@@ -6681,175 +6681,175 @@ IGNACIO_COMPARE_WMFIRE: false
 # IGNACIO_RANDOM_SEED
 #   Type:        int
 #   Default:     42
-#   Source:      IGNACIOConfig (model_configs_ml_fire.py)
+#   Source:      IGNACIOConfig (models/ignacio/config_schema.py)
 #   Description: Random seed for reproducibility
 IGNACIO_RANDOM_SEED: 42
 
 # IGNACIO_WORKING_CRS
 #   Type:        str
 #   Default:     EPSG:4326
-#   Source:      IGNACIOConfig (model_configs_ml_fire.py)
+#   Source:      IGNACIOConfig (models/ignacio/config_schema.py)
 #   Description: Working coordinate reference system
 IGNACIO_WORKING_CRS: "EPSG:4326"
 
 # IGNACIO_OUTPUT_CRS
 #   Type:        Optional
 #   Default:     None
-#   Source:      IGNACIOConfig (model_configs_ml_fire.py)
+#   Source:      IGNACIOConfig (models/ignacio/config_schema.py)
 #   Description: Output CRS (defaults to working_crs)
 IGNACIO_OUTPUT_CRS: null
 
 # IGNACIO_SLOPE_PATH
 #   Type:        Optional
 #   Default:     None
-#   Source:      IGNACIOConfig (model_configs_ml_fire.py)
+#   Source:      IGNACIOConfig (models/ignacio/config_schema.py)
 #   Description: Path to pre-computed slope raster (optional)
 IGNACIO_SLOPE_PATH: null
 
 # IGNACIO_ASPECT_PATH
 #   Type:        Optional
 #   Default:     None
-#   Source:      IGNACIOConfig (model_configs_ml_fire.py)
+#   Source:      IGNACIOConfig (models/ignacio/config_schema.py)
 #   Description: Path to pre-computed aspect raster (optional)
 IGNACIO_ASPECT_PATH: null
 
 # IGNACIO_FUEL_SOURCE_TYPE
 #   Type:        Literal
 #   Default:     raster
-#   Source:      IGNACIOConfig (model_configs_ml_fire.py)
+#   Source:      IGNACIOConfig (models/ignacio/config_schema.py)
 #   Description: Type of fuel data source
 IGNACIO_FUEL_SOURCE_TYPE: "raster"
 
 # IGNACIO_NON_FUEL_CODES
 #   Type:        List
 #   Default:     [0, 100, 101, 102, -9999]
-#   Source:      IGNACIOConfig (model_configs_ml_fire.py)
+#   Source:      IGNACIOConfig (models/ignacio/config_schema.py)
 #   Description: Raster codes to treat as non-fuel
 IGNACIO_NON_FUEL_CODES: [0, 100, 101, 102, -9999]
 
 # IGNACIO_IGNITION_CAUSE
 #   Type:        str
 #   Default:     Lightning
-#   Source:      IGNACIOConfig (model_configs_ml_fire.py)
+#   Source:      IGNACIOConfig (models/ignacio/config_schema.py)
 #   Description: Cause of ignition
 IGNACIO_IGNITION_CAUSE: "Lightning"
 
 # IGNACIO_N_ITERATIONS
 #   Type:        int
 #   Default:     1
-#   Source:      IGNACIOConfig (model_configs_ml_fire.py)
+#   Source:      IGNACIOConfig (models/ignacio/config_schema.py)
 #   Description: Number of simulation iterations
 IGNACIO_N_ITERATIONS: 1
 
 # IGNACIO_FWI_LATITUDE
 #   Type:        Optional
 #   Default:     None
-#   Source:      IGNACIOConfig (model_configs_ml_fire.py)
+#   Source:      IGNACIOConfig (models/ignacio/config_schema.py)
 #   Description: Latitude for FWI day length adjustment
 IGNACIO_FWI_LATITUDE: null
 
 # IGNACIO_DEFAULT_FFMC
 #   Type:        float
 #   Default:     88.0
-#   Source:      IGNACIOConfig (model_configs_ml_fire.py)
+#   Source:      IGNACIOConfig (models/ignacio/config_schema.py)
 #   Description: Default Fine Fuel Moisture Code
 IGNACIO_DEFAULT_FFMC: 88.0
 
 # IGNACIO_DEFAULT_DMC
 #   Type:        float
 #   Default:     30.0
-#   Source:      IGNACIOConfig (model_configs_ml_fire.py)
+#   Source:      IGNACIOConfig (models/ignacio/config_schema.py)
 #   Description: Default Duff Moisture Code
 IGNACIO_DEFAULT_DMC: 30.0
 
 # IGNACIO_DEFAULT_DC
 #   Type:        float
 #   Default:     150.0
-#   Source:      IGNACIOConfig (model_configs_ml_fire.py)
+#   Source:      IGNACIOConfig (models/ignacio/config_schema.py)
 #   Description: Default Drought Code
 IGNACIO_DEFAULT_DC: 150.0
 
 # IGNACIO_DEFAULT_ISI
 #   Type:        float
 #   Default:     5.0
-#   Source:      IGNACIOConfig (model_configs_ml_fire.py)
+#   Source:      IGNACIOConfig (models/ignacio/config_schema.py)
 #   Description: Default Initial Spread Index
 IGNACIO_DEFAULT_ISI: 5.0
 
 # IGNACIO_DEFAULT_BUI
 #   Type:        float
 #   Default:     50.0
-#   Source:      IGNACIOConfig (model_configs_ml_fire.py)
+#   Source:      IGNACIOConfig (models/ignacio/config_schema.py)
 #   Description: Default Buildup Index
 IGNACIO_DEFAULT_BUI: 50.0
 
 # IGNACIO_FMC
 #   Type:        float
 #   Default:     100.0
-#   Source:      IGNACIOConfig (model_configs_ml_fire.py)
+#   Source:      IGNACIOConfig (models/ignacio/config_schema.py)
 #   Description: Foliar Moisture Content (%)
 IGNACIO_FMC: 100.0
 
 # IGNACIO_CURING
 #   Type:        float
 #   Default:     85.0
-#   Source:      IGNACIOConfig (model_configs_ml_fire.py)
+#   Source:      IGNACIOConfig (models/ignacio/config_schema.py)
 #   Description: Grass curing percentage
 IGNACIO_CURING: 85.0
 
 # IGNACIO_N_VERTICES
 #   Type:        int
 #   Default:     300
-#   Source:      IGNACIOConfig (model_configs_ml_fire.py)
+#   Source:      IGNACIOConfig (models/ignacio/config_schema.py)
 #   Description: Number of vertices for fire perimeter
 IGNACIO_N_VERTICES: 300
 
 # IGNACIO_INITIAL_RADIUS
 #   Type:        float
 #   Default:     10.0
-#   Source:      IGNACIOConfig (model_configs_ml_fire.py)
+#   Source:      IGNACIOConfig (models/ignacio/config_schema.py)
 #   Description: Initial fire radius in meters
 IGNACIO_INITIAL_RADIUS: 10.0
 
 # IGNACIO_MIN_ROS
 #   Type:        float
 #   Default:     0.01
-#   Source:      IGNACIOConfig (model_configs_ml_fire.py)
+#   Source:      IGNACIOConfig (models/ignacio/config_schema.py)
 #   Description: Minimum rate of spread threshold
 IGNACIO_MIN_ROS: 0.01
 
 # IGNACIO_TIME_VARYING_WEATHER
 #   Type:        bool
 #   Default:     True
-#   Source:      IGNACIOConfig (model_configs_ml_fire.py)
+#   Source:      IGNACIOConfig (models/ignacio/config_schema.py)
 #   Description: Use time-varying weather during simulation
 IGNACIO_TIME_VARYING_WEATHER: true
 
 # IGNACIO_SAVE_ROS_GRIDS
 #   Type:        bool
 #   Default:     True
-#   Source:      IGNACIOConfig (model_configs_ml_fire.py)
+#   Source:      IGNACIOConfig (models/ignacio/config_schema.py)
 #   Description: Save rate of spread grids
 IGNACIO_SAVE_ROS_GRIDS: true
 
 # IGNACIO_PERIMETER_FORMAT
 #   Type:        Literal
 #   Default:     shapefile
-#   Source:      IGNACIOConfig (model_configs_ml_fire.py)
+#   Source:      IGNACIOConfig (models/ignacio/config_schema.py)
 #   Description: Output format for perimeter files
 IGNACIO_PERIMETER_FORMAT: "shapefile"
 
 # IGNACIO_GENERATE_PLOTS
 #   Type:        bool
 #   Default:     True
-#   Source:      IGNACIOConfig (model_configs_ml_fire.py)
+#   Source:      IGNACIOConfig (models/ignacio/config_schema.py)
 #   Description: Generate visualization plots
 IGNACIO_GENERATE_PLOTS: true
 
 # IGNACIO_OBSERVED_PERIMETER
 #   Type:        Optional
 #   Default:     None
-#   Source:      IGNACIOConfig (model_configs_ml_fire.py)
+#   Source:      IGNACIOConfig (models/ignacio/config_schema.py)
 #   Description: Path to observed fire perimeter for validation
 IGNACIO_OBSERVED_PERIMETER: null
 
@@ -6937,14 +6937,14 @@ GNN_PARAMETER_BOUNDS: null
 # GNN_OUTPUT_SIZE
 #   Type:        int
 #   Default:     32
-#   Source:      GNNConfig (model_configs_ml_fire.py)
+#   Source:      GNNConfig (models/gnn/config_schema.py)
 #   Description: Gnn Output Size
 GNN_OUTPUT_SIZE: 32
 
 # GNN_USE_SNOW
 #   Type:        bool
 #   Default:     False
-#   Source:      GNNConfig (model_configs_ml_fire.py)
+#   Source:      GNNConfig (models/gnn/config_schema.py)
 #   Description: Gnn Use Snow
 GNN_USE_SNOW: false
 
@@ -7799,77 +7799,77 @@ WATFLOOD_TIMEOUT: 3600
 # WFLOW_INSTALL_PATH
 #   Type:        str
 #   Default:     default
-#   Source:      WflowConfig (model_configs_hydrology.py)
+#   Source:      WflowConfig (models/wflow/config_schema.py)
 #   Usage:      4
 WFLOW_INSTALL_PATH: default
 
 # WFLOW_EXE
 #   Type:        str
 #   Default:     wflow_cli
-#   Source:      WflowConfig (model_configs_hydrology.py)
+#   Source:      WflowConfig (models/wflow/config_schema.py)
 #   Usage:      4
 WFLOW_EXE: "wflow_cli"
 
 # SETTINGS_WFLOW_PATH
 #   Type:        str
 #   Default:     default
-#   Source:      WflowConfig (model_configs_hydrology.py)
+#   Source:      WflowConfig (models/wflow/config_schema.py)
 #   Usage:      4
 SETTINGS_WFLOW_PATH: default
 
 # WFLOW_CONFIG_FILE
 #   Type:        str
 #   Default:     wflow_sbm.toml
-#   Source:      WflowConfig (model_configs_hydrology.py)
+#   Source:      WflowConfig (models/wflow/config_schema.py)
 #   Usage:      3
 WFLOW_CONFIG_FILE: "wflow_sbm.toml"
 
 # WFLOW_STATICMAPS_FILE
 #   Type:        str
 #   Default:     wflow_staticmaps.nc
-#   Source:      WflowConfig (model_configs_hydrology.py)
+#   Source:      WflowConfig (models/wflow/config_schema.py)
 #   Usage:      3
 WFLOW_STATICMAPS_FILE: "wflow_staticmaps.nc"
 
 # WFLOW_SPATIAL_MODE
 #   Type:        str
 #   Default:     lumped
-#   Source:      WflowConfig (model_configs_hydrology.py)
+#   Source:      WflowConfig (models/wflow/config_schema.py)
 #   Usage:      3
 WFLOW_SPATIAL_MODE: "lumped"
 
 # EXPERIMENT_OUTPUT_WFLOW
 #   Type:        str
 #   Default:     default
-#   Source:      WflowConfig (model_configs_hydrology.py)
+#   Source:      WflowConfig (models/wflow/config_schema.py)
 #   Usage:      3
 EXPERIMENT_OUTPUT_WFLOW: default
 
 # WFLOW_OUTPUT_FILE
 #   Type:        str
 #   Default:     output.nc
-#   Source:      WflowConfig (model_configs_hydrology.py)
+#   Source:      WflowConfig (models/wflow/config_schema.py)
 #   Usage:      3
 WFLOW_OUTPUT_FILE: "output.nc"
 
 # WFLOW_PET_METHOD
 #   Type:        str
 #   Default:     oudin
-#   Source:      WflowConfig (model_configs_hydrology.py)
+#   Source:      WflowConfig (models/wflow/config_schema.py)
 #   Usage:      3
 WFLOW_PET_METHOD: "oudin"
 
 # WFLOW_PARAMS_TO_CALIBRATE
 #   Type:        str
 #   Default:     KsatVer,f,SoilThickness,InfiltCapPath,RootingDepth,KsatHorFrac,n_river,PathFrac,thetaS,thetaR
-#   Source:      WflowConfig (model_configs_hydrology.py)
+#   Source:      WflowConfig (models/wflow/config_schema.py)
 #   Usage:      4
 WFLOW_PARAMS_TO_CALIBRATE: KsatVer,f,SoilThickness,InfiltCapPath,RootingDepth,KsatHorFrac,n_river,PathFrac,thetaS,thetaR
 
 # WFLOW_TIMEOUT
 #   Type:        int
 #   Default:     7200
-#   Source:      WflowConfig (model_configs_hydrology.py)
+#   Source:      WflowConfig (models/wflow/config_schema.py)
 #   Usage:      3
 WFLOW_TIMEOUT: 7200
 
@@ -7878,91 +7878,91 @@ WFLOW_TIMEOUT: 7200
 # LISFLOOD_INSTALL_PATH
 #   Type:        str
 #   Default:     default
-#   Source:      LisfloodConfig (model_configs_hydrology.py)
+#   Source:      LisfloodConfig (models/lisflood/config_schema.py)
 #   Usage:      1
 LISFLOOD_INSTALL_PATH: default
 
 # LISFLOOD_EXE
 #   Type:        str
 #   Default:     lisflood
-#   Source:      LisfloodConfig (model_configs_hydrology.py)
+#   Source:      LisfloodConfig (models/lisflood/config_schema.py)
 #   Usage:      1
 LISFLOOD_EXE: "lisflood"
 
 # SETTINGS_LISFLOOD_PATH
 #   Type:        str
 #   Default:     default
-#   Source:      LisfloodConfig (model_configs_hydrology.py)
+#   Source:      LisfloodConfig (models/lisflood/config_schema.py)
 #   Usage:      1
 SETTINGS_LISFLOOD_PATH: default
 
 # LISFLOOD_SETTINGS_FILE
 #   Type:        str
 #   Default:     settings.xml
-#   Source:      LisfloodConfig (model_configs_hydrology.py)
+#   Source:      LisfloodConfig (models/lisflood/config_schema.py)
 #   Usage:      3
 LISFLOOD_SETTINGS_FILE: "settings.xml"
 
 # LISFLOOD_SPATIAL_MODE
 #   Type:        SpatialModeType
 #   Default:     lumped
-#   Source:      LisfloodConfig (model_configs_hydrology.py)
+#   Source:      LisfloodConfig (models/lisflood/config_schema.py)
 #   Usage:      2
 LISFLOOD_SPATIAL_MODE: "lumped"
 
 # EXPERIMENT_OUTPUT_LISFLOOD
 #   Type:        str
 #   Default:     default
-#   Source:      LisfloodConfig (model_configs_hydrology.py)
+#   Source:      LisfloodConfig (models/lisflood/config_schema.py)
 #   Usage:      1
 EXPERIMENT_OUTPUT_LISFLOOD: default
 
 # LISFLOOD_PCRASTER_PATH
 #   Type:        str
 #   Default:     default
-#   Source:      LisfloodConfig (model_configs_hydrology.py)
+#   Source:      LisfloodConfig (models/lisflood/config_schema.py)
 #   Usage:      1
 LISFLOOD_PCRASTER_PATH: default
 
 # LISFLOOD_NUM_THREADS
 #   Type:        int
 #   Default:     1
-#   Source:      LisfloodConfig (model_configs_hydrology.py)
+#   Source:      LisfloodConfig (models/lisflood/config_schema.py)
 #   Usage:      1
 LISFLOOD_NUM_THREADS: 1
 
 # LISFLOOD_PET_METHOD
 #   Type:        str
 #   Default:     oudin
-#   Source:      LisfloodConfig (model_configs_hydrology.py)
+#   Source:      LisfloodConfig (models/lisflood/config_schema.py)
 #   Usage:      2
 LISFLOOD_PET_METHOD: "oudin"
 
 # LISFLOOD_FOREST_FRACTION
 #   Type:        float
 #   Default:     0.3
-#   Source:      LisfloodConfig (model_configs_hydrology.py)
+#   Source:      LisfloodConfig (models/lisflood/config_schema.py)
 #   Usage:      1
 LISFLOOD_FOREST_FRACTION: 0.3
 
 # LISFLOOD_FORCING_TIMESTEP
 #   Type:        int
 #   Default:     86400 (daily). Set to 3600 for hourly.
-#   Source:      LisfloodConfig (model_configs_hydrology.py)
+#   Source:      LisfloodConfig (models/lisflood/config_schema.py)
 #   Usage:      2
 LISFLOOD_FORCING_TIMESTEP: 86400
 
 # LISFLOOD_PARAMS_TO_CALIBRATE
 #   Type:        str
 #   Default:     ksat1,ksat2,ksat3,lambda1,lambda2,lambda3,thetas1,thetas2,thetas3,chanman,mannings,cropcoef,snow_melt_coef,temp_melt,temp_snow,GwPercValue
-#   Source:      LisfloodConfig (model_configs_hydrology.py)
+#   Source:      LisfloodConfig (models/lisflood/config_schema.py)
 #   Usage:      1
 LISFLOOD_PARAMS_TO_CALIBRATE: ksat1,ksat2,ksat3,lambda1,lambda2,lambda3,thetas1,thetas2,thetas3,chanman,mannings,cropcoef,snow_melt_coef,temp_melt,temp_snow,GwPercValue
 
 # LISFLOOD_TIMEOUT
 #   Type:        int
 #   Default:     7200
-#   Source:      LisfloodConfig (model_configs_hydrology.py)
+#   Source:      LisfloodConfig (models/lisflood/config_schema.py)
 #   Usage:      3
 LISFLOOD_TIMEOUT: 7200
 
@@ -7971,126 +7971,126 @@ LISFLOOD_TIMEOUT: 7200
 # PCRGLOBWB_INSTALL_PATH
 #   Type:        str
 #   Default:     default
-#   Source:      PCRGLOBWBConfig (model_configs_hydrology.py)
+#   Source:      PCRGLOBWBConfig (models/pcrglobwb/config_schema.py)
 #   Usage:      Path to the cloned PCR-GLOBWB repository
 PCRGLOBWB_INSTALL_PATH: default
 
 # PCRGLOBWB_EXE
 #   Type:        str
 #   Default:     deterministic_runner.py
-#   Source:      PCRGLOBWBConfig (model_configs_hydrology.py)
+#   Source:      PCRGLOBWBConfig (models/pcrglobwb/config_schema.py)
 #   Usage:      Name of the PCR-GLOBWB runner script
 PCRGLOBWB_EXE: "deterministic_runner.py"
 
 # PCRGLOBWB_PYTHON_EXE
 #   Type:        str
 #   Default:     python
-#   Source:      PCRGLOBWBConfig (model_configs_hydrology.py)
+#   Source:      PCRGLOBWBConfig (models/pcrglobwb/config_schema.py)
 #   Usage:      Python executable with PCRaster installed (e.g., conda env)
 PCRGLOBWB_PYTHON_EXE: "python"
 
 # SETTINGS_PCRGLOBWB_PATH
 #   Type:        str
 #   Default:     default
-#   Source:      PCRGLOBWBConfig (model_configs_hydrology.py)
+#   Source:      PCRGLOBWBConfig (models/pcrglobwb/config_schema.py)
 #   Usage:      Path to PCR-GLOBWB settings directory
 SETTINGS_PCRGLOBWB_PATH: default
 
 # PCRGLOBWB_CONFIG_FILE
 #   Type:        str
 #   Default:     setup.ini
-#   Source:      PCRGLOBWBConfig (model_configs_hydrology.py)
+#   Source:      PCRGLOBWBConfig (models/pcrglobwb/config_schema.py)
 #   Usage:      Name of the INI configuration file
 PCRGLOBWB_CONFIG_FILE: "setup.ini"
 
 # PCRGLOBWB_CLONE_MAP
 #   Type:        str
 #   Default:     clone.map
-#   Source:      PCRGLOBWBConfig (model_configs_hydrology.py)
+#   Source:      PCRGLOBWBConfig (models/pcrglobwb/config_schema.py)
 #   Usage:      PCRaster clone map defining the grid domain
 PCRGLOBWB_CLONE_MAP: "clone.map"
 
 # PCRGLOBWB_RESOLUTION
 #   Type:        str
 #   Default:     05min
-#   Source:      PCRGLOBWBConfig (model_configs_hydrology.py)
+#   Source:      PCRGLOBWBConfig (models/pcrglobwb/config_schema.py)
 #   Usage:      Spatial resolution: '05min' (~10km) or '30min' (~50km)
 PCRGLOBWB_RESOLUTION: "05min"
 
 # PCRGLOBWB_SPATIAL_MODE
 #   Type:        str
 #   Default:     distributed
-#   Source:      PCRGLOBWBConfig (model_configs_hydrology.py)
+#   Source:      PCRGLOBWBConfig (models/pcrglobwb/config_schema.py)
 #   Usage:      Spatial mode for the model run
 PCRGLOBWB_SPATIAL_MODE: "distributed"
 
 # EXPERIMENT_OUTPUT_PCRGLOBWB
 #   Type:        str
 #   Default:     default
-#   Source:      PCRGLOBWBConfig (model_configs_hydrology.py)
+#   Source:      PCRGLOBWBConfig (models/pcrglobwb/config_schema.py)
 #   Usage:      Experiment output directory for PCR-GLOBWB
 EXPERIMENT_OUTPUT_PCRGLOBWB: default
 
 # PCRGLOBWB_OUTPUT_DIR
 #   Type:        str
 #   Default:     default
-#   Source:      PCRGLOBWBConfig (model_configs_hydrology.py)
+#   Source:      PCRGLOBWBConfig (models/pcrglobwb/config_schema.py)
 #   Usage:      Output directory for PCR-GLOBWB results
 PCRGLOBWB_OUTPUT_DIR: default
 
 # PCRGLOBWB_SPINUP_YEARS
 #   Type:        int
 #   Default:     0
-#   Source:      PCRGLOBWBConfig (model_configs_hydrology.py)
+#   Source:      PCRGLOBWBConfig (models/pcrglobwb/config_schema.py)
 #   Usage:      Number of spin-up years (0 = no spin-up)
 PCRGLOBWB_SPINUP_YEARS: 0
 
 # PCRGLOBWB_SPINUP_CONVERGENCE
 #   Type:        bool
 #   Default:     False
-#   Source:      PCRGLOBWBConfig (model_configs_hydrology.py)
+#   Source:      PCRGLOBWBConfig (models/pcrglobwb/config_schema.py)
 #   Usage:      Enable convergence checking during spin-up
 PCRGLOBWB_SPINUP_CONVERGENCE: False
 
 # PCRGLOBWB_USE_OPENDAP
 #   Type:        bool
 #   Default:     False
-#   Source:      PCRGLOBWBConfig (model_configs_hydrology.py)
+#   Source:      PCRGLOBWBConfig (models/pcrglobwb/config_schema.py)
 #   Usage:      Read global inputs from 4TU OPeNDAP server
 PCRGLOBWB_USE_OPENDAP: False
 
 # PCRGLOBWB_INPUT_DIR
 #   Type:        str
 #   Default:     default
-#   Source:      PCRGLOBWBConfig (model_configs_hydrology.py)
+#   Source:      PCRGLOBWBConfig (models/pcrglobwb/config_schema.py)
 #   Usage:      Path to PCR-GLOBWB input data directory
 PCRGLOBWB_INPUT_DIR: default
 
 # PCRGLOBWB_MET_FORCING_DIR
 #   Type:        str
 #   Default:     default
-#   Source:      PCRGLOBWBConfig (model_configs_hydrology.py)
+#   Source:      PCRGLOBWBConfig (models/pcrglobwb/config_schema.py)
 #   Usage:      Path to meteorological forcing data
 PCRGLOBWB_MET_FORCING_DIR: default
 
 # PCRGLOBWB_PET_METHOD
 #   Type:        str
 #   Default:     hamon
-#   Source:      PCRGLOBWBConfig (model_configs_hydrology.py)
+#   Source:      PCRGLOBWBConfig (models/pcrglobwb/config_schema.py)
 #   Usage:      PET estimation method: 'hamon' or 'oudin'
 PCRGLOBWB_PET_METHOD: "hamon"
 
 # PCRGLOBWB_PARAMS_TO_CALIBRATE
 #   Type:        str
 #   Default:     KSat1,KSat2,recessionCoeff,degreeDayFactor,freezingT,manningsN,ROUTE_ALPHA,ROUTE_BETA,ROUTE_SPLIT,ROUTE_BASEFLOW
-#   Source:      PCRGLOBWBConfig (model_configs_hydrology.py)
+#   Source:      PCRGLOBWBConfig (models/pcrglobwb/config_schema.py)
 #   Usage:      Comma-separated list of parameters for calibration
 PCRGLOBWB_PARAMS_TO_CALIBRATE: KSat1,KSat2,recessionCoeff,degreeDayFactor,freezingT,manningsN,ROUTE_ALPHA,ROUTE_BETA,ROUTE_SPLIT,ROUTE_BASEFLOW
 
 # PCRGLOBWB_TIMEOUT
 #   Type:        int
 #   Default:     14400
-#   Source:      PCRGLOBWBConfig (model_configs_hydrology.py)
+#   Source:      PCRGLOBWBConfig (models/pcrglobwb/config_schema.py)
 #   Usage:      Maximum runtime in seconds (default 4 hours)
 PCRGLOBWB_TIMEOUT: 14400
 
@@ -8099,79 +8099,79 @@ PCRGLOBWB_TIMEOUT: 14400
 # CWATM_INSTALL_PATH
 #   Type:        str
 #   Default:     default
-#   Source:      CWatMConfig (model_configs_hydrology.py)
+#   Source:      CWatMConfig (models/cwatm/config_schema.py)
 CWATM_INSTALL_PATH: default
 
 # CWATM_EXE
 #   Type:        str
 #   Default:     run_cwatm.py
-#   Source:      CWatMConfig (model_configs_hydrology.py)
+#   Source:      CWatMConfig (models/cwatm/config_schema.py)
 CWATM_EXE: "run_cwatm.py"
 
 # SETTINGS_CWATM_PATH
 #   Type:        str
 #   Default:     default
-#   Source:      CWatMConfig (model_configs_hydrology.py)
+#   Source:      CWatMConfig (models/cwatm/config_schema.py)
 SETTINGS_CWATM_PATH: default
 
 # CWATM_CONFIG_FILE
 #   Type:        str
 #   Default:     settings.ini
-#   Source:      CWatMConfig (model_configs_hydrology.py)
+#   Source:      CWatMConfig (models/cwatm/config_schema.py)
 CWATM_CONFIG_FILE: "settings.ini"
 
 # CWATM_RESOLUTION
 #   Type:        str
 #   Default:     30min
-#   Source:      CWatMConfig (model_configs_hydrology.py)
+#   Source:      CWatMConfig (models/cwatm/config_schema.py)
 CWATM_RESOLUTION: "30min"
 
 # CWATM_SPATIAL_MODE
 #   Type:        str
 #   Default:     distributed
-#   Source:      CWatMConfig (model_configs_hydrology.py)
+#   Source:      CWatMConfig (models/cwatm/config_schema.py)
 CWATM_SPATIAL_MODE: "distributed"
 
 # EXPERIMENT_OUTPUT_CWATM
 #   Type:        str
 #   Default:     default
-#   Source:      CWatMConfig (model_configs_hydrology.py)
+#   Source:      CWatMConfig (models/cwatm/config_schema.py)
 EXPERIMENT_OUTPUT_CWATM: default
 
 # CWATM_OUTPUT_DIR
 #   Type:        str
 #   Default:     default
-#   Source:      CWatMConfig (model_configs_hydrology.py)
+#   Source:      CWatMConfig (models/cwatm/config_schema.py)
 CWATM_OUTPUT_DIR: default
 
 # CWATM_SPINUP_YEARS
 #   Type:        int
 #   Default:     0
-#   Source:      CWatMConfig (model_configs_hydrology.py)
+#   Source:      CWatMConfig (models/cwatm/config_schema.py)
 CWATM_SPINUP_YEARS: 0
 
 # CWATM_CALC_EVAPORATION
 #   Type:        bool
 #   Default:     False
-#   Source:      CWatMConfig (model_configs_hydrology.py)
+#   Source:      CWatMConfig (models/cwatm/config_schema.py)
 CWATM_CALC_EVAPORATION: False
 
 # CWATM_PET_METHOD
 #   Type:        str
 #   Default:     hamon
-#   Source:      CWatMConfig (model_configs_hydrology.py)
+#   Source:      CWatMConfig (models/cwatm/config_schema.py)
 CWATM_PET_METHOD: "hamon"
 
 # CWATM_PARAMS_TO_CALIBRATE
 #   Type:        str
 #   Default:     SnowMeltCoef,crop_correct,soildepth_factor,arnoBeta_add,recessionCoeff_factor,manningsN
-#   Source:      CWatMConfig (model_configs_hydrology.py)
+#   Source:      CWatMConfig (models/cwatm/config_schema.py)
 CWATM_PARAMS_TO_CALIBRATE: SnowMeltCoef,crop_correct,soildepth_factor,arnoBeta_add,recessionCoeff_factor,manningsN
 
 # CWATM_TIMEOUT
 #   Type:        int
 #   Default:     14400
-#   Source:      CWatMConfig (model_configs_hydrology.py)
+#   Source:      CWatMConfig (models/cwatm/config_schema.py)
 CWATM_TIMEOUT: 14400
 
 
@@ -8180,151 +8180,151 @@ CWATM_TIMEOUT: 14400
 # NOAHMP_INSTALL_PATH
 #   Type:        str
 #   Default:     default
-#   Source:      NoahMPConfig (model_configs_hydrology.py)
+#   Source:      NoahMPConfig (models/noahmp/config_schema.py)
 NOAHMP_INSTALL_PATH: default
 
 # NOAHMP_EXE
 #   Type:        str
 #   Default:     noah_owp_modular.exe
-#   Source:      NoahMPConfig (model_configs_hydrology.py)
+#   Source:      NoahMPConfig (models/noahmp/config_schema.py)
 NOAHMP_EXE: "noah_owp_modular.exe"
 
 # SETTINGS_NOAHMP_PATH
 #   Type:        str
 #   Default:     default
-#   Source:      NoahMPConfig (model_configs_hydrology.py)
+#   Source:      NoahMPConfig (models/noahmp/config_schema.py)
 SETTINGS_NOAHMP_PATH: default
 
 # NOAHMP_NAMELIST_FILE
 #   Type:        str
 #   Default:     namelist.input
-#   Source:      NoahMPConfig (model_configs_hydrology.py)
+#   Source:      NoahMPConfig (models/noahmp/config_schema.py)
 NOAHMP_NAMELIST_FILE: "namelist.input"
 
 # NOAHMP_FORCING_FILE
 #   Type:        str
 #   Default:     forcing.txt
-#   Source:      NoahMPConfig (model_configs_hydrology.py)
+#   Source:      NoahMPConfig (models/noahmp/config_schema.py)
 NOAHMP_FORCING_FILE: "forcing.txt"
 
 # NOAHMP_OUTPUT_FILE
 #   Type:        str
 #   Default:     output.nc
-#   Source:      NoahMPConfig (model_configs_hydrology.py)
+#   Source:      NoahMPConfig (models/noahmp/config_schema.py)
 NOAHMP_OUTPUT_FILE: "output.nc"
 
 # NOAHMP_PARAMETER_DIR
 #   Type:        str
 #   Default:     parameters
-#   Source:      NoahMPConfig (model_configs_hydrology.py)
+#   Source:      NoahMPConfig (models/noahmp/config_schema.py)
 NOAHMP_PARAMETER_DIR: "parameters"
 
 # NOAHMP_TIMESTEP
 #   Type:        int
 #   Default:     3600
-#   Source:      NoahMPConfig (model_configs_hydrology.py)
+#   Source:      NoahMPConfig (models/noahmp/config_schema.py)
 NOAHMP_TIMESTEP: 3600
 
 # NOAHMP_NSOIL
 #   Type:        int
 #   Default:     4
-#   Source:      NoahMPConfig (model_configs_hydrology.py)
+#   Source:      NoahMPConfig (models/noahmp/config_schema.py)
 NOAHMP_NSOIL: 4
 
 # NOAHMP_NSNOW
 #   Type:        int
 #   Default:     3
-#   Source:      NoahMPConfig (model_configs_hydrology.py)
+#   Source:      NoahMPConfig (models/noahmp/config_schema.py)
 NOAHMP_NSNOW: 3
 
 # NOAHMP_DYNAMIC_VEG_OPTION
 #   Type:        int
 #   Default:     1
-#   Source:      NoahMPConfig (model_configs_hydrology.py)
+#   Source:      NoahMPConfig (models/noahmp/config_schema.py)
 NOAHMP_DYNAMIC_VEG_OPTION: 1
 
 # NOAHMP_CANOPY_STOMATAL_OPTION
 #   Type:        int
 #   Default:     1
-#   Source:      NoahMPConfig (model_configs_hydrology.py)
+#   Source:      NoahMPConfig (models/noahmp/config_schema.py)
 NOAHMP_CANOPY_STOMATAL_OPTION: 1
 
 # NOAHMP_SOIL_MOISTURE_OPTION
 #   Type:        int
 #   Default:     1
-#   Source:      NoahMPConfig (model_configs_hydrology.py)
+#   Source:      NoahMPConfig (models/noahmp/config_schema.py)
 NOAHMP_SOIL_MOISTURE_OPTION: 1
 
 # NOAHMP_RUNOFF_OPTION
 #   Type:        int
 #   Default:     1
-#   Source:      NoahMPConfig (model_configs_hydrology.py)
+#   Source:      NoahMPConfig (models/noahmp/config_schema.py)
 NOAHMP_RUNOFF_OPTION: 1
 
 # NOAHMP_SFC_DRAG_OPTION
 #   Type:        int
 #   Default:     1
-#   Source:      NoahMPConfig (model_configs_hydrology.py)
+#   Source:      NoahMPConfig (models/noahmp/config_schema.py)
 NOAHMP_SFC_DRAG_OPTION: 1
 
 # NOAHMP_SUPERCOOLED_WATER_OPTION
 #   Type:        int
 #   Default:     1
-#   Source:      NoahMPConfig (model_configs_hydrology.py)
+#   Source:      NoahMPConfig (models/noahmp/config_schema.py)
 NOAHMP_SUPERCOOLED_WATER_OPTION: 1
 
 # NOAHMP_FROZEN_SOIL_OPTION
 #   Type:        int
 #   Default:     1
-#   Source:      NoahMPConfig (model_configs_hydrology.py)
+#   Source:      NoahMPConfig (models/noahmp/config_schema.py)
 NOAHMP_FROZEN_SOIL_OPTION: 1
 
 # NOAHMP_RADIATIVE_TRANSFER_OPTION
 #   Type:        int
 #   Default:     3
-#   Source:      NoahMPConfig (model_configs_hydrology.py)
+#   Source:      NoahMPConfig (models/noahmp/config_schema.py)
 NOAHMP_RADIATIVE_TRANSFER_OPTION: 3
 
 # NOAHMP_SNOW_ALBEDO_OPTION
 #   Type:        int
 #   Default:     2
-#   Source:      NoahMPConfig (model_configs_hydrology.py)
+#   Source:      NoahMPConfig (models/noahmp/config_schema.py)
 NOAHMP_SNOW_ALBEDO_OPTION: 2
 
 # NOAHMP_PRECIP_PHASE_OPTION
 #   Type:        int
 #   Default:     1
-#   Source:      NoahMPConfig (model_configs_hydrology.py)
+#   Source:      NoahMPConfig (models/noahmp/config_schema.py)
 NOAHMP_PRECIP_PHASE_OPTION: 1
 
 # EXPERIMENT_OUTPUT_NOAHMP
 #   Type:        str
 #   Default:     default
-#   Source:      NoahMPConfig (model_configs_hydrology.py)
+#   Source:      NoahMPConfig (models/noahmp/config_schema.py)
 EXPERIMENT_OUTPUT_NOAHMP: default
 
 # NOAHMP_OUTPUT_DIR
 #   Type:        str
 #   Default:     default
-#   Source:      NoahMPConfig (model_configs_hydrology.py)
+#   Source:      NoahMPConfig (models/noahmp/config_schema.py)
 NOAHMP_OUTPUT_DIR: default
 
 # NOAHMP_SPINUP_LOOPS
 #   Type:        int
 #   Default:     0
-#   Source:      NoahMPConfig (model_configs_hydrology.py)
+#   Source:      NoahMPConfig (models/noahmp/config_schema.py)
 NOAHMP_SPINUP_LOOPS: 0
 
 # NOAHMP_PARAMS_TO_CALIBRATE
 #   Type:        str
 #   Default:     refkdt,dksat,bexp,smcmax,slope,noah_czil
-#   Source:      NoahMPConfig (model_configs_hydrology.py)
+#   Source:      NoahMPConfig (models/noahmp/config_schema.py)
 NOAHMP_PARAMS_TO_CALIBRATE: refkdt,dksat,bexp,smcmax,slope,noah_czil
 
 # NOAHMP_TIMEOUT
 #   Type:        int
 #   Default:     7200
-#   Source:      NoahMPConfig (model_configs_hydrology.py)
+#   Source:      NoahMPConfig (models/noahmp/config_schema.py)
 NOAHMP_TIMEOUT: 7200
 
 

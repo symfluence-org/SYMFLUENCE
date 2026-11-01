@@ -22,10 +22,10 @@ the debug-calibration and add-model-handler skills). Paths relative to
 
 ## 1. The mechanism
 
-Algorithms live in `optimizers/algorithms/<name>.py`, each a subclass of
-`OptimizationAlgorithm` (`optimizers/algorithms/base_algorithm.py`). They are
+Algorithms live in `core/calibration/optimizers/algorithms/<name>.py`, each a subclass of
+`OptimizationAlgorithm` (`core/calibration/optimizers/algorithms/base_algorithm.py`). They are
 registered in a **plain dict** — `ALGORITHM_REGISTRY` in
-`optimizers/algorithms/__init__.py` (this is NOT the unified `R.*` facade; it's a
+`core/calibration/optimizers/algorithms/__init__.py` (this is NOT the unified `R.*` facade; it's a
 local name→class map) — and instantiated by `get_algorithm(name, config, logger)`
 (case-insensitive; `-`/space are normalized to `_`).
 
@@ -135,7 +135,7 @@ Mirror the richest in-tree exemplar for real structure: **`algorithms/dds.py`**
 
 ## 4. Step-by-step
 
-1. Copy the closest exemplar in `optimizers/algorithms/` (DDS for sampling/greedy,
+1. Copy the closest exemplar in `core/calibration/optimizers/algorithms/` (DDS for sampling/greedy,
    PSO for population, Adam/L-BFGS for gradient, NSGA-II for multi-objective).
 2. Implement `name` + `optimize`; read hyperparameters via `self._get_config_value`.
 3. **Register it:** add `from .myopt import MyOptAlgorithm` and a
@@ -144,7 +144,7 @@ Mirror the richest in-tree exemplar for real structure: **`algorithms/dds.py`**
    `algorithms/config_schema.py` and a typed field in
    `core/config/models/optimization.py`.
 5. Select it: set `OPTIMIZATION_ALGORITHM: MyOpt` in the config.
-6. Verify: `python -c "from symfluence.optimization.optimizers.algorithms import get_algorithm; print(get_algorithm('myopt', {}, __import__('logging').getLogger()).name)"`.
+6. Verify: `python -c "from symfluence.core.calibration.optimizers.algorithms import get_algorithm; print(get_algorithm('myopt', {}, __import__('logging').getLogger()).name)"`.
 7. Smoke-test a short calibration on a tiny domain; confirm the score moves and
    `record_iteration`/`update_best` fire. Then `ruff` + `mypy`.
 
@@ -152,9 +152,9 @@ Mirror the richest in-tree exemplar for real structure: **`algorithms/dds.py`**
 
 | Concern | File |
 |---------|------|
-| Algorithm base class | `optimizers/algorithms/base_algorithm.py` (`OptimizationAlgorithm`) |
-| Registry + `get_algorithm` (MUST edit) | `optimizers/algorithms/__init__.py` (`ALGORITHM_REGISTRY`) |
-| Hyperparameter defaults/validation | `optimizers/algorithms/config_schema.py` |
+| Algorithm base class | `core/calibration/optimizers/algorithms/base_algorithm.py` (`OptimizationAlgorithm`) |
+| Registry + `get_algorithm` (MUST edit) | `core/calibration/optimizers/algorithms/__init__.py` (`ALGORITHM_REGISTRY`) |
+| Hyperparameter defaults/validation | `core/calibration/optimizers/algorithms/config_schema.py` |
 | Algorithm config field/selector | `core/config/models/optimization.py` (`algorithm`, `OPTIMIZATION_ALGORITHM`) |
 | Driver that calls the algorithm | `optimizers/base_model_optimizer.py` (`get_algorithm`, callback wiring) |
 | Exemplars | `algorithms/{dds,pso,de,sce_ua,nsga2,adam,lbfgs}.py` |

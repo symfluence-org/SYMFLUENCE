@@ -19,8 +19,8 @@ from .results_tracking import ResultsTrackingMixin
 from .retry_execution import RetryExecutionMixin
 
 # SUMMAOptimizerMixin deliberately does NOT live here: it wraps the SUMMA model
-# package, which core must not depend on. It remains available from its
-# historical home, ``symfluence.optimization.mixins``.
+# package, which core must not depend on. Import it from
+# ``symfluence.models.summa.calibration.optimizer_mixin``.
 
 __all__ = [
     'ParallelExecutionMixin',

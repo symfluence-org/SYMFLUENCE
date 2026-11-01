@@ -15,15 +15,31 @@ name: SYMFLUENCE - ARM64 Source Build & Validate
 # x86_64-linux-gnu. The x86_64-only release-tarball/relocatability steps are out
 # of scope here and stay in install-validate.yml.
 #
-# Tiered (like install-validate.yml): on demand, weekly, and on develop/main —
-# NOT on every PR (a full ARM source build is slow and the unit gate is in ci.yml).
+# Tiered: nightly, on demand, and on develop/main pushes that touch
+# install-relevant paths (see on.push.paths) — NOT on every PR or every merge (a full ARM source build is slow and the unit gate is in ci.yml).
 
 on:
   push:
     branches: [ main, develop ]
+    # Only when something that affects installation changed; everything else
+    # is covered nightly. (Running on every develop push added ~13 jobs and the
+    # 2 h ARM build to each merge regardless of what changed.)
+    paths:
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'pixi.toml'
+      - 'pixi.lock'
+      - 'MANIFEST.in'
+      - 'scripts/**'
+      - 'npm/**'
+      - 'src/symfluence/cli/services/**'
+      - 'src/symfluence/core/build/**'
+      - 'src/symfluence/models/**/build_instructions*.py'
+      - 'src/symfluence/models/**/patches/**'
+      - '.github/workflows/install-validate-arm.yml'
   workflow_dispatch:
   schedule:
-    - cron: '0 3 * * 0'  # weekly, Sundays 03:00 UTC (offset from the x86_64 job)
+    - cron: '30 3 * * *'  # nightly 03:30 UTC (offset from cross-platform at 03:00)
 
 permissions:
   contents: read

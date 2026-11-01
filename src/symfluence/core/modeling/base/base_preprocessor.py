@@ -233,6 +233,55 @@ class BaseModelPreProcessor(ABC, ModelComponentMixin, PathResolverMixin, Shapefi
         """
         return self._get_catchment_file_path()
 
+    def get_catchment_location(self) -> Dict[str, Any]:
+        """Return the catchment centroid, area and mean elevation.
+
+        Reads the catchment shapefile and returns ``{'lat', 'lon', 'area_m2',
+        'elev'}`` where lat/lon are the whole-catchment centroid in decimal
+        degrees, ``area_m2`` is the projected (UTM) area, and ``elev`` is the
+        area-weighted mean of the ``elev_mean`` attribute (``None`` if the
+        shapefile has no such column).
+
+        Raises rather than falling back to a default location: a silent
+        fallback builds a model for the wrong place and still "succeeds".
+
+        Raises:
+            FileNotFoundError: If the catchment shapefile does not exist.
+            ValueError: If the shapefile contains no features.
+        """
+        import geopandas as gpd
+
+        from symfluence.core.geometry_utils import (
+            calculate_catchment_area_km2,
+            calculate_catchment_centroid,
+        )
+
+        catchment_path = self.get_catchment_path()
+        if not catchment_path.exists():
+            raise FileNotFoundError(
+                f"Catchment shapefile not found: {catchment_path}. Run domain "
+                "definition/discretisation before preprocessing this model."
+            )
+        gdf = gpd.read_file(catchment_path)
+        if gdf.empty:
+            raise ValueError(f"Catchment shapefile has no features: {catchment_path}")
+        if gdf.crs is None:
+            self.logger.warning(f"Catchment CRS not defined in {catchment_path}; assuming EPSG:4326")
+            gdf = gdf.set_crs(epsg=4326)
+
+        lon, lat = calculate_catchment_centroid(gdf, self.logger)
+        area_m2 = calculate_catchment_area_km2(gdf, self.logger) * 1e6
+
+        elev: Optional[float] = None
+        if 'elev_mean' in gdf.columns:
+            elevs = pd.to_numeric(gdf['elev_mean'], errors='coerce')
+            weights = gdf.to_crs(gdf.estimate_utm_crs()).geometry.area
+            valid = elevs.notna()
+            if valid.any():
+                elev = float((elevs[valid] * weights[valid]).sum() / weights[valid].sum())
+
+        return {'lat': float(lat), 'lon': float(lon), 'area_m2': float(area_m2), 'elev': elev}
+
     def get_river_network_path(self) -> Path:
         """
         Get path to river network shapefile.

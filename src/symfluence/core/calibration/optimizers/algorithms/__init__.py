@@ -92,6 +92,14 @@ ALGORITHM_REGISTRY: Dict[str, Type[OptimizationAlgorithm]] = {
 }
 
 
+# Primary (non-alias) names of the built-in algorithms; these are the names
+# the BaseModelOptimizer.run_<algo>() wrappers pass to run_optimization().
+_BUILTIN_PRIMARY_NAMES: List[str] = [
+    'dds', 'pso', 'de', 'sce-ua', 'async_dds', 'nsga2', 'adam', 'lbfgs', 'cmaes',
+    'dream', 'glue', 'basin_hopping', 'nelder_mead', 'ga', 'bayesian_opt', 'moead',
+    'simulated_annealing', 'abc',
+]
+
 # Primary names contributed via register_algorithm() (external packages),
 # kept separate so list_algorithms() can report them alongside the built-ins.
 _EXTERNAL_PRIMARY_NAMES: List[str] = []
@@ -127,7 +135,8 @@ def register_algorithm(
     """
     def _register(cls: Type[OptimizationAlgorithm]) -> Type[OptimizationAlgorithm]:
         keys = [_normalize_name(name)] + [_normalize_name(a) for a in aliases]
-        taken = [k for k in keys if k in ALGORITHM_REGISTRY]
+        existing = {_normalize_name(k) for k in ALGORITHM_REGISTRY}
+        taken = [k for k in keys if k in existing]
         if taken:
             raise ValueError(
                 f"Algorithm name(s) already registered: {taken}. "
@@ -163,17 +172,42 @@ def get_algorithm(
     Raises:
         ValueError: If algorithm name is not recognized
     """
-    name_lower = name.lower().replace('-', '_').replace(' ', '_')
+    return _lookup_class(name)(config, logger)
 
-    if name_lower not in ALGORITHM_REGISTRY:
-        available = list(set(ALGORITHM_REGISTRY.keys()))
+
+def _lookup_class(name: str) -> Type[OptimizationAlgorithm]:
+    """Registry lookup with the same normalization on both sides.
+
+    Registry keys are normalized too, so hyphenated aliases ('nsga-ii',
+    'l-bfgs', 'cma-es') are reachable; normalizing only the query made them
+    dead entries.
+    """
+    lookup = {_normalize_name(k): cls for k, cls in ALGORITHM_REGISTRY.items()}
+    cls = lookup.get(_normalize_name(name))
+    if cls is None:
         raise ValueError(
             f"Unknown algorithm '{name}'. "
-            f"Available algorithms: {sorted(available)}"
+            f"Available algorithms: {list_algorithms()}"
         )
+    return cls
 
-    algorithm_class = ALGORITHM_REGISTRY[name_lower]
-    return algorithm_class(config, logger)
+
+def resolve_algorithm_name(name: str) -> str:
+    """Map any accepted spelling/alias to the algorithm's primary name.
+
+    E.g. 'NSGA-II' -> 'nsga2', 'L-BFGS' -> 'lbfgs', 'SCE_UA' -> 'sce-ua'.
+    The primary name is what ``BaseModelOptimizer.run_<algo>()`` passes to
+    ``run_optimization`` (it drives result file names and per-algorithm
+    branches), so callers dispatching by config string should use this.
+
+    Raises:
+        ValueError: If the name is not a registered algorithm.
+    """
+    cls = _lookup_class(name)
+    for primary in [*_BUILTIN_PRIMARY_NAMES, *_EXTERNAL_PRIMARY_NAMES]:
+        if _lookup_class(primary) is cls:
+            return primary
+    return _normalize_name(name)  # registered directly into ALGORITHM_REGISTRY
 
 
 def list_algorithms() -> list:
@@ -184,12 +218,12 @@ def list_algorithms() -> list:
         Sorted list of primary algorithm names
     """
     # Return only primary names (not aliases), built-in + externally registered
-    primary_names = ['dds', 'pso', 'de', 'sce-ua', 'async_dds', 'nsga2', 'adam', 'lbfgs', 'cmaes', 'dream', 'glue', 'basin_hopping', 'nelder_mead', 'ga', 'bayesian_opt', 'moead', 'simulated_annealing', 'abc']
-    return sorted(primary_names + _EXTERNAL_PRIMARY_NAMES)
+    return sorted(_BUILTIN_PRIMARY_NAMES + _EXTERNAL_PRIMARY_NAMES)
 
 
 __all__ = [
     'register_algorithm',
+    'resolve_algorithm_name',
     # Base class
     'OptimizationAlgorithm',
     # Algorithm classes

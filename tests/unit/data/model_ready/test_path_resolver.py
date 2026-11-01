@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from symfluence.data.model_ready.path_resolver import resolve_model_ready_path
+from symfluence.core.modeling.model_ready.path_resolver import resolve_model_ready_path
 
 
 class TestResolveModelReadyPath:

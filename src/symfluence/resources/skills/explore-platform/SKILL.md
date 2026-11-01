@@ -49,7 +49,7 @@ sorted(R.observation_handlers.keys())    # observation networks
 sorted(R.calibration_targets.keys())     # calibration targets (e.g. SUMMA_STREAMFLOW)
 sorted(R.metrics.keys())                 # metrics
 
-from symfluence.optimization.optimizers.algorithms import list_algorithms
+from symfluence.core.calibration.optimizers.algorithms import list_algorithms
 list_algorithms()                        # optimizers
 
 from symfluence.core.config.canonical_mappings import FLAT_TO_NESTED_MAP

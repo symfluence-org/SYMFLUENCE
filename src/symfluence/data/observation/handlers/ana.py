@@ -98,7 +98,7 @@ class ANAStreamflowHandler(BaseObservationHandler):
             return raw_file
 
         download_enabled = self._get_config_value(
-            lambda: self.config.data.download_ana_data, default=True
+            lambda: None, default=True, dict_key='DOWNLOAD_ANA_DATA'
         )
         if not download_enabled:
             if raw_file.exists():

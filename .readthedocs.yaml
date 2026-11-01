@@ -1,17 +1,22 @@
 version: 2
 
+# Mirror .github/workflows/docs.yml: install the package plus the [docs] extra
+# from uv.lock. The core dependencies all ship wheels, so no system GDAL is
+# needed. (The old "docs deps only + mocks" setup pointed at
+# docs/requirements.txt, which was removed in 934ff541, and the conf.py mock
+# list no longer covers every top-level import, e.g. pandas.)
 build:
   os: ubuntu-22.04
   tools:
     python: "3.11"
+  jobs:
+    create_environment:
+      - asdf plugin add uv
+      - asdf install uv latest
+      - asdf global uv latest
+    install:
+      - UV_PROJECT_ENVIRONMENT=$READTHEDOCS_VIRTUALENV_PATH uv sync --locked --extra docs
 
 sphinx:
   configuration: docs/source/conf.py
   fail_on_warning: true
-
-# Only install documentation dependencies, NOT the full package
-# The package has native dependencies (GDAL) that aren't available on RTD
-# Autodoc uses mocks configured in conf.py for all heavy imports
-python:
-  install:
-    - requirements: docs/requirements.txt

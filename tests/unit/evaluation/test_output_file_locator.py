@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from symfluence.evaluation.output_file_locator import OutputFileLocator, get_output_file_locator
+from symfluence.core.modeling.output_file_locator import OutputFileLocator, get_output_file_locator
 
 
 class TestOutputFileLocatorPatterns:

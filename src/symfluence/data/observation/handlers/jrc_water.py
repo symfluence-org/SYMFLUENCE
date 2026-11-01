@@ -61,8 +61,8 @@ class JRCWaterHandler(BaseObservationHandler):
 
         # Determine data directory
         jrc_path = self._get_config_value(
-            lambda: self.config.evaluation.jrc_water.path,
-            default='default'
+            lambda: None,
+            default='default', dict_key='JRC_WATER_PATH'
         )
         if isinstance(jrc_path, str) and jrc_path.lower() == 'default':
             jrc_dir = self.project_observations_dir / "surface_water" / "jrc"
@@ -105,7 +105,7 @@ class JRCWaterHandler(BaseObservationHandler):
 
         # Get dataset type from config
         dataset = self._get_config_value(
-            lambda: self.config.evaluation.jrc_water.dataset,
+            lambda: None,
             default='occurrence',
             dict_key='JRC_WATER_DATASET'
         )

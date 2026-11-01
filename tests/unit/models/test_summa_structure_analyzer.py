@@ -290,7 +290,7 @@ class TestCalculatePerformanceMetricsDispatch:
         analyzer._calculate_evaluator_metrics.assert_called_once_with('et')
 
     @patch('symfluence.models.summa.structure_analyzer.SummaRunner')
-    @patch('symfluence.evaluation.registry.EvaluationRegistry.get_evaluator')
+    @patch('symfluence.core.modeling.evaluation_registry.EvaluationRegistry.get_evaluator')
     def test_evaluator_metrics_delegates_to_registry(self, mock_get_evaluator, mock_summa_runner):
         from symfluence.models.summa.structure_analyzer import SummaStructureAnalyzer
 
@@ -314,7 +314,7 @@ class TestCalculatePerformanceMetricsDispatch:
         assert result['nse'] == 0.70
 
     @patch('symfluence.models.summa.structure_analyzer.SummaRunner')
-    @patch('symfluence.evaluation.registry.EvaluationRegistry.get_evaluator')
+    @patch('symfluence.core.modeling.evaluation_registry.EvaluationRegistry.get_evaluator')
     def test_evaluator_metrics_returns_nan_when_no_evaluator(self, mock_get_evaluator, mock_summa_runner):
         import numpy as np
 
@@ -331,7 +331,7 @@ class TestCalculatePerformanceMetricsDispatch:
         assert np.isnan(result['nse'])
 
     @patch('symfluence.models.summa.structure_analyzer.SummaRunner')
-    @patch('symfluence.evaluation.registry.EvaluationRegistry.get_evaluator')
+    @patch('symfluence.core.modeling.evaluation_registry.EvaluationRegistry.get_evaluator')
     def test_evaluator_metrics_returns_nan_when_metrics_fail(self, mock_get_evaluator, mock_summa_runner):
         import numpy as np
 

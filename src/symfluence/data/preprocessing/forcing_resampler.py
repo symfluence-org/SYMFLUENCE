@@ -333,7 +333,7 @@ class ForcingResampler(PathResolverMixin):
         self.dem_path = self._get_default_path('DEM_PATH', f"attributes/elevation/dem/{dem_name}")
         self.forcing_basin_path = self.project_forcing_dir / 'basin_averaged_data'
         # Use backward-compatible catchment path resolution
-        self.catchment_name = self._get_config_value(lambda: self.config.paths.catchment_shp_name)
+        self.catchment_name = self._get_config_value(lambda: self.config.paths.catchment_name, dict_key='CATCHMENT_SHP_NAME')
         if self.catchment_name == 'default' or self.catchment_name is None:
             self.catchment_name = f"{self._get_config_value(lambda: self.config.domain.name)}_HRUs_{str(self._get_config_value(lambda: self.config.domain.discretization)).replace(',','_')}.shp"
         # Note: catchment_path will be resolved dynamically using _get_catchment_file_path()

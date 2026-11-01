@@ -252,7 +252,7 @@ class GRStreamflowTarget(StreamflowEvaluator):
                 default='elevation'
             )
 
-            c_name = self._get_config_value(lambda: self.config.paths.catchment_shp_name, default='default')
+            c_name = self._get_config_value(lambda: self.config.paths.catchment_name, default='default', dict_key='CATCHMENT_SHP_NAME')
             if not c_name or c_name == 'default':
                 catchment_name = f"{self.domain_name}_HRUs_{discretization}.shp"
             else:

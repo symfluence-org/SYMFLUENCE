@@ -60,8 +60,8 @@ class SSEBopHandler(BaseObservationHandler):
 
         # Determine data directory
         ssebop_path = self._get_config_value(
-            lambda: self.config.evaluation.ssebop.path,
-            default='default'
+            lambda: None,
+            default='default', dict_key='SSEBOP_PATH'
         )
         if isinstance(ssebop_path, str) and ssebop_path.lower() == 'default':
             ssebop_dir = self.project_observations_dir / "et" / "ssebop"

@@ -180,12 +180,12 @@ class SoilMoistureEvaluator(ModelEvaluator):
 
         if self.optimization_target == 'sm_point':
             self.target_depth = self._get_config_value(
-                lambda: self.config.evaluation.soil_moisture.target_depth_m,
+                lambda: None,
                 default='auto',
                 dict_key='SM_TARGET_DEPTH'
             )
             self.depth_tolerance = self._get_config_value(
-                lambda: self.config.evaluation.soil_moisture.depth_tolerance_m,
+                lambda: None,
                 default=0.05,
                 dict_key='SM_DEPTH_TOLERANCE'
             )
@@ -196,7 +196,7 @@ class SoilMoistureEvaluator(ModelEvaluator):
                 dict_key='SMAP_LAYER'
             )
             self.temporal_aggregation = self._get_config_value(
-                lambda: self.config.evaluation.soil_moisture.temporal_aggregation,
+                lambda: None,
                 default='daily_mean',
                 dict_key='SM_TEMPORAL_AGGREGATION'
             )
@@ -213,23 +213,23 @@ class SoilMoistureEvaluator(ModelEvaluator):
             )
         elif self.optimization_target == 'sm_esa':
             self.esa_surface_depth = float(self._get_config_value(
-                lambda: self.config.evaluation.esa_cci.surface_depth_m,
+                lambda: None,
                 default=0.05,
                 dict_key='ESA_SURFACE_DEPTH_M'
             ))
             self.temporal_aggregation = self._get_config_value(
-                lambda: self.config.evaluation.soil_moisture.temporal_aggregation,
+                lambda: None,
                 default='daily_mean',
                 dict_key='SM_TEMPORAL_AGGREGATION'
             )
 
         self.use_quality_control = self._get_config_value(
-            lambda: self.config.evaluation.soil_moisture.use_quality_control,
+            lambda: None,
             default=True,
             dict_key='SM_USE_QUALITY_CONTROL'
         )
         self.min_valid_pixels = self._get_config_value(
-            lambda: self.config.evaluation.smap.min_valid_pixels,
+            lambda: None,
             default=10,
             dict_key='SM_MIN_VALID_PIXELS'
         )

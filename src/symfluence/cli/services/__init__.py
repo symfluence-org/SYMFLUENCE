@@ -23,17 +23,7 @@ Build Configuration:
 """
 from __future__ import annotations
 
-from .base import BaseService
-
-# Build configuration
-from .build_registry import BuildInstructionsRegistry
-from .build_schema import (
-    BuildInstructionSchema,
-    VerifyInstallSchema,
-    validate_all_instructions,
-    validate_build_instructions,
-)
-from .build_snippets import (
+from symfluence.core.build.build_snippets import (
     get_all_snippets,
     get_bison_detection_and_build,
     get_common_build_environment,
@@ -44,6 +34,17 @@ from .build_snippets import (
     get_netcdf_lib_detection,
     get_safe_build_path,
     get_udunits2_detection_and_build,
+)
+
+from .base import BaseService
+
+# Build configuration
+from .build_registry import BuildInstructionsRegistry
+from .build_schema import (
+    BuildInstructionSchema,
+    VerifyInstallSchema,
+    validate_all_instructions,
+    validate_build_instructions,
 )
 
 # Project management services

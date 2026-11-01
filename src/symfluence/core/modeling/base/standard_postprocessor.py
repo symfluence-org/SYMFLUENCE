@@ -233,7 +233,7 @@ class StandardModelPostProcessor(BaseModelPostProcessor):
 
         # Handle routing output reach selection
         if self.use_routing_output:
-            sim_reach_id = self._get_config_value(lambda: self.config.evaluation.streamflow.sim_reach_id)
+            sim_reach_id = self._get_config_value(lambda: self.config.evaluation.sim_reach_id, dict_key='SIM_REACH_ID')
             if sim_reach_id:
                 # This will be handled specially in extract_streamflow for routing
                 pass

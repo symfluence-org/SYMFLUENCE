@@ -142,8 +142,10 @@ def calculate_catchment_centroid(
     # Project to UTM for accurate centroid calculation
     catchment_utm = catchment_geo.to_crs(f"EPSG:{epsg_code}")
 
-    # Calculate centroid in projected coordinates
-    centroid_utm = catchment_utm.geometry.centroid.iloc[0]
+    # Calculate centroid of the whole catchment in projected coordinates.
+    # (Taking ``.centroid.iloc[0]`` returned the first HRU's centroid for
+    # multi-feature catchments, not the catchment's.)
+    centroid_utm = catchment_utm.geometry.union_all().centroid
 
     # Create GeoDataFrame for reprojection
     centroid_gdf = gpd.GeoDataFrame(

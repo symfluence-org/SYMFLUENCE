@@ -45,7 +45,7 @@ def test_sanctioned_keys_still_have_consumers():
     keys stay recognized)."""
     import inspect
 
-    from symfluence.core.config.models.model_configs_hydrology import NGENConfig
+    from symfluence.models.ngen.config_schema import NGENConfig
 
     source = inspect.getsource(NGENConfig)
     for key in ("ENABLE_NOAH", "ENABLE_PET", "ENABLE_SLOTH"):

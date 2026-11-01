@@ -11,8 +11,8 @@ directly-registered values otherwise.
 These replace the resolution methods that previously lived on the deprecated
 ``ConfigRegistry`` / ``ModelRegistry`` facade classes. They depend only on the
 unified ``R`` registry (no model imports), so they live in ``core`` and the
-config system imports them directly. A thin re-export shim remains at
-``symfluence.models.config_resolution`` for backward compatibility.
+config system imports them directly. (The re-export shim that used to sit at
+``symfluence.models.config_resolution`` was removed under ADR-0011.)
 """
 from __future__ import annotations
 

@@ -12,16 +12,16 @@ from __future__ import annotations
 
 import pytest
 
-from symfluence.core.config.defaults import ModelDefaults
-from symfluence.core.config.transformers import transform_flat_to_nested
-from symfluence.core.modeling.base import ConfigValidationError, ModelConfigAdapter
-from symfluence.core.registries import R
-from symfluence.models.config_resolution import (
+from symfluence.core.config.config_resolution import (
     get_config_adapter,
     get_config_defaults,
     get_config_transformers,
     validate_model_config,
 )
+from symfluence.core.config.defaults import ModelDefaults
+from symfluence.core.config.transformers import transform_flat_to_nested
+from symfluence.core.modeling.base import ConfigValidationError, ModelConfigAdapter
+from symfluence.core.registries import R
 
 
 class TestModelRegistryRegistration:

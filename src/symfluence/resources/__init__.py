@@ -59,10 +59,10 @@ def __getattr__(name: str):
         # Resolved at CALL time, never at module level. That distinction is the
         # whole invariant: a module-level import here would re-create the
         # import-time cycle this promotion broke, whereas a deprecated shim
-        # reaching its target when someone actually touches it cannot. Same
-        # shape as the models/model_manager.py shim, and deliberately a plain
-        # import rather than importlib-on-a-string — the string form was only
-        # ever hiding this edge from the grep instead of stating it.
+        # reaching its target when someone actually touches it cannot. This is
+        # deliberately a plain import rather than importlib-on-a-string — the
+        # string form was only ever hiding this edge from the grep instead of
+        # stating it.
         from symfluence.core.modeling import base_settings
 
         return getattr(base_settings, name)

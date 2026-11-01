@@ -399,8 +399,7 @@ class AnalysisManager(ConfigurableMixin):
 
         # Check if sensitivity analysis is enabled
         run_sensitivity = self._get_config_value(
-            lambda: self.config.analysis.run_sensitivity_analysis,
-            True
+            lambda: None, True, dict_key='RUN_SENSITIVITY_ANALYSIS'
         )
         if not run_sensitivity:
             self.logger.info("Sensitivity analysis is disabled in configuration")
@@ -602,8 +601,7 @@ class AnalysisManager(ConfigurableMixin):
 
         # Check if decision analysis is enabled
         run_decision = self._get_config_value(
-            lambda: self.config.analysis.run_decision_analysis,
-            True
+            lambda: None, True, dict_key='RUN_DECISION_ANALYSIS'
         )
         if not run_decision:
             self.logger.info("Decision analysis is disabled in configuration")
@@ -732,12 +730,10 @@ class AnalysisManager(ConfigurableMixin):
         status = {
             'benchmarking_complete': (self.project_dir / "evaluation" / "benchmark_scores.csv").exists(),
             'sensitivity_analysis_available': self._get_config_value(
-                lambda: self.config.analysis.run_sensitivity_analysis,
-                True
+                lambda: None, True, dict_key='RUN_SENSITIVITY_ANALYSIS'
             ),
             'decision_analysis_available': self._get_config_value(
-                lambda: self.config.analysis.run_decision_analysis,
-                True
+                lambda: None, True, dict_key='RUN_DECISION_ANALYSIS'
             ),
             'optimization_results_exist': self._find_optimization_results() is not None,
         }

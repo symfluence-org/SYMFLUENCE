@@ -7,6 +7,6 @@ delegate parameter subsets to each, run the dCoupler graph, and score one shared
 
 Model-agnostic framework machinery -- no model package is imported here; the participating
 models are resolved through the ``R`` registries. Promoted from
-``symfluence.models.coupled.calibration``, which remains as a back-compat shim (and is still
-the path ``optimization._autodiscover`` imports to fire the ``COUPLED`` registrations).
+``symfluence.models.coupled.calibration`` (that shim was removed under ADR-0011); the
+``COUPLED`` registrations fire from ``core._bootstrap._seed_model_optimizers``.
 """
