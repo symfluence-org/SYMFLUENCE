@@ -20,6 +20,7 @@ import xarray as xr
 
 from symfluence.core.config.coercion import coerce_config
 from symfluence.core.mixins import ConfigMixin
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.mixins.project import resolve_data_subdir
 
 
@@ -55,7 +56,7 @@ class MESHConfigGenerator(ConfigMixin):
         self._config = coerce_config(config, warn=False)
         self.logger = logger or logging.getLogger(__name__)
         self.get_simulation_time_window = time_window_func
-        self.domain_name = config.get('DOMAIN_NAME', 'domain')
+        self.domain_name = resolve_config_value(config, lambda: config.domain.name, 'domain', 'DOMAIN_NAME')
 
     @property
     def project_observations_dir(self) -> Path:

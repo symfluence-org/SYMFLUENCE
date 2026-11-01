@@ -22,6 +22,7 @@ from symfluence.core.calibration.workers.base_worker import (
 )
 from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -44,11 +45,11 @@ class WflowWorker(BaseWorker):
             params = wflow_params
 
             config = kwargs.get('config', self.config) or {}
-            domain_name = config.get('DOMAIN_NAME', '')
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             original_settings = data_dir / f'domain_{domain_name}' / 'settings' / 'WFLOW'
             settings_dir = Path(settings_dir)
-            staticmaps_name = config.get('WFLOW_STATICMAPS_FILE', 'wflow_staticmaps.nc')
+            staticmaps_name = resolve_config_value(config, lambda: config.model.wflow.staticmaps_file, 'wflow_staticmaps.nc', 'WFLOW_STATICMAPS_FILE')
 
             # Copy staticmaps from original settings to process directory
             original_file = original_settings / staticmaps_name
@@ -57,7 +58,7 @@ class WflowWorker(BaseWorker):
                 shutil.copy2(original_file, target_file)
 
             # Copy and patch the TOML config for process-specific paths
-            config_file = config.get('WFLOW_CONFIG_FILE', 'wflow_sbm.toml')
+            config_file = resolve_config_value(config, lambda: config.model.wflow.config_file, 'wflow_sbm.toml', 'WFLOW_CONFIG_FILE')
             original_toml = original_settings / config_file
             target_toml = settings_dir / config_file
             out_dir = kwargs.get('output_dir') or kwargs.get('proc_output_dir')
@@ -110,11 +111,11 @@ class WflowWorker(BaseWorker):
 
     def run_model(self, config, settings_dir, output_dir, **kwargs):
         try:
-            install_path = config.get('WFLOW_INSTALL_PATH', 'default')
+            install_path = resolve_config_value(config, lambda: config.model.wflow.install_path, 'default', 'WFLOW_INSTALL_PATH')
             data_dir = config.get('SYMFLUENCE_DATA_DIR', '.')
             exe_path = Path(data_dir) / 'installs' / 'wflow' / 'bin' / 'wflow_cli' if install_path == 'default' else Path(install_path) / 'wflow_cli'
-            config_file = config.get('WFLOW_CONFIG_FILE', 'wflow_sbm.toml')
-            timeout = int(config.get('WFLOW_TIMEOUT', 7200))
+            config_file = resolve_config_value(config, lambda: config.model.wflow.config_file, 'wflow_sbm.toml', 'WFLOW_CONFIG_FILE')
+            timeout = int(resolve_config_value(config, lambda: config.model.wflow.timeout, 7200, 'WFLOW_TIMEOUT'))
             if not exe_path.exists():
                 self.logger.error(f"wflow_cli not found at {exe_path}")
                 return False
@@ -125,7 +126,7 @@ class WflowWorker(BaseWorker):
             output_dir = Path(output_dir).resolve()
             toml_path = settings_dir / config_file
             self._patch_toml(toml_path, toml_path, settings_dir, output_dir)
-            if config.get('WFLOW_CALIBRATION_ONLY_PERIOD', False):
+            if resolve_config_value(config, lambda: config.model.wflow.calibration_only_period, False, 'WFLOW_CALIBRATION_ONLY_PERIOD'):
                 end = (config['EXPERIMENT_TIME_END'] if kwargs.get('final_evaluation', False)
                        else config['CALIBRATION_PERIOD'].split(',')[1].strip())
                 native_end = pd.Timestamp(end).normalize() + pd.Timedelta(days=1)
@@ -139,7 +140,7 @@ class WflowWorker(BaseWorker):
             )
             if result.returncode != 0 and result.stderr:
                 self.logger.warning(f"Wflow stderr: {result.stderr[-500:]}")
-            if result.returncode == 0 and config.get('WFLOW_SPATIAL_MODE') == 'distributed':
+            if result.returncode == 0 and resolve_config_value(config, lambda: config.model.wflow.spatial_mode, None, 'WFLOW_SPATIAL_MODE') == 'distributed':
                 from ..balance import check
                 check(output_dir)
                 import tomllib
@@ -197,19 +198,19 @@ class WflowWorker(BaseWorker):
             )
             metrics = self._streamflow_metrics.calculate_metrics(obs.values, sim.values)
             if any(str(k).upper() == 'SEASONAL_BIAS_SCORE'
-                   for k in (config.get('COMPOSITE_METRIC') or {})):
+                   for k in (resolve_config_value(config, lambda: config.optimization.composite_metric, None, 'COMPOSITE_METRIC') or {})):
                 from .seasonal import seasonal_bias_score
                 metrics['seasonal_bias_score'] = seasonal_bias_score(sim, obs)
-            if config.get('WFLOW_CRYOSPHERE_CONSTRAINTS', False):
+            if resolve_config_value(config, lambda: config.model.wflow.cryosphere_constraints, False, 'WFLOW_CRYOSPHERE_CONSTRAINTS'):
                 from ..cryosphere import calculate_constraints
                 project = Path(config['SYMFLUENCE_DATA_DIR']) / ('domain_' + config['DOMAIN_NAME'])
                 # Spatial geometry is immutable during calibration; parameter updates
                 # cannot change the areas used to weight snow/ice observations.
                 metrics.update(calculate_constraints(
                     output_dir, project / 'settings/WFLOW', project, cal_period,
-                    config.get('WFLOW_SNOW_COVER_ERROR_SCALE', .2),
-                    config.get('WFLOW_GLACIER_MB_ERROR_SCALE', 1.),
-                    config.get('WFLOW_SNOW_COVER_THRESHOLD_MM', 5.)))
+                    resolve_config_value(config, lambda: config.model.wflow.snow_cover_error_scale, .2, 'WFLOW_SNOW_COVER_ERROR_SCALE'),
+                    resolve_config_value(config, lambda: config.model.wflow.glacier_mb_error_scale, 1., 'WFLOW_GLACIER_MB_ERROR_SCALE'),
+                    resolve_config_value(config, lambda: config.model.wflow.snow_cover_threshold_mm, 5., 'WFLOW_SNOW_COVER_THRESHOLD_MM')))
             self.logger.info(f"Computed metrics: {metrics}")
             return metrics
         except Exception as e:  # noqa: BLE001
@@ -258,19 +259,19 @@ class WflowWorker(BaseWorker):
         # (net_runoff_volume_flux is instantaneous — needs smoothing)
         if self._is_runoff_flux_output(output_dir, config) and routing_params:
             q = self._apply_routing(q, routing_params)
-        if q is not None and config and config.get('WFLOW_SPATIAL_MODE') == 'distributed':
+        if q is not None and config and resolve_config_value(config, lambda: config.model.wflow.spatial_mode, None, 'WFLOW_SPATIAL_MODE') == 'distributed':
             q.index = q.index - pd.Timedelta(days=1)
         return q
 
     def _is_runoff_flux_output(self, output_dir: Path, config: dict = None):
         """Check if the TOML output uses net_runoff_volume_flux (mm/dt units)."""
-        toml_name = config.get('WFLOW_CONFIG_FILE', 'wflow_sbm.toml') if config else 'wflow_sbm.toml'
+        toml_name = resolve_config_value(config, lambda: config.model.wflow.config_file, 'wflow_sbm.toml', 'WFLOW_CONFIG_FILE') if config else 'wflow_sbm.toml'
         # Search multiple possible locations for the TOML
         search_dirs = [output_dir, output_dir.parent / 'settings', output_dir.parent]
         # Also check the original domain settings (works during DDS calibration)
         if config:
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
-            domain_name = config.get('DOMAIN_NAME', '')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
             search_dirs.append(data_dir / f'domain_{domain_name}' / 'settings' / 'WFLOW')
         for settings_dir in search_dirs:
             toml_path = settings_dir / toml_name
@@ -292,9 +293,9 @@ class WflowWorker(BaseWorker):
         area = 0.0
         dt = int(config.get('WFLOW_TIMESTEP', 3600))
         try:
-            domain_name = config.get('DOMAIN_NAME', '')
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
-            staticmaps_name = config.get('WFLOW_STATICMAPS_FILE', 'wflow_staticmaps.nc')
+            domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
+            staticmaps_name = resolve_config_value(config, lambda: config.model.wflow.staticmaps_file, 'wflow_staticmaps.nc', 'WFLOW_STATICMAPS_FILE')
             staticmaps_path = data_dir / f'domain_{domain_name}' / 'settings' / 'WFLOW' / staticmaps_name
             if staticmaps_path.exists():
                 ds = xr.open_dataset(staticmaps_path)
@@ -340,8 +341,8 @@ class WflowWorker(BaseWorker):
 
     def _load_observations(self, config):
         try:
-            domain_name = config.get('DOMAIN_NAME', '')
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             project_dir = data_dir / f'domain_{domain_name}'
             values, index = self._streamflow_metrics.load_observations(
                 config, project_dir, domain_name, resample_freq=None,

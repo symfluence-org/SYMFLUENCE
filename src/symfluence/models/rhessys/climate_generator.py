@@ -23,6 +23,7 @@ import pandas as pd
 import xarray as xr
 
 from symfluence.core.exceptions import FileOperationError
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.mixins.project import resolve_data_subdir, resolve_forcing_basin_path
 from symfluence.core.modeling.variable_utils import VariableHandler
 
@@ -58,7 +59,7 @@ class RHESSysClimateGenerator:
         self.forcing_raw_path = resolve_data_subdir(self.project_dir, 'forcing') / 'raw_data'
 
         # Get forcing dataset info
-        forcing_ds = config.get('FORCING_DATASET', 'ERA5')
+        forcing_ds = resolve_config_value(config, lambda: config.forcing.dataset, 'ERA5', 'FORCING_DATASET')
         self.forcing_dataset = forcing_ds.upper() if forcing_ds else 'ERA5'
 
     def generate_climate_files(
@@ -241,7 +242,7 @@ class RHESSysClimateGenerator:
         #    distributed remap) when a single-HRU one is present. RHESSys
         #    basin-averages regardless, so the 1-HRU file is always correct.
         sizes = {f: self._forcing_spatial_size(f) for f in candidates}
-        method = str(self.config.get('DOMAIN_DEFINITION_METHOD', 'lumped')).lower()
+        method = str(resolve_config_value(self.config, lambda: self.config.domain.definition_method, 'lumped', 'DOMAIN_DEFINITION_METHOD')).lower()
         if method != 'delineate':
             lumped = [f for f in candidates if sizes[f] == 1]
             if lumped:
@@ -583,7 +584,7 @@ class RHESSysClimateGenerator:
                 centroid_proj = gdf_proj.geometry.centroid.iloc[0]
                 centroid_ll = gpd.GeoSeries([centroid_proj], crs=utm_crs).to_crs("EPSG:4326").iloc[0]
                 lon, lat = float(centroid_ll.x), float(centroid_ll.y)
-                elev_col = self.config.get('CATCHMENT_SHP_ELEV', 'elev_mean')
+                elev_col = resolve_config_value(self.config, lambda: self.config.paths.catchment_elev, 'elev_mean', 'CATCHMENT_SHP_ELEV')
                 if elev_col in gdf.columns:
                     elev = float(gdf[elev_col].iloc[0])
             except (FileNotFoundError, KeyError, IndexError, ValueError):

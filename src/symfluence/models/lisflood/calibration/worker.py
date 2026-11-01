@@ -13,6 +13,7 @@ import xarray as xr
 
 from symfluence.core.calibration.workers.base_worker import BaseWorker
 from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -26,8 +27,8 @@ class LisfloodWorker(BaseWorker):
     def apply_parameters(self, params, settings_dir, **kwargs):
         try:
             config = kwargs.get("config", self.config) or {}
-            domain_name = config.get("DOMAIN_NAME", "")
-            data_dir = Path(config.get("SYMFLUENCE_DATA_DIR", "."))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, "", 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, ".", 'SYMFLUENCE_DATA_DIR'))
             original_settings = data_dir / f"domain_{domain_name}" / "settings" / "LISFLOOD"
             settings_dir = Path(settings_dir)
 
@@ -40,7 +41,7 @@ class LisfloodWorker(BaseWorker):
                 shutil.copytree(original_maps, target_maps)
 
             # Copy and patch settings XML
-            settings_file = config.get("LISFLOOD_SETTINGS_FILE", "settings.xml")
+            settings_file = resolve_config_value(config, lambda: config.model.lisflood.settings_file, "settings.xml", 'LISFLOOD_SETTINGS_FILE')
             original_xml = original_settings / settings_file
             target_xml = settings_dir / settings_file
             if original_xml.exists() and original_xml != target_xml:
@@ -80,9 +81,9 @@ class LisfloodWorker(BaseWorker):
             if override:
                 settings_path = Path(override)
             else:
-                settings_file = config.get("LISFLOOD_SETTINGS_FILE", "settings.xml")
+                settings_file = resolve_config_value(config, lambda: config.model.lisflood.settings_file, "settings.xml", 'LISFLOOD_SETTINGS_FILE')
                 settings_path = Path(settings_dir) / settings_file
-            timeout = int(config.get("LISFLOOD_TIMEOUT", 7200))
+            timeout = int(resolve_config_value(config, lambda: config.model.lisflood.timeout, 7200, 'LISFLOOD_TIMEOUT'))
 
             env = dict(os.environ)
             from symfluence.models.lisflood.runner import _find_pcraster_site_packages
@@ -130,7 +131,7 @@ class LisfloodWorker(BaseWorker):
                 median_dt = pd.Series(sim.index).diff().median()
                 if median_dt < pd.Timedelta(days=1):
                     sim = sim.resample("D").mean()
-            cal_period = config.get("CALIBRATION_PERIOD", "") if isinstance(config, dict) else ""
+            cal_period = config.get('CALIBRATION_PERIOD', "") if isinstance(config, dict) else ""
             if cal_period:
                 parts = [p.strip() for p in cal_period.split(",")]
                 if len(parts) == 2:
@@ -190,8 +191,8 @@ class LisfloodWorker(BaseWorker):
 
     def _load_observations(self, config):
         try:
-            domain_name = config.get("DOMAIN_NAME", "")
-            data_dir = Path(config.get("SYMFLUENCE_DATA_DIR", "."))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, "", 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, ".", 'SYMFLUENCE_DATA_DIR'))
             obs_dir = data_dir / f"domain_{domain_name}" / "observations" / "streamflow" / "preprocessed"
             if not obs_dir.exists():
                 return None

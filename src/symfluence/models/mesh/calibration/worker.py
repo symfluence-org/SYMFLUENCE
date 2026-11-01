@@ -17,6 +17,7 @@ import pandas as pd
 
 from symfluence.core.calibration.workers.base_worker import BaseWorker, run_worker_task
 from symfluence.core.metrics import StreamflowMetrics, kge, nse
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.mixins.project import resolve_data_subdir
 from symfluence.core.registries import R
 from symfluence.models.mesh.runner import MESHRunner
@@ -181,7 +182,7 @@ class MESHWorker(BaseWorker):
             else:
                 # Fallback to standard paths
                 # Handle both flat (DOMAIN_NAME) and nested (domain.name) config formats
-                domain_name = config.get('DOMAIN_NAME')
+                domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
                 if domain_name is None and 'domain' in config:
                     domain_name = config['domain'].get('name')
 
@@ -255,7 +256,7 @@ class MESHWorker(BaseWorker):
                 output_dir / 'streamflow.csv',
             ]
             mesh_config = config.get('model', {}).get('mesh', {})
-            if config.get('MESH_SPATIAL_ROUTING_KERNEL') or mesh_config.get('spatial_routing_kernel'):
+            if resolve_config_value(config, lambda: config.model.mesh.spatial_routing_kernel, None, 'MESH_SPATIAL_ROUTING_KERNEL') or mesh_config.get('spatial_routing_kernel'):
                 # Never silently score unrouted runoff if requested routing failed.
                 sim_file_candidates = [output_dir / 'MESH_spatial_streamflow.csv']
 
@@ -354,7 +355,7 @@ class MESHWorker(BaseWorker):
                 return {'kge': self.penalty_score, 'error': 'Runoff column not found'}
 
             # Load observations
-            domain_name = config.get('DOMAIN_NAME')
+            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
             if domain_name is None and 'domain' in config:
                 domain_name = config['domain'].get('name')
 
@@ -445,7 +446,7 @@ class MESHWorker(BaseWorker):
             # back to CALIBRATION_PERIOD from the config dict.
             period = kwargs.get('period', '')
             if not period:
-                period = config.get('CALIBRATION_PERIOD') or config.get('domain', {}).get('calibration_period', '')
+                period = resolve_config_value(config, lambda: config.domain.calibration_period, None, 'CALIBRATION_PERIOD') or config.get('domain', {}).get('calibration_period', '')
             if period and ',' not in str(period):
                 return {'kge': self.penalty_score, 'error': 'Invalid scoring period'}
             if period:
@@ -517,7 +518,7 @@ class MESHWorker(BaseWorker):
             }
             if config.get('MESH_CRYOSPHERE_CONSTRAINTS', mesh_config.get('cryosphere_constraints', False)):
                 from symfluence.models.mesh.cryosphere import calculate_constraints
-                observation_dir = config.get('MESH_CRYOSPHERE_OBSERVATIONS') or mesh_config.get('cryosphere_observations')
+                observation_dir = resolve_config_value(config, lambda: config.model.mesh.cryosphere_observations, None, 'MESH_CRYOSPHERE_OBSERVATIONS') or mesh_config.get('cryosphere_observations')
                 if not observation_dir:
                     raise MESHConfigurationError('Cryosphere observations directory is required')
                 metrics.update(calculate_constraints(
@@ -596,7 +597,7 @@ class MESHWorker(BaseWorker):
         ]
 
         # Also try forcing directory from config
-        domain_name = config.get('DOMAIN_NAME')
+        domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
         if domain_name is None and 'domain' in config:
             domain_name = config['domain'].get('name')
 
