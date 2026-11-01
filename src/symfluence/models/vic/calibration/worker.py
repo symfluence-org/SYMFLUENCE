@@ -25,6 +25,7 @@ from symfluence.core.calibration.workers.base_worker import (
 )
 from symfluence.core.exceptions import ValidationError
 from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 from symfluence.models.vic.constants import target_snow_constants
@@ -83,8 +84,8 @@ class VICWorker(BaseWorker):
             # Always copy fresh from the original settings location
             # to ensure dimensions match the current domain file
             config = kwargs.get('config', self.config) or {}
-            domain_name = config.get('DOMAIN_NAME', '')
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             original_params_dir = data_dir / f'domain_{domain_name}' / 'settings' / 'VIC' / 'parameters'
 
             if original_params_dir.exists():
@@ -193,7 +194,7 @@ class VICWorker(BaseWorker):
                 # Recalculate Pfactor to match shifted elevations
                 if 'Pfactor' in ds and 'AreaFract' in ds:
                     config = self.config or {}
-                    pfactor_per_km = float(config.get('VIC_PFACTOR_PER_KM', 0.0005))
+                    pfactor_per_km = float(resolve_config_value(config, lambda: config.model.vic.pfactor_per_km, 0.0005, 'VIC_PFACTOR_PER_KM'))
                     elevs = ds['elevation'].values
                     areas = ds['AreaFract'].values
                     mean_elev = float(np.nansum(elevs * areas) / np.nansum(areas))
@@ -339,8 +340,8 @@ class VICWorker(BaseWorker):
             True if model ran successfully
         """
         try:
-            domain_name = config.get('DOMAIN_NAME')
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             project_dir = data_dir / f'domain_{domain_name}'
             vic_settings_dir = project_dir / 'settings' / 'VIC'
 
@@ -374,7 +375,7 @@ class VICWorker(BaseWorker):
             env['MallocStackLogging'] = '0'
 
             # Run with timeout
-            timeout = config.get('VIC_TIMEOUT', 300)
+            timeout = resolve_config_value(config, lambda: config.model.vic.timeout, 300, 'VIC_TIMEOUT')
 
             stdout_file = vic_output_dir / 'vic_stdout.log'
             stderr_file = vic_output_dir / 'vic_stderr.log'
@@ -415,8 +416,8 @@ class VICWorker(BaseWorker):
 
     def _get_vic_executable(self, config: Dict[str, Any], data_dir: Path) -> Path:
         """Get VIC executable path."""
-        install_path = config.get('VIC_INSTALL_PATH', 'default')
-        exe_name = config.get('VIC_EXE', 'vic_image.exe')
+        install_path = resolve_config_value(config, lambda: config.model.vic.install_path, 'default', 'VIC_INSTALL_PATH')
+        exe_name = resolve_config_value(config, lambda: config.model.vic.exe, 'vic_image.exe', 'VIC_EXE')
 
         if install_path == 'default':
             return data_dir / "installs" / "vic" / "bin" / exe_name
@@ -435,7 +436,7 @@ class VICWorker(BaseWorker):
     ) -> Path:
         """Get or create a worker-specific global parameter file."""
         # First try to find existing global file
-        global_file_name = config.get('VIC_GLOBAL_PARAM_FILE', 'vic_global.txt')
+        global_file_name = resolve_config_value(config, lambda: config.model.vic.global_param_file, 'vic_global.txt', 'VIC_GLOBAL_PARAM_FILE')
         original_global = vic_settings_dir / global_file_name
 
         if not original_global.exists():
@@ -554,8 +555,8 @@ class VICWorker(BaseWorker):
             ds.close()
 
             # Convert to m³/s using catchment area
-            domain_name = config.get('DOMAIN_NAME')
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             project_dir = data_dir / f'domain_{domain_name}'
 
             area_km2 = self._streamflow_metrics.get_catchment_area(
@@ -583,7 +584,7 @@ class VICWorker(BaseWorker):
 
             obs_series = pd.Series(obs_values, index=obs_index)
 
-            period = kwargs.get('period') or config.get('CALIBRATION_PERIOD') or config.get('domain', {}).get('calibration_period')
+            period = kwargs.get('period') or resolve_config_value(config, lambda: config.domain.calibration_period, None, 'CALIBRATION_PERIOD') or config.get('domain', {}).get('calibration_period')
             calibration_period = None
             if period:
                 parts = period.split(',') if isinstance(period, str) else period

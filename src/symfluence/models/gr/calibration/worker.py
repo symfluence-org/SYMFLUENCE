@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from symfluence.core.calibration.workers.base_worker import BaseWorker, run_worker_task
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.registries import R
 from symfluence.models.gr.runner import GRRunner
 
@@ -173,8 +174,8 @@ class GRWorker(BaseWorker):
             from symfluence.models.gr.calibration.targets import GRStreamflowTarget
 
             # Resolve project directory
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
-            domain_name = config.get('DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
             project_dir = data_dir / f"domain_{domain_name}"
 
             # Initialize target

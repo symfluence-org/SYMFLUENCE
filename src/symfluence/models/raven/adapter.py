@@ -13,6 +13,7 @@ from symfluence.core.calibration.optimizers.base_model_optimizer import BaseMode
 from symfluence.core.calibration.parameters.base_parameter_manager import BaseParameterManager
 from symfluence.core.calibration.workers.base_worker import BaseWorker
 from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.modeling.base import BaseModelRunner
 from symfluence.core.modeling.base.base_preprocessor import BaseModelPreProcessor
 from symfluence.core.modeling.utilities.elevation_forcing import daily_bands, upper_ice_fractions
@@ -110,7 +111,7 @@ class RavenWorker(BaseWorker):
         return True
 
     def run_model(self, config, settings_dir, output_dir, **kwargs):
-        p = Path(config.get("RAVEN_INSTALL_PATH", "default"))
+        p = Path(resolve_config_value(config, lambda: config.model.raven.install_path, "default", 'RAVEN_INSTALL_PATH'))
         exe = Path(config["SYMFLUENCE_DATA_DIR"]) / "installs/raven/bin/Raven" if str(p) == "default" else p / "Raven"
         out = Path(output_dir)
         out.mkdir(parents=True, exist_ok=True)
@@ -120,7 +121,7 @@ class RavenWorker(BaseWorker):
                 cwd=settings_dir,
                 stdout=log,
                 stderr=subprocess.STDOUT,
-                timeout=config.get("RAVEN_TIMEOUT", 600),
+                timeout=resolve_config_value(config, lambda: config.model.raven.timeout, 600, 'RAVEN_TIMEOUT'),
             )
         errors = out / "Raven_errors.txt"
         if result.returncode or (errors.exists() and "ERROR" in errors.read_text()):
@@ -143,13 +144,13 @@ class RavenWorker(BaseWorker):
         if len(pair) < 365:
             return {"KGE": -999.0}
         result = metrics.calculate_metrics(pair.iloc[:, 0].values, pair.iloc[:, 1].values)
-        if config.get("RAVEN_GLACIER_CONSTRAINTS", False):
+        if resolve_config_value(config, lambda: config.model.raven.glacier_constraints, False, 'RAVEN_GLACIER_CONSTRAINTS'):
             from .cryosphere import glacier_metrics
 
             result.update(glacier_metrics(
                 output_dir, project / "settings/RAVEN/geometry.json",
                 project / "data/observations/cryosphere/glacier_timeseries.csv",
-                config["CALIBRATION_PERIOD"], config.get("RAVEN_GLACIER_MB_ERROR_SCALE", 1.0),
+                config["CALIBRATION_PERIOD"], resolve_config_value(config, lambda: config.model.raven.glacier_mb_error_scale, 1.0, 'RAVEN_GLACIER_MB_ERROR_SCALE'),
             ))
         return result
 

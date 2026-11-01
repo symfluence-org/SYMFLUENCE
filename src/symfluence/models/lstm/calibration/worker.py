@@ -13,6 +13,7 @@ from typing import Any, Dict
 
 from symfluence.core.calibration.targets import create_calibration_target
 from symfluence.core.calibration.workers.base_worker import BaseWorker, WorkerResult, WorkerTask
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.models.lstm import LSTMRunner
 
 
@@ -40,7 +41,7 @@ class LSTMWorker(BaseWorker):
                 eval_config[key] = val
 
             # Override directories for isolation
-            eval_config['EXPERIMENT_ID'] = f"{task.config.get('EXPERIMENT_ID')}_eval_{task.proc_id}"
+            eval_config['EXPERIMENT_ID'] = f"{resolve_config_value(task.config, lambda: task.config.domain.experiment_id, None, 'EXPERIMENT_ID')}_eval_{task.proc_id}"
 
             # 2. Run model
             runner = LSTMRunner(eval_config, self.logger)
@@ -118,7 +119,7 @@ class LSTMWorker(BaseWorker):
         try:
             # Determine the correct simulation directory
             sim_dir = output_dir
-            routing_model = config.get('ROUTING_MODEL', 'none').lower()
+            routing_model = resolve_config_value(config, lambda: config.model.routing_model, 'none', 'ROUTING_MODEL').lower()
             if routing_model and routing_model != 'none':
                 if 'droute' in routing_model:
                     potential_dir = output_dir.parent / 'dRoute'
@@ -130,8 +131,8 @@ class LSTMWorker(BaseWorker):
                         sim_dir = potential_dir
 
             # Use StreamflowTarget for metrics calculation
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
-            domain_name = config.get('DOMAIN_NAME', '')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
             project_dir = data_dir / f"domain_{domain_name}"
 
             target = create_calibration_target('streamflow', config, project_dir, self.logger)

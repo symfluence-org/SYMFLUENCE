@@ -49,7 +49,7 @@ class HYPERunner(BaseModelRunner):  # type: ignore[misc]
         except (AttributeError, KeyError):
             if self.output_dir is not None:
                 return self.output_dir
-            experiment_id = self.config_dict.get('EXPERIMENT_ID', 'default')
+            experiment_id = self._get_config_value(lambda: self.config.domain.experiment_id, default='default', dict_key='EXPERIMENT_ID')
             return self.project_dir / 'simulations' / experiment_id / 'HYPE'
 
     def _build_run_command(self) -> Optional[List[str]]:

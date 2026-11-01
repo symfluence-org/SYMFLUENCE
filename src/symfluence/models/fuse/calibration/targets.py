@@ -23,6 +23,8 @@ from typing import Any, Dict, List, cast
 import pandas as pd
 import xarray as xr
 
+from symfluence.core.mixins.config import resolve_config_value
+
 # Suppress xarray FutureWarning about timedelta64 decoding
 warnings.filterwarnings('ignore',
                        message='.*decode_timedelta.*',
@@ -41,7 +43,7 @@ class FUSEStreamflowTarget(StreamflowEvaluator):
 
     def __init__(self, config: Dict[str, Any], project_dir: Path, logger: logging.Logger):
         super().__init__(config, project_dir, logger)
-        self.is_distributed = config.get('FUSE_SPATIAL_MODE', 'lumped').lower() == 'distributed'
+        self.is_distributed = resolve_config_value(config, lambda: config.model.fuse.spatial_mode, 'lumped', 'FUSE_SPATIAL_MODE').lower() == 'distributed'
 
     def get_simulation_files(self, sim_dir: Path) -> List[Path]:
         """Find FUSE or mizuRoute output files."""
@@ -128,7 +130,7 @@ class FUSESnowTarget(SnowEvaluator):
 
     def __init__(self, config: Dict[str, Any], project_dir: Path, logger: logging.Logger):
         super().__init__(config, project_dir, logger)
-        self.is_distributed = config.get('FUSE_SPATIAL_MODE', 'lumped').lower() == 'distributed'
+        self.is_distributed = resolve_config_value(config, lambda: config.model.fuse.spatial_mode, 'lumped', 'FUSE_SPATIAL_MODE').lower() == 'distributed'
 
     def get_simulation_files(self, sim_dir: Path) -> List[Path]:
         """Snow variables are always in FUSE output, not mizuRoute."""

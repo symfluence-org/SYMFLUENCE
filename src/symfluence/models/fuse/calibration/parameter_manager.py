@@ -131,7 +131,7 @@ class FUSEParameterManager(BaseParameterManager):
                 tuple_bounds[p] = (raw_bounds[p]['min'], raw_bounds[p]['max'])
 
         attrs_path = self._get_config_value(
-            lambda: self.config.model.fuse.transfer_function_attributes,
+            lambda: None,
             default=None, dict_key='TRANSFER_FUNCTION_ATTRIBUTES'
         )
         attributes = None
@@ -146,13 +146,13 @@ class FUSEParameterManager(BaseParameterManager):
                     n_units = ds.sizes.get('par', 1)
 
         param_config = self._get_config_value(
-            lambda: self.config.model.fuse.transfer_function_param_config,
+            lambda: None,
             default=None, dict_key='TRANSFER_FUNCTION_PARAM_CONFIG'
         ) or FUSE_DEFAULT_PARAM_CONFIG
 
         config: Dict[str, Any] = {'TRANSFER_FUNCTION_PARAM_CONFIG': param_config}
         b_bounds = self._get_config_value(
-            lambda: self.config.model.fuse.transfer_function_b_bounds,
+            lambda: self.config.optimization.transfer_function_b_bounds,
             default=None, dict_key='TRANSFER_FUNCTION_B_BOUNDS'
         )
         if b_bounds:

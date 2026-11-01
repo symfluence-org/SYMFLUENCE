@@ -17,6 +17,7 @@ from typing import Any, Dict, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.models.fuse.calibration.file_manager import resolve_fuse_id
 
 # Suppress xarray FutureWarning about timedelta64 decoding
@@ -65,8 +66,8 @@ class FuseToMizurouteConverter:
         try:
             import xarray as xr
 
-            domain_name = config.get('DOMAIN_NAME')
-            experiment_id = config.get('EXPERIMENT_ID')
+            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+            experiment_id = resolve_config_value(config, lambda: config.domain.experiment_id, None, 'EXPERIMENT_ID')
             fuse_id = resolve_fuse_id(config, experiment_id)
 
             # Find FUSE output file (runs_def.nc for run_def mode)
@@ -147,7 +148,7 @@ class FuseToMizurouteConverter:
 
     def _get_routing_var_name(self, config: Dict[str, Any]) -> str:
         """Get the routing variable name from config."""
-        routing_var = config.get('SETTINGS_MIZU_ROUTING_VAR', 'q_routed')
+        routing_var = resolve_config_value(config, lambda: config.model.mizuroute.routing_var, 'q_routed', 'SETTINGS_MIZU_ROUTING_VAR')
         if routing_var in ('default', None, ''):
             routing_var = 'q_routed'
         return routing_var
@@ -163,7 +164,7 @@ class FuseToMizurouteConverter:
             q_fuse = q_fuse.isel(param_set=0)
 
         # Handle spatial dimensions
-        subcatchment_dim = config.get('FUSE_SUBCATCHMENT_DIM', 'longitude')
+        subcatchment_dim = resolve_config_value(config, lambda: config.model.fuse.subcatchment_dim, 'longitude', 'FUSE_SUBCATCHMENT_DIM')
 
         if 'latitude' in q_fuse.dims and 'longitude' in q_fuse.dims:
             # Squeeze singleton dimensions
@@ -197,7 +198,7 @@ class FuseToMizurouteConverter:
         Returns:
             Tuple of (converted values, target units string)
         """
-        target_units = config.get('SETTINGS_MIZU_ROUTING_UNITS', 'm/s')
+        target_units = resolve_config_value(config, lambda: config.model.mizuroute.routing_units, 'm/s', 'SETTINGS_MIZU_ROUTING_UNITS')
         if target_units in ('default', None, ''):
             target_units = 'm/s'
 
@@ -210,7 +211,7 @@ class FuseToMizurouteConverter:
         # 86400, so the fallback never fired — but it sat one raw dict away from
         # firing, and the parity of the two `config.get` defaults (86400 vs the
         # forcing step) is exactly the kind of detail a later edit gets wrong.
-        timestep_seconds = int(config.get('FUSE_OUTPUT_TIMESTEP_SECONDS') or 86400)
+        timestep_seconds = int(resolve_config_value(config, lambda: config.model.fuse.output_timestep_seconds, None, 'FUSE_OUTPUT_TIMESTEP_SECONDS') or 86400)
 
         self.logger.debug(f"Converting FUSE runoff to {target_units} (timestep={timestep_seconds}s)")
 
@@ -279,7 +280,7 @@ class FuseToMizurouteConverter:
 
         # Try from config
         data_dir = config.get('SYMFLUENCE_DATA_DIR', '')
-        domain = config.get('DOMAIN_NAME', '')
+        domain = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
         if data_dir and domain:
             candidate = Path(data_dir) / f'domain_{domain}' / 'settings' / 'mizuRoute' / 'fuse_to_routing_mapping.csv'
             if candidate.exists():

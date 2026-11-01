@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from symfluence.core.calibration.parameters.base_parameter_manager import BaseParameterManager
 from symfluence.core.calibration.parameters.parameter_bounds_registry import get_hype_bounds
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.registries import R
 
 
@@ -29,20 +30,20 @@ class HYPEParameterManager(BaseParameterManager):
         super().__init__(config, logger, hype_settings_dir)
 
         # HYPE-specific setup
-        self.domain_name = config.get('DOMAIN_NAME')
-        self.experiment_id = config.get('EXPERIMENT_ID')
+        self.domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+        self.experiment_id = resolve_config_value(config, lambda: config.domain.experiment_id, None, 'EXPERIMENT_ID')
 
         # Parse HYPE parameters to calibrate from config
         # Default includes critical baseflow/groundwater parameter (rcgrw)
         # This is essential for snow-dominated and cold-region basins to generate winter baseflow
-        hype_params_str = config.get('HYPE_PARAMS_TO_CALIBRATE')
+        hype_params_str = resolve_config_value(config, lambda: config.model.hype.params_to_calibrate, None, 'HYPE_PARAMS_TO_CALIBRATE')
         if hype_params_str is None:
             hype_params_str = 'ttmp,cmlt,cevp,lp,epotdist,rrcs1,rrcs2,rcgrw,rivvel,damp,wcwp,wcfc,wcep,srrcs'
 
         self.hype_params = [p.strip() for p in str(hype_params_str).split(',') if p.strip()]
 
         # Path to par.txt file
-        self.data_dir = Path(config.get('SYMFLUENCE_DATA_DIR'))
+        self.data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, None, 'SYMFLUENCE_DATA_DIR'))
         self.project_dir = self.data_dir / f"domain_{self.domain_name}"
         self.hype_setup_dir = self.project_dir / 'settings' / 'HYPE'
         self.par_file_path = self.hype_setup_dir / 'par.txt'
@@ -112,7 +113,7 @@ class HYPEParameterManager(BaseParameterManager):
     def _load_raw_bounds(self) -> Dict[str, Dict[str, Any]]:
         """Load raw bounds without regionalization override."""
         bounds = get_hype_bounds()
-        config_bounds = self.config.get('HYPE_PARAM_BOUNDS', {})
+        config_bounds = self._get_config_value(lambda: self.config.model.hype.param_bounds, default={}, dict_key='HYPE_PARAM_BOUNDS')
         if config_bounds:
             self._apply_config_bounds_override(bounds, config_bounds)
         return bounds
@@ -261,7 +262,7 @@ class HYPEParameterManager(BaseParameterManager):
         If INITIAL_PARAMETERS is provided in config, use those values
         instead of midpoints for a warm-start.
         """
-        config_initial = self.config.get('INITIAL_PARAMETERS') if isinstance(self.config, dict) else None
+        config_initial = self._get_config_value(lambda: self.config.optimization.initial_parameters, dict_key='INITIAL_PARAMETERS') if isinstance(self.config, dict) else None
         if config_initial and isinstance(config_initial, dict):
             params = {}
             for name in self.all_param_names:

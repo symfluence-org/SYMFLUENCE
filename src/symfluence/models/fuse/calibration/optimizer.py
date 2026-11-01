@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 
 from symfluence.core.calibration.optimizers.base_model_optimizer import BaseModelOptimizer
 from symfluence.core.file_utils import copy_file
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.registries import R
 
 from .parameter_manager import FUSEParameterManager  # noqa: F401 - trigger param manager registration
@@ -57,11 +58,11 @@ class FUSEModelOptimizer(BaseModelOptimizer):
         """
         # Initialize FUSE-specific paths before super().__init__
         # because parent calls _setup_parallel_dirs()
-        # Note: These use raw dict access because super().__init__ hasn't run yet
-        # and _get_config_value() isn't available. After super().__init__(), use typed access.
-        exp_id = config.get('EXPERIMENT_ID') if isinstance(config, dict) else config.domain.experiment_id
+        # Note: super().__init__ hasn't run yet, so _get_config_value() isn't
+        # available; resolve_config_value works for both typed and dict configs.
+        exp_id = resolve_config_value(config, lambda: config.domain.experiment_id, None, 'EXPERIMENT_ID')
         data_dir_str = config.get('SYMFLUENCE_DATA_DIR') if isinstance(config, dict) else config.system.data_dir
-        domain_name_str = config.get('DOMAIN_NAME') if isinstance(config, dict) else config.domain.name
+        domain_name_str = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
         self.data_dir = Path(data_dir_str)
         self.domain_name = domain_name_str
         self.project_dir = self.data_dir / f"domain_{self.domain_name}"
@@ -71,7 +72,7 @@ class FUSEModelOptimizer(BaseModelOptimizer):
         self.fuse_exe_path = self._get_fuse_executable_path_pre_init(config)
         # Use 'or' to treat None as "not set" and fallback to exp_id; hash long IDs.
         from symfluence.models.fuse.calibration.file_manager import resolve_fuse_id
-        fuse_file_id = config.get('FUSE_FILE_ID') if isinstance(config, dict) else (config.model.fuse.file_id if config.model and config.model.fuse else None)
+        fuse_file_id = resolve_config_value(config, lambda: config.model.fuse.file_id, None, 'FUSE_FILE_ID')
         self.fuse_id = resolve_fuse_id({'FUSE_FILE_ID': fuse_file_id, 'EXPERIMENT_ID': exp_id})
 
         super().__init__(config, logger, optimization_settings_dir, reporting_manager=reporting_manager)
@@ -83,10 +84,7 @@ class FUSEModelOptimizer(BaseModelOptimizer):
 
     def _get_fuse_executable_path_pre_init(self, config) -> Path:
         """Helper to get FUSE executable path before full initialization."""
-        if isinstance(config, dict):
-            fuse_install = config.get('FUSE_INSTALL_PATH', 'default')
-        else:
-            fuse_install = config.model.fuse.install_path if config.model and config.model.fuse else 'default'
+        fuse_install = resolve_config_value(config, lambda: config.model.fuse.install_path, 'default', 'FUSE_INSTALL_PATH')
         if fuse_install == 'default':
             return self.data_dir / 'installs' / 'fuse' / 'bin' / 'fuse.exe'
         return Path(fuse_install) / 'fuse.exe'

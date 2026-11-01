@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from symfluence.core.calibration.optimizers.base_model_optimizer import BaseModelOptimizer
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.registries import R
 
 from .worker import CRHMWorker  # noqa: F401 - Import to trigger worker registration
@@ -38,9 +39,9 @@ class CRHMModelOptimizer(BaseModelOptimizer):
         optimization_settings_dir: Optional[Path] = None,
         reporting_manager: Optional[Any] = None
     ):
-        self.experiment_id = config.get('EXPERIMENT_ID')
-        self.data_dir = Path(config.get('SYMFLUENCE_DATA_DIR'))
-        self.domain_name = config.get('DOMAIN_NAME')
+        self.experiment_id = resolve_config_value(config, lambda: config.domain.experiment_id, None, 'EXPERIMENT_ID')
+        self.data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, None, 'SYMFLUENCE_DATA_DIR'))
+        self.domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
         self.project_dir = self.data_dir / f"domain_{self.domain_name}"
 
         self.crhm_setup_dir = self.project_dir / 'settings' / 'CRHM'
@@ -78,7 +79,7 @@ class CRHMModelOptimizer(BaseModelOptimizer):
         so external routing is typically not needed.
         """
         routing_integration = self._get_config_value(
-            lambda: self.config.model.crhm.routing_integration,
+            lambda: None,
             default='none',
             dict_key='CRHM_ROUTING_INTEGRATION'
         )
@@ -154,7 +155,7 @@ class CRHMModelOptimizer(BaseModelOptimizer):
 
             # --- Evaluation-period metrics ---
             eval_metrics: Dict[str, float] = {}
-            eval_period = self.config.get('EVALUATION_PERIOD', '')
+            eval_period = self._get_config_value(lambda: self.config.domain.evaluation_period, default='', dict_key='EVALUATION_PERIOD')
             if eval_period and ',' in str(eval_period):
                 eval_cfg = self.config.to_dict() if hasattr(self.config, 'to_dict') else dict(self.config)
                 eval_cfg['CALIBRATION_PERIOD'] = eval_period  # worker filters on this key

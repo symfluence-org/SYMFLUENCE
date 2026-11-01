@@ -11,8 +11,9 @@ is ``pour_point_path``) made ``POUR_POINT_SHP_PATH`` a no-op, and
 This test statically resolves each such lambda against ``SymfluenceConfig``.
 Options that only exist as flat keys should use
 ``_get_config_value(lambda: None, default=..., dict_key='FLAT_KEY')``.
-``model.*`` paths are skipped: model sections are resolved per model at
-runtime.
+``model.<name>.*`` paths are checked against the per-model schema registered
+in ``R.config_schemas`` -- the same registry ``ModelConfig.__getattr__`` uses
+to resolve ``config.model.<name>`` at runtime.
 """
 from __future__ import annotations
 
@@ -24,16 +25,44 @@ import pytest
 from pydantic import BaseModel
 
 from symfluence.core.config.models import SymfluenceConfig
+from symfluence.core.config.models.model_configs import ModelConfig
+from symfluence.core.registries import R
 
 pytestmark = pytest.mark.unit
 
 SRC = Path(__file__).resolve().parents[3] / "src" / "symfluence"
 _ACCESSORS = {"_get_config_value", "get_config_value", "resolve_config_value"}
 
+# Pre-existing model paths with no schema field (and, mostly, no dict_key), so
+# they always return their default. Each needs a schema field or a dict_key
+# decision, which is a behaviour change, so they are listed rather than fixed
+# here. Keyed by (file, typed path); remove an entry when you fix it.
+KNOWN_UNRESOLVED = {
+    # option has no field and no dict_key: always the default
+    ("symfluence/core/modeling/utilities/base_topology_generator.py", "model.mizuroute.grid_cell_size"),
+    ("symfluence/models/mizuroute/topology_generator.py", "model.mizuroute.grid_cell_size"),
+    ("symfluence/models/lstm/preprocessor.py", "model.flash.lookback"),  # legacy FLASH name
+    ("symfluence/models/ngen/config_generator.py", "model.ngen.forcing_provider"),
+    ("symfluence/models/rhessys/runner.py", "model.rhessys.std_scale"),
+    ("symfluence/models/rhessys/runner.py", "model.rhessys.use_subsurface_gw"),
+    ("symfluence/models/wflow/preprocessor.py", "model.wflow.soil_layer_thickness"),
+    # probably meant ``observed_perimeter_path`` (IGNACIO_OBSERVED_PERIMETER_PATH)
+    ("symfluence/models/ignacio/postprocessor.py", "model.ignacio.observed_perimeter"),
+    # models/mhm/ is excluded from the config-access codemod (in-flight work)
+    ("symfluence/models/mhm/calibration/optimizer.py", "model.mhm.routing_integration"),
+}
+
 
 def _resolves(cls: type, parts: list[str]) -> bool:
     for part in parts:
         fields = getattr(cls, "model_fields", {})
+        if part not in fields and cls is ModelConfig:
+            # ``config.model.<name>`` resolves through R.config_schemas
+            schema = R.config_schemas.get(part.upper())
+            if schema is None:
+                return False
+            cls = schema
+            continue
         if part not in fields:
             return hasattr(cls, part)  # property / method
         annotation = fields[part].annotation
@@ -77,10 +106,12 @@ def _unresolvable_paths() -> list[str]:
             if "config" not in chain:
                 continue
             cfg_path = chain[chain.index("config") + 1:]
-            if not cfg_path or cfg_path[0] == "model":
+            if not cfg_path:
+                continue
+            rel = path.relative_to(SRC.parent)
+            if (rel.as_posix(), ".".join(cfg_path)) in KNOWN_UNRESOLVED:
                 continue
             if not _resolves(SymfluenceConfig, cfg_path):
-                rel = path.relative_to(SRC.parent)
                 bad.append(f"{rel}:{call.lineno}: config.{'.'.join(cfg_path)}")
     return bad
 
@@ -94,6 +125,25 @@ def test_typed_config_paths_resolve():
     )
 
 
+def test_known_unresolved_is_not_stale():
+    still_bad = set()
+    for rel, dotted in KNOWN_UNRESOLVED:
+        used = f"config.{dotted}" in (SRC.parent / rel).read_text(encoding="utf-8")
+        if used and not _resolves(SymfluenceConfig, dotted.split(".")):
+            still_bad.add((rel, dotted))
+    assert still_bad == KNOWN_UNRESOLVED, (
+        "These are fixed or gone -- drop them from KNOWN_UNRESOLVED: "
+        f"{sorted(KNOWN_UNRESOLVED - still_bad)}"
+    )
+
+
 def test_checker_catches_a_bad_path():
     assert not _resolves(SymfluenceConfig, ["paths", "pour_point_shp_path"])
     assert _resolves(SymfluenceConfig, ["paths", "pour_point_path"])
+
+
+def test_checker_resolves_model_sections_through_the_schema_registry():
+    assert _resolves(SymfluenceConfig, ["model", "summa", "exe"])
+    assert _resolves(SymfluenceConfig, ["model", "hydrological_model"])
+    assert not _resolves(SymfluenceConfig, ["model", "summa", "no_such_field"])
+    assert not _resolves(SymfluenceConfig, ["model", "no_such_model", "exe"])

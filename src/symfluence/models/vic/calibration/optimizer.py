@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from symfluence.core.calibration.optimizers.base_model_optimizer import BaseModelOptimizer
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.registries import R
 
 from .worker import VICWorker  # noqa: F401 - Import to trigger worker registration
@@ -38,15 +39,10 @@ class VICModelOptimizer(BaseModelOptimizer):
         reporting_manager: Optional[Any] = None
     ):
         # Extract config values before super().__init__ (which may reference them).
-        # Supports both typed SymfluenceConfig and plain dict.
-        if isinstance(config, dict):
-            self.experiment_id = config.get('EXPERIMENT_ID')
-            self.data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
-            self.domain_name = config.get('DOMAIN_NAME')
-        else:
-            self.experiment_id = config.domain.experiment_id
-            self.data_dir = Path(config.system.data_dir)
-            self.domain_name = config.domain.name
+        # Works for both typed SymfluenceConfig and plain dict configs.
+        self.experiment_id = resolve_config_value(config, lambda: config.domain.experiment_id, None, 'EXPERIMENT_ID')
+        self.data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
+        self.domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
         self.project_dir = self.data_dir / f"domain_{self.domain_name}"
 
         self.vic_setup_dir = self.project_dir / 'settings' / 'VIC'
@@ -80,7 +76,7 @@ class VICModelOptimizer(BaseModelOptimizer):
     def _check_routing_needed(self) -> bool:
         """Determine if routing is needed for VIC."""
         routing_integration = self._get_config_value(
-            lambda: self.config.model.vic.routing_integration,
+            lambda: None,
             default='none',
             dict_key='VIC_ROUTING_INTEGRATION'
         )

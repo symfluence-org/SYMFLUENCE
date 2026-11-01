@@ -18,6 +18,7 @@ import pandas as pd
 
 from symfluence.core.calibration.workers.base_worker import BaseWorker, run_worker_task
 from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.mixins.project import resolve_data_subdir
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
@@ -73,8 +74,8 @@ class CRHMWorker(BaseWorker):
 
             # Always copy fresh from the original CRHM_input location
             config = kwargs.get('config', self.config) or {}
-            domain_name = config.get('DOMAIN_NAME', '')
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             original_settings_dir = data_dir / f'domain_{domain_name}' / 'settings' / 'CRHM'
 
             if original_settings_dir.exists() and original_settings_dir.resolve() != settings_dir.resolve():
@@ -89,7 +90,7 @@ class CRHMWorker(BaseWorker):
                 return False
 
             # Find project file
-            prj_file_name = config.get('CRHM_PROJECT_FILE', 'model.prj')
+            prj_file_name = resolve_config_value(config, lambda: config.model.crhm.project_file, 'model.prj', 'CRHM_PROJECT_FILE')
             prj_file = settings_dir / prj_file_name
             if not prj_file.exists():
                 # Try to find any .prj file
@@ -206,7 +207,7 @@ class CRHMWorker(BaseWorker):
             True if model ran successfully
         """
         try:
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
 
             # Use sim_dir for output if provided
             crhm_output_dir = Path(kwargs.get('sim_dir', output_dir))
@@ -222,7 +223,7 @@ class CRHMWorker(BaseWorker):
                 return False
 
             # Get project file
-            prj_file_name = config.get('CRHM_PROJECT_FILE', 'model.prj')
+            prj_file_name = resolve_config_value(config, lambda: config.model.crhm.project_file, 'model.prj', 'CRHM_PROJECT_FILE')
             prj_file = settings_dir / prj_file_name
             if not prj_file.exists():
                 prj_files = list(settings_dir.glob('*.prj'))
@@ -237,7 +238,7 @@ class CRHMWorker(BaseWorker):
             # not the project file flag.  Use --obs_file_directory so CRHM
             # can locate forcing (.obs) files, which live in
             # data/forcing/CRHM_input (separate from settings/CRHM).
-            domain_name = config.get('DOMAIN_NAME', '')
+            domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
             project_dir = data_dir / f'domain_{domain_name}'
             forcing_dir = resolve_data_subdir(project_dir, 'forcing') / 'CRHM_input'
             obs_dir = str(forcing_dir) + os.sep
@@ -247,7 +248,7 @@ class CRHMWorker(BaseWorker):
             env = os.environ.copy()
 
             # Run with timeout
-            timeout = config.get('CRHM_TIMEOUT', 300)
+            timeout = resolve_config_value(config, lambda: config.model.crhm.timeout, 300, 'CRHM_TIMEOUT')
 
             stdout_file = crhm_output_dir / 'crhm_stdout.log'
             stderr_file = crhm_output_dir / 'crhm_stderr.log'
@@ -293,8 +294,8 @@ class CRHMWorker(BaseWorker):
 
     def _get_crhm_executable(self, config: Dict[str, Any], data_dir: Path) -> Path:
         """Get CRHM executable path."""
-        install_path = config.get('CRHM_INSTALL_PATH', 'default')
-        exe_name = config.get('CRHM_EXE', 'crhm')
+        install_path = resolve_config_value(config, lambda: config.model.crhm.install_path, 'default', 'CRHM_INSTALL_PATH')
+        exe_name = resolve_config_value(config, lambda: config.model.crhm.exe, 'crhm', 'CRHM_EXE')
 
         if install_path == 'default':
             exe = data_dir / "installs" / "crhm" / "bin" / exe_name
@@ -416,8 +417,8 @@ class CRHMWorker(BaseWorker):
                 self.logger.debug(f"Skipped {warmup_days} warmup days for metric calculation")
 
             # Load observations
-            domain_name = config.get('DOMAIN_NAME')
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             project_dir = data_dir / f'domain_{domain_name}'
 
             obs_values, obs_index = self._streamflow_metrics.load_observations(
@@ -431,7 +432,7 @@ class CRHMWorker(BaseWorker):
             # Restrict scoring to the configured calibration window; the final
             # evaluation swaps EVALUATION_PERIOD into this key to score the
             # held-out window from the same full-period run.
-            cal_period_str = config.get('CALIBRATION_PERIOD', '')
+            cal_period_str = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
             cal_period_tuple = None
             if cal_period_str and ',' in str(cal_period_str):
                 parts = str(cal_period_str).split(',')

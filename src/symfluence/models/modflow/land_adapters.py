@@ -30,6 +30,7 @@ from typing import Any, Dict, Optional, Type
 import pandas as pd
 
 from symfluence.core.exceptions import ConfigurationError, ValidationError
+from symfluence.core.mixins.config import resolve_config_value
 
 logger = logging.getLogger(__name__)
 
@@ -76,8 +77,8 @@ def resolve_land_model(config, default: str = 'SUMMA') -> str:
     """
     if not isinstance(config, dict):
         config = config.to_dict(flatten=True) if hasattr(config, 'to_dict') else {}
-    hydro = str(config.get('HYDROLOGICAL_MODEL') or '').split(',')[0].strip()
-    for name in (config.get('LAND_SURFACE_MODEL'), hydro, config.get('MODFLOW_COUPLING_SOURCE')):
+    hydro = str(resolve_config_value(config, lambda: config.model.hydrological_model, None, 'HYDROLOGICAL_MODEL') or '').split(',')[0].strip()
+    for name in (config.get('LAND_SURFACE_MODEL'), hydro, resolve_config_value(config, lambda: config.model.modflow.coupling_source, None, 'MODFLOW_COUPLING_SOURCE')):
         if name and str(name).strip().upper() not in ('MODFLOW', 'NONE', 'DEFAULT'):
             return str(name).strip().upper()
     return default

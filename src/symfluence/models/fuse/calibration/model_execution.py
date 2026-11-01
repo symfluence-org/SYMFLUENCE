@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from symfluence.core.logging_utils import log_once
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.mixins.project import resolve_data_subdir
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.models.fuse.calibration.file_manager import resolve_fuse_id
@@ -54,7 +55,7 @@ def detect_fuse_run_mode(config: Dict[str, Any], kwargs: Dict[str, Any],
     """
     log = log or logger
 
-    requested = config.get('FUSE_RUN_MODE') or kwargs.get('mode')
+    requested = resolve_config_value(config, lambda: config.model.fuse.run_mode, None, 'FUSE_RUN_MODE') or kwargs.get('mode')
     if requested and requested != 'run_pre' and requested not in _REJECTED_MODES_WARNED:
         _REJECTED_MODES_WARNED.add(requested)
         log.warning(
@@ -86,9 +87,9 @@ def resolve_fuse_paths(
     log = log or logger
 
     # Resolve executable
-    fuse_install = config.get('FUSE_INSTALL_PATH', 'default')
+    fuse_install = resolve_config_value(config, lambda: config.model.fuse.install_path, 'default', 'FUSE_INSTALL_PATH')
     if fuse_install == 'default':
-        data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+        data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
         fuse_exe = data_dir / 'installs' / 'fuse' / 'bin' / 'fuse.exe'
     else:
         fuse_exe = Path(fuse_install) / 'fuse.exe'
@@ -127,11 +128,11 @@ def prepare_input_files(
     log = log or logger
 
     fuse_run_id = 'sim'
-    data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
-    domain_name = config.get('DOMAIN_NAME')
+    data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
+    domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
     project_dir = data_dir / f"domain_{domain_name}"
     fuse_input_dir = resolve_data_subdir(project_dir, 'forcing') / 'FUSE_input'
-    experiment_id = config.get('EXPERIMENT_ID', 'run_1')
+    experiment_id = resolve_config_value(config, lambda: config.domain.experiment_id, 'run_1', 'EXPERIMENT_ID')
     fuse_id = resolve_fuse_id(config, experiment_id)
 
     # Input files to symlink
@@ -395,7 +396,7 @@ def execute_fuse(
     # For run_pre mode, append parameter file
     if mode == 'run_pre':
         param_file = _find_run_pre_param_file(execution_cwd, fuse_run_id, fuse_id,
-                                               config.get('DOMAIN_NAME', ''), log)
+                                               resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME'), log)
         if param_file:
             cmd.append(str(param_file.name))
             cmd.append('1')
@@ -444,7 +445,7 @@ def execute_fuse(
         text=True,
         encoding='utf-8',
         errors='replace',
-        timeout=config.get('FUSE_TIMEOUT', 3600),
+        timeout=resolve_config_value(config, lambda: config.model.fuse.timeout, 3600, 'FUSE_TIMEOUT'),
         env=env
     )
 
@@ -534,7 +535,7 @@ def handle_fuse_output(
     """
     log = log or logger
 
-    domain_name = config.get('DOMAIN_NAME')
+    domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
     fuse_id = resolve_fuse_id(config)
 
     run_suffix = 'runs_def' if mode == 'run_def' else 'runs_pre'

@@ -26,6 +26,7 @@ import pandas as pd
 from symfluence.core.calibration.parameters.base_parameter_manager import BaseParameterManager
 from symfluence.core.calibration.parameters.parameter_bounds_registry import get_ngen_bounds
 from symfluence.core.logging_utils import log_once
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.registries import R
 
 
@@ -46,8 +47,8 @@ class NgenParameterManager(BaseParameterManager):
         super().__init__(config, logger, ngen_settings_dir)
 
         # Ngen-specific setup
-        self.domain_name = config.get('DOMAIN_NAME')
-        self.experiment_id = config.get('EXPERIMENT_ID')
+        self.domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+        self.experiment_id = resolve_config_value(config, lambda: config.domain.experiment_id, None, 'EXPERIMENT_ID')
 
         # Parse which modules to calibrate
         self.modules_to_calibrate = self._parse_modules_to_calibrate()
@@ -274,7 +275,7 @@ class NgenParameterManager(BaseParameterManager):
 
         # TOPMODEL parameters
         if 'TOPMODEL' in self.modules_to_calibrate:
-            topmodel_params_str = self._get_config_value(lambda: self.config.model.ngen.topmodel_params_to_calibrate, default='m,lnTe,Srmax,td', dict_key='NGEN_TOPMODEL_PARAMS_TO_CALIBRATE')
+            topmodel_params_str = self._get_config_value(lambda: None, default='m,lnTe,Srmax,td', dict_key='NGEN_TOPMODEL_PARAMS_TO_CALIBRATE')
             if topmodel_params_str is None:
                 topmodel_params_str = 'm,lnTe,Srmax,td'
             params['TOPMODEL'] = [p.strip() for p in topmodel_params_str.split(',') if p.strip()]

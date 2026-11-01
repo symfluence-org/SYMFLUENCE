@@ -476,7 +476,7 @@ shortwave_radiation_provided=1
         # This ensures initial conditions are physically consistent with calibration bounds
         # Default: 60% of saturation (between field capacity and saturation)
         initial_moisture_frac = self._get_config_value(
-            lambda: self.config.model.ngen.initial_moisture_fraction,
+            lambda: None,
             default=0.6,
             dict_key='NOAH_INITIAL_MOISTURE_FRACTION'
         )

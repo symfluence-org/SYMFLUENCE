@@ -15,6 +15,7 @@ import pandas as pd
 
 from symfluence.core.calibration.workers.base_worker import BaseWorker
 from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -44,7 +45,7 @@ class CWatMWorker(BaseWorker):
             return False
 
         env = dict(os.environ)
-        install_path = config.get('CWATM_INSTALL_PATH', 'default')
+        install_path = resolve_config_value(config, lambda: config.model.cwatm.install_path, 'default', 'CWATM_INSTALL_PATH')
         data_dir = config.get('SYMFLUENCE_DATA_DIR', '.')
         if install_path == 'default' or not install_path:
             cwatm_dir = Path(data_dir) / 'installs' / 'cwatm'
@@ -53,10 +54,10 @@ class CWatMWorker(BaseWorker):
 
         env['PYTHONPATH'] = str(cwatm_dir)
 
-        exe_name = config.get('CWATM_EXE', 'run_cwatm.py')
+        exe_name = resolve_config_value(config, lambda: config.model.cwatm.exe, 'run_cwatm.py', 'CWATM_EXE')
         cmd = [sys.executable, str(cwatm_dir / exe_name), str(ini_path), '-q']
 
-        timeout = int(config.get('CWATM_TIMEOUT', 14400))
+        timeout = int(resolve_config_value(config, lambda: config.model.cwatm.timeout, 14400, 'CWATM_TIMEOUT'))
         try:
             result = run_subprocess(
                 cmd, cwd=str(settings_dir), env=env,
@@ -79,7 +80,7 @@ class CWatMWorker(BaseWorker):
             if sim is None or obs is None or len(sim) == 0 or len(obs) == 0:
                 return {'KGE': -999.0, 'NSE': -999.0}
 
-            cal_period = config.get('CALIBRATION_PERIOD', '')
+            cal_period = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
             if cal_period:
                 parts = cal_period.split(',')
                 if len(parts) == 2:
@@ -120,7 +121,7 @@ class CWatMWorker(BaseWorker):
 
     def _load_observations(self, config: Dict) -> Optional[pd.Series]:
         data_dir = config.get('SYMFLUENCE_DATA_DIR', '.')
-        domain = config.get('DOMAIN_NAME', '')
+        domain = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
         obs_dir = Path(data_dir) / f'domain_{domain}' / 'observations' / 'streamflow' / 'preprocessed'
         if not obs_dir.exists():
             return None
@@ -135,7 +136,7 @@ class CWatMWorker(BaseWorker):
 
     def _get_original_settings_dir(self) -> Path:
         data_dir = self.config.get('SYMFLUENCE_DATA_DIR', '.')
-        domain = self.config.get('DOMAIN_NAME', '')
+        domain = resolve_config_value(self.config, lambda: self.config.domain.name, '', 'DOMAIN_NAME')
         return Path(data_dir) / f'domain_{domain}' / 'settings' / 'CWATM'
 
     def _setup_process_dir(self, original_dir: Path, settings_dir: Path) -> None:

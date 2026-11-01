@@ -22,6 +22,7 @@ from symfluence.core.calibration.workers.base_worker import BaseWorker, run_work
 from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.logging_utils import log_once
 from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -270,8 +271,8 @@ class RHESSysWorker(BaseWorker):
         """
         try:
             # Get paths
-            domain_name = config.get('DOMAIN_NAME')
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             project_dir = data_dir / f'domain_{domain_name}'
             rhessys_input_dir = project_dir / 'settings' / 'RHESSys'
 
@@ -445,8 +446,8 @@ class RHESSysWorker(BaseWorker):
 
     def _get_rhessys_executable(self, config: Dict[str, Any], data_dir: Path) -> Path:
         """Get RHESSys executable path."""
-        install_path = config.get('RHESSYS_INSTALL_PATH', 'default')
-        exe_name = config.get('RHESSYS_EXE', 'rhessys')
+        install_path = resolve_config_value(config, lambda: config.model.rhessys.install_path, 'default', 'RHESSYS_INSTALL_PATH')
+        exe_name = resolve_config_value(config, lambda: config.model.rhessys.exe, 'rhessys', 'RHESSYS_EXE')
         if install_path == 'default':
             exe = data_dir / "installs" / "rhessys" / "bin" / exe_name
         else:
@@ -471,7 +472,7 @@ class RHESSysWorker(BaseWorker):
         output_dir: Path
     ) -> list:
         """Build RHESSys command line."""
-        domain_name = config.get('DOMAIN_NAME')
+        domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
 
         # Use worker-specific defs directory if available
         worker_defs_dir = settings_dir / 'defs'
@@ -507,8 +508,8 @@ class RHESSysWorker(BaseWorker):
                      message=f"Worker defs directory does not exist: {worker_defs_dir}")
 
         # Parse dates
-        start_str = config.get('EXPERIMENT_TIME_START', '2004-01-01 01:00')
-        end_str = config.get('EXPERIMENT_TIME_END', '2004-12-31 23:00')
+        start_str = resolve_config_value(config, lambda: config.domain.time_start, '2004-01-01 01:00', 'EXPERIMENT_TIME_START')
+        end_str = resolve_config_value(config, lambda: config.domain.time_end, '2004-12-31 23:00', 'EXPERIMENT_TIME_END')
         start_date = pd.to_datetime(start_str)
         end_date = pd.to_datetime(end_str)
 
@@ -599,13 +600,13 @@ class RHESSysWorker(BaseWorker):
         cmd.extend(['-longwaveevap'])
 
         # Fire spread if WMFire is enabled
-        wmfire_enabled = config.get('RHESSYS_USE_WMFIRE', False)
+        wmfire_enabled = resolve_config_value(config, lambda: config.model.rhessys.use_wmfire, False, 'RHESSYS_USE_WMFIRE')
         if wmfire_enabled:
             fire_dir = rhessys_input_dir / "fire"
             patch_grid = fire_dir / "patch_grid.txt"
             dem_grid = fire_dir / "dem_grid.txt"
             if patch_grid.exists() and dem_grid.exists():
-                resolution = config.get('WMFIRE_GRID_RESOLUTION', 30)
+                resolution = resolve_config_value(config, lambda: config.model.rhessys.wmfire.grid_resolution, 30, 'WMFIRE_GRID_RESOLUTION')
                 cmd.extend(["-firespread", str(resolution), str(patch_grid), str(dem_grid)])
                 self.logger.debug(f"WMFire fire spread enabled: {resolution}m resolution")
             else:
@@ -797,7 +798,7 @@ class RHESSysWorker(BaseWorker):
 
             # Read RHESSys output - robustly locate the file
             # RHESSys produces output in a nested structure: [sim_dir]/simulations/[experiment_id]/RHESSys/
-            experiment_id = config.get('EXPERIMENT_ID', 'run_1')
+            experiment_id = resolve_config_value(config, lambda: config.domain.experiment_id, 'run_1', 'EXPERIMENT_ID')
             possible_paths = [
                 sim_dir / 'rhessys_basin.daily',
                 sim_dir / 'simulations' / experiment_id / 'RHESSys' / 'rhessys_basin.daily',
@@ -839,8 +840,8 @@ class RHESSysWorker(BaseWorker):
                 return {'kge': self.penalty_score, 'error': 'No streamflow column'}
 
             # Convert to m³/s using catchment area from shared utility
-            domain_name = config.get('DOMAIN_NAME')
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             project_dir = data_dir / f'domain_{domain_name}'
 
             # Cache catchment area to avoid repeated shapefile reads
@@ -906,7 +907,7 @@ class RHESSysWorker(BaseWorker):
             try:
                 # Parse calibration period if specified
                 calib_period_tuple = None
-                calib_period_str = config.get('CALIBRATION_PERIOD', '')
+                calib_period_str = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
                 if calib_period_str:
                     try:
                         start_str, end_str = calib_period_str.split(',')

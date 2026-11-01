@@ -23,6 +23,7 @@ import xarray as xr
 from tqdm import tqdm
 
 from symfluence.core.exceptions import ValidationError
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.modeling.utilities import BaseForcingProcessor
 
 _FLUX_UNITS = ('wm-2', 'w/m2', 'wm^-2', 'w/m^2', 'wm**-2')
@@ -30,11 +31,11 @@ _FLUX_UNITS = ('wm-2', 'w/m2', 'wm^-2', 'w/m^2', 'wm**-2')
 
 def required_extra_obs(config: Dict[str, Any]) -> List[str]:
     """Optional HYPE observation files the configured model options read."""
-    pet_model = config.get('HYPE_PET_MODEL')
+    pet_model = resolve_config_value(config, lambda: config.model.hype.pet_model, None, 'HYPE_PET_MODEL')
     names = []
-    if config.get('HYPE_SNOWFALL_FRACTION'):
+    if resolve_config_value(config, lambda: config.model.hype.snowfall_fraction, None, 'HYPE_SNOWFALL_FRACTION'):
         names.append('SFobs')
-    if config.get('HYPE_SNOW_MELT_MODEL', 0) == 2 or pet_model == 5:
+    if resolve_config_value(config, lambda: config.model.hype.snow_melt_model, 0, 'HYPE_SNOW_MELT_MODEL') == 2 or pet_model == 5:
         names.append('SWobs')
     if pet_model == 5:
         names += ['RHobs', 'Uobs']
@@ -463,7 +464,7 @@ class HYPEForcingProcessor(BaseForcingProcessor):
 
     def write_wind_obs(self, files: List[Path]) -> Path:
         """Daily mean wind speed at 2 m (FAO-56 eq. 47 log profile) as HYPE Uobs (m/s)."""
-        height = float(self.config.get('HYPE_WIND_MEASUREMENT_HEIGHT', 10.0))
+        height = float(self._get_config_value(lambda: self.config.model.hype.wind_measurement_height, default=10.0, dict_key='HYPE_WIND_MEASUREMENT_HEIGHT'))
         wind = self._read_steps(files, 'wind_speed', ('ms-1', 'm/s'))
         if (wind.to_numpy() < 0).any():
             raise ValidationError('Negative wind forcing')
@@ -479,7 +480,7 @@ class HYPEForcingProcessor(BaseForcingProcessor):
         dry days get the unweighted mean so a later precipitation correction never
         meets an undefined fraction.
         """
-        snow_tw, rain_tw = (float(v) for v in self.config.get('HYPE_WET_BULB_SNOW_RANGE', [0.0, 2.0]))
+        snow_tw, rain_tw = (float(v) for v in self._get_config_value(lambda: self.config.model.hype.wet_bulb_snow_range, default=[0.0, 2.0], dict_key='HYPE_WET_BULB_SNOW_RANGE'))
         if not rain_tw > snow_tw:
             raise ValidationError('HYPE_WET_BULB_SNOW_RANGE must be increasing')
         t = self._read_steps(files, 'air_temperature', ('k',)) - 273.15

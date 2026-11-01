@@ -13,6 +13,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.mixins.project import resolve_data_subdir
 
 logger = logging.getLogger(__name__)
@@ -25,8 +26,8 @@ def resolve_fuse_id(config: Dict[str, Any], experiment_id: Optional[str] = None)
     runner-side filenames (FUSE Fortran uses CHARACTER(LEN=6) for FMODEL_ID).
     """
     if experiment_id is None:
-        experiment_id = (config.get('EXPERIMENT_ID') if config else None) or 'run_1'
-    fuse_id = (config.get('FUSE_FILE_ID') if config else None) or experiment_id
+        experiment_id = (resolve_config_value(config, lambda: config.domain.experiment_id, None, 'EXPERIMENT_ID') if config else None) or 'run_1'
+    fuse_id = (resolve_config_value(config, lambda: config.model.fuse.file_id, None, 'FUSE_FILE_ID') if config else None) or experiment_id
     if fuse_id and len(fuse_id) > 6:
         import hashlib
         fuse_id = hashlib.md5(fuse_id.encode(), usedforsecurity=False).hexdigest()[:6]
@@ -67,7 +68,7 @@ def update_fuse_file_manager(
 
         # Resolve experiment/fuse IDs (hash long IDs to fit FUSE's 6-char buffer)
         if experiment_id is None:
-            experiment_id = config.get('EXPERIMENT_ID', 'run_1') if config else 'run_1'
+            experiment_id = resolve_config_value(config, lambda: config.domain.experiment_id, 'run_1', 'EXPERIMENT_ID') if config else 'run_1'
         fuse_id = resolve_fuse_id(config, experiment_id)
 
         # Resolve paths
@@ -136,8 +137,8 @@ def _resolve_input_path(
     if not config:
         return None
 
-    data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
-    domain_name = config.get('DOMAIN_NAME', '')
+    data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
+    domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
     project_dir = data_dir / f"domain_{domain_name}"
     fuse_input_dir = resolve_data_subdir(project_dir, 'forcing') / 'FUSE_input'
 
@@ -168,8 +169,8 @@ def _resolve_simulation_dates(
         return sim_start, sim_end, eval_start, eval_end
 
     # Try to read actual dates from forcing file
-    data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
-    domain_name = config.get('DOMAIN_NAME', '')
+    data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
+    domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
     project_dir = data_dir / f"domain_{domain_name}"
     forcing_file = resolve_data_subdir(project_dir, 'forcing') / 'FUSE_input' / f"{domain_name}_input.nc"
 
@@ -202,16 +203,16 @@ def _resolve_simulation_dates(
 
     # Fallback to config dates
     if sim_start is None:
-        exp_start = config.get('EXPERIMENT_TIME_START', '')
+        exp_start = resolve_config_value(config, lambda: config.domain.time_start, '', 'EXPERIMENT_TIME_START')
         if exp_start:
             sim_start = str(exp_start).split()[0]
     if sim_end is None:
-        exp_end = config.get('EXPERIMENT_TIME_END', '')
+        exp_end = resolve_config_value(config, lambda: config.domain.time_end, '', 'EXPERIMENT_TIME_END')
         if exp_end:
             sim_end = str(exp_end).split()[0]
 
     # Calibration period
-    calib_period = config.get('CALIBRATION_PERIOD', '')
+    calib_period = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
     if calib_period and ',' in str(calib_period):
         parts = str(calib_period).split(',')
         eval_start = parts[0].strip()

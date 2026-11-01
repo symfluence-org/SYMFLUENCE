@@ -19,6 +19,7 @@ import pandas as pd
 
 from symfluence.core.constants import UnitConversion
 from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.models.fuse.calibration.file_manager import resolve_fuse_id
 
 logger = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ def load_observations(
     CSV — keeping FUSE consistent with the other models' calibration loaders.
     """
     log = log or logger
-    domain_name = config.get('DOMAIN_NAME')
+    domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
 
     values, index = StreamflowMetrics().load_observations(
         config, project_dir, domain_name, resample_freq='D',
@@ -80,7 +81,7 @@ def find_simulation_output(
         Tuple of (sim_file_path, use_routed_output)
     """
     log = log or logger
-    experiment_id = config.get('EXPERIMENT_ID')
+    experiment_id = resolve_config_value(config, lambda: config.domain.experiment_id, None, 'EXPERIMENT_ID')
 
     # Check for routed output first
     if mizuroute_dir and Path(mizuroute_dir).exists():
@@ -137,8 +138,8 @@ def _find_fuse_output(
     log: logging.Logger
 ) -> Optional[Path]:
     """Find FUSE output file."""
-    domain_name = config.get('DOMAIN_NAME')
-    experiment_id = config.get('EXPERIMENT_ID')
+    domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+    experiment_id = resolve_config_value(config, lambda: config.domain.experiment_id, None, 'EXPERIMENT_ID')
     fuse_id = resolve_fuse_id(config, experiment_id)
     fuse_output_dir = Path(sim_dir) if sim_dir else output_dir
 
@@ -188,7 +189,7 @@ def read_routed_streamflow(
         return None
 
     with ds:
-        sim_reach_id = config.get('SIM_REACH_ID')
+        sim_reach_id = resolve_config_value(config, lambda: config.evaluation.sim_reach_id, None, 'SIM_REACH_ID')
         seg_idx = 0
 
         if sim_reach_id is not None and sim_reach_id != 'default':
@@ -244,7 +245,7 @@ def read_fuse_streamflow(
     import xarray as xr
 
     log = log or logger
-    domain_name = config.get('DOMAIN_NAME')
+    domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
 
     try:
         ds = xr.open_dataset(sim_file_path, decode_times=True, decode_timedelta=True)
@@ -257,8 +258,8 @@ def read_fuse_streamflow(
         return None
 
     with ds:
-        spatial_mode = config.get('FUSE_SPATIAL_MODE', 'lumped')
-        subcatchment_dim = config.get('FUSE_SUBCATCHMENT_DIM', 'latitude')
+        spatial_mode = resolve_config_value(config, lambda: config.model.fuse.spatial_mode, 'lumped', 'FUSE_SPATIAL_MODE')
+        subcatchment_dim = resolve_config_value(config, lambda: config.model.fuse.subcatchment_dim, 'latitude', 'FUSE_SUBCATCHMENT_DIM')
 
         # Select runoff variable
         if 'q_routed' in ds.variables:
@@ -414,7 +415,7 @@ def align_and_filter(
     sim_aligned = simulated.loc[common_index].dropna()
 
     # Filter to calibration period
-    calib_period = config.get('CALIBRATION_PERIOD', '')
+    calib_period = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
     if calib_period and ',' in str(calib_period):
         try:
             calib_start, calib_end = [s.strip() for s in str(calib_period).split(',')]
@@ -469,7 +470,7 @@ def compute_metrics(
             metric_list.append(metric_lower)
 
     # Add composite metric components if configured
-    composite_config = config.get('COMPOSITE_METRIC')
+    composite_config = resolve_config_value(config, lambda: config.optimization.composite_metric, None, 'COMPOSITE_METRIC')
     if composite_config and isinstance(composite_config, dict):
         for metric_name in composite_config.keys():
             metric_lower = metric_name.lower()

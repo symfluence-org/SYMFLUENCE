@@ -87,7 +87,7 @@ class TRouteConfigMixin:
     @property
     def troute_make_outlet(self) -> str:
         return self._get_config_value(
-            lambda: self.config.model.troute.make_outlet,
+            lambda: None,
             default='n/a',
             dict_key='TROUTE_MAKE_OUTLET',
         )
@@ -95,7 +95,7 @@ class TRouteConfigMixin:
     @property
     def troute_needs_remap(self) -> bool:
         return self._get_config_value(
-            lambda: self.config.model.troute.needs_remap,
+            lambda: None,
             default=False,
             dict_key='TROUTE_NEEDS_REMAP',
         )

@@ -17,6 +17,7 @@ import pandas as pd
 from symfluence.core.calibration.workers.base_worker import BaseWorker, run_worker_task
 from symfluence.core.logging_utils import log_once
 from symfluence.core.metrics import StreamflowMetrics, kge, nse
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 from symfluence.models.hype.preprocessor import HYPEPreProcessor
@@ -114,7 +115,7 @@ class HYPEWorker(BaseWorker):
         elif hasattr(self.config, 'model_dump'):
             cfg = self.config.model_dump()
 
-        exe_name = cfg.get('HYPE_EXE', 'hype')
+        exe_name = resolve_config_value(cfg, lambda: self.config.model.hype.exe, 'hype', 'HYPE_EXE')
 
         if Path(exe_name).is_absolute() and Path(exe_name).exists():
             return exe_name
@@ -122,7 +123,7 @@ class HYPEWorker(BaseWorker):
         # Honor the explicitly configured install path (as runner.py does).
         # Without this the worker ignores HYPE_INSTALL_PATH and falls through to
         # the bare exe name -> FileNotFoundError -> 100% calibration crashes.
-        install_path = cfg.get('HYPE_INSTALL_PATH', '')
+        install_path = resolve_config_value(cfg, lambda: self.config.model.hype.install_path, '', 'HYPE_INSTALL_PATH')
         if install_path and install_path != 'default':
             ip = Path(install_path)
             for candidate in (ip / exe_name, ip):

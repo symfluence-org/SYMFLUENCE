@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional
 from xml.etree import ElementTree as ET  # nosec B405
 
 from symfluence.core.calibration.optimizers.base_model_optimizer import BaseModelOptimizer
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.registries import R
 
 from .worker import LisfloodWorker  # noqa: F401
@@ -20,14 +21,9 @@ class LisfloodModelOptimizer(BaseModelOptimizer):
     """LISFLOOD-specific optimizer using the unified BaseModelOptimizer framework."""
 
     def __init__(self, config, logger, optimization_settings_dir=None, reporting_manager=None):
-        if isinstance(config, dict):
-            self.experiment_id = config.get("EXPERIMENT_ID")
-            self.data_dir = Path(config.get("SYMFLUENCE_DATA_DIR", "."))
-            self.domain_name = config.get("DOMAIN_NAME")
-        else:
-            self.experiment_id = config.domain.experiment_id
-            self.data_dir = Path(config.system.data_dir)
-            self.domain_name = config.domain.name
+        self.experiment_id = resolve_config_value(config, lambda: config.domain.experiment_id, None, 'EXPERIMENT_ID')
+        self.data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, ".", 'SYMFLUENCE_DATA_DIR'))
+        self.domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
         self.project_dir = self.data_dir / f"domain_{self.domain_name}"
         self.lisflood_setup_dir = self.project_dir / "settings" / "LISFLOOD"
         super().__init__(config, logger, optimization_settings_dir, reporting_manager=reporting_manager)

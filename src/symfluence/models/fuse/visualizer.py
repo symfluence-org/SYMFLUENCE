@@ -12,6 +12,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List
 
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.mixins.project import resolve_data_subdir
 from symfluence.core.registries import R
 
@@ -24,7 +25,7 @@ def visualize_fuse(reporting_manager: Any, config: Dict[str, Any], project_dir: 
     logger = logging.getLogger(__name__)
     logger.info(f"Running FUSE visualizer for experiment {experiment_id}")
 
-    domain_name = config.get('DOMAIN_NAME')
+    domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
 
     model_outputs = [("FUSE", str(project_dir / "simulations" / experiment_id / "FUSE" / f"{domain_name}_{experiment_id}_runs_best.nc"))]
     obs_files = [('Observed', str(resolve_data_subdir(project_dir, 'observations') / "streamflow" / "preprocessed" / f"{domain_name}_streamflow_processed.csv"))]

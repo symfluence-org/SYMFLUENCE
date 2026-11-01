@@ -324,9 +324,9 @@ class HYPEPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         Uses the template method pattern from BaseModelPreProcessor.
         """
         self.logger.info("Starting HYPE preprocessing")
-        if self.config_dict.get('HYPE_CRYOSPHERE_CONSTRAINTS', False):
+        if self._get_config_value(lambda: self.config.model.hype.cryosphere_constraints, default=False, dict_key='HYPE_CRYOSPHERE_CONSTRAINTS'):
             from .cryosphere import ensure_observations
-            station = self.config_dict.get('LAMAH_ICE_DOMAIN_ID') or self.config_dict.get('STREAMFLOW_STATION_ID')
+            station = self._get_config_value(lambda: self.config.evaluation.lamah_ice.domain_id, dict_key='LAMAH_ICE_DOMAIN_ID') or self._get_config_value(lambda: self.config.data.streamflow_station_id, dict_key='STREAMFLOW_STATION_ID')
             if station is None:
                 raise ValidationError('HYPE cryosphere constraints require a LamaH-Ice station ID')
             ensure_observations(self.project_dir, station, self.logger)

@@ -21,6 +21,7 @@ import pandas as pd
 
 from symfluence.core.calibration.workers.base_worker import BaseWorker, run_worker_task
 from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -106,8 +107,8 @@ class SWATWorker(BaseWorker):
 
             # Copy fresh files from settings + forcing into worker dir
             config = kwargs.get('config', self.config) or {}
-            domain_name = config.get('DOMAIN_NAME', '')
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             project_dir = data_dir / f'domain_{domain_name}'
             swat_settings = project_dir / 'settings' / 'SWAT'
             swat_forcing = project_dir / 'data' / 'forcing' / 'SWAT_input'
@@ -456,8 +457,8 @@ class SWATWorker(BaseWorker):
                     if f.is_file():
                         shutil.copy2(f, work_dir / f.name)
                 # Also copy forcing files if not already present in settings_dir
-                domain_name = config.get('DOMAIN_NAME', '')
-                data_dir_path = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+                domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
+                data_dir_path = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
                 project_dir = data_dir_path / f'domain_{domain_name}'
                 swat_forcing = project_dir / 'data' / 'forcing' / 'SWAT_input'
                 if not swat_forcing.exists():
@@ -470,7 +471,7 @@ class SWATWorker(BaseWorker):
                                 shutil.copy2(f, dest)
 
             # Get executable (check once before retry loop)
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             swat_exe = self._get_swat_executable(config, data_dir)
 
             if not swat_exe.exists():
@@ -494,7 +495,7 @@ class SWATWorker(BaseWorker):
                 'OPENBLAS_NUM_THREADS': '1',
             })
 
-            timeout = config.get('SWAT_TIMEOUT', 300)
+            timeout = resolve_config_value(config, lambda: config.model.swat.timeout, 300, 'SWAT_TIMEOUT')
             stdout_file = work_dir / 'swat_stdout.log'
             stderr_file = work_dir / 'swat_stderr.log'
 
@@ -569,8 +570,8 @@ class SWATWorker(BaseWorker):
 
     def _get_swat_executable(self, config: Dict[str, Any], data_dir: Path) -> Path:
         """Get SWAT executable path."""
-        install_path = config.get('SWAT_INSTALL_PATH', 'default')
-        exe_name = config.get('SWAT_EXE', 'swat_rel.exe')
+        install_path = resolve_config_value(config, lambda: config.model.swat.install_path, 'default', 'SWAT_INSTALL_PATH')
+        exe_name = resolve_config_value(config, lambda: config.model.swat.exe, 'swat_rel.exe', 'SWAT_EXE')
 
         if install_path == 'default':
             return data_dir / "installs" / "swat" / "bin" / exe_name
@@ -627,7 +628,7 @@ class SWATWorker(BaseWorker):
             # Get simulation start date
             try:
                 start_str = (
-                    config.get('EXPERIMENT_TIME_START')
+                    resolve_config_value(config, lambda: config.domain.time_start, None, 'EXPERIMENT_TIME_START')
                     or config.get('TIME_START')
                 )
                 if start_str is None and hasattr(config, 'domain'):
@@ -640,7 +641,7 @@ class SWATWorker(BaseWorker):
             # SWAT output.rch already starts AFTER the NYSKIP warmup period
             # (file.cio NYSKIP is set to warmup_years by the preprocessor).
             # We must NOT skip warmup again; just offset the start date.
-            warmup_years = int(config.get('SWAT_WARMUP_YEARS', 2))
+            warmup_years = int(resolve_config_value(config, lambda: config.model.swat.warmup_years, 2, 'SWAT_WARMUP_YEARS'))
             output_start_date = start_date + pd.DateOffset(years=warmup_years)
             dates = pd.date_range(start=output_start_date, periods=len(flow_data), freq='D')
             sim_series = pd.Series(flow_data, index=dates)
@@ -650,8 +651,8 @@ class SWATWorker(BaseWorker):
             )
 
             # Load observations
-            domain_name = config.get('DOMAIN_NAME')
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             project_dir = data_dir / f'domain_{domain_name}'
 
             obs_values, obs_index = self._streamflow_metrics.load_observations(
@@ -665,7 +666,7 @@ class SWATWorker(BaseWorker):
             # Restrict scoring to the configured calibration window; the final
             # evaluation swaps EVALUATION_PERIOD into this key to score the
             # held-out window from the same full-period run.
-            cal_period_str = config.get('CALIBRATION_PERIOD', '')
+            cal_period_str = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
             cal_period_tuple = None
             if cal_period_str and ',' in str(cal_period_str):
                 parts = str(cal_period_str).split(',')

@@ -127,11 +127,11 @@ class CLMSurfaceGenerator:
 
         # Try config overrides first
         pct_sand = self.pp._get_config_value(
-            lambda: self.pp.config.model.clm.pct_sand,
+            lambda: None,
             default=None, dict_key='CLM_PCT_SAND'
         )
         pct_clay = self.pp._get_config_value(
-            lambda: self.pp.config.model.clm.pct_clay,
+            lambda: None,
             default=None, dict_key='CLM_PCT_CLAY'
         )
         if pct_sand is not None and pct_clay is not None:

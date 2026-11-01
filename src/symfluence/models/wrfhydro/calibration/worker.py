@@ -24,6 +24,7 @@ from symfluence.core.calibration.workers.base_worker import (
     run_worker_task,
 )
 from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -72,8 +73,8 @@ class WRFHydroWorker(BaseWorker):
             self.logger.debug(f"Applying WRF-Hydro parameters to {settings_dir}")
 
             config = kwargs.get('config', self.config) or {}
-            domain_name = config.get('DOMAIN_NAME', '')
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             original_settings_dir = data_dir / f'domain_{domain_name}' / 'settings' / 'WRFHYDRO'
 
             if original_settings_dir.exists() and original_settings_dir.resolve() != settings_dir.resolve():
@@ -132,14 +133,14 @@ class WRFHydroWorker(BaseWorker):
             success = True
 
             # Update hydro.namelist
-            hydro_file = config.get('WRFHYDRO_HYDRO_NAMELIST', 'hydro.namelist')
+            hydro_file = resolve_config_value(config, lambda: config.model.wrfhydro.hydro_namelist, 'hydro.namelist', 'WRFHYDRO_HYDRO_NAMELIST')
             hydro_path = settings_dir / hydro_file
             if hydro_params and hydro_path.exists():
                 if not self._update_namelist_file(hydro_path, hydro_params):
                     success = False
 
             # Update namelist.hrldas
-            hrldas_file = config.get('WRFHYDRO_NAMELIST_FILE', 'namelist.hrldas')
+            hrldas_file = resolve_config_value(config, lambda: config.model.wrfhydro.namelist_file, 'namelist.hrldas', 'WRFHYDRO_NAMELIST_FILE')
             hrldas_path = settings_dir / hrldas_file
             if hrldas_params and hrldas_path.exists():
                 if not self._update_namelist_file(hrldas_path, hrldas_params):
@@ -407,7 +408,7 @@ class WRFHydroWorker(BaseWorker):
         import shutil
 
         try:
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
 
             wrfhydro_output_dir = Path(kwargs.get('sim_dir', output_dir))
             wrfhydro_output_dir.mkdir(parents=True, exist_ok=True)
@@ -441,7 +442,7 @@ class WRFHydroWorker(BaseWorker):
 
             # Fix OUTDIR in namelist.hrldas to point to worker directory
             # (prevents output files from being written to the original input dir)
-            hrldas_file = config.get('WRFHYDRO_NAMELIST_FILE', 'namelist.hrldas')
+            hrldas_file = resolve_config_value(config, lambda: config.model.wrfhydro.namelist_file, 'namelist.hrldas', 'WRFHYDRO_NAMELIST_FILE')
             worker_hrldas = wrfhydro_output_dir / hrldas_file
             if worker_hrldas.exists():
                 self._update_namelist_path(
@@ -449,7 +450,7 @@ class WRFHydroWorker(BaseWorker):
                 )
 
             # Symlink routing files (unchanged between trials)
-            domain_name = config.get('DOMAIN_NAME', '')
+            domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
             routing_dir = data_dir / f'domain_{domain_name}' / 'settings' / 'WRFHYDRO' / 'routing'
             if routing_dir.exists():
                 for f in routing_dir.glob('*.nc'):
@@ -467,7 +468,7 @@ class WRFHydroWorker(BaseWorker):
             env = os.environ.copy()
             env['MallocStackLogging'] = '0'
 
-            timeout = config.get('WRFHYDRO_TIMEOUT', 7200)
+            timeout = resolve_config_value(config, lambda: config.model.wrfhydro.timeout, 7200, 'WRFHYDRO_TIMEOUT')
 
             stdout_file = wrfhydro_output_dir / 'wrfhydro_stdout.log'
             stderr_file = wrfhydro_output_dir / 'wrfhydro_stderr.log'
@@ -529,8 +530,8 @@ class WRFHydroWorker(BaseWorker):
 
     def _get_wrfhydro_executable(self, config: Dict[str, Any], data_dir: Path) -> Path:
         """Get WRF-Hydro executable path."""
-        install_path = config.get('WRFHYDRO_INSTALL_PATH', 'default')
-        exe_name = config.get('WRFHYDRO_EXE', 'wrf_hydro.exe')
+        install_path = resolve_config_value(config, lambda: config.model.wrfhydro.install_path, 'default', 'WRFHYDRO_INSTALL_PATH')
+        exe_name = resolve_config_value(config, lambda: config.model.wrfhydro.exe, 'wrf_hydro.exe', 'WRFHYDRO_EXE')
 
         if install_path == 'default':
             return data_dir / "installs" / "wrfhydro" / "bin" / exe_name
@@ -582,8 +583,8 @@ class WRFHydroWorker(BaseWorker):
                 output_files = sorted(Path(settings_dir).glob('*CHRTOUT*'))
 
             if not output_files:
-                domain_name = config.get('DOMAIN_NAME', '')
-                data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+                domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
+                data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
                 wrfhydro_output = data_dir / f'domain_{domain_name}' / 'simulations'
                 if wrfhydro_output.exists():
                     output_files = sorted(wrfhydro_output.rglob('*CHRTOUT*'))
@@ -594,8 +595,8 @@ class WRFHydroWorker(BaseWorker):
                 if not output_files and settings_dir:
                     output_files = sorted(Path(settings_dir).glob('*LDASOUT*'))
                 if not output_files:
-                    domain_name = config.get('DOMAIN_NAME', '')
-                    data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+                    domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
+                    data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
                     wrfhydro_output = data_dir / f'domain_{domain_name}' / 'simulations'
                     if wrfhydro_output.exists():
                         output_files = sorted(wrfhydro_output.rglob('*LDASOUT*'))
@@ -663,8 +664,8 @@ class WRFHydroWorker(BaseWorker):
                 sim_series = sim_series.resample('D').mean()
 
             # Load observations
-            domain_name = config.get('DOMAIN_NAME')
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             project_dir = data_dir / f'domain_{domain_name}'
 
             obs_values, obs_index = self._streamflow_metrics.load_observations(
@@ -676,7 +677,7 @@ class WRFHydroWorker(BaseWorker):
             obs_series = pd.Series(obs_values, index=obs_index)
 
             # Parse calibration period
-            cal_period_str = config.get('CALIBRATION_PERIOD', '')
+            cal_period_str = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
             cal_period_tuple = None
             if cal_period_str and ',' in str(cal_period_str):
                 parts = str(cal_period_str).split(',')

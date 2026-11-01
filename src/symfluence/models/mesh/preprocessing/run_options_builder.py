@@ -151,7 +151,7 @@ class RunOptionsConfigBuilder(ConfigMixin):
             modified = False
             replacements = [
                 (r'FREZTH\s+[-\d.]+', 'FREZTH                0.0'),
-                (r'SWELIM\s+[-\d.]+', f'SWELIM                {self._get_config_value(lambda: self.config.model.mesh.swelim, default=800.0, dict_key="MESH_SWELIM")}'),
+                (r'SWELIM\s+[-\d.]+', f'SWELIM                {self._get_config_value(lambda: None, default=800.0, dict_key="MESH_SWELIM")}'),
                 (r'SNDENLIM\s+[-\d.]+', 'SNDENLIM              600.0'),
                 (r'PBSMFLAG\s+\w+', 'PBSMFLAG              off'),
                 (r'FROZENSOILINFILFLAG\s+\d+', f'FROZENSOILINFILFLAG   {frozen_flag}'),

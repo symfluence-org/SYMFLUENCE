@@ -38,6 +38,7 @@ import pandas as pd
 import pint
 
 from symfluence.core.exceptions import ValidationError
+from symfluence.core.mixins.config import resolve_config_value
 
 if TYPE_CHECKING:
     pass
@@ -54,10 +55,10 @@ def groundwater_export_enabled(config) -> bool:
     On with HYPE_GROUNDWATER_EXPORT, or by default when GROUNDWATER_MODEL is
     MODFLOW (HYPE_GROUNDWATER_EXPORT: false turns it off).
     """
-    explicit = config.get('HYPE_GROUNDWATER_EXPORT')
+    explicit = resolve_config_value(config, lambda: config.model.hype.groundwater_export, None, 'HYPE_GROUNDWATER_EXPORT')
     if explicit is not None:
         return bool(explicit)
-    return str(config.get('GROUNDWATER_MODEL') or '').strip().upper() == 'MODFLOW'
+    return str(resolve_config_value(config, lambda: config.model.groundwater_model, None, 'GROUNDWATER_MODEL') or '').strip().upper() == 'MODFLOW'
 
 
 def load_elevation_band_table(shapefile: Path | str) -> list[dict[str, float]]:
@@ -276,7 +277,7 @@ class HYPEGeoDataManager:
                     'pass the elevation-band shapefile or build the model-ready attributes store')
 
         # 5. SLC processing
-        glacier_fraction = self.config.get('HYPE_GLACIER_FRACTION')
+        glacier_fraction = resolve_config_value(self.config, lambda: self.config.model.hype.glacier_fraction, None, 'HYPE_GLACIER_FRACTION')
         if glacier_fraction is not None:
             if len(base_df) != 1:
                 raise ValidationError('HYPE_GLACIER_FRACTION currently requires one parent basin')
@@ -417,7 +418,7 @@ class HYPEGeoDataManager:
         # 10. Write GeoClass.txt
         self._write_geoclass(slc_df)
 
-        glacier_type = self.config.get('HYPE_GLACIER_TYPE')
+        glacier_type = resolve_config_value(self.config, lambda: self.config.model.hype.glacier_type, None, 'HYPE_GLACIER_TYPE')
         if glacier_type is not None:
             glacier_cols = [f'SLC_{int(r.SLC)}' for r in slc_df.itertuples() if r.landcover == 15]
             glacier_rows = sorted_df.loc[sorted_df[glacier_cols].sum(axis=1) > 0, ['subid']].copy()
@@ -594,7 +595,7 @@ class HYPEGeoDataManager:
             from symfluence.core.modeling.model_ready import open_canonical_attributes
 
             data_dir = self.config.get('SYMFLUENCE_DATA_DIR')
-            domain = self.config.get('DOMAIN_NAME')
+            domain = resolve_config_value(self.config, lambda: self.config.domain.name, None, 'DOMAIN_NAME')
             if not data_dir or not domain:
                 return None
             project_dir = Path(data_dir) / f'domain_{domain}'
@@ -909,8 +910,8 @@ class HYPEGeoDataManager:
                 row['elev_mean'] = band['elev_mean']
                 row['glacier_fraction'] = (
                     band_glac[k] / band_areas[k] if band_areas[k] > 0 else 0.0)
-                if self.config.get('HYPE_PRESERVE_ICECAP_VOLUME', False):
-                    if self.config.get('HYPE_GLACIER_TYPE') != 1:
+                if resolve_config_value(self.config, lambda: self.config.model.hype.preserve_icecap_volume, False, 'HYPE_PRESERVE_ICECAP_VOLUME'):
+                    if resolve_config_value(self.config, lambda: self.config.model.hype.glacier_type, None, 'HYPE_GLACIER_TYPE') != 1:
                         raise ValidationError('HYPE_PRESERVE_ICECAP_VOLUME requires glacier type 1')
                     # HYPE defaults: V = exp(logvolcor) * 1.701 * A**1.25.
                     # Each band retains the parent's mean ice thickness; the
@@ -1075,7 +1076,7 @@ class HYPEGeoDataManager:
 
     def apply_river_length_overrides(self, geodata: pd.DataFrame) -> pd.DataFrame:
         """Apply explicit, validated reach lengths to final model subbasin IDs."""
-        overrides = self.config.get('HYPE_RIVER_LENGTH_OVERRIDES') or {}
+        overrides = resolve_config_value(self.config, lambda: self.config.model.hype.river_length_overrides, None, 'HYPE_RIVER_LENGTH_OVERRIDES') or {}
         result = geodata.copy()
         for subid, length in overrides.items():
             if not np.isfinite(length) or length <= 0:
@@ -1098,7 +1099,7 @@ class HYPEGeoDataManager:
         combination['Vegetation type'] = 1
         # HYPE's glacier_model is 3; code 2 is an internal lake.
         combination['Special class code'] = combination['LULC'].apply(lambda x: 3 if x == 15 else 0)
-        soil_depths = self.config.get('HYPE_SOIL_LAYER_DEPTHS')
+        soil_depths = resolve_config_value(self.config, lambda: self.config.model.hype.soil_layer_depths, None, 'HYPE_SOIL_LAYER_DEPTHS')
         if soil_depths and len(soil_depths) == 3:
             d1, d2, d3 = [float(d) for d in soil_depths]
         else:

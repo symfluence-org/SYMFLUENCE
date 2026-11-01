@@ -20,6 +20,7 @@ import pandas as pd
 
 from symfluence.core.calibration.workers.base_worker import BaseWorker, run_worker_task
 from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -100,12 +101,12 @@ class PIHMWorker(BaseWorker):
                     shutil.copy2(src, input_dir / src.name)
 
             # Get executable
-            install_path = config.get('PIHM_INSTALL_PATH', 'default')
+            install_path = resolve_config_value(config, lambda: config.model.pihm.install_path, 'default', 'PIHM_INSTALL_PATH')
             if install_path == 'default':
-                data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+                data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
                 install_path = str(data_dir / 'installs' / 'pihm')
 
-            exe_name = config.get('PIHM_EXE', 'flux-pihm')
+            exe_name = resolve_config_value(config, lambda: config.model.pihm.exe, 'flux-pihm', 'PIHM_EXE')
             # Search order: bin/<exe>, <exe>, bin/pihm, pihm
             pihm_exe = None
             for candidate in [
@@ -139,7 +140,7 @@ class PIHMWorker(BaseWorker):
             if epc_src.is_dir() and not epc_dst.exists():
                 shutil.copytree(epc_src, epc_dst)
 
-            timeout = int(config.get('PIHM_TIMEOUT', 3600))
+            timeout = int(resolve_config_value(config, lambda: config.model.pihm.timeout, 3600, 'PIHM_TIMEOUT'))
 
             # Run PIHM: pihm -o <project_name> <project_name>
             # PIHM internally prepends "output/" to the -o argument
@@ -198,7 +199,7 @@ class PIHMWorker(BaseWorker):
 
             river_flux = extractor.extract_variable(
                 pihm_output, 'river_flux',
-                outlet_segment=int(config.get('PIHM_OUTLET_SEGMENT', 1)),
+                outlet_segment=int(resolve_config_value(config, lambda: config.model.pihm.outlet_segment, 1, 'PIHM_OUTLET_SEGMENT')),
             )
 
             if river_flux.empty:
@@ -214,8 +215,8 @@ class PIHMWorker(BaseWorker):
             sim_series = river_flux.resample('D').mean()
 
             # Load observations
-            domain_name = config.get('DOMAIN_NAME')
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             project_dir = data_dir / f'domain_{domain_name}'
 
             obs_values, obs_index = self._streamflow_metrics.load_observations(
@@ -227,7 +228,7 @@ class PIHMWorker(BaseWorker):
             obs_series = pd.Series(obs_values, index=obs_index)
 
             # Filter to calibration period if defined
-            cal_period = config.get('CALIBRATION_PERIOD')
+            cal_period = resolve_config_value(config, lambda: config.domain.calibration_period, None, 'CALIBRATION_PERIOD')
             if cal_period:
                 parts = str(cal_period).split(',')
                 if len(parts) == 2:

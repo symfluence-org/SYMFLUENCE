@@ -262,14 +262,14 @@ class HYPEConfigManager(ConfigMixin):
         ) else 'n'
 
         # Build info.txt content
-        glacier_outputs = '\tGLCV\tGLCA\tGMLT' if self.config.get('HYPE_GLACIER_FRACTION') is not None else ''
-        if self.config.get('HYPE_CRYOSPHERE_CONSTRAINTS', False):
+        glacier_outputs = '\tGLCV\tGLCA\tGMLT' if self._get_config_value(lambda: self.config.model.hype.glacier_fraction, dict_key='HYPE_GLACIER_FRACTION') is not None else ''
+        if self._get_config_value(lambda: self.config.model.hype.cryosphere_constraints, default=False, dict_key='HYPE_CRYOSPHERE_CONSTRAINTS'):
             glacier_outputs = '\tGLCV\tGLCA\tGMLT\tCFSC'
-        if self.config.get('HYPE_WATER_BALANCE_DIAGNOSTICS', False):
+        if self._get_config_value(lambda: self.config.model.hype.water_balance_diagnostics, default=False, dict_key='HYPE_WATER_BALANCE_DIAGNOSTICS'):
             glacier_outputs += '\tSOIM\tSML1\tSML2\tSML3\tCLRV\tCMRV\tCPRC\tEPOT'
         if groundwater_export:
             glacier_outputs += '\tAQIN'
-        snow_melt_model = self.config.get('HYPE_SNOW_MELT_MODEL', 0)
+        snow_melt_model = self._get_config_value(lambda: self.config.model.hype.snow_melt_model, default=0, dict_key='HYPE_SNOW_MELT_MODEL')
         extra_obs = required_extra_obs(self.config)
         read_sf, read_sw, read_u, read_rh = ('y' if name in extra_obs else 'n'
                                              for name in ('SFobs', 'SWobs', 'Uobs', 'RHobs'))
@@ -446,15 +446,15 @@ timeoutput decimals\t3
         # Glacier melt uses general parameters, not the land-use snow cmlt.
         # Keep these explicit so an active glacier class cannot silently have zero melt.
         if land_uses is not None and 15 in land_uses and not template_file:
-            melt = self.config.get('HYPE_GLACIER_MELT_FACTOR', 5.0)
-            threshold = self.config.get('HYPE_GLACIER_MELT_THRESHOLD', 0.0)
+            melt = self._get_config_value(lambda: self.config.model.hype.glacier_melt_factor, default=5.0, dict_key='HYPE_GLACIER_MELT_FACTOR')
+            threshold = self._get_config_value(lambda: self.config.model.hype.glacier_melt_threshold, default=0.0, dict_key='HYPE_GLACIER_MELT_THRESHOLD')
             par_content += f'\n!! Glacier degree-day melt; initial volume uses HYPE area-volume defaults\nglaccmlt\t{melt}\nglacttmp\t{threshold}\nglacdens\t0.85\n'
 
         # HYPE's native model 2 implements the Oudin temperature/radiation
         # formulation; supply its reference constants explicitly (cevp is inactive).
         # Models 2-5 scale reference PET by the land-use crop coefficient kc.
         # Custom templates retain their own values.
-        pet_model = self.config.get('HYPE_PET_MODEL')
+        pet_model = self._get_config_value(lambda: self.config.model.hype.pet_model, dict_key='HYPE_PET_MODEL')
         if pet_model in (2, 3, 4, 5) and not template_file:
             par_content += f'\n!! Reference PET (native petmodel {pet_model})\n'
             if pet_model == 2:
@@ -462,13 +462,13 @@ timeoutput decimals\t3
             par_content += 'kc\t' + '\t'.join(['1.0'] * max_lu) + '\n'
 
         # Apply parameter substitutions
-        percolation = self.config.get('HYPE_SOIL_PERCOLATION')
+        percolation = self._get_config_value(lambda: self.config.model.hype.soil_percolation, dict_key='HYPE_SOIL_PERCOLATION')
         if percolation is not None:
             if template_file or len(percolation) != 2 or any(not math.isfinite(v) or v < 0 for v in percolation):
                 raise ValidationError('Soil percolation requires two finite nonnegative values and no custom template')
             for name, value in zip(('mperc1', 'mperc2'), percolation):
                 par_content += '\n' + name + '\t' + '\t'.join([str(value)] * num_soil) + '\n'
-        if self.config.get('HYPE_SNOW_MELT_MODEL', 0) == 2:
+        if self._get_config_value(lambda: self.config.model.hype.snow_melt_model, default=0, dict_key='HYPE_SNOW_MELT_MODEL') == 2:
             if template_file:
                 raise ValidationError('Set radiation melt parameters directly in a custom HYPE template')
             par_content += '\n!! Temperature and radiation melt (SWobs in MJ/m2/day)\n'
@@ -478,10 +478,10 @@ timeoutput decimals\t3
             for name, value in {'cmrad': 0.0, 'snalbmin': 0.5, 'snalbmax': 0.85,
                                 'snalbkexp': 0.05}.items():
                 par_content += name + '\t' + '\t'.join([str(value)] * max_lu) + '\n'
-            par_content += f"glaccmrad\t{self.config.get('HYPE_GLACIER_RADIATION_MELT_FACTOR', 0.5)}\n"
-            par_content += f"glacalb\t{self.config.get('HYPE_GLACIER_ALBEDO', 0.35)}\n"
+            par_content += f"glaccmrad\t{self._get_config_value(lambda: self.config.model.hype.glacier_radiation_melt_factor, default=0.5, dict_key='HYPE_GLACIER_RADIATION_MELT_FACTOR')}\n"
+            par_content += f"glacalb\t{self._get_config_value(lambda: self.config.model.hype.glacier_albedo, default=0.35, dict_key='HYPE_GLACIER_ALBEDO')}\n"
             par_content += 'glaccmrefr\t0.2\n'
-        if self.config.get('HYPE_FRACTIONAL_SNOW_COVER', False):
+        if self._get_config_value(lambda: self.config.model.hype.fractional_snow_cover, default=False, dict_key='HYPE_FRACTIONAL_SNOW_COVER'):
             if template_file:
                 raise ValidationError('Set fractional snow-cover parameters directly in a custom HYPE template')
             # HYPE model_hype.f90 reference values. Without fscmax the model
@@ -492,11 +492,11 @@ timeoutput decimals\t3
                 par_content += f'{name}\t{value}\n'
             for name, value in {'fscdistmax': 0.8, 'fscdist0': 0.6, 'fscdist1': 0.001}.items():
                 par_content += name + '\t' + '\t'.join([str(value)] * max_lu) + '\n'
-        if self.config.get('HYPE_PRESERVE_ICECAP_VOLUME', False):
+        if self._get_config_value(lambda: self.config.model.hype.preserve_icecap_volume, default=False, dict_key='HYPE_PRESERVE_ICECAP_VOLUME'):
             if template_file or any(k in (params or {}) for k in ('glacvcoef1', 'glacvexp1')):
                 raise ValidationError('Ice-cap volume preservation requires the default area-volume relation')
             par_content += '\n!! Relation used to preserve parent ice-cap volume across bands\nglacvcoef1\t1.701\nglacvexp1\t1.25\n'
-        extra = self.config.get('HYPE_EXTRA_PARAMETERS')
+        extra = self._get_config_value(lambda: self.config.model.hype.extra_parameters, dict_key='HYPE_EXTRA_PARAMETERS')
         if extra:
             par_content = self._apply_extra_parameters(par_content, extra, max_lu, num_soil)
         if params:
