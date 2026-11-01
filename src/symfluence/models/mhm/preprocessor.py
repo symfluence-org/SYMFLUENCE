@@ -316,6 +316,15 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                          transform=fine_t, fill=0, dtype='uint8')
         return fine.reshape(nrow, k, ncol, k).mean(axis=(1, 3))
 
+    def _routing_case(self) -> int:
+        """MHM_ROUTING_CASE: mRM processCase(8), 1 (Muskingum) or 2 (adaptive
+        time step, constant ``streamflow_celerity``)."""
+        case = int(self._get_config_value(
+            lambda: self.config.model.mhm.routing_case, default=1, dict_key='MHM_ROUTING_CASE'))
+        if case not in (1, 2):
+            raise ConfigurationError(f"MHM_ROUTING_CASE must be 1 or 2, got {case}")
+        return case
+
     def _model_timestep(self) -> int:
         """MHM_TIMESTEP, refused for a non-hourly step unless the installed mHM
         carries the SYMFLUENCE timestep patch.
@@ -1238,7 +1247,7 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
   processCase(5)  = 0    ! PET (0 = PET is input)
   processCase(6)  = 1    ! Interflow
   processCase(7)  = 1    ! Percolation
-  processCase(8)  = 1    ! Routing (Muskingum)
+  processCase(8)  = {self._routing_case()}    ! Routing (1 Muskingum, 2 adaptive step, constant celerity)
   processCase(9)  = 1    ! Baseflow
   processCase(10) = 0    ! Neutrons (off)
   processCase(11) = 0    ! River temperature (off)
