@@ -17,7 +17,7 @@ import pandas as pd
 import pytest
 import xarray as xr
 
-from symfluence.data.model_ready.forcing_reader import forcing_timestep_seconds
+from symfluence.core.modeling.model_ready.forcing_reader import forcing_timestep_seconds
 from symfluence.models.rhessys.climate_generator import RHESSysClimateGenerator
 
 

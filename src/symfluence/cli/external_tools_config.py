@@ -35,6 +35,9 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from symfluence.core.build.build_snippets import (
+    get_common_build_environment,
+)
 from symfluence.core.registries import R
 
 from .external_tools_build_commands import (
@@ -44,9 +47,6 @@ from .external_tools_build_commands import (
     TAUDEM_BUILD_COMMAND,
 )
 from .services.build_registry import BuildInstructionsRegistry
-from .services.build_snippets import (
-    get_common_build_environment,
-)
 
 
 def _register_sundials(common_env: str) -> None:

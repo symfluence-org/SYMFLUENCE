@@ -9,9 +9,10 @@ Materializes forcings, observations, and attributes into a structured
 """
 from __future__ import annotations
 
-from .attributes_reader import AttributesReader, open_canonical_attributes
-from .cf_conventions import CF_STANDARD_NAMES, build_global_attrs
-from .path_resolver import resolve_model_ready_path
+from symfluence.core.modeling.model_ready.attributes_reader import AttributesReader, open_canonical_attributes
+from symfluence.core.modeling.model_ready.cf_conventions import CF_STANDARD_NAMES, build_global_attrs
+from symfluence.core.modeling.model_ready.path_resolver import resolve_model_ready_path
+
 from .source_metadata import SourceMetadata
 from .store_builder import ModelReadyStoreBuilder
 

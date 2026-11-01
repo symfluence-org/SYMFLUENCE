@@ -20,7 +20,7 @@ import pandas as pd
 import pytest
 import xarray as xr
 
-from symfluence.data.utils.variable_utils import VariableHandler
+from symfluence.core.modeling.variable_utils import VariableHandler
 
 pytestmark = [pytest.mark.unit, pytest.mark.quick]
 
@@ -93,7 +93,7 @@ def test_find_matching_variable_picks_canonical_first():
     pick whichever matches on standard_name and exists in the data —
     canonical for canonical files, legacy for legacy files. No
     ordering dependency."""
-    from symfluence.data.utils.variable_utils import VariableHandler
+    from symfluence.core.modeling.variable_utils import VariableHandler
     h = VariableHandler(MagicMock(), logging.getLogger('t'), 'CFIF', 'FUSE')
 
     canonical_vars = {'air_temperature'}

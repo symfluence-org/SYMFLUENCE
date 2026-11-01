@@ -22,9 +22,9 @@ import pytest
 
 import symfluence  # noqa: F401 - triggers bootstrap + config-schema registration
 import symfluence.core.config.models.model_configs  # noqa: F401 - ensures bridge ran
+from symfluence.core.config.config_resolution import get_config_schema
 from symfluence.core.config.models.model_configs import ModelConfig
 from symfluence.core.registries import R
-from symfluence.models.config_resolution import get_config_schema
 
 REGISTERED_SCHEMAS = sorted(R.config_schemas.keys())
 

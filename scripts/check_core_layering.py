@@ -346,8 +346,7 @@ def find_violations(core_root: Path | None = None) -> List[Violation]:
 # deferred (function-body) imports must be allow-listed with a reason.
 #
 # Note: the deprecated lazy shims under optimization/ (parameter_managers,
-# calibration_targets model files, workers/summa, mixins/summa_optimizer_mixin)
-# resolve via importlib.import_module with string paths. The scan now SEES
+# the calibration_targets re-export map, workers/__init__) resolve via importlib.import_module with string paths. The scan now SEES
 # those string-built edges (it used to be AST-imports only), so each is
 # explicitly allow-listed below with its reason rather than passing unnoticed.
 
@@ -372,12 +371,6 @@ BOUNDARY_RULES: List[BoundaryRule] = [
                 "Deprecated lazy re-export (PEP 562) of RoutingDecider from its "
                 "canonical home in the models package.",
             ),
-            (
-                "mixins/summa_optimizer_mixin.py",
-                "symfluence.models.summa.calibration",
-                "Deprecated lazy re-export (PEP 562) of SUMMAOptimizerMixin; "
-                "the TYPE_CHECKING import is type-only and erased at runtime.",
-            ),
             # ---- String-built edges (first surfaced when the scan was
             # extended). These are the deprecated PEP-562 shims the header
             # comment above already described as invisible to the AST scan;
@@ -393,13 +386,6 @@ BOUNDARY_RULES: List[BoundaryRule] = [
                 "importlib at call time.",
             ),
             (
-                "_calibration_targets.py",
-                "symfluence.models",
-                "Per-model deprecated PEP-562 target shims "
-                "(fuse/gr/hype/ngen/rhessys/summa_calibration_targets.py), each "
-                "resolving its canonical model-package module inside __getattr__.",
-            ),
-            (
                 "parameter_managers/__init__.py",
                 "symfluence.models",
                 "Deprecated lazy re-export map (_MANAGERS); module-level strings "
@@ -410,12 +396,6 @@ BOUNDARY_RULES: List[BoundaryRule] = [
                 "symfluence.models",
                 "Deprecated lazy re-export map for the per-model calibration "
                 "workers, resolved at call time.",
-            ),
-            (
-                "workers/summa.py",
-                "symfluence.models.summa.calibration.worker_impl",
-                "Deprecated PEP-562 shim for the SUMMA worker implementation; "
-                "_CANONICAL is resolved inside __getattr__.",
             ),
         ],
     ),
@@ -442,7 +422,7 @@ BOUNDARY_RULES: List[BoundaryRule] = [
             # but models must reach settings through the core contract so the
             # models distribution depends on ``symfluence.core`` alone.
             "symfluence.resources",
-            # ModelManager was promoted to project/; the shim left behind at
+            # ModelManager was promoted to project/; the (since removed) shim at
             # models/model_manager.py imported it at module level, so importing
             # the models package pulled in the orchestration layer. Forbidding
             # the prefix keeps that from creeping back once models ships as its
@@ -551,12 +531,8 @@ BOUNDARY_RULES: List[BoundaryRule] = [
             "symfluence.optimization",
             "symfluence.reporting",
             "symfluence.evaluation",
-            "symfluence.data.preprocessing.cfif.variables",
-            "symfluence.data.preprocessing.dataset_alignment_manager",
-            "symfluence.data.preprocessing.time_window_manager",
             "symfluence.data.model_ready",
             "symfluence.data.utils.netcdf_utils",
-            "symfluence.data.utils.variable_utils",
         ),
         [],
     ),

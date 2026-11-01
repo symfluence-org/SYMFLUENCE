@@ -70,8 +70,8 @@ ConfigurableMixin
 
 See Also
 --------
-- optimization.mixins : ParallelExecutionMixin, ResultsTrackingMixin, etc.
-- models.mixins : PETCalculatorMixin, ObservationLoaderMixin, etc.
+- core.calibration.mixins : ParallelExecutionMixin, ResultsTrackingMixin, etc.
+- core.modeling.mixins : PETCalculatorMixin, ObservationLoaderMixin, etc.
 - data.acquisition.mixins : RetryMixin, ChunkedDownloadMixin, SpatialSubsetMixin
 """
 from __future__ import annotations

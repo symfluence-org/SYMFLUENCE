@@ -33,11 +33,11 @@ _LAZY_IMPORTS = {
     'evaluators': ('.evaluators', None),
     'AnalysisRegistry': ('.analysis_registry', 'AnalysisRegistry'),
     'KoopmanAnalyzer': ('.koopman_analysis', 'KoopmanAnalyzer'),
-    'MetricTransformer': ('.metric_transformer', 'MetricTransformer'),
-    'OutputFileLocator': ('.output_file_locator', 'OutputFileLocator'),
-    'get_output_file_locator': ('.output_file_locator', 'get_output_file_locator'),
-    'EvaluationRegistry': ('.registry', 'EvaluationRegistry'),
-    'BaseStructureEnsembleAnalyzer': ('.structure_ensemble', 'BaseStructureEnsembleAnalyzer'),
+    'MetricTransformer': ('symfluence.core.metrics.metric_transformer', 'MetricTransformer'),
+    'OutputFileLocator': ('symfluence.core.modeling.output_file_locator', 'OutputFileLocator'),
+    'get_output_file_locator': ('symfluence.core.modeling.output_file_locator', 'get_output_file_locator'),
+    'EvaluationRegistry': ('symfluence.core.modeling.evaluation_registry', 'EvaluationRegistry'),
+    'BaseStructureEnsembleAnalyzer': ('symfluence.core.modeling.structure_ensemble', 'BaseStructureEnsembleAnalyzer'),
 }
 
 
@@ -58,13 +58,14 @@ def __dir__():
 
 
 if TYPE_CHECKING:
+    from symfluence.core.metrics.metric_transformer import MetricTransformer
+    from symfluence.core.modeling.evaluation_registry import EvaluationRegistry
+    from symfluence.core.modeling.output_file_locator import OutputFileLocator, get_output_file_locator
+    from symfluence.core.modeling.structure_ensemble import BaseStructureEnsembleAnalyzer
+
     from . import evaluators
     from .analysis_registry import AnalysisRegistry
     from .koopman_analysis import KoopmanAnalyzer
-    from .metric_transformer import MetricTransformer
-    from .output_file_locator import OutputFileLocator, get_output_file_locator
-    from .registry import EvaluationRegistry
-    from .structure_ensemble import BaseStructureEnsembleAnalyzer
 
 __all__ = [
     "EvaluationRegistry",

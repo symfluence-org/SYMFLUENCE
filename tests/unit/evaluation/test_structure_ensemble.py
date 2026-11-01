@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, mock_open, patch
 import pandas as pd
 import pytest
 
-from symfluence.evaluation.structure_ensemble import BaseStructureEnsembleAnalyzer
+from symfluence.core.modeling.structure_ensemble import BaseStructureEnsembleAnalyzer
 
 
 class MockStructureAnalyzer(BaseStructureEnsembleAnalyzer):

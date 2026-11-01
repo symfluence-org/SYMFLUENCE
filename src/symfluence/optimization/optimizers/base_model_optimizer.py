@@ -4,8 +4,17 @@
 """Back-compat shim: moved to ``symfluence.core.calibration.optimizers.base_model_optimizer``."""
 from __future__ import annotations
 
+import warnings as _warnings
+
 import symfluence.core.calibration.optimizers.base_model_optimizer as _impl
 from symfluence.core.calibration.optimizers.base_model_optimizer import *  # noqa: F401,F403
+
+_warnings.warn(
+    "symfluence.optimization.optimizers.base_model_optimizer is deprecated; import from symfluence.core.calibration.optimizers.base_model_optimizer instead. "
+    "This back-compat shim will be removed before SYMFLUENCE 1.0 (see docs/adr/0011-retire-unused-back-compat-shims.md).",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 def __getattr__(name: str):

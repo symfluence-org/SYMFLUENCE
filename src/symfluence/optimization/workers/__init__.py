@@ -26,8 +26,8 @@ import from the canonical location.
 """
 from __future__ import annotations
 
-from .base_worker import BaseWorker, WorkerResult, WorkerTask
-from .inmemory_worker import InMemoryModelWorker
+from symfluence.core.calibration.workers.base_worker import BaseWorker, WorkerResult, WorkerTask
+from symfluence.core.calibration.workers.inmemory_worker import InMemoryModelWorker
 
 
 # Lazy import of worker classes from canonical locations to avoid circular dependencies

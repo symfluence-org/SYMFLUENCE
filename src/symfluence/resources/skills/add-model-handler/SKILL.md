@@ -127,7 +127,7 @@ Routing reference: **`models/mizuroute/`**.
 
 ## 4. Runner contract
 
-`BaseModelRunner` — `models/base/base_runner.py`. Mixes in `ModelComponentMixin`,
+`BaseModelRunner` — `core/modeling/base/base_runner.py`. Mixes in `ModelComponentMixin`,
 `PathResolverMixin`, `ShapefileAccessMixin`, `SubprocessExecutionMixin`,
 `SlurmExecutionMixin`. Set the class var `MODEL_NAME = "MYMODEL"`.
 
@@ -146,11 +146,11 @@ execution — if `_build_run_command()` returns argv, it's executed via
 `project_dir/simulations/{experiment_id}/{model_name}`), `_get_expected_outputs()`,
 `_prepare_run()`, `_validate_required_config()`, `_get_environment()`.
 
-**Convenience base: `UnifiedModelRunner`** (`models/templates/model_template.py`)
+**Convenience base: `UnifiedModelRunner`** (`core/modeling/templates/model_template.py`)
 combines `BaseModelRunner` + spatial orchestration. SUMMA/FUSE subclass it.
 Minimal:
 ```python
-from symfluence.models.templates import UnifiedModelRunner
+from symfluence.core.modeling.templates import UnifiedModelRunner
 
 class MyModelRunner(UnifiedModelRunner):
     MODEL_NAME = "MYMODEL"
@@ -162,7 +162,7 @@ In-process models (GR/LSTM) subclass `BaseModelRunner` directly, skip
 
 ## 5. Preprocessor contract
 
-`BaseModelPreProcessor` — `models/base/base_preprocessor.py`. Consumes the
+`BaseModelPreProcessor` — `core/modeling/base/base_preprocessor.py`. Consumes the
 **model-ready store** (`data/model_ready/forcings`, `.../attributes`) and the
 discretized domain (HRU/GRU shapefiles), and writes model-native inputs.
 
@@ -193,14 +193,14 @@ mixing in `PathResolverMixin`.
 
 ## 7. Postprocessor contract
 
-`BaseModelPostProcessor` — `models/base/base_postprocessor.py`. Converts model
+`BaseModelPostProcessor` — `core/modeling/base/base_postprocessor.py`. Converts model
 output → standardized streamflow for evaluation. Abstract: `_get_model_name()`
 and `extract_streamflow() -> Optional[Path]`. Writes to
 `project_dir/results/{experiment_id}_results.csv` and a CF NetCDF in
 `data/model_output/`.
 
 **Most models should subclass `StandardModelPostProcessor`**
-(`models/base/standard_postprocessor.py`) and just set class attributes:
+(`core/modeling/base/standard_postprocessor.py`) and just set class attributes:
 ```python
 class MyModelPostProcessor(StandardModelPostProcessor):
     model_name = "MYMODEL"
@@ -245,11 +245,11 @@ carries `params` (normalized [0,1]), `settings_dir`, `output_dir`, `sim_dir`,
 class: `@R.calibration_targets.add('MYMODEL_STREAMFLOW')` (e.g. `GR_STREAMFLOW`,
 `SUMMA_SNOW`).
 
-**Optimizer loop:** algorithms in `optimization/optimizers/algorithms/`
+**Optimizer loop:** algorithms in `core/calibration/optimizers/algorithms/`
 (`dds.py`, `pso.py`, `sce_ua.py`, `de.py`, …) call back into the worker each
 iteration: denormalize → `apply_parameters` → `run_model` → `calculate_metrics`.
 Workers run in `process_N/` dirs created by
-`optimization/mixins/parallel/directory_manager.py`:
+`core/calibration/mixins/parallel/directory_manager.py`:
 `process_{id}/settings/{model}/` and `process_{id}/simulations/{exp}/{model}/`.
 
 **Regionalization** (spatially-varying params from attributes):
@@ -306,14 +306,14 @@ xarray) inside methods. Line length 120, Python 3.11+.
 | Unified registries (`R.runners` etc.) | `core/registries.py` (`R`), `core/registry.py` (`Registry`) |
 | Model entry points (MUST add) | `pyproject.toml` `[project.entry-points."symfluence.plugins"]` |
 | Plugin entry-point discovery | `core/_bootstrap.py` (`_discover_plugins`) |
-| Runner base | `models/base/base_runner.py` |
-| Runner template (combined) | `models/templates/model_template.py` (`UnifiedModelRunner`) |
-| Preprocessor base | `models/base/base_preprocessor.py` |
-| Postprocessor base / standard | `models/base/base_postprocessor.py`, `standard_postprocessor.py` |
+| Runner base | `core/modeling/base/base_runner.py` |
+| Runner template (combined) | `core/modeling/templates/model_template.py` (`UnifiedModelRunner`) |
+| Preprocessor base | `core/modeling/base/base_preprocessor.py` |
+| Postprocessor base / standard | `core/modeling/base/base_postprocessor.py`, `standard_postprocessor.py` |
 | Calibration worker base | `optimization/workers/base_worker.py` (`BaseWorker`, `WorkerTask`) |
 | Parameter manager base | `optimization/core/base_parameter_manager.py` |
-| Optimizer algorithms | `optimization/optimizers/algorithms/{dds,pso,sce_ua,de}.py` |
-| Worker process dirs | `optimization/mixins/parallel/directory_manager.py` |
+| Optimizer algorithms | `core/calibration/optimizers/algorithms/{dds,pso,sce_ua,de}.py` |
+| Worker process dirs | `core/calibration/mixins/parallel/directory_manager.py` |
 | Regionalization | `optimization/regionalization/strategies.py` |
 | Calibration targets | `optimization/calibration_targets/`, `models/<m>/calibration/targets.py` |
 | Flagship exemplar | `models/summa/` |

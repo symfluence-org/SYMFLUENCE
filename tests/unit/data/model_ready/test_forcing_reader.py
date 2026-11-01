@@ -17,11 +17,11 @@ import pytest
 pytest.importorskip("xarray")
 import xarray as xr
 
-from symfluence.data.model_ready.cf_conventions import (
+from symfluence.core.modeling.model_ready.cf_conventions import (
     CANONICAL_FORCING,
     resolve_forcing_var,
 )
-from symfluence.data.model_ready.forcing_reader import (
+from symfluence.core.modeling.model_ready.forcing_reader import (
     forcing_timestep_seconds,
     open_canonical_forcing,
 )
@@ -117,7 +117,7 @@ def test_resolve_forcing_var_accepts_cf_key_and_aliases(tmp_path):
 # ---------------------------------------------------------------------------
 # resample_canonical_forcing
 # ---------------------------------------------------------------------------
-from symfluence.data.model_ready.forcing_reader import resample_canonical_forcing  # noqa: E402
+from symfluence.core.modeling.model_ready.forcing_reader import resample_canonical_forcing  # noqa: E402
 
 
 def _forcing(times, pptrate, airtemp):
@@ -262,7 +262,7 @@ def test_conflicting_hru_dims_raise_actionable_error(tmp_path):
 
 def test_consistent_hru_dims_pass_the_guard(tmp_path):
     """Two time-chunks that share the same hru size must NOT trip the guard."""
-    from symfluence.data.model_ready.forcing_reader import assert_consistent_spatial_dims
+    from symfluence.core.modeling.model_ready.forcing_reader import assert_consistent_spatial_dims
 
     jan = _write_hru_forcing(tmp_path / "Bow_ERA5_remapped_2020-01.nc", 12)
     feb = _write_hru_forcing(tmp_path / "Bow_ERA5_remapped_2020-02.nc", 12)
@@ -291,7 +291,7 @@ def test_store_builder_rejects_mixed_discretization(tmp_path):
 # --- discretization-namespaced forcing store (issue #339 true-source fix) ----
 
 def test_discretization_token_sanitizes():
-    from symfluence.data.model_ready.forcing_reader import discretization_token
+    from symfluence.core.modeling.model_ready.forcing_reader import discretization_token
 
     assert discretization_token("lumped") == "lumped"
     assert discretization_token("Elevation") == "elevation"
@@ -304,7 +304,7 @@ def test_discretization_token_sanitizes():
 
 def test_select_forcing_files_picks_matching_discretization():
     """Each discretization selects only its own namespaced files."""
-    from symfluence.data.model_ready.forcing_reader import select_forcing_files
+    from symfluence.core.modeling.model_ready.forcing_reader import select_forcing_files
 
     files = [
         "Bow_ERA5_remapped_lumped_2002-01-01-00-00-00.nc",
@@ -322,7 +322,7 @@ def test_select_forcing_files_picks_matching_discretization():
 
 def test_select_forcing_files_falls_back_for_legacy_untokened_store():
     """A store predating namespacing (no token) is returned whole, not empty."""
-    from symfluence.data.model_ready.forcing_reader import select_forcing_files
+    from symfluence.core.modeling.model_ready.forcing_reader import select_forcing_files
 
     legacy = [
         "Bow_ERA5_remapped_2002-01-01-00-00-00.nc",
@@ -356,7 +356,7 @@ def test_open_canonical_forcing_selects_by_discretization(tmp_path):
 
 def test_namespaced_discretizations_coexist_but_intra_namespace_collision_fails(tmp_path):
     """The write-boundary check allows distinct namespaces, rejects a real collision."""
-    from symfluence.data.model_ready.forcing_reader import (
+    from symfluence.core.modeling.model_ready.forcing_reader import (
         assert_consistent_within_discretization,
     )
 

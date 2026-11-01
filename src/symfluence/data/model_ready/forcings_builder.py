@@ -159,7 +159,7 @@ class ForcingsStoreBuilder:
         forcing) coexist. Raises ``ValueError`` naming the offending file(s) on a
         genuine intra-namespace collision.
         """
-        from .forcing_reader import assert_consistent_within_discretization
+        from symfluence.core.modeling.model_ready.forcing_reader import assert_consistent_within_discretization
 
         assert_consistent_within_discretization([Path(f) for f in nc_files])
 
@@ -218,7 +218,10 @@ class ForcingsStoreBuilder:
         try:
             import xarray as xr
 
-            from .forcing_reader import _has_datetime_axis, validated_timestep_seconds
+            from symfluence.core.modeling.model_ready.forcing_reader import (
+                _has_datetime_axis,
+                validated_timestep_seconds,
+            )
             for f in nc_files:
                 with xr.open_dataset(f) as ds:
                     if _has_datetime_axis(ds):
