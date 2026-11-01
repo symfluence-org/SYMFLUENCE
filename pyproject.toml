@@ -41,9 +41,7 @@ dependencies = [
   "cdo>=1.6.0,<3.0.0",
   # Visualization
   "seaborn>=0.12.0,<1.0.0",
-  "plotly>=5.0.0,<6.0.0",
   "matplotlib>=3.7.0,<4.0.0",
-  "contextily",
   # Cloud and data access
   "gcsfs>=2023.0.0",
   "netCDF4>=1.6.0,<2.0.0",
@@ -425,7 +423,7 @@ disallow_untyped_defs = false
 # These high-volume categories are being enabled incrementally.  Do not add
 # codes here without recording a concrete burn-down plan.
 disable_error_code = ["attr-defined", "operator", "arg-type", "assignment", "union-attr"]
-exclude = ["examples/", "tests/", "src/symfluence/cli\\.py$"]
+exclude = ["examples/", "tests/"]
 
 [tool.coverage.run]
 source = ["src/symfluence"]
@@ -455,6 +453,6 @@ exclude_lines = [
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
     "if __name__ == .__main__.",
-    "pass",
+    "^\\s*pass\\s*$",
     "@(abc\\.)?abstractmethod",
 ]

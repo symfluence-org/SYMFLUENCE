@@ -57,25 +57,43 @@ from .r_environment import (
 # is installed but this import fails — as it does when the embedded R cannot
 # start on a given platform — __init__ surfaces that captured cause instead of
 # the misleading "rpy2 is not installed" message.
+#
+# The import is deferred to the first GRRunner construction: importing rpy2
+# starts the embedded R interpreter (~1 s), and this module is reached on every
+# `import symfluence` via optimizer registration, so doing it at module level
+# made every CLI command pay for R even when GR is never used.
 _RPY2_IMPORT_ERROR: Optional[BaseException] = None
-configure_r_dll_search()
-try:
-    import contextlib
-    import io
-    with contextlib.redirect_stderr(io.StringIO()):
-        import rpy2.robjects as robjects
-        from rpy2.robjects import pandas2ri
-        from rpy2.robjects.conversion import localconverter
-        from rpy2.robjects.packages import importr
-    HAS_RPY2 = True
-except Exception:  # noqa: BLE001 - Broad exception required for rpy2 import failures
-    import sys as _sys
-    _RPY2_IMPORT_ERROR = _sys.exc_info()[1]
-    HAS_RPY2 = False
-    robjects = None
-    importr = None
-    pandas2ri = None
-    localconverter = None
+HAS_RPY2: Optional[bool] = None  # None = import not attempted yet
+robjects: Any = None
+importr: Any = None
+pandas2ri: Any = None
+localconverter: Any = None
+
+
+def _load_rpy2() -> bool:
+    """Import rpy2 (once) into this module's globals; return availability."""
+    global HAS_RPY2, _RPY2_IMPORT_ERROR, robjects, importr, pandas2ri, localconverter
+    if HAS_RPY2 is not None:
+        return HAS_RPY2
+    configure_r_dll_search()
+    try:
+        import contextlib
+        import io
+        with contextlib.redirect_stderr(io.StringIO()):
+            import rpy2.robjects as robjects
+            from rpy2.robjects import pandas2ri
+            from rpy2.robjects.conversion import localconverter
+            from rpy2.robjects.packages import importr
+        HAS_RPY2 = True
+    except Exception:  # noqa: BLE001 - Broad exception required for rpy2 import failures
+        import sys as _sys
+        _RPY2_IMPORT_ERROR = _sys.exc_info()[1]
+        HAS_RPY2 = False
+        robjects = None
+        importr = None
+        pandas2ri = None
+        localconverter = None
+    return HAS_RPY2
 
 
 @R.runners.add('GR', runner_method='run_gr')
@@ -125,7 +143,7 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
             mid-workflow is neither reproducible nor available offline.
         """
         # GR-specific: Check rpy2 dependency BEFORE calling super().
-        if not HAS_RPY2:
+        if not _load_rpy2():
             # rpy2 installed but its import failed => the embedded R could not
             # start. Surface the real, platform-specific cause (which the eager
             # module-level import swallowed) rather than telling the user to

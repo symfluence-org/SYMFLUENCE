@@ -287,9 +287,7 @@ class USGSGroundwaterHandler(BaseObservationHandler):
     def acquire(self) -> Path:
         """Download USGS groundwater data."""
         download_enabled = self._get_config_value(
-            lambda: self.config.evaluation.usgs_gw.download, default=False
-        ) or self._get_config_value(
-            lambda: self.config.data.download_usgs_gw, default=False
+            lambda: self.config.evaluation.usgs_gw.download, default=False, dict_key='DOWNLOAD_USGS_GW'
         )
 
         if not download_enabled:

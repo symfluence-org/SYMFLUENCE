@@ -25,7 +25,6 @@ geopandas = ">=0.13,<2"
 pyproj = ">=3.5,<4"
 shapely = ">=2.0,<3"
 rasterstats = "*"
-contextily = "*"
 
 # Scientific — upper bounds match pyproject.toml
 numpy = ">=2.0,<3"
@@ -43,7 +42,6 @@ distributed = "*"
 # Visualization — upper bounds match pyproject.toml
 matplotlib = ">=3.7,<4"
 seaborn = ">=0.12,<1"
-plotly = ">=5.0,<6"
 
 # Utilities — upper bounds match pyproject.toml
 pyyaml = ">=6.0,<7"

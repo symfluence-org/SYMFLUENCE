@@ -63,7 +63,7 @@ class SSEBopAcquirer(BaseAcquisitionHandler):
 
         # Determine product type (conus or global)
         product = self._get_config_value(
-            lambda: self.config.evaluation.ssebop.product,
+            lambda: None,
             default='conus',
             dict_key='SSEBOP_PRODUCT'
         )

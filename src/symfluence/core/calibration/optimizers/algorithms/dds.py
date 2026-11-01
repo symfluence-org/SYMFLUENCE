@@ -68,7 +68,7 @@ class DDSAlgorithm(OptimizationAlgorithm):
 
         # Minimum perturbation probability to ensure exploration even late in optimization
         p_min = self._get_config_value(
-            lambda: self.config.optimization.dds.p_min, default=0.05, dict_key='DDS_P_MIN'
+            lambda: None, default=0.05, dict_key='DDS_P_MIN'
         )
 
         # Initialize with random starting point or provided initial guess

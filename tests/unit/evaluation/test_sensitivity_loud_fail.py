@@ -119,7 +119,6 @@ def test_analysis_manager_raises_when_no_model_produces_results(monkeypatch, tmp
 
     cfg = MagicMock()
     cfg.model.hydrological_model = "SUMMA,FUSE"
-    cfg.analysis.run_sensitivity_analysis = True
     logger = logging.getLogger("test_sa_manager_loud")
     reporting = MagicMock()
 
@@ -128,7 +127,7 @@ def test_analysis_manager_raises_when_no_model_produces_results(monkeypatch, tmp
     mgr.logger = logger
     mgr.reporting_manager = reporting
     mgr._get_config_value = lambda getter, default=None, **_: (
-        getter() if callable(getter) else default
+        default if getter() is None else getter()
     )
 
     def fail_generic(model):
@@ -154,14 +153,13 @@ def _make_manager(hydrological_model):
 
     cfg = MagicMock()
     cfg.model.hydrological_model = hydrological_model
-    cfg.analysis.run_sensitivity_analysis = True
 
     mgr = AnalysisManager.__new__(AnalysisManager)
     mgr.config = cfg
     mgr.logger = logging.getLogger("test_sa_self_training")
     mgr.reporting_manager = MagicMock()
     mgr._get_config_value = lambda getter, default=None, **_: (
-        getter() if callable(getter) else default
+        default if getter() is None else getter()
     )
     return mgr
 

@@ -265,7 +265,7 @@ class LamahIceStreamflowHandler(BaseObservationHandler):
                 dict_key='LAMAH_ICE_PATH',
             )
             or self._get_config_value(
-                lambda: self.config.data.lamah_ice_path,
+                lambda: self.config.evaluation.lamah_ice.path,
                 dict_key='LAMAH_ICE_PATH',
             )
         )

@@ -357,7 +357,13 @@ class Registry(Generic[T]):
             self._meta[nkey] = meta
 
     def _resolve_alias(self, nkey: str) -> str:
-        """Follow one level of aliasing."""
+        """Follow one level of aliasing.
+
+        A real registration always wins over an alias of the same name,
+        whichever was declared first.
+        """
+        if nkey in self._entries:
+            return nkey
         return self._aliases.get(nkey, nkey)
 
     def _unwrap(self, nkey: str, entry: Any) -> T:
@@ -586,12 +592,15 @@ def model_manifest(
     # became declarable; widening it is a deliberate change, not a tidy-up.
     # Aliases resolve lazily at lookup time, so declaring one before the
     # canonical registration is fine.
+    #
+    # No "is the alias already a real key?" check here: real registrations
+    # take precedence at lookup (Registry._resolve_alias), regardless of
+    # order. Checking via registry.keys() at registration time forced the
+    # lazy optimizer/worker seeders, which imported every model's calibration
+    # stack (and GR's embedded R) on every `import symfluence`.
     for alias in aliases or ():
         for registry in (R.runners, R.preprocessors, R.postprocessors,
                          R.optimizers, R.workers):
-            # Never let an alias shadow a real registration of the same name.
-            if alias.upper() in registry.keys():
-                continue
             registry.alias(alias, model_name)
 
     if self_training:

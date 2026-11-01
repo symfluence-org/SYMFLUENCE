@@ -111,7 +111,7 @@ class GroundwaterEvaluator(ModelEvaluator):
 
         self.variable_name = self.optimization_target
         self.grace_center = self._get_config_value(
-            lambda: self.config.evaluation.grace.processing_center,
+            lambda: None,
             default='csr',
             dict_key='GRACE_PROCESSING_CENTER'
         )
@@ -198,7 +198,7 @@ class GroundwaterEvaluator(ModelEvaluator):
 
             # 3. Apply auto-alignment AFTER both datasets loaded
             auto_align = self._get_config_value(
-                lambda: self.config.evaluation.groundwater.auto_align,
+                lambda: self.config.evaluation.usgs_gw.auto_align,
                 default=True,
                 dict_key='GW_AUTO_ALIGN'
             )
@@ -277,7 +277,7 @@ class GroundwaterEvaluator(ModelEvaluator):
             sim_data_m = sim_data / 1000.0
 
             base_depth = float(self._get_config_value(
-                lambda: self.config.evaluation.groundwater.base_depth_m,
+                lambda: self.config.evaluation.usgs_gw.base_depth,
                 default=50.0,
                 dict_key='GW_BASE_DEPTH'
             ))
@@ -288,7 +288,7 @@ class GroundwaterEvaluator(ModelEvaluator):
             # Use base class method for spatial dimension collapse
             sim_data = self._collapse_spatial_dims(ds['scalarAquiferStorage'], aggregate='mean')
             base_depth = float(self._get_config_value(
-                lambda: self.config.evaluation.groundwater.base_depth_m,
+                lambda: self.config.evaluation.usgs_gw.base_depth,
                 default=50.0,
                 dict_key='GW_BASE_DEPTH'
             ))

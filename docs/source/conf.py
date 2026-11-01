@@ -35,9 +35,7 @@ autodoc_mock_imports = [
     'cdo',
     # Visualization
     'seaborn',
-    'plotly',
     'matplotlib',
-    'contextily',
     # Cloud and data access
     'gcsfs',
     'intake_xarray',

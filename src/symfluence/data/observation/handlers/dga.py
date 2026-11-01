@@ -112,7 +112,7 @@ class DGAStreamflowHandler(BaseObservationHandler):
             return raw_file
 
         download_enabled = self._get_config_value(
-            lambda: self.config.data.download_dga_data, default=True
+            lambda: None, default=True, dict_key='DOWNLOAD_DGA_DATA'
         )
         if not download_enabled:
             if raw_file.exists():

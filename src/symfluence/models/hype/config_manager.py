@@ -220,7 +220,7 @@ class HYPEConfigManager(ConfigMixin):
 
         # Disable HYPE internal obs loading when using external multi-gauge metrics
         multi_gauge = self._get_config_value(
-            lambda: self.config.calibration.multi_gauge_calibration,
+            lambda: self.config.optimization.multi_gauge.calibration,
             default=False, dict_key='MULTI_GAUGE_CALIBRATION',
         )
         readobsid_flag = 'n' if multi_gauge else 'y'
