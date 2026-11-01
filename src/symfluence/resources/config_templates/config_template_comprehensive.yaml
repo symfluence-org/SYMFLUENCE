@@ -3312,28 +3312,28 @@ DATATOOL_PATH: default
 #   Type:        str
 #   Default:     None
 #   Source:      DataConfig (data.py)
-#   Usage:      MAF / datatool job submission account (acquisition.maf_processor)
+#   Usage:      MAF / datatool job submission account (unused; legacy key)
 TOOL_ACCOUNT: default
 
 # UNIFY_SOIL
 #   Type:        bool
 #   Default:     false
 #   Source:      DataConfig (data.py)
-#   Usage:      Collapse soil majority to a single class (acquisition.cleanup_processor)
+#   Usage:      Collapse soil majority to a single class (unused; legacy key)
 UNIFY_SOIL: false
 
 # MINIMUM_LAND_FRACTION
 #   Type:        float
 #   Default:     0.01
 #   Source:      DataConfig (data.py)
-#   Usage:      Drop land-cover fractions below this threshold (acquisition.cleanup_processor)
+#   Usage:      Drop land-cover fractions below this threshold (unused; legacy key)
 MINIMUM_LAND_FRACTION: 0.01
 
 # NUM_LAND_COVER
 #   Type:        int
 #   Default:     20
 #   Source:      DataConfig (data.py)
-#   Usage:      Number of land-cover classes to pad to (acquisition.cleanup_processor)
+#   Usage:      Number of land-cover classes to pad to (unused; legacy key)
 NUM_LAND_COVER: 20
 
 # EASYMORE_CACHE

@@ -178,7 +178,6 @@ class gistoolRunner(ConfigMixin):
         - Geographic coordinates expected in decimal degrees
 
     See Also:
-        - data.acquisition.maf_processor.DataAcquisitionProcessor: Config generator
         - data.preprocessing.attribute_processor: Processes gistool outputs
     """
 
@@ -377,7 +376,6 @@ class datatoolRunner(ConfigMixin):
         - Dataset naming conventions differ (see DATASET_MAP for mappings)
 
     See Also:
-        - data.acquisition.maf_processor.DataAcquisitionProcessor: Config generator
         - data.preprocessing.dataset_handlers: Variable processing for datasets
     """
 

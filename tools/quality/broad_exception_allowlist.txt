@@ -297,8 +297,6 @@ src/symfluence/data/acquisition/handlers/wokam.py:WOKAMAcquirer.download:except 
 src/symfluence/data/acquisition/handlers/worldclim.py:WorldClimAcquirer.download:except Exception as e:  # noqa: BLE001
 src/symfluence/data/acquisition/maf_pipeline.py:datatoolRunner.execute_datatool_command:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/data/acquisition/utils.py:resolve_credentials:except Exception as e:  # noqa: BLE001 — .netrc fallback is non-critical
-src/symfluence/data/acquisition/zonal_stats_processor.py:DataPreProcessor.calculate_land_stats:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
-src/symfluence/data/acquisition/zonal_stats_processor.py:DataPreProcessor.calculate_soil_stats:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/data/cache/forcing_cache.py:RawForcingCache._evict_if_needed:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/cache/forcing_cache.py:RawForcingCache.get_cache_stats:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/data_manager.py:DataManager._ensure_gauge_segment_mapping:except Exception as exc:  # noqa: BLE001 — let downstream errors surface specifics
@@ -472,7 +470,6 @@ src/symfluence/data/preprocessing/shapefile_manager.py:ShapefileManager._validat
 src/symfluence/data/preprocessing/shapefile_manager.py:ShapefileManager.align_longitude_frame:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/shapefile_manager.py:ShapefileManager.ensure_unique_hru_ids:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/data/preprocessing/shapefile_manager.py:ShapefileManager.ensure_wgs84:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
-src/symfluence/data/utils/archive_utils.py:tar_directory:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data_assimilation/da_manager.py:DataAssimilationManager.run_data_assimilation:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/data_assimilation/enkf/ensemble_manager.py:SubprocessEnsembleManager.extract_predictions:except Exception:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/data_assimilation/enkf/ensemble_manager.py:SubprocessEnsembleManager.forecast_step:except Exception as e:  # noqa: BLE001 — must-not-raise contract
@@ -749,7 +746,6 @@ src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker.apply_parameters
 src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker._run_model:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/gsflow/calibration/worker.py:_evaluate_gsflow_parameters_worker:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/gsflow/coupling.py:GSFLOWCouplingManager.update_modflow_parameters:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/gsflow/extractor.py:GSFLOWResultExtractor._parse_statvar_file:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/gsflow/extractor.py:GSFLOWResultExtractor.extract_variable:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/gsflow/postprocessor.py:GSFLOWPostProcessor._extract_from_file:except Exception as e:  # noqa: BLE001 — model execution resilience
