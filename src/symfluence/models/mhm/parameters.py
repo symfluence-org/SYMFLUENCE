@@ -53,6 +53,7 @@ PARAM_BOUNDS: Dict[str, Dict[str, float]] = {
     'interflowStorageCapacityFactor': {'min': 75.0, 'max': 200.0}, # interflow storage volume
     'slowInterflowRecession_Ks': {'min': 1.0, 'max': 30.0},       # slow interflow routing speed
     'muskingumTravelTime_constant': {'min': 0.31, 'max': 0.35},   # channel routing travel time
+    'streamflow_celerity': {'min': 0.3, 'max': 5.0},             # m/s, routing case 2 only
     'orgMatterContent_forest': {'min': 5.0, 'max': 10.0},         # soil organic matter
     'minCorrectionFactorPET': {'min': 0.30, 'max': 1.30},        # direct PET multiplier (fAsp)
     'maxCorrectionFactorPET': {'min': 0.01, 'max': 0.20},        # PET correction range
@@ -96,6 +97,7 @@ DEFAULT_PARAMS: Dict[str, float] = {
     'interflowStorageCapacityFactor': 85.0,
     'slowInterflowRecession_Ks': 15.0,
     'muskingumTravelTime_constant': 0.325,
+    'streamflow_celerity': 1.5,
     'orgMatterContent_forest': 7.0,
     'minCorrectionFactorPET': 0.90,
     'maxCorrectionFactorPET': 0.10,

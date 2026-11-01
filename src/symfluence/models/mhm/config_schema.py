@@ -50,6 +50,12 @@ class MHMConfig(BaseModel):
     match_lumped_area: bool = Field(default=False, alias='MHM_MATCH_LUMPED_AREA')
     # Model time step in hours; mHM accepts divisors of 24.
     timestep: Literal[1, 2, 3, 4, 6, 12, 24] = Field(default=1, alias='MHM_TIMESTEP')
+    # mRM channel routing (processCase(8)): 1 = Muskingum, 2 = adaptive time
+    # step with one constant celerity (streamflow_celerity, m/s). Muskingum
+    # floors each cell's delay at about one model step, so on fine grids the
+    # outlet lags by (cells along the river) x (time step) whatever the
+    # travel-time parameters say: ~2 days late at 1 km on Tungnaa.
+    routing_case: Literal[1, 2] = Field(default=1, alias='MHM_ROUTING_CASE')
 
     # Distributed-forcing options (only used with distributed_morph). The
     # basin-mean forcing is taken to represent the basin-mean DEM elevation and
