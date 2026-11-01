@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Dict
 
 from symfluence.core.mixins import ConfigMixin
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.data.acquisition.registry import AcquisitionRegistry
 
 
@@ -74,8 +75,8 @@ class CloudForcingDownloader(ConfigMixin):
         from symfluence.core.config.coercion import coerce_config
         self._config = coerce_config(config, warn=False)
         self.logger = logger
-        self.dataset_name = config.get('FORCING_DATASET', '').upper()
-        self.supplement_data = config.get('SUPPLEMENT_FORCING', False)
+        self.dataset_name = resolve_config_value(config, lambda: config.forcing.dataset, '', 'FORCING_DATASET').upper()
+        self.supplement_data = resolve_config_value(config, lambda: config.forcing.supplement, False, 'SUPPLEMENT_FORCING')
 
     def download_forcing_data(self, output_dir: Path) -> Path:
         """Download forcing data based on configured dataset.

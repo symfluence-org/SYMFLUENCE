@@ -13,6 +13,8 @@ import traceback
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
+from symfluence.core.mixins.config import resolve_config_value
+
 from .file_manager_updater import FileManagerUpdater
 from .model_decisions_updater import ModelDecisionsUpdater
 from .results_saver import FinalResultsSaver
@@ -217,8 +219,8 @@ class FinalEvaluationRunner:
         if not callable(worker_calc):
             return None
         periods = {
-            'Calib': self.config.get('CALIBRATION_PERIOD'),
-            'Eval': self.config.get('EVALUATION_PERIOD'),
+            'Calib': resolve_config_value(self.config, lambda: self.config.domain.calibration_period, None, 'CALIBRATION_PERIOD'),
+            'Eval': resolve_config_value(self.config, lambda: self.config.domain.evaluation_period, None, 'EVALUATION_PERIOD'),
         }
         out: Dict[str, float] = {}
         for prefix, period in periods.items():

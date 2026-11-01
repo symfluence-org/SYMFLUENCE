@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import xarray as xr
 
-from symfluence.core.mixins.config import ConfigMixin
+from symfluence.core.mixins.config import ConfigMixin, resolve_config_value
 
 
 def _get_cfif_variable_attributes() -> Dict[str, Dict[str, str]]:
@@ -280,11 +280,10 @@ class BaseDatasetHandler(ABC, ConfigMixin):
         self.config = config
         self.logger = logger
         self.project_dir = project_dir
-        # Support both typed SymfluenceConfig (.domain.name) and plain dict
-        if hasattr(config, 'domain') and not isinstance(config, dict):
-            self.domain_name = config.domain.name
-        else:
-            self.domain_name = config['DOMAIN_NAME']
+        # Works for both typed SymfluenceConfig and plain dict configs.
+        self.domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+        if self.domain_name is None:
+            raise KeyError('DOMAIN_NAME')
         # Store extra kwargs like forcing_timestep_seconds if provided
         for key, value in kwargs.items():
             setattr(self, key, value)

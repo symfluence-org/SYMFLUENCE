@@ -1,6 +1,7 @@
 """Every typed config path passed to ``_get_config_value`` must exist.
 
-``_get_config_value(lambda: self.config.a.b, default)`` swallows the
+``_get_config_value(lambda: self.config.a.b, default)`` (and
+``resolve_config_value(config, lambda: config.a.b, ...)``) swallows the
 ``AttributeError`` a mistyped path raises and quietly returns the default (or
 the ``dict_key`` fallback). A wrong field name therefore never fails -- the
 user's setting is just ignored. E.g. ``paths.pour_point_shp_path`` (the field
@@ -27,7 +28,7 @@ from symfluence.core.config.models import SymfluenceConfig
 pytestmark = pytest.mark.unit
 
 SRC = Path(__file__).resolve().parents[3] / "src" / "symfluence"
-_ACCESSORS = {"_get_config_value", "get_config_value"}
+_ACCESSORS = {"_get_config_value", "get_config_value", "resolve_config_value"}
 
 
 def _resolves(cls: type, parts: list[str]) -> bool:
@@ -52,6 +53,8 @@ def _attr_chain(node: ast.AST) -> list[str]:
     while isinstance(node, ast.Attribute):
         parts.append(node.attr)
         node = node.value
+    if isinstance(node, ast.Name):
+        parts.append(node.id)
     return parts[::-1]
 
 
@@ -60,11 +63,17 @@ def _unresolvable_paths() -> list[str]:
     for path in sorted(SRC.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for call in ast.walk(tree):
-            if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
-                    and call.func.attr in _ACCESSORS
-                    and call.args and isinstance(call.args[0], ast.Lambda)):
+            if not isinstance(call, ast.Call):
                 continue
-            chain = _attr_chain(call.args[0].body)
+            func = call.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+            if name not in _ACCESSORS:
+                continue
+            # _get_config_value(lambda, ...) / resolve_config_value(config, lambda, ...)
+            lam = next((a for a in call.args[:2] if isinstance(a, ast.Lambda)), None)
+            if lam is None:
+                continue
+            chain = _attr_chain(lam.body)
             if "config" not in chain:
                 continue
             cfg_path = chain[chain.index("config") + 1:]

@@ -20,6 +20,7 @@ from typing import Any, Dict, Optional
 
 import pandas as pd
 
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.registries import R
 
 from ...acquisition.handlers.fluxnet_constants import convert_le_to_et
@@ -49,8 +50,8 @@ class FLUXNETObservationHandler(BaseObservationHandler):
     def __init__(self, config: Dict[str, Any], logger: logging.Logger):
         super().__init__(config, logger)
 
-        self.station_id = config.get('FLUXNET_STATION', '')
-        self.domain_name = config.get('DOMAIN_NAME', 'unknown')
+        self.station_id = resolve_config_value(config, lambda: config.evaluation.fluxnet.station, '', 'FLUXNET_STATION')
+        self.domain_name = resolve_config_value(config, lambda: config.domain.name, 'unknown', 'DOMAIN_NAME')
 
         # Output directories
         self.raw_dir = self.project_observations_dir / 'fluxnet' / 'raw'

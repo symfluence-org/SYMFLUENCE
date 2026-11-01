@@ -18,6 +18,7 @@ import pandas as pd
 
 from symfluence.core.constants import ModelDefaults, UnitConversion
 from symfluence.core.metrics import kge, kge_prime, mae, nse, rmse
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.mixins.project import resolve_data_subdir
 from symfluence.core.path_resolver import find_basin_shapefile
 
@@ -90,7 +91,7 @@ class StreamflowMetrics:
                         store_series = store_series.resample(resample_freq).mean()
                     return np.asarray(store_series.values), cast(pd.DatetimeIndex, store_series.index)
 
-            obs_file = config.get('OBSERVATIONS_PATH', 'default')
+            obs_file = resolve_config_value(config, lambda: config.paths.observations_path, 'default', 'OBSERVATIONS_PATH')
             if obs_file == 'default' or not obs_file:
                 obs_file = resolve_data_subdir(project_dir, 'observations') / 'streamflow' / 'preprocessed' / f"{domain_name}_streamflow_processed.csv"
             else:
@@ -364,10 +365,10 @@ class StreamflowMetrics:
         catchment_file = find_basin_shapefile(
             project_dir / 'shapefiles',
             domain_name,
-            config.get('DOMAIN_DEFINITION_METHOD', 'lumped'),
-            config.get('EXPERIMENT_ID', 'run_1'),
-            explicit_path=config.get('CATCHMENT_PATH', 'default'),
-            explicit_name=config.get('CATCHMENT_SHP_NAME', 'default'),
+            resolve_config_value(config, lambda: config.domain.definition_method, 'lumped', 'DOMAIN_DEFINITION_METHOD'),
+            resolve_config_value(config, lambda: config.domain.experiment_id, 'run_1', 'EXPERIMENT_ID'),
+            explicit_path=resolve_config_value(config, lambda: config.paths.catchment_path, 'default', 'CATCHMENT_PATH'),
+            explicit_name=resolve_config_value(config, lambda: config.paths.catchment_name, 'default', 'CATCHMENT_SHP_NAME'),
             logger=logger,
         )
 

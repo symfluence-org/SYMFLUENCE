@@ -14,6 +14,38 @@ if TYPE_CHECKING:
     from symfluence.core.config.models import SymfluenceConfig
 
 
+
+def resolve_config_value(
+    config: Any,
+    typed_accessor: Optional[Callable[[], Any]] = None,
+    default: Any = None,
+    dict_key: Optional[str] = None,
+) -> Any:
+    """The single implementation of typed-first config lookup.
+
+    Config reaches code both as a typed ``SymfluenceConfig`` and as a flat
+    dict (e.g. inside calibration worker processes). This tries
+    ``typed_accessor()`` first; if it raises ``AttributeError``/``KeyError``/
+    ``TypeError`` (a dict config, or an unset optional section) or returns
+    ``None``, it falls back to ``config.get(dict_key)``, then ``default``.
+
+    ``tests/unit/core/test_config_paths_resolve.py`` statically checks the
+    typed paths passed through ``_get_config_value``, since a mistyped path
+    would otherwise silently fall through to the default.
+    """
+    if callable(typed_accessor):
+        try:
+            value = typed_accessor()
+            if value is not None:
+                return value
+        except (AttributeError, KeyError, TypeError):
+            pass
+    if dict_key is not None and config is not None and hasattr(config, 'get'):
+        value = config.get(dict_key)
+        if value is not None:
+            return value
+    return default
+
 class ConfigMixin:
     """
     Mixin for classes that use typed SymfluenceConfig configuration.
@@ -116,26 +148,7 @@ class ConfigMixin:
             if dict_key in self._config_dict_override:
                 return self._config_dict_override[dict_key]
 
-        try:
-            value = typed_accessor()
-            if value is not None:
-                return value
-        except (AttributeError, KeyError, TypeError):
-            pass
-
-        # Fallback to dict access for backward compatibility
-        if dict_key is not None:
-            cfg = self.config
-            if isinstance(cfg, dict):
-                value = cfg.get(dict_key)
-                if value is not None:
-                    return value
-            elif hasattr(cfg, 'get'):
-                value = cfg.get(dict_key)
-                if value is not None:
-                    return value
-
-        return default
+        return resolve_config_value(self.config, typed_accessor, default, dict_key)
 
     @property
     def forcing_discretization(self) -> Optional[str]:

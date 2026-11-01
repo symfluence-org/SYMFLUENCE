@@ -27,6 +27,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+from symfluence.core.mixins.config import resolve_config_value
+
 # A `module load` command must be run through a shell (``module`` is a shell
 # function, not a binary), which is otherwise an injection surface. We constrain
 # what the shell may run: module names must look like module names, and the
@@ -88,9 +90,9 @@ class TauDEMExecutor:
         self.config = config
         self.logger = logger
         self.taudem_dir = taudem_dir
-        self.num_processes = config.get('NUM_PROCESSES', 1)
-        self.max_retries = config.get('MAX_RETRIES', 3)
-        self.retry_delay = config.get('RETRY_DELAY', 5)
+        self.num_processes = resolve_config_value(config, lambda: config.system.num_processes, 1, 'NUM_PROCESSES')
+        self.max_retries = resolve_config_value(config, lambda: config.domain.delineation.max_retries, 3, 'MAX_RETRIES')
+        self.retry_delay = resolve_config_value(config, lambda: config.domain.delineation.retry_delay, 5, 'RETRY_DELAY')
 
         # Add TauDEM to PATH (os.pathsep: ':' corrupts PATH on Windows)
         os.environ['PATH'] = f"{os.environ['PATH']}{os.pathsep}{taudem_dir}"

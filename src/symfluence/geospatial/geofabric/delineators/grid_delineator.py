@@ -20,6 +20,7 @@ import rasterio
 from shapely.geometry import box
 
 from symfluence.core.exceptions import DiscretizationError
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.registries import R
 
 from ....geospatial.raster_utils import _scipy_mode_compat
@@ -65,10 +66,10 @@ class GridDelineator(BaseGeofabricDelineator):
         super().__init__(config, logger)
 
         # Grid-specific configuration
-        self.grid_cell_size = config.get('GRID_CELL_SIZE', 1000.0)  # meters
-        self.clip_to_watershed = config.get('CLIP_GRID_TO_WATERSHED', True)
-        self.grid_source = config.get('GRID_SOURCE', 'generate')
-        self.native_grid_dataset = config.get('NATIVE_GRID_DATASET', 'era5')
+        self.grid_cell_size = resolve_config_value(config, lambda: config.domain.grid_cell_size, 1000.0, 'GRID_CELL_SIZE')  # meters
+        self.clip_to_watershed = resolve_config_value(config, lambda: config.domain.clip_grid_to_watershed, True, 'CLIP_GRID_TO_WATERSHED')
+        self.grid_source = resolve_config_value(config, lambda: config.domain.grid_source, 'generate', 'GRID_SOURCE')
+        self.native_grid_dataset = resolve_config_value(config, lambda: config.domain.native_grid_dataset, 'era5', 'NATIVE_GRID_DATASET')
 
         # Specific paths for grid delineation
         self.output_dir = self.project_dir / "shapefiles/tempdir"

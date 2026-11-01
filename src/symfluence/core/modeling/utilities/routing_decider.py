@@ -13,6 +13,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.modeling.config_schema import schema_key_table
 
 logger = logging.getLogger(__name__)
@@ -205,7 +206,7 @@ class RoutingDecider:
 
         # 1. Explicit routing model check
         # Only use this if explicitly set - don't short-circuit on default value
-        routing_model = config.get('ROUTING_MODEL', '').lower()
+        routing_model = resolve_config_value(config, lambda: config.model.routing_model, '', 'ROUTING_MODEL').lower()
         diagnostics['checks']['routing_model'] = routing_model
 
         # If explicitly set to 'none', disable routing
@@ -215,7 +216,7 @@ class RoutingDecider:
 
         # Check for point mode BEFORE enabling routing based on ROUTING_MODEL
         # Point-scale simulations never need routing regardless of ROUTING_MODEL setting
-        domain_method = config.get('DOMAIN_DEFINITION_METHOD', 'lumped').lower()
+        domain_method = resolve_config_value(config, lambda: config.domain.definition_method, 'lumped', 'DOMAIN_DEFINITION_METHOD').lower()
         if domain_method == 'point':
             diagnostics['reason'] = 'point_scale_no_routing_needed'
             diagnostics['checks']['domain_method'] = domain_method
@@ -233,7 +234,7 @@ class RoutingDecider:
         # ROUTING_MODEL may be a global template setting, but if the model
         # explicitly declares itself lumped, routing is not meaningful.
         if model_spatial == 'lumped':
-            routing_delineation = config.get('ROUTING_DELINEATION', 'lumped').lower()
+            routing_delineation = resolve_config_value(config, lambda: config.domain.delineation.routing, 'lumped', 'ROUTING_DELINEATION').lower()
             if routing_delineation == 'lumped':
                 diagnostics['reason'] = 'model_spatial_mode_lumped'
                 diagnostics['checks']['routing_delineation'] = routing_delineation
@@ -263,7 +264,7 @@ class RoutingDecider:
         # to override the generic DOMAIN_DEFINITION_METHOD.
         spatial_mode = model_spatial or domain_method
 
-        routing_delineation = config.get('ROUTING_DELINEATION', 'lumped').lower()
+        routing_delineation = resolve_config_value(config, lambda: config.domain.delineation.routing, 'lumped', 'ROUTING_DELINEATION').lower()
 
         diagnostics['checks']['domain_method'] = domain_method
         diagnostics['checks']['spatial_mode'] = spatial_mode

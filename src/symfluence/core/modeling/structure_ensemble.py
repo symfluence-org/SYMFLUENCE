@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.mixins.project import ProjectContextMixin
 
 
@@ -82,13 +83,7 @@ class BaseStructureEnsembleAnalyzer(ProjectContextMixin, ABC):
             dict_key: Flat dict key for fallback
             default: Default value if both fail
         """
-        try:
-            value = typed_accessor()
-            if value is not None:
-                return value
-        except (AttributeError, KeyError, TypeError):
-            pass
-        return self._config_dict_cache.get(dict_key, default)
+        return resolve_config_value(self._config_dict_cache, typed_accessor, default, dict_key)
 
     @abstractmethod
     def _initialize_decision_options(self) -> Dict[str, List[str]]:
