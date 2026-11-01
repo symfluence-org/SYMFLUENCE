@@ -11,7 +11,7 @@ one writer: a guarded, validated, line-preserving edit of the user's own
 experiment YAML.
 
 Path conventions read here (see ``project/logging_manager.py`` and
-``optimization/core/results_manager.py``):
+``optimization/optimization_results_manager.py``):
 
 - domain dir:      ``{SYMFLUENCE_DATA_DIR}/domain_{DOMAIN_NAME}``
 - run logs:        ``{domain}/_workLog_{DOMAIN_NAME}/symfluence_{DOMAIN_NAME}[_{EXPERIMENT_ID}]_{ts}.log``
