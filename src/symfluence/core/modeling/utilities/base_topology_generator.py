@@ -120,7 +120,7 @@ class BaseTopologyGenerator(ABC):
             return 'point'
 
         routing_delineation = self.pp._get_config_value(
-            lambda: self.pp.config.domain.routing,  # type: ignore[attr-defined]
+            lambda: self.pp.config.domain.delineation.routing,
             default='lumped',
             dict_key='ROUTING_DELINEATION',
         )
@@ -374,11 +374,11 @@ class BaseTopologyGenerator(ABC):
             routing_suffix = self._get_method_suffix()
 
         river_network_path = self.pp._get_config_value(
-            lambda: self.pp.config.paths.river_network_shp_path,  # type: ignore[attr-defined]
+            lambda: self.pp.config.paths.river_network_path,
             default='default'
         )
         river_network_name = self.pp._get_config_value(
-            lambda: self.pp.config.paths.river_network_shp_name,  # type: ignore[attr-defined]
+            lambda: self.pp.config.paths.river_network_name,
             default='default'
         )
 

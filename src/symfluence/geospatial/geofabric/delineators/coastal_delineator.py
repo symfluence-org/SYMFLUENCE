@@ -214,7 +214,7 @@ class CoastalWatershedDelineator(BaseGeofabricDelineator):
             # geographic CRS) and the inherited base watersheds can carry thin
             # tentacle artifacts. Strip them before writing the final geofabric.
             despike = self._get_config_value(
-                lambda: self.config.geofabric.despike_basin_geometry,
+                lambda: None,
                 default=False,
                 dict_key='DESPIKE_BASIN_GEOMETRY',
             )

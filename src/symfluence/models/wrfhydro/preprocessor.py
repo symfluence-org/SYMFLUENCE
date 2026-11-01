@@ -375,6 +375,18 @@ class WRFHydroPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             "with forcing data before running preprocessing."
         )
 
+    def _domain_location(self) -> tuple:
+        """(lat, lon, elev) of the catchment for the 3x3 lumped WRF-Hydro grid.
+
+        Previously hard-coded to Bow at Banff for every domain.
+        """
+        props = self.get_catchment_location()
+        elev = props['elev']
+        if elev is None:
+            logger.warning("Catchment shapefile has no elev_mean column; using 1500 m for WRF-Hydro HGT/TOPOGRAPHY")
+            elev = 1500.0
+        return props['lat'], props['lon'], elev
+
     def _generate_domain_files(self) -> None:
         """
         Generate wrfinput_d01.nc domain file for WRF-Hydro/Noah-MP.
@@ -393,10 +405,7 @@ class WRFHydroPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
         from netCDF4 import Dataset as NC4Dataset
 
-        # Bow at Banff basin parameters
-        lat = 51.17
-        lon = -115.57
-        elev = 1500.0
+        lat, lon, elev = self._domain_location()
         dx = 1000.0  # Grid spacing in meters (3x3 lumped grid)
 
         wrfinput_path = self.settings_dir / 'wrfinput_d01.nc'
@@ -514,7 +523,8 @@ class WRFHydroPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         ds.createDimension('x', 3)
 
         topo = ds.createVariable('TOPOGRAPHY', 'f4', ('y', 'x'))
-        topo[:] = np.full((3, 3), 1500.0)
+        cen_lat, cen_lon, cen_elev = self._domain_location()
+        topo[:] = np.full((3, 3), cen_elev)
 
         flowdir = ds.createVariable('FLOWDIRECTION', 'i4', ('y', 'x'))
         # Flow direction: center cell flows out (value=0 for outlet)
@@ -532,10 +542,10 @@ class WRFHydroPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         lakegrid[:] = np.full((3, 3), -1, dtype=np.int32)
 
         lat = ds.createVariable('LATITUDE', 'f4', ('y', 'x'))
-        lat[:] = np.full((3, 3), 51.17)
+        lat[:] = np.full((3, 3), cen_lat)
 
         lon = ds.createVariable('LONGITUDE', 'f4', ('y', 'x'))
-        lon[:] = np.full((3, 3), -115.57)
+        lon[:] = np.full((3, 3), cen_lon)
 
         ds.close()
 

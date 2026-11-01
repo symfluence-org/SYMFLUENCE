@@ -68,11 +68,11 @@ class GLDASHandler(BaseObservationHandler):
 
         # Compute anomaly
         baseline_start = self._get_config_value(
-            lambda: self.config.evaluation.gldas.baseline_start,
-            default='2004-01-01')
+            lambda: None,
+            default='2004-01-01', dict_key='GLDAS_BASELINE_START')
         baseline_end = self._get_config_value(
-            lambda: self.config.evaluation.gldas.baseline_end,
-            default='2009-12-31')
+            lambda: None,
+            default='2009-12-31', dict_key='GLDAS_BASELINE_END')
 
         if 'tws_mm' in df.columns:
             df['tws_cm'] = df['tws_mm'] / 10.0

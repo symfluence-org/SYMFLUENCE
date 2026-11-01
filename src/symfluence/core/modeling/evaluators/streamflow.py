@@ -781,7 +781,7 @@ class StreamflowEvaluator(ModelEvaluator):
 
         # Priority 0: Manual override from config
         fixed_area = self._get_config_value(
-            lambda: self.config.domain.catchment_area_m2,
+            lambda: None,
             default=None,
             dict_key='FIXED_CATCHMENT_AREA'
         )
@@ -822,7 +822,7 @@ class StreamflowEvaluator(ModelEvaluator):
             import geopandas as gpd
             basin_path = self.project_dir / "shapefiles" / "river_basins"
             area_col = self._get_config_value(
-                lambda: self.config.geospatial.river_basin_area_column,
+                lambda: self.config.paths.river_basin_area,
                 default='GRU_area',
                 dict_key='RIVER_BASIN_SHP_AREA'
             )
@@ -876,7 +876,7 @@ class StreamflowEvaluator(ModelEvaluator):
             if catchment_shp is not None:
                 gdf = gpd.read_file(catchment_shp)
                 area_col = self._get_config_value(
-                    lambda: self.config.geospatial.catchment_area_column,
+                    lambda: self.config.paths.catchment_area,
                     default='HRU_area',
                     dict_key='CATCHMENT_SHP_AREA'
                 )
@@ -895,7 +895,7 @@ class StreamflowEvaluator(ModelEvaluator):
 
         # Fallback: Check if explicit area is required
         require_explicit = self._get_config_value(
-            lambda: self.config.domain.require_explicit_catchment_area,
+            lambda: None,
             default=False,
             dict_key='REQUIRE_EXPLICIT_CATCHMENT_AREA'
         )
@@ -941,7 +941,7 @@ class StreamflowEvaluator(ModelEvaluator):
             return model_ready_obs
 
         obs_path = self._get_config_value(
-            lambda: self.config.observations.streamflow_path,
+            lambda: self.config.paths.observations_path,
             default=None,
             dict_key='OBSERVATIONS_PATH'
         )
@@ -1010,7 +1010,7 @@ class StreamflowEvaluator(ModelEvaluator):
             dict_key='DOMAIN_DEFINITION_METHOD'
         )
         routing_delineation = self._get_config_value(
-            lambda: self.config.routing.delineation,
+            lambda: self.config.domain.delineation.routing,
             default='lumped',
             dict_key='ROUTING_DELINEATION'
         )

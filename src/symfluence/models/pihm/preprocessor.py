@@ -1026,8 +1026,15 @@ class PIHMPreProcessor(BaseModelPreProcessor):
         Defines soil layer structure, radiation mode, and Noah constants.
         """
         # Get site coordinates
-        lat = float(self._get_pihm_cfg('LATITUDE', 51.17))
-        lon = float(self._get_pihm_cfg('LONGITUDE', -115.57))
+        lat = self._get_pihm_cfg('LATITUDE')
+        lon = self._get_pihm_cfg('LONGITUDE')
+        if lat is None or lon is None:
+            # Default to the catchment centroid (was a hard-coded Bow-at-Banff
+            # location, which Noah uses for solar geometry).
+            loc = self.get_catchment_location()
+            lat = loc['lat'] if lat is None else lat
+            lon = loc['lon'] if lon is None else lon
+        lat, lon = float(lat), float(lon)
 
         # Define soil layers that sum to soil_depth
         # Use 4 layers with increasing thickness

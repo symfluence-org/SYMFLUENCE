@@ -113,7 +113,7 @@ class attributeProcessor(ConfigMixin):
         results: Dict[str, Any] = {}
 
         enabled = self._get_config_value(
-            lambda: self.config.attributes.plugins_enabled,
+            lambda: None,
             default=True,
             dict_key='ATTRIBUTE_PLUGINS_ENABLED',
         )
@@ -123,7 +123,7 @@ class attributeProcessor(ConfigMixin):
         from .attribute_processors.plugins import discover_attribute_plugins
 
         exclude = self._get_config_value(
-            lambda: self.config.attributes.plugins_exclude,
+            lambda: None,
             default=[],
             dict_key='ATTRIBUTE_PLUGINS_EXCLUDE',
         ) or []

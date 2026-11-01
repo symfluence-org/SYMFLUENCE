@@ -59,7 +59,6 @@ CORE_PACKAGES: List[Dict] = [
     {"canonical": "fiona", "names": {"fiona"}},
     {"canonical": "matplotlib", "names": {"matplotlib"}},
     {"canonical": "seaborn", "names": {"seaborn"}},
-    {"canonical": "plotly", "names": {"plotly"}},
     {"canonical": "pyyaml", "names": {"pyyaml"}},
     {"canonical": "requests", "names": {"requests"}},
     {"canonical": "psutil", "names": {"psutil"}},
@@ -70,7 +69,6 @@ CORE_PACKAGES: List[Dict] = [
     {"canonical": "cdsapi", "names": {"cdsapi"}},
     {"canonical": "distributed", "names": {"distributed"}},
     {"canonical": "pint-xarray", "names": {"pint-xarray"}},
-    {"canonical": "contextily", "names": {"contextily"}},
     {"canonical": "rasterstats", "names": {"rasterstats"}},
 ]
 

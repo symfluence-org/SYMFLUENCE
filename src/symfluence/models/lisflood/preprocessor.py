@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Dict, Tuple
 from xml.etree import ElementTree as ET  # nosec B405
 
-import geopandas as gpd
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -74,22 +73,13 @@ class LisfloodPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         return pd.to_datetime(start_str).to_pydatetime(), pd.to_datetime(end_str).to_pydatetime()
 
     def _get_catchment_properties(self) -> Dict:
-        try:
-            catchment_path = self.get_catchment_path()
-            if catchment_path.exists():
-                gdf = gpd.read_file(catchment_path)
-                centroid = gdf.geometry.centroid.iloc[0]
-                lon, lat = centroid.x, centroid.y
-                utm_zone = int((lon + 180) / 6) + 1
-                hemisphere = "north" if lat >= 0 else "south"
-                utm_crs = f"EPSG:{32600 + utm_zone if hemisphere == 'north' else 32700 + utm_zone}"
-                gdf_proj = gdf.to_crs(utm_crs)
-                area_m2 = gdf_proj.geometry.area.sum()
-                elev = float(gdf.get("elev_mean", [1500])[0]) if "elev_mean" in gdf.columns else 1500.0
-                return {"lat": lat, "lon": lon, "area_m2": area_m2, "elev": elev}
-        except Exception as e:  # noqa: BLE001
-            self.logger.warning(f"Could not read catchment properties: {e}")
-        return {"lat": 51.17, "lon": -115.57, "area_m2": 2.21e9, "elev": 1500.0}
+        # Raises if the catchment shapefile is missing; never fall back to a
+        # default location (that silently builds the model somewhere else).
+        props = self.get_catchment_location()
+        if props['elev'] is None:
+            self.logger.warning("Catchment shapefile has no elev_mean column; using 1500 m for LISFLOOD elevation maps")
+            props['elev'] = 1500.0
+        return props
 
     # ------------------------------------------------------------------
     # Static map helpers
@@ -481,7 +471,7 @@ class LisfloodPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
     def _get_forcing_path(self) -> Path:
         forcing_path = self._get_config_value(
-            lambda: self.config.data.forcing_path, default=None, dict_key="FORCING_PATH"
+            lambda: self.config.paths.forcing_path, default=None, dict_key="FORCING_PATH"
         )
         if forcing_path and forcing_path != "default":
             return Path(forcing_path)

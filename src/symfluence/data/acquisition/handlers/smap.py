@@ -53,7 +53,7 @@ class SMAPAcquirer(BaseAcquisitionHandler):
 
         # Try earthaccess streaming first (most efficient)
         use_streaming = self._get_config_value(
-            lambda: self.config.evaluation.smap.use_streaming,
+            lambda: None,
             default=True,
             dict_key='SMAP_USE_STREAMING'
         )
@@ -208,7 +208,7 @@ class SMAPAcquirer(BaseAcquisitionHandler):
             dict_key='SMAP_PRODUCT'
         )
         version = self._get_config_value(
-            lambda: self.config.evaluation.smap.version,
+            lambda: None,
             default='006',
             dict_key='SMAP_VERSION'
         )

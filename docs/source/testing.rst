@@ -469,15 +469,23 @@ The project has several GitHub Actions workflows:
    * - Workflow
      - Duration
      - Trigger
-   * - ci.yml (Lint)
-     - ~2 min
-     - Every push/PR
-   * - install-validate-parallel.yml
-     - 20-60 min
-     - Push to main/develop, weekly
+   * - ci.yml (lint, unit tests, contracts)
+     - ~10 min
+     - Every PR and push to main/develop (stale PR runs are cancelled)
    * - cross-platform.yml
      - ~45 min
-     - Platform compatibility testing
+     - Push to main/develop, nightly, on demand
+   * - install-validate.yml (x86_64 source build + e2e)
+     - 20-90 min
+     - Push to main/develop, weekly, on demand
+   * - install-methods.yml / install-validate-arm.yml
+     - 20-120 min
+     - Nightly, on demand, and pushes to main/develop that touch
+       install-relevant paths (dependency manifests, ``scripts/``, ``npm/``,
+       build instructions/patches, the CLI install services)
+   * - docs.yml
+     - ~5 min
+     - PRs and pushes that touch ``docs/``, ``src/`` or dependency files
 
 Test Modes in CI
 ----------------

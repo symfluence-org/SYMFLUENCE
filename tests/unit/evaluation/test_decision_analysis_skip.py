@@ -42,14 +42,13 @@ def _make_manager(models: str):
 
     cfg = MagicMock()
     cfg.model.hydrological_model = models
-    cfg.analysis.run_decision_analysis = True
 
     mgr = AnalysisManager.__new__(AnalysisManager)
     mgr.config = cfg
     mgr.logger = logging.getLogger("test_decision_skip")
     mgr.reporting_manager = MagicMock()
     mgr._get_config_value = lambda getter, default=None, **_: (
-        getter() if callable(getter) else default
+        default if getter() is None else getter()
     )
     mgr._import_model_analyzers = lambda: None
     return mgr

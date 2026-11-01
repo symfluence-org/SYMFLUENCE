@@ -9,7 +9,8 @@ network hydrological models, supporting sequence-to-sequence learning.
 
 Components:
     optimizer: LSTM-specific optimizer using PyTorch training loops
-    parameter_manager: Manages LSTM hyperparameters (hidden size, layers, dropout)
+    (hyperparameters are managed by the shared ``MLParameterManager`` in
+    ``symfluence.models.gnn.calibration.parameter_manager``)
     worker: Executes LSTM training runs with sequence batching
 
 The calibration system supports:

@@ -341,7 +341,7 @@ class NoahMPPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
     def _get_lat(self) -> float:
         """Get latitude from configuration or default."""
         return float(self._get_config_value(
-            lambda: self.config.domain.latitude,
+            lambda: None,
             default=51.0,
             dict_key='DOMAIN_LATITUDE',
         ))
@@ -349,7 +349,7 @@ class NoahMPPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
     def _get_lon(self) -> float:
         """Get longitude from configuration or default."""
         return float(self._get_config_value(
-            lambda: self.config.domain.longitude,
+            lambda: None,
             default=-116.0,
             dict_key='DOMAIN_LONGITUDE',
         ))

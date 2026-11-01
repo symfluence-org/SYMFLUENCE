@@ -51,10 +51,10 @@ class CNESGRGSAcquirer(BaseAcquisitionHandler):
             return output_dir
 
         start_year = int(self._get_config_value(
-            lambda: self.config.evaluation.cnes_grgs.start_year,
+            lambda: None,
             default=2002, dict_key='CNES_GRGS_START_YEAR'))
         end_year = int(self._get_config_value(
-            lambda: self.config.evaluation.cnes_grgs.end_year,
+            lambda: None,
             default=2017, dict_key='CNES_GRGS_END_YEAR'))
 
         bbox = self._get_bounding_box()

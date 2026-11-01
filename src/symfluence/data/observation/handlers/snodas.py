@@ -61,8 +61,8 @@ class SNODASHandler(BaseObservationHandler):
 
         # Determine data directory
         snodas_path = self._get_config_value(
-            lambda: self.config.evaluation.snodas.path,
-            default='default'
+            lambda: None,
+            default='default', dict_key='SNODAS_PATH'
         )
         if isinstance(snodas_path, str) and snodas_path.lower() == 'default':
             snodas_dir = self.project_observations_dir / "snow" / "snodas"
@@ -105,8 +105,8 @@ class SNODASHandler(BaseObservationHandler):
 
         # Get variable from config
         variable = self._get_config_value(
-            lambda: self.config.evaluation.snodas.variable,
-            default='swe'
+            lambda: None,
+            default='swe', dict_key='SNODAS_VARIABLE'
         )
         if isinstance(variable, str):
             variable = variable.lower()
