@@ -617,7 +617,6 @@ src/symfluence/models/clm/calibration/worker.py:CLMWorker.calculate_metrics:exce
 src/symfluence/models/clm/calibration/worker.py:CLMWorker.run_model._get_cpu_pct:except Exception:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/clm/calibration/worker.py:CLMWorker.run_model:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/clm/calibration/worker.py:_evaluate_clm_parameters_worker:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/clm/domain_generator.py:CLMDomainGenerator._get_catchment_area_from_gdf:except Exception:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/clm/domain_generator.py:CLMDomainGenerator._load_hru_shapefile:except Exception:  # noqa: BLE001
 src/symfluence/models/clm/domain_generator.py:CLMDomainGenerator.get_elevation_stats:except Exception:  # noqa: BLE001
 src/symfluence/models/clm/domain_generator.py:CLMDomainGenerator.get_mean_elevation:except Exception:  # noqa: BLE001
@@ -643,7 +642,6 @@ src/symfluence/models/clmparflow/plotter.py:CLMParFlowPlotter.plot_results:excep
 src/symfluence/models/clmparflow/postprocessor.py:CLMParFlowPostProcessor.extract_streamflow:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/clmparflow/postprocessor.py:CLMParFlowPostProcessor.extract_streamflow:except Exception:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/clmparflow/postprocessor.py:CLMParFlowPostProcessor.extract_streamflow:except Exception:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/clmparflow/preprocessor.py:CLMParFlowPreProcessor._get_latitude:except Exception:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/clmparflow/preprocessor.py:CLMParFlowPreProcessor._prepare_daily_rainfall:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/clmparflow/runner.py:CLMParFlowRunner._get_parflow_dir:except Exception:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/crhm/calibration/optimizer.py:CRHMModelOptimizer.run_final_evaluation:except Exception as e:  # noqa: BLE001 — calibration resilience
@@ -816,7 +814,6 @@ src/symfluence/models/lisflood/extractor.py:LisfloodResultExtractor.extract_vari
 src/symfluence/models/lisflood/postprocessor.py:LisfloodPostProcessor.extract_streamflow:except Exception as e:  # noqa: BLE001
 src/symfluence/models/lisflood/postprocessor.py:LisfloodPostProcessor.extract_streamflow:except Exception as e:  # noqa: BLE001
 src/symfluence/models/lisflood/preprocessor.py:LisfloodPreProcessor._extract_forcing_var:except Exception:  # noqa: BLE001
-src/symfluence/models/lisflood/preprocessor.py:LisfloodPreProcessor._get_catchment_properties:except Exception as e:  # noqa: BLE001
 src/symfluence/models/lisflood/preprocessor.py:LisfloodPreProcessor.run_preprocessing:except Exception as e:  # noqa: BLE001
 src/symfluence/models/lstm/calibration/worker.py:LSTMWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/lstm/calibration/worker.py:LSTMWorker.evaluate:except Exception as e:  # noqa: BLE001 — calibration resilience
@@ -995,7 +992,6 @@ src/symfluence/models/pcrglobwb/postprocessor.py:PCRGLOBWBPostProcessor.extract_
 src/symfluence/models/pcrglobwb/preprocessor.py:PCRGLOBWBPreProcessor._build_domain_grid:except Exception:  # noqa: BLE001
 src/symfluence/models/pcrglobwb/preprocessor.py:PCRGLOBWBPreProcessor._estimate_initial_conditions:except Exception:  # noqa: BLE001
 src/symfluence/models/pcrglobwb/preprocessor.py:PCRGLOBWBPreProcessor._extract_forcing_var:except Exception:  # noqa: BLE001
-src/symfluence/models/pcrglobwb/preprocessor.py:PCRGLOBWBPreProcessor._get_catchment_properties:except Exception as e:  # noqa: BLE001
 src/symfluence/models/pcrglobwb/preprocessor.py:PCRGLOBWBPreProcessor.run_preprocessing:except Exception as e:  # noqa: BLE001
 src/symfluence/models/pihm/calibration/parameter_manager.py:PIHMParameterManager.update_model_files:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/pihm/calibration/targets.py:PIHMStreamflowTarget._extract_pihm_streamflow:except Exception as e:  # noqa: BLE001 — calibration resilience

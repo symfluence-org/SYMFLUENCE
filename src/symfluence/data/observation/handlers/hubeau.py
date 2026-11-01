@@ -126,10 +126,10 @@ class HubEauStreamflowHandler(BaseObservationHandler):
             self.logger.debug("Hub'Eau station ID not found, skipping acquisition")
             return self.project_observations_dir / "streamflow" / "raw_data"
 
+        # (The first term used to be a non-existent path that always yielded
+        # its default True, so DOWNLOAD_HUBEAU_DATA: False was ignored.)
         download_enabled = self._get_config_value(
-            lambda: self.config.data.download_hubeau_data, default=True
-        ) or self._get_config_value(
-            lambda: self.config.evaluation.hubeau.download, default=True
+            lambda: self.config.evaluation.hubeau.download, default=True, dict_key='DOWNLOAD_HUBEAU_DATA'
         )
 
         raw_dir = self.project_observations_dir / "streamflow" / "raw_data"
@@ -155,8 +155,7 @@ class HubEauStreamflowHandler(BaseObservationHandler):
         """Get Hub'Eau station ID from config."""
         return (
             self._get_config_value(lambda: self.config.evaluation.streamflow.station_id) or
-            self._get_config_value(lambda: self.config.evaluation.hubeau.station_id) or
-            self._get_config_value(lambda: self.config.data.hubeau_station_code) or
+            self._get_config_value(lambda: None, dict_key='HUBEAU_STATION_ID') or
             self._get_config_value(lambda: self.config.data.streamflow_station_id)
         )
 
@@ -428,9 +427,8 @@ class HubEauWaterLevelHandler(BaseObservationHandler):
     def acquire(self) -> Path:
         """Acquire water level data from Hub'Eau API."""
         station_id = (
-            self._get_config_value(lambda: self.config.evaluation.waterlevel.station_id) or
-            self._get_config_value(lambda: self.config.evaluation.hubeau.station_id) or
-            self._get_config_value(lambda: self.config.data.hubeau_station_code)
+            self._get_config_value(lambda: None, dict_key='WATERLEVEL_STATION_ID') or
+            self._get_config_value(lambda: None, dict_key='HUBEAU_STATION_ID')
         )
 
         if not station_id:

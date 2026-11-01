@@ -211,7 +211,7 @@ class ModelComparisonDataLoadingMixin:
 
                 self.logger.info(f"Using mizuRoute variable: {routing_var}")
                 sim_reach_id = self._get_config_value(
-                    lambda: self.config.routing.sim_reach_id,
+                    lambda: self.config.evaluation.sim_reach_id,
                     default=None,
                     dict_key=ConfigKeys.SIM_REACH_ID,
                 )

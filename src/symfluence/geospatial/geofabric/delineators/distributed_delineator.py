@@ -123,7 +123,7 @@ class GeofabricDelineator(BaseGeofabricDelineator):
             # tentacle basins reaching the domain edge. Defaults to the coastal
             # flag, overridable via MASK_OCEAN_WATERSHEDS.
             mask_ocean = self._get_config_value(
-                lambda: self.config.geofabric.mask_ocean_watersheds,
+                lambda: None,
                 default=None,
                 dict_key='MASK_OCEAN_WATERSHEDS',
             )
@@ -134,7 +134,7 @@ class GeofabricDelineator(BaseGeofabricDelineator):
                     dict_key='DELINEATE_COASTAL_WATERSHEDS',
                 )
             sea_level = self._get_config_value(
-                lambda: self.config.geofabric.sea_level_threshold,
+                lambda: None,
                 default=0.0,
                 dict_key='SEA_LEVEL_THRESHOLD',
             )
@@ -429,7 +429,7 @@ class GeofabricDelineator(BaseGeofabricDelineator):
         # Optionally strip thin watershed-delineation "tentacle" artifacts that
         # gdal.Polygonize traces from 1-pixel flow-routing leaks toward the coast.
         despike = self._get_config_value(
-            lambda: self.config.geofabric.despike_basin_geometry,
+            lambda: None,
             default=False,
             dict_key='DESPIKE_BASIN_GEOMETRY',
         )

@@ -471,7 +471,7 @@ class AcquisitionService(ConfigurableMixin):
                     self.logger.info("Skipping land cover acquisition (DOWNLOAD_LAND_COVER is False)")
 
                 # --- Glacier task (optional, failure is non-fatal) ---
-                if self._get_config_value(lambda: self.config.data.download_glacier_data, default=False, dict_key='DOWNLOAD_GLACIER_DATA'):
+                if self._get_config_value(lambda: self.config.evaluation.glacier.download, default=False, dict_key='DOWNLOAD_GLACIER_DATA'):
                     attr_tasks.append(('glacier', downloader.download_glacier_data))
 
                 # Run attribute downloads concurrently
@@ -763,13 +763,13 @@ class AcquisitionService(ConfigurableMixin):
         return RawForcingCache(
             cache_root=self.data_dir / 'cache' / 'raw_forcing',
             max_size_gb=self._get_config_value(
-                lambda: self.config.data.forcing_cache_size_gb,
+                lambda: None,
                 default=3.0, dict_key='FORCING_CACHE_SIZE_GB'),
             ttl_days=self._get_config_value(
-                lambda: self.config.data.forcing_cache_ttl_days,
+                lambda: None,
                 default=30, dict_key='FORCING_CACHE_TTL_DAYS'),
             enable_checksum=self._get_config_value(
-                lambda: self.config.data.forcing_cache_checksum,
+                lambda: None,
                 default=True, dict_key='FORCING_CACHE_CHECKSUM'),
         )
 
@@ -1000,9 +1000,9 @@ class AcquisitionService(ConfigurableMixin):
             cache_root = self.data_dir / 'cache' / 'raw_forcing'
             cache = RawForcingCache(
                 cache_root=cache_root,
-                max_size_gb=self._get_config_value(lambda: self.config.data.forcing_cache_size_gb, default=3.0, dict_key='FORCING_CACHE_SIZE_GB'),
-                ttl_days=self._get_config_value(lambda: self.config.data.forcing_cache_ttl_days, default=30, dict_key='FORCING_CACHE_TTL_DAYS'),
-                enable_checksum=self._get_config_value(lambda: self.config.data.forcing_cache_checksum, default=True, dict_key='FORCING_CACHE_CHECKSUM')
+                max_size_gb=self._get_config_value(lambda: None, default=3.0, dict_key='FORCING_CACHE_SIZE_GB'),
+                ttl_days=self._get_config_value(lambda: None, default=30, dict_key='FORCING_CACHE_TTL_DAYS'),
+                enable_checksum=self._get_config_value(lambda: None, default=True, dict_key='FORCING_CACHE_CHECKSUM')
             )
 
             # Generate cache key (reuse the bbox resolved above so a point
@@ -1512,7 +1512,7 @@ class AcquisitionService(ConfigurableMixin):
             additional_obs.append('GRACE')
 
         # Check for MOD16 ET (based on ET_OBS_SOURCE or OPTIMIZATION_TARGET)
-        et_obs_source = str(self._get_config_value(lambda: self.config.evaluation.et_obs_source, default='', dict_key='ET_OBS_SOURCE')).lower()
+        et_obs_source = str(self._get_config_value(lambda: self.config.evaluation.et.obs_source, default='', dict_key='ET_OBS_SOURCE')).lower()
         optimization_target = str(self._get_config_value(lambda: self.config.optimization.target, default='', dict_key='OPTIMIZATION_TARGET')).lower()
         if et_obs_source in ('mod16', 'modis', 'modis_et', 'mod16a2'):
             if 'MODIS_ET' not in additional_obs and 'MOD16' not in additional_obs:
@@ -1528,7 +1528,7 @@ class AcquisitionService(ConfigurableMixin):
                 additional_obs.append('FLUXNET_ET')
 
         # Check for multi-source ET (both FLUXNET and MOD16)
-        if self._get_config_value(lambda: self.config.evaluation.multi_source_et, default=False, dict_key='MULTI_SOURCE_ET'):
+        if self._get_config_value(lambda: None, default=False, dict_key='MULTI_SOURCE_ET'):
             if 'FLUXNET_ET' not in additional_obs and 'FLUXNET' not in additional_obs:
                 additional_obs.append('FLUXNET_ET')
             if 'MODIS_ET' not in additional_obs and 'MOD16' not in additional_obs:

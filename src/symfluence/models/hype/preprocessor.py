@@ -232,16 +232,16 @@ class HYPEPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # mapping geofabric fields to model names
         self.geofabric_mapping = {
             'basinID': {'in_varname': self._get_config_value(
-                lambda: self.config.paths.river_basin_shp_rm_gruid, dict_key='RIVER_BASIN_SHP_RM_GRUID'
+                lambda: self.config.paths.river_basin_rm_gruid, dict_key='RIVER_BASIN_SHP_RM_GRUID'
             )},
             'nextDownID': {'in_varname': self._get_config_value(
-                lambda: self.config.paths.river_network_shp_downsegid, dict_key='RIVER_NETWORK_SHP_DOWNSEGID'
+                lambda: self.config.paths.river_network_downsegid, dict_key='RIVER_NETWORK_SHP_DOWNSEGID'
             )},
             'area': {'in_varname': self._get_config_value(
-                lambda: self.config.paths.river_basin_shp_area, dict_key='RIVER_BASIN_SHP_AREA'
+                lambda: self.config.paths.river_basin_area, dict_key='RIVER_BASIN_SHP_AREA'
             ), 'in_units': 'm^2', 'out_units': 'm^2'},
             'rivlen': {'in_varname': self._get_config_value(
-                lambda: self.config.paths.river_network_shp_length, dict_key='RIVER_NETWORK_SHP_LENGTH'
+                lambda: self.config.paths.river_network_length, dict_key='RIVER_NETWORK_SHP_LENGTH'
             ), 'in_units': 'm', 'out_units': 'm'}
         }
 

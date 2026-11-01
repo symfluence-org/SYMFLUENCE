@@ -84,7 +84,7 @@ class KoopmanAnalyzer(ConfigMixin):
         self.dmd_method = dmd_method
 
         self.data_dir = Path(self._get_config_value(
-            lambda: self.config.paths.symfluence_data_dir,
+            lambda: self.config.system.data_dir,
             default=tempfile.gettempdir(),
             dict_key="SYMFLUENCE_DATA_DIR",
         ))

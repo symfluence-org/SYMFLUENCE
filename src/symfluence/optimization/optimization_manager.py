@@ -307,7 +307,7 @@ class OptimizationManager(BaseManager):
                     dict_key='FUSE_RUN_INTERNAL_CALIBRATION'
                 )
                 multi_gauge = self._get_config_value(
-                    lambda: self.config.calibration.multi_gauge,
+                    lambda: self.config.optimization.multi_gauge.calibration,
                     default=False,
                     dict_key='MULTI_GAUGE_CALIBRATION'
                 )
@@ -416,7 +416,7 @@ class OptimizationManager(BaseManager):
         if R.parameter_managers.get(routing_model) is None:
             return False
         calibrate = self._get_config_value(
-            lambda: self.config.calibration.calibrate_routing, default=True,
+            lambda: None, default=True,
             dict_key='CALIBRATE_ROUTING',
         )
         return bool(calibrate)
@@ -568,60 +568,24 @@ class OptimizationManager(BaseManager):
             self.logger.debug(f"Using {algorithm} optimization for {model_name} (registry-based)")
             optimizer = optimizer_cls(self.config, self.logger, None, reporting_manager=self.reporting_manager)
 
-            # Map algorithm name to method
-            algorithm_methods = {
-                'DDS': optimizer.run_dds,
-                'ASYNC-DDS': optimizer.run_async_dds,
-                'ASYNCDDS': optimizer.run_async_dds,
-                'ASYNC_DDS': optimizer.run_async_dds,
-                'PSO': optimizer.run_pso,
-                'SCE-UA': optimizer.run_sce,
-                'DE': optimizer.run_de,
-                'NSGA-II': optimizer.run_nsga2,
-                # Step counts and learning rates are resolved from config inside
-                # the algorithms (ADAM_STEPS/LBFGS_STEPS → NUMBER_OF_ITERATIONS,
-                # and ADAM_LR/LBFGS_LR). No arguments needed here.
-                'ADAM': optimizer.run_adam,
-                'LBFGS': optimizer.run_lbfgs,
-                'CMA-ES': optimizer.run_cmaes,
-                'CMAES': optimizer.run_cmaes,
-                'DREAM': optimizer.run_dream,
-                'GLUE': optimizer.run_glue,
-                'BASIN-HOPPING': optimizer.run_basin_hopping,
-                'BASINHOPPING': optimizer.run_basin_hopping,
-                'BH': optimizer.run_basin_hopping,
-                'NELDER-MEAD': optimizer.run_nelder_mead,
-                'NELDERMEAD': optimizer.run_nelder_mead,
-                'NM': optimizer.run_nelder_mead,
-                'SIMPLEX': optimizer.run_nelder_mead,
-                'GA': optimizer.run_ga,
-                'BAYESIAN-OPT': optimizer.run_bayesian_opt,
-                'BAYESIAN_OPT': optimizer.run_bayesian_opt,
-                'BAYESIAN': optimizer.run_bayesian_opt,
-                'BO': optimizer.run_bayesian_opt,
-                'MOEAD': optimizer.run_moead,
-                'MOEA-D': optimizer.run_moead,
-                'MOEA_D': optimizer.run_moead,
-                'SIMULATED-ANNEALING': optimizer.run_simulated_annealing,
-                'SIMULATED_ANNEALING': optimizer.run_simulated_annealing,
-                'SA': optimizer.run_simulated_annealing,
-                'ANNEALING': optimizer.run_simulated_annealing,
-                'ABC': optimizer.run_abc,
-                'ABC-SMC': optimizer.run_abc,
-                'ABC_SMC': optimizer.run_abc,
-                'APPROXIMATE-BAYESIAN': optimizer.run_abc,
-            }
-
-            # Get algorithm method
-            run_method = algorithm_methods.get(algorithm)
-
-            if run_method is None:
+            # Resolve any accepted spelling to the registry's primary name and
+            # dispatch through run_optimization(). (A hand-kept name->method
+            # table here had drifted from ALGORITHM_REGISTRY: it rejected
+            # e.g. 'L-BFGS', 'SCE_UA', 'NSGA2' and any algorithm added via
+            # register_algorithm().)
+            from symfluence.core.calibration.optimizers.algorithms import (
+                list_algorithms,
+                resolve_algorithm_name,
+            )
+            try:
+                canonical = resolve_algorithm_name(algorithm)
+            except ValueError:
                 self.logger.error(f"Algorithm {algorithm} not supported for registry-based optimization")
-                self.logger.info(f"Supported algorithms: {list(algorithm_methods.keys())}")
+                self.logger.info(f"Supported algorithms: {list_algorithms()}")
                 return None
 
             # Run optimization
-            results_file = run_method()
+            results_file = optimizer.run_optimization(canonical)
 
             if results_file and Path(results_file).exists():
                 self.logger.info(f"{model_name} calibration completed: {results_file}")
@@ -803,15 +767,13 @@ class OptimizationManager(BaseManager):
         results['model_supported'] = model_supported
 
         # Check parameters to calibrate
-        local_params = self._get_config_value(
-            lambda: self.config.optimization.params_to_calibrate,
-            ''
-        )
-        basin_params = self._get_config_value(
-            lambda: self.config.optimization.basin_params_to_calibrate,
-            ''
-        )
-        results['parameters_defined'] = bool(local_params or basin_params)
+        # Parameter lists live in model-specific config (e.g. SUMMA's
+        # PARAMS_TO_CALIBRATE, FUSE_PARAMS_TO_CALIBRATE); there is no
+        # optimization.params_to_calibrate, which this used to read (always '').
+        flat = self.config_dict
+        param_keys = ['PARAMS_TO_CALIBRATE', 'BASIN_PARAMS_TO_CALIBRATE']
+        param_keys += [f'{m}_PARAMS_TO_CALIBRATE' for m in models]
+        results['parameters_defined'] = any(flat.get(k) for k in param_keys)
 
         return results
 

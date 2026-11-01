@@ -645,7 +645,7 @@ class NorSWEHandler(CanSWEHandler):
     def acquire(self) -> Path:
         """Acquire NorSWE data from Zenodo."""
         download_enabled = self._get_config_value(
-            lambda: self.config.evaluation.norswe.download,
+            lambda: None,
             default=True,
             dict_key='DOWNLOAD_NORSWE'
         )
@@ -654,7 +654,7 @@ class NorSWEHandler(CanSWEHandler):
 
         # Check for existing file path override
         norswe_path = self._get_config_value(
-            lambda: self.config.evaluation.norswe.path,
+            lambda: None,
             default=None,
             dict_key='NORSWE_PATH'
         )

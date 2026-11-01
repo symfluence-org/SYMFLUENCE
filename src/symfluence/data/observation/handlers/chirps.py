@@ -59,8 +59,8 @@ class CHIRPSHandler(BaseObservationHandler):
 
         # Determine data directory
         chirps_path = self._get_config_value(
-            lambda: self.config.evaluation.chirps.path,
-            default='default'
+            lambda: None,
+            default='default', dict_key='CHIRPS_PATH'
         )
         if isinstance(chirps_path, str) and chirps_path.lower() == 'default':
             chirps_dir = self.project_observations_dir / "precipitation" / "chirps"

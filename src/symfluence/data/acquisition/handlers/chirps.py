@@ -76,7 +76,7 @@ class CHIRPSAcquirer(BaseAcquisitionHandler):
 
         # Get product type from config
         product_type = self._get_config_value(
-            lambda: self.config.evaluation.chirps.product,
+            lambda: None,
             default='daily',
             dict_key='CHIRPS_PRODUCT'
         )

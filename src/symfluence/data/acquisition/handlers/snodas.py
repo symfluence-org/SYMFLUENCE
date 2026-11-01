@@ -99,7 +99,7 @@ class SNODASAcquirer(BaseAcquisitionHandler):
 
         # Get variable from config
         variable = self._get_config_value(
-            lambda: self.config.evaluation.snodas.variable,
+            lambda: None,
             default='swe',
             dict_key='SNODAS_VARIABLE'
         )
