@@ -610,7 +610,7 @@ class ERA5ARCOAcquirer(BaseAcquisitionHandler):
 
         # Check for skip_existing option (default True to resume interrupted downloads)
         skip_existing = self._get_config_value(
-            lambda: self.config.forcing.skip_existing_files, default=True
+            lambda: None, default=True, dict_key='FORCING_SKIP_EXISTING_FILES'
         )
 
         # Default to parallel processing if not specified

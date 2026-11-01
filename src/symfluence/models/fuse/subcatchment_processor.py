@@ -699,7 +699,7 @@ class SubcatchmentProcessor(ConfigMixin):
             Path: Directory containing catchment shapefiles.
         """
         catchment_path = self._get_config_value(
-            lambda: self.config.paths.catchment,
+            lambda: self.config.paths.catchment_path,
             default='default',
             dict_key='CATCHMENT_PATH'
         )

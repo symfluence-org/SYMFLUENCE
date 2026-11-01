@@ -186,7 +186,7 @@ class FuseStructureAnalyzer(BaseStructureEnsembleAnalyzer):
             Dict: Dictionary containing KGE, NSE, MAE, and RMSE.
         """
         obs_file_path = self._get_config_value(
-            lambda: self.config.paths.observations,
+            lambda: self.config.paths.observations_path,
             default=None,
             dict_key='OBSERVATIONS_PATH'
         )

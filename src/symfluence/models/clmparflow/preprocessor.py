@@ -27,10 +27,11 @@ from __future__ import annotations
 import logging
 import math
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 import numpy as np
 
+from symfluence.core.exceptions import ShapefileError
 from symfluence.core.mixins.project import resolve_data_subdir, resolve_forcing_basin_path
 from symfluence.core.modeling.base.base_preprocessor import BaseModelPreProcessor
 from symfluence.core.registries import R
@@ -43,6 +44,7 @@ class CLMParFlowPreProcessor(BaseModelPreProcessor):
     """Generates ParFlow-CLM input files for integrated hydrologic simulation."""
 
     MODEL_NAME = "CLMPARFLOW"
+    _location_cache: Optional[Tuple[float, float]] = None
 
     # This preprocessor keeps its own defensive __init__ (tolerates dict / coupled
     # contexts) rather than calling super().__init__, whose strict typed-config
@@ -110,38 +112,41 @@ class CLMParFlowPreProcessor(BaseModelPreProcessor):
                     return fp
         return None
 
-    def _get_latitude(self) -> float:
+    def _get_location(self) -> Tuple[float, float]:
+        """(lat, lon) of the catchment, from the catchment shapefile centroid.
+
+        Falls back to the first cell of the basin-averaged forcing if the
+        shapefile is missing; raises if neither is available. (This used to
+        fall back to a hard-coded Bow-at-Banff latitude and always used the
+        Banff longitude, which CLM uses for solar geometry.)
+        """
+        if self._location_cache is not None:
+            return self._location_cache
         try:
-            lat = self.config.paths.catchment_lat
-            if lat and lat != 'center_lat':
-                return float(lat)
-        except (AttributeError, TypeError, ValueError):
-            pass
-        try:
-            lat = self.config.domain.latitude
-        except (AttributeError, TypeError):
-            lat = None
-        if lat is not None:
-            return float(lat)
-        try:
-            return float(self.config.domain.latitude)
-        except (AttributeError, TypeError):
-            pass
+            props = self.get_catchment_location()
+            self._location_cache = (props['lat'], props['lon'])
+            return self._location_cache
+        except FileNotFoundError as e:
+            shp_error = e
         forcing_dir = self._get_forcing_dir()
         if forcing_dir:
-            try:
-                import xarray as xr
-                nc_files = sorted(forcing_dir.glob('*.nc'))
-                if nc_files:
-                    ds = xr.open_dataset(nc_files[0])
-                    if 'latitude' in ds:
-                        lat = float(ds['latitude'].values.flat[0])
-                        ds.close()
-                        return lat
-                    ds.close()
-            except Exception:  # noqa: BLE001 — model execution resilience
-                pass
-        return 51.36
+            import xarray as xr
+            nc_files = sorted(forcing_dir.glob('*.nc'))
+            if nc_files:
+                with xr.open_dataset(nc_files[0]) as ds:
+                    if 'latitude' in ds and 'longitude' in ds:
+                        self._location_cache = (
+                            float(ds['latitude'].values.flat[0]),
+                            float(ds['longitude'].values.flat[0]),
+                        )
+                        return self._location_cache
+        raise ShapefileError(
+            f"Cannot determine CLM-ParFlow site location: {shp_error}; and no "
+            "basin-averaged forcing with latitude/longitude was found."
+        )
+
+    def _get_latitude(self) -> float:
+        return self._get_location()[0]
 
     def _get_time_info(self):
         import pandas as pd
@@ -535,8 +540,7 @@ class CLMParFlowPreProcessor(BaseModelPreProcessor):
             "! x  y  lat  lon  sand clay color fractional_coverage[1:18] bare",
         ]
 
-        lat = self._get_latitude()
-        lon = -115.57  # Bow River at Banff approximate longitude
+        lat, lon = self._get_location()
 
         for j in range(ny):
             for i in range(nx):

@@ -51,10 +51,10 @@ class GLDASAcquirer(BaseAcquisitionHandler):
 
         # Get config
         start_year = int(self._get_config_value(
-            lambda: self.config.evaluation.gldas.start_year,
+            lambda: None,
             default=2002, dict_key='GLDAS_START_YEAR'))
         end_year = int(self._get_config_value(
-            lambda: self.config.evaluation.gldas.end_year,
+            lambda: None,
             default=2017, dict_key='GLDAS_END_YEAR'))
 
         bbox = self._get_bounding_box()

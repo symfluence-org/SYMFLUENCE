@@ -126,7 +126,7 @@ class LisfloodPostProcessor(StandardModelPostProcessor):
         # Reconstruct time index from settings
         start_date, end_date = self._get_simulation_dates()
         timestep_secs = self._get_config_value(
-            lambda: self.config.data.forcing_time_step_size, default=86400, dict_key="FORCING_TIME_STEP_SIZE"
+            lambda: self.config.forcing.time_step_size, default=86400, dict_key="FORCING_TIME_STEP_SIZE"
         )
         freq = f"{timestep_secs}s"
         time_index = pd.date_range(start=start_date, periods=len(records), freq=freq)

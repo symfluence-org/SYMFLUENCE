@@ -128,7 +128,7 @@ class MESHModelOptimizer(BaseModelOptimizer):
 
             # Evaluation period metrics (if EVALUATION_PERIOD is configured)
             eval_metrics: dict[str, float] = {}
-            eval_period = self._get_config_value(lambda: self.config.evaluation.period, default='', dict_key='EVALUATION_PERIOD')
+            eval_period = self._get_config_value(lambda: self.config.domain.evaluation_period, default='', dict_key='EVALUATION_PERIOD')
             if eval_period and ',' in str(eval_period):
                 eval_raw = self.worker.calculate_metrics(
                     final_output_dir, self.config, period=eval_period

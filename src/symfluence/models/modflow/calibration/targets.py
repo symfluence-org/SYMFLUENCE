@@ -136,7 +136,7 @@ class CoupledGWStreamflowTarget(StreamflowEvaluator):
 
         # Extract MODFLOW drain discharge (m3/d)
         # Use date-only (no time component) so dates align with SUMMA daily output
-        start_str = str(self._get_config_value(lambda: self.config.domain.experiment_time_start, default='2000-01-01', dict_key='EXPERIMENT_TIME_START'))
+        start_str = str(self._get_config_value(lambda: self.config.domain.time_start, default='2000-01-01', dict_key='EXPERIMENT_TIME_START'))
         start_date = pd.Timestamp(start_str).strftime('%Y-%m-%d')
         drain_discharge = extractor.extract_variable(
             modflow_dir,
