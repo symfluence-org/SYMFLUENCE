@@ -621,14 +621,18 @@ class RHESSysWorker(BaseWorker):
 
         # Subgrid variability for lumped mode (-stdev enables variance-based return flow)
         # This uses normal distribution around mean sat_deficit to generate partial saturation
-        std_scale = config.get('RHESSYS_STD_SCALE', 1.0)
+        std_scale = resolve_config_value(config, lambda: config.model.rhessys.std_scale, 1.0, 'RHESSYS_STD_SCALE')
         if std_scale > 0:
             cmd.extend(["-stdev", str(std_scale)])
             self.logger.debug(f"Subgrid variability enabled with std_scale={std_scale}")
 
         # Subsurface-to-GW recharge pathway (SYMFLUENCE Patch 1)
         # Requires SYMFLUENCE-patched build (symfluence binary install rhessys --patched)
-        if self._binary_supports_subsurfacegw(exe):
+        # Same switch as the runner (RHESSYS_USE_SUBSURFACE_GW); previously the
+        # worker always added the flag when the binary supported it.
+        use_subsurface_gw = resolve_config_value(
+            config, lambda: config.model.rhessys.use_subsurface_gw, True, 'RHESSYS_USE_SUBSURFACE_GW')
+        if use_subsurface_gw and self._binary_supports_subsurfacegw(exe):
             cmd.extend(["-subsurfacegw"])
 
         return cmd

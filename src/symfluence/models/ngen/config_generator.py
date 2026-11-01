@@ -838,7 +838,7 @@ num_topodex_values={n_classes}
 
         lib_ext = ".dylib" if sys.platform == "darwin" else ".so"
 
-        forcing_provider = self._get_config_value(lambda: self.config.model.ngen.forcing_provider, default=None)
+        forcing_provider = self._get_config_value(lambda: self.config.model.ngen.forcing_provider, default=None, dict_key='NGEN_FORCING_PROVIDER')
         if not forcing_provider:
             # CsvPerFeature: works but has SIGSEGV bug on macOS ARM64 (~19% crash rate,
             # mitigated by retry logic in runner.py).

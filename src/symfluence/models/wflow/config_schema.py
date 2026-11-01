@@ -63,6 +63,9 @@ class WflowConfig(BaseModel):
     # Fixed seasonal air-temperature corrections (deg C, keys DJF/MAM/JJA/SON); PET is recomputed.
     temperature_offsets: dict[str, float] = Field(default_factory=dict, alias='WFLOW_TEMPERATURE_OFFSETS')
     frozen_soil: bool = Field(default=False, alias='WFLOW_FROZEN_SOIL')
+    # SBM soil layer thicknesses (mm), written to [model] soil_layer__thickness;
+    # the staticmaps Brooks-Corey layer dimension follows it (+1 sentinel layer).
+    soil_layer_thickness: list[float] = Field(default_factory=lambda: [100, 300, 800], alias='WFLOW_SOIL_LAYER_THICKNESS')
     parameter_bounds: dict[str, dict[str, float]] = Field(default_factory=dict, alias='WFLOW_PARAMETER_BOUNDS')
     initial_parameters: dict[str, float] = Field(default_factory=dict, alias='WFLOW_INITIAL_PARAMETERS')
     timeout: int = Field(default=7200, alias='WFLOW_TIMEOUT', ge=60, le=86400)

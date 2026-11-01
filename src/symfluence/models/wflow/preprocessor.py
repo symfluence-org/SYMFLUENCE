@@ -137,10 +137,7 @@ class WflowPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # Brooks-Corey exponent needs a layer dimension.
         # Wflow adds an extra sentinel layer internally (maxlayers = n_layers + 1),
         # so the netCDF must have n_layers + 1 layers.
-        soil_layers = self._get_config_value(
-            lambda: self.config.model.wflow.soil_layer_thickness,
-            default=[100, 300, 800],
-        )
+        soil_layers = self._soil_layer_thickness()
         n_layers = len(soil_layers) + 1  # +1 for Wflow sentinel layer
         c_val = 10.0
         c_3d = np.full((n_layers, 3, 3), np.nan, dtype=np.float64)
@@ -302,6 +299,15 @@ class WflowPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # else legacy forcing/basin_averaged_data) — resolved by the base class.
         return self.forcing_basin_path
 
+    def _soil_layer_thickness(self) -> list:
+        """SBM soil layer thicknesses (mm); one source for staticmaps and TOML."""
+        layers = self._get_config_value(
+            lambda: self.config.model.wflow.soil_layer_thickness,
+            default=[100, 300, 800], dict_key='WFLOW_SOIL_LAYER_THICKNESS',
+        )
+        # Keep integral values as ints so the TOML reads exactly as before.
+        return [int(x) if float(x).is_integer() else float(x) for x in layers]
+
     def _generate_toml_config(self) -> None:
         self.logger.info("Generating Wflow TOML configuration...")
         start_date, end_date = self._get_simulation_dates()
@@ -384,7 +390,7 @@ land_surface_water_flow__manning_n_parameter = "N"
 land_surface__slope = "Slope"
 
 [model]
-soil_layer__thickness = [100, 300, 800]
+soil_layer__thickness = {self._soil_layer_thickness()}
 type = "sbm"
 snow__flag = true
 pit__flag = true

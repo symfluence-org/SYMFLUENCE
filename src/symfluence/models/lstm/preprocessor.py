@@ -96,9 +96,12 @@ class LSTMPreProcessor(BaseModelPreProcessor):
 
         # ML-specific setup
         self.device = device if device is not None else torch.device('cpu')
+        # LSTM_LOOKBACK (schema default 700). When the model is selected under
+        # its legacy FLASH name there is no typed lstm section; keep FLASH's
+        # historical default of 30 there, but honour LSTM_LOOKBACK if set.
         self.lookback = self._get_config_value(
             lambda: self.config.model.lstm.lookback,
-            default=self._get_config_value(lambda: self.config.model.flash.lookback, default=30)
+            default=30, dict_key='LSTM_LOOKBACK',
         )
 
         # Use inherited domain_definition_method from mixin

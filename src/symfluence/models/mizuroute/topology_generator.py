@@ -400,7 +400,7 @@ class MizuRouteTopologyGenerator:
             self.pp.logger.warning(f"Fixed {invalid_count} invalid downstream segment references in grid topology")
 
         # Get cell size for segment length
-        grid_cell_size = self.pp._get_config_value(lambda: self.pp.config.model.mizuroute.grid_cell_size, default=1000.0)
+        grid_cell_size = self.pp._get_config_value(lambda: self.pp.config.domain.grid_cell_size, default=1000.0, dict_key='GRID_CELL_SIZE')
         lengths = np.full(num_cells, float(grid_cell_size))
 
         # HRU variables (each cell is also an HRU)

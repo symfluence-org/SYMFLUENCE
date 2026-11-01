@@ -73,7 +73,7 @@ BASELINE = {
     "models/ngen/extractor.py": 1,  # explicit dict branch
     "models/pcrglobwb/calibration/worker.py": 3,  # SYMFLUENCE_DATA_DIR as str
     "models/raven/adapter.py": 8,  # config['KEY'] (KeyError semantics)
-    "models/rhessys/calibration/worker.py": 8,  # RHESSYS_* worker options (no fields)
+    "models/rhessys/calibration/worker.py": 7,  # RHESSYS_* worker options (no fields)
     "models/rhessys/climate_generator.py": 2,  # SUB_GRID/DOMAIN_DISCRETIZATION chain
     "models/summa/calibration/worker.py": 4,  # SYMFLUENCE_DATA_DIR as str, CALIBRATION_METRIC (no field)
     "models/summa/calibration/worker_impl/metrics_calculation.py": 2,  # FIXED_CATCHMENT_AREA, SYMFLUENCE_DATA_DIR

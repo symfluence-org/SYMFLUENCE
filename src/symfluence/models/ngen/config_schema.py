@@ -80,6 +80,10 @@ class NGENConfig(BaseModel):
     modules_selected: str = Field(default='SLOTH,PET,CFE', alias='NGEN_MODULES_SELECTED')
     noah_et_fallback: str = Field(default='ETRAN', alias='NGEN_NOAH_ET_FALLBACK')
     csv_output_is_flow: bool = Field(default=False, alias='NGEN_CSV_OUTPUT_IS_FLOW')
+    # ngen forcing provider; None -> CsvPerFeature. 'NetCDF' needs AORC-format
+    # NetCDF (epoch_start attr, CSDMS names) which the forcing pipeline doesn't
+    # produce yet.
+    forcing_provider: Optional[str] = Field(default=None, alias='NGEN_FORCING_PROVIDER')
 
     @model_validator(mode='before')
     @classmethod
