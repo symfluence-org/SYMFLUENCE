@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from symfluence.core.calibration.workers.base_worker import BaseWorker
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -123,7 +124,7 @@ class IGNACIOWorker(BaseWorker):
             settings_dir.parent / 'IGNACIO_input' / 'ignacio_config.yaml',
         ]
         if self.config:
-            project_dir = Path(self.config.get('SYMFLUENCE_DATA_DIR', '.')) / f"domain_{self.config.get('DOMAIN_NAME', '')}"
+            project_dir = Path(resolve_config_value(self.config, lambda: self.config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR')) / f"domain_{resolve_config_value(self.config, lambda: self.config.domain.name, '', 'DOMAIN_NAME')}"
             candidates.append(project_dir / 'IGNACIO_input' / 'ignacio_config.yaml')
 
         for path in candidates:
@@ -236,11 +237,11 @@ class IGNACIOWorker(BaseWorker):
 
     def _get_observed_path(self, config: Dict[str, Any]) -> Optional[Path]:
         """Get path to observed fire perimeter."""
-        obs_path = config.get('IGNACIO_OBSERVED_PERIMETER')
+        obs_path = resolve_config_value(config, lambda: config.model.ignacio.observed_perimeter_path, None, 'IGNACIO_OBSERVED_PERIMETER')
         if obs_path and Path(obs_path).exists():
             return Path(obs_path)
 
-        wmfire_dir = config.get('WMFIRE_PERIMETER_DIR')
+        wmfire_dir = resolve_config_value(config, lambda: config.model.rhessys.wmfire.perimeter_dir, None, 'WMFIRE_PERIMETER_DIR')
         if wmfire_dir and Path(wmfire_dir).exists():
             shapefiles = list(Path(wmfire_dir).glob('*.shp'))
             if shapefiles:

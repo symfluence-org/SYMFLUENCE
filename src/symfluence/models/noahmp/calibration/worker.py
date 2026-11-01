@@ -28,6 +28,7 @@ from symfluence.core.calibration.workers.base_worker import (
     run_worker_task,
 )
 from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -270,14 +271,14 @@ class NoahMPWorker(BaseWorker):
             output_dir.mkdir(parents=True, exist_ok=True)
 
             # Resolve executable
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
-            install_path = config.get('NOAHMP_INSTALL_PATH', 'default')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
+            install_path = resolve_config_value(config, lambda: config.model.noahmp.install_path, 'default', 'NOAHMP_INSTALL_PATH')
             if install_path == 'default':
                 install_dir = data_dir / 'installs' / 'noah-owp-modular'
             else:
                 install_dir = Path(install_path)
 
-            exe_name = config.get('NOAHMP_EXE', 'noah_owp_modular.exe')
+            exe_name = resolve_config_value(config, lambda: config.model.noahmp.exe, 'noah_owp_modular.exe', 'NOAHMP_EXE')
             # The noah-owp-modular build places the executable under run/; older
             # layouts used bin/ or the install root. Check all three.
             noahmp_exe = None
@@ -297,7 +298,7 @@ class NoahMPWorker(BaseWorker):
             env = os.environ.copy()
             env['OMP_NUM_THREADS'] = '1'
 
-            timeout = int(config.get('NOAHMP_TIMEOUT', 600))
+            timeout = int(resolve_config_value(config, lambda: config.model.noahmp.timeout, 600, 'NOAHMP_TIMEOUT'))
 
             with open(output_dir / 'noahmp_stdout.log', 'w') as out, \
                  open(output_dir / 'noahmp_stderr.log', 'w') as err:
@@ -404,8 +405,8 @@ class NoahMPWorker(BaseWorker):
             ds.close()
 
             # Convert mm -> m3/s
-            domain_name = config.get('DOMAIN_NAME')
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             project_dir = data_dir / f'domain_{domain_name}'
 
             area_km2 = self._streamflow_metrics.get_catchment_area(
@@ -440,7 +441,7 @@ class NoahMPWorker(BaseWorker):
             obs_series = pd.Series(obs_values, index=obs_index)
 
             # Align
-            cal_period_str = config.get('CALIBRATION_PERIOD')
+            cal_period_str = resolve_config_value(config, lambda: config.domain.calibration_period, None, 'CALIBRATION_PERIOD')
             calibration_period = None
             if cal_period_str:
                 parts = [s.strip() for s in str(cal_period_str).split(',')]

@@ -13,6 +13,7 @@ from typing import Any, Dict
 
 from symfluence.core.calibration.targets import create_calibration_target
 from symfluence.core.calibration.workers.base_worker import BaseWorker, WorkerResult, WorkerTask
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.models.gnn import GNNRunner
 
 
@@ -27,7 +28,7 @@ class GNNWorker(BaseWorker):
             for key, val in task.params.items():
                 eval_config[key] = val
 
-            eval_config['EXPERIMENT_ID'] = f"{task.config.get('EXPERIMENT_ID')}_eval_{task.proc_id}"
+            eval_config['EXPERIMENT_ID'] = f"{resolve_config_value(task.config, lambda: task.config.domain.experiment_id, None, 'EXPERIMENT_ID')}_eval_{task.proc_id}"
 
             runner = GNNRunner(eval_config, self.logger)
             runner.run_gnn()
@@ -79,7 +80,7 @@ class GNNWorker(BaseWorker):
         target = create_calibration_target(
             'streamflow',
             config,
-            Path(config.get('SYMFLUENCE_DATA_DIR', '.')) / f"domain_{config.get('DOMAIN_NAME', '')}",
+            Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR')) / f"domain_{resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')}",
             self.logger
         )
         metrics = target.calculate_metrics(output_dir)

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from symfluence.core.calibration.optimizers.base_model_optimizer import BaseModelOptimizer
+from symfluence.core.mixins.config import resolve_config_value
 
 
 # NOTE: LSTM is a self-training model — its weights are learned during the run
@@ -35,7 +36,7 @@ class LSTMModelOptimizer(BaseModelOptimizer):
     ):
         self.config = config
         # Distributed mode detected from DOMAIN_DEFINITION_METHOD
-        self._routing_needed = config.get('DOMAIN_DEFINITION_METHOD', 'lumped') == 'delineate'
+        self._routing_needed = resolve_config_value(config, lambda: config.domain.definition_method, 'lumped', 'DOMAIN_DEFINITION_METHOD') == 'delineate'
 
         super().__init__(config, logger, optimization_settings_dir, reporting_manager=reporting_manager)
 

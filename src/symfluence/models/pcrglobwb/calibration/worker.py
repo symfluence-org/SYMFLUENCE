@@ -16,6 +16,7 @@ import pandas as pd
 
 from symfluence.core.calibration.workers.base_worker import BaseWorker
 from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 from symfluence.models.lisflood.runner import _find_pcraster_site_packages
@@ -111,7 +112,7 @@ class PCRGLOBWBWorker(BaseWorker):
         env = dict(os.environ)
 
         # PCR-GLOBWB install path
-        install_path = config.get('PCRGLOBWB_INSTALL_PATH', 'default')
+        install_path = resolve_config_value(config, lambda: config.model.pcrglobwb.install_path, 'default', 'PCRGLOBWB_INSTALL_PATH')
         data_dir = config.get('SYMFLUENCE_DATA_DIR', '.')
         if install_path == 'default' or not install_path:
             pcrglobwb_dir = Path(data_dir) / 'installs' / 'pcrglobwb'
@@ -128,11 +129,11 @@ class PCRGLOBWBWorker(BaseWorker):
             env['CONDA_PREFIX'] = pcraster_prefix
             env['PATH'] = f"{pcraster_prefix}/bin:{env.get('PATH', '')}"
 
-        exe_name = config.get('PCRGLOBWB_EXE', 'deterministic_runner.py')
+        exe_name = resolve_config_value(config, lambda: config.model.pcrglobwb.exe, 'deterministic_runner.py', 'PCRGLOBWB_EXE')
         runner_script = pcrglobwb_dir / exe_name
         cmd = [sys.executable, str(runner_script), str(ini_path)]
 
-        timeout = int(config.get('PCRGLOBWB_TIMEOUT', 14400))
+        timeout = int(resolve_config_value(config, lambda: config.model.pcrglobwb.timeout, 14400, 'PCRGLOBWB_TIMEOUT'))
         try:
             result = run_subprocess(
                 cmd, cwd=str(settings_dir), env=env,
@@ -160,7 +161,7 @@ class PCRGLOBWBWorker(BaseWorker):
                 sim = sim.resample('D').mean()
 
             # Filter to calibration period
-            cal_period = config.get('CALIBRATION_PERIOD', '')
+            cal_period = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
             if cal_period:
                 parts = cal_period.split(',')
                 if len(parts) == 2:
@@ -222,7 +223,7 @@ class PCRGLOBWBWorker(BaseWorker):
     def _load_observations(self, config: Dict) -> Optional[pd.Series]:
         """Load observed streamflow (model-ready store first, CSV fallback)."""
         data_dir = config.get('SYMFLUENCE_DATA_DIR', '.')
-        domain = config.get('DOMAIN_NAME', '')
+        domain = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
         project_dir = Path(data_dir) / f'domain_{domain}'
         values, index = self._streamflow_metrics.load_observations(
             config, project_dir, domain, resample_freq=None,
@@ -254,7 +255,7 @@ class PCRGLOBWBWorker(BaseWorker):
 
     def _get_original_settings_dir(self) -> Path:
         data_dir = self.config.get('SYMFLUENCE_DATA_DIR', '.')
-        domain = self.config.get('DOMAIN_NAME', '')
+        domain = resolve_config_value(self.config, lambda: self.config.domain.name, '', 'DOMAIN_NAME')
         return Path(data_dir) / f'domain_{domain}' / 'settings' / 'PCRGLOBWB'
 
     def _patch_ini_output(self, settings_dir: Path, output_dir: Path) -> None:
