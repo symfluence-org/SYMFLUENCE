@@ -239,14 +239,14 @@ def get_spatial_mode_from_config(config_dict) -> SpatialMode:
     Returns:
         Inferred SpatialMode
     """
-    try:
-        domain_method = config_dict.domain.definition_method or 'lumped'
-    except (AttributeError, TypeError):
-        domain_method = config_dict.get('DOMAIN_DEFINITION_METHOD', 'lumped') if isinstance(config_dict, dict) else 'lumped'
-    try:
-        routing_delineation = config_dict.model.mizuroute.routing_delineation or 'lumped'
-    except (AttributeError, TypeError):
-        routing_delineation = config_dict.get('ROUTING_DELINEATION', 'lumped') if isinstance(config_dict, dict) else 'lumped'
+    from symfluence.core.mixins.config import resolve_config_value
+
+    domain_method = resolve_config_value(
+        config_dict, lambda: config_dict.domain.definition_method, 'lumped', 'DOMAIN_DEFINITION_METHOD')
+    # (The typed branch used to read model.mizuroute.routing_delineation,
+    # which doesn't exist, so typed configs always got 'lumped'.)
+    routing_delineation = resolve_config_value(
+        config_dict, lambda: config_dict.domain.delineation.routing, 'lumped', 'ROUTING_DELINEATION')
 
     # Map domain method to spatial mode
     if domain_method in ('point', 'lumped'):

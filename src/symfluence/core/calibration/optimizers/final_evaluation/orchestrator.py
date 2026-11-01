@@ -13,6 +13,8 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
+from symfluence.core.mixins.config import resolve_config_value
+
 from .file_manager_updater import FileManagerUpdater
 from .model_decisions_updater import ModelDecisionsUpdater
 from .results_saver import FinalResultsSaver
@@ -50,17 +52,7 @@ class FinalEvaluationOrchestrator:
     # Helper to access config values via ConfigMixin-style
     def _get_config_value(self, accessor, default=None, dict_key=None):
         """Access config value using accessor lambda or dict key."""
-        try:
-            value = accessor() if callable(accessor) else None
-            if value is not None:
-                return value
-        except (AttributeError, KeyError, TypeError):
-            pass
-        if dict_key and hasattr(self._config, 'get'):
-            val = self._config.get(dict_key)
-            if val is not None:
-                return val
-        return default
+        return resolve_config_value(self._config, accessor, default, dict_key)
 
     # ------------------------------------------------------------------
     # File manager operations

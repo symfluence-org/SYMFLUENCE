@@ -16,6 +16,7 @@ import pandas as pd
 
 from symfluence.core.base_manager import BaseManager
 from symfluence.core.constants import SupportedModels
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.registries import R
 from symfluence.optimization.core import TransformationManager
 from symfluence.optimization.optimization_results_manager import OptimizationResultsManager
@@ -471,8 +472,8 @@ class OptimizationManager(BaseManager):
             obs_series = pd.Series(obs_values, index=obs_index)
 
             periods = {
-                'calibration_metrics': self.config_dict.get('CALIBRATION_PERIOD', ''),
-                'evaluation_metrics': self.config_dict.get('EVALUATION_PERIOD', ''),
+                'calibration_metrics': resolve_config_value(self.config, lambda: self.config.domain.calibration_period, '', 'CALIBRATION_PERIOD'),
+                'evaluation_metrics': resolve_config_value(self.config, lambda: self.config.domain.evaluation_period, '', 'EVALUATION_PERIOD'),
             }
             final_result: Dict[str, Any] = {'best_params': {}}
             for key, period_str in periods.items():

@@ -22,6 +22,7 @@ from symfluence.core.constants import ModelDefaults
 from symfluence.core.exceptions import RetryExhaustedError
 from symfluence.core.metrics.metric_transformer import MetricTransformer
 from symfluence.core.metrics.streamflow_metrics import StreamflowMetrics
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.mixins.logging import _class_logger_name
 
 logger = logging.getLogger(__name__)
@@ -375,22 +376,7 @@ class BaseWorker(ABC):
         Returns:
             Configuration value or *default*.
         """
-        # Try typed accessor first (works with SymfluenceConfig)
-        if typed_accessor is not None:
-            try:
-                value = typed_accessor()
-                if value is not None:
-                    return value
-            except (AttributeError, KeyError, TypeError):
-                pass
-
-        # Fallback to flat dict access
-        if dict_key is not None:
-            value = self._cfg(dict_key)
-            if value is not None:
-                return value
-
-        return default
+        return resolve_config_value(self.config, typed_accessor, default, dict_key)
 
     @property
     def max_retries(self) -> int:

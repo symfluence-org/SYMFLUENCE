@@ -26,6 +26,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from symfluence.core.mixins.config import resolve_config_value
+
 
 class ParameterRegionalization(ABC):
     """Abstract base class for parameter regionalization strategies."""
@@ -353,9 +355,9 @@ class RegionalizationFactory:
             return TransferFunctionRegionalization(
                 param_bounds=param_bounds, n_units=n_units, attributes=attributes,
                 param_config=param_config,
-                b_bounds=config.get('TRANSFER_FUNCTION_B_BOUNDS', (-1.0, 1.0)),
-                transfer_function_type=config.get('TRANSFER_FUNCTION_TYPE', 'linear'),
-                log_transform_attrs=config.get('TRANSFER_FUNCTION_LOG_ATTRS'),
+                b_bounds=resolve_config_value(config, lambda: config.optimization.transfer_function_b_bounds, (-1.0, 1.0), 'TRANSFER_FUNCTION_B_BOUNDS'),
+                transfer_function_type=resolve_config_value(config, lambda: config.optimization.transfer_function_type, 'linear', 'TRANSFER_FUNCTION_TYPE'),
+                log_transform_attrs=resolve_config_value(config, lambda: config.optimization.transfer_function_log_attrs, None, 'TRANSFER_FUNCTION_LOG_ATTRS'),
                 logger=logger,
             )
 

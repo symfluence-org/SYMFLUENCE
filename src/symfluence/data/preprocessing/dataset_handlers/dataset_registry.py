@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import List
 
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.data.base_registry import BaseRegistry
 
 
@@ -56,7 +57,7 @@ class DatasetRegistry(BaseRegistry):
             config = args[0]
 
         if config:
-            kwargs.setdefault("forcing_timestep_seconds", config.get("FORCING_TIME_STEP_SIZE", 3600))
+            kwargs.setdefault("forcing_timestep_seconds", resolve_config_value(config, lambda: config.forcing.time_step_size, 3600, 'FORCING_TIME_STEP_SIZE'))
 
         return handler_class(*args, **kwargs)
 

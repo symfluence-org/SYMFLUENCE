@@ -22,6 +22,7 @@ import pandas as pd
 
 from symfluence.core.constants import PhysicalConstants, UnitConversion
 from symfluence.core.mixins import ConfigMixin
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.mixins.project import resolve_data_subdir
 
 
@@ -49,7 +50,7 @@ def _perform_em_earth_remapping_logic(input_file: Path, output_file: Path, basin
             basins_gdf = basins_gdf.to_crs('EPSG:4326')
 
         # Get basin ID column
-        basin_id_col = config.get('RIVER_BASIN_SHP_RM_GRUID', 'GRU_ID')
+        basin_id_col = resolve_config_value(config, lambda: config.paths.river_basin_rm_gruid, 'GRU_ID', 'RIVER_BASIN_SHP_RM_GRUID')
 
         if basin_id_col not in basins_gdf.columns:
             raise ValueError(f"Basin ID column '{basin_id_col}' not found in shapefile")

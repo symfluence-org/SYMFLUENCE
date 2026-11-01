@@ -39,6 +39,8 @@ import pint_xarray
 import xarray as xr
 import yaml
 
+from symfluence.core.mixins.config import resolve_config_value
+
 # Lazy import CFIF mappings to avoid circular imports
 # These are imported in the methods that need them
 if TYPE_CHECKING:
@@ -827,8 +829,8 @@ class VariableHandler:
         """
         self.config = config
         self.logger = logger
-        self.dataset = dataset if dataset is not None else config.get('FORCING_DATASET')
-        self.model = model if model is not None else config.get('HYDROLOGICAL_MODEL')
+        self.dataset = dataset if dataset is not None else resolve_config_value(config, lambda: config.forcing.dataset, None, 'FORCING_DATASET')
+        self.model = model if model is not None else resolve_config_value(config, lambda: config.model.hydrological_model, None, 'HYDROLOGICAL_MODEL')
 
         # Initialize pint for unit handling
         self.ureg: pint.UnitRegistry = pint.UnitRegistry()
