@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional
 import numpy as np
 import pandas as pd
 
-from symfluence.core.calibration.workers.base_worker import BaseWorker, WorkerTask
+from symfluence.core.calibration.workers.base_worker import BaseWorker, run_worker_task
 from symfluence.core.metrics import StreamflowMetrics, kge, nse
 from symfluence.core.mixins.project import resolve_data_subdir
 from symfluence.core.registries import R
@@ -648,16 +648,11 @@ class MESHWorker(BaseWorker):
 
 
 def _evaluate_mesh_parameters_worker(task_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Module-level worker function for MPI/ProcessPool execution.
-
-    Args:
-        task_data: Task dictionary
-
-    Returns:
-        Result dictionary
-    """
-    worker = MESHWorker()
-    task = WorkerTask.from_legacy_dict(task_data)
-    result = worker.evaluate(task)
-    return result.to_legacy_dict()
+    """Module-level worker function for MPI/ProcessPool execution (delegates to ``run_worker_task``)."""
+    return run_worker_task(
+        MESHWorker,
+        task_data,
+        isolate=False,
+        catch_exceptions=False,
+        pass_config=False,
+    )

@@ -15,7 +15,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict
 
-from symfluence.core.calibration.workers.base_worker import BaseWorker, WorkerTask
+from symfluence.core.calibration.workers.base_worker import BaseWorker, run_worker_task
 from symfluence.core.registries import R
 from symfluence.models.gr.runner import GRRunner
 
@@ -205,11 +205,13 @@ class GRWorker(BaseWorker):
 
 
 def _evaluate_gr_parameters_worker(task_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Module-level worker function for MPI execution.
+    """Module-level worker function for MPI execution.
+
     Naming matches convention for dynamic resolution in BaseModelOptimizer.
     """
-    worker = GRWorker(config=task_data.get('config'))
-    task = WorkerTask.from_legacy_dict(task_data)
-    result = worker.evaluate(task)
-    return result.to_legacy_dict()
+    return run_worker_task(
+        GRWorker,
+        task_data,
+        isolate=False,
+        catch_exceptions=False,
+    )

@@ -16,7 +16,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from symfluence.core.calibration.workers.base_worker import BaseWorker, WorkerTask
+from symfluence.core.calibration.workers.base_worker import BaseWorker, run_worker_task
 from symfluence.core.exceptions import ConfigurationError
 from symfluence.core.registries import R
 
@@ -201,38 +201,14 @@ def _evaluate_coupled_parameters_worker(task_data: Dict[str, Any]) -> Dict[str, 
     """Module-level coupled worker function for MPI/ProcessPool execution.
 
     Resolved by ``PopulationEvaluator`` via the ``_evaluate_<model>_parameters_worker`` naming
-    convention (here ``_evaluate_coupled_parameters_worker``). Mirrors the SUMMA/dRoute workers.
+    convention (here ``_evaluate_coupled_parameters_worker``); delegates to ``run_worker_task``.
     """
-    import os
-    import signal
-    import sys
-    import traceback
-
-    def _sig(signum, frame):
-        sys.exit(1)
-
-    try:
-        signal.signal(signal.SIGTERM, _sig)
-        signal.signal(signal.SIGINT, _sig)
-    except ValueError:
-        pass
-    # One thread per process: parallelism is across the pool (each coupled eval runs its own SUMMA).
-    os.environ.update({'OMP_NUM_THREADS': '1', 'MKL_NUM_THREADS': '1', 'OPENBLAS_NUM_THREADS': '1'})
-
-    try:
-        worker = CoupledModelWorker(config=task_data.get('config'))
-        task = WorkerTask.from_legacy_dict(task_data)
-        result = worker.evaluate(task)
-        return result.to_legacy_dict()
-    except Exception as e:  # noqa: BLE001 -- calibration resilience
-        from symfluence.core.constants import ModelDefaults
-        return {
-            'individual_id': task_data.get('individual_id', -1),
-            'params': task_data.get('params', {}),
-            'score': ModelDefaults.PENALTY_SCORE,
-            'error': f'coupled worker exception: {e}\n{traceback.format_exc()}',
-            'proc_id': task_data.get('proc_id', -1),
-        }
+    return run_worker_task(
+        CoupledModelWorker,
+        task_data,
+        start_jitter=None,
+        error_prefix='coupled worker exception',
+    )
 
 
 __all__ = ['CoupledModelWorker']
