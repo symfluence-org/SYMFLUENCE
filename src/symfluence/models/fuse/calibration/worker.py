@@ -18,6 +18,7 @@ from typing import Any, Dict, Optional
 from symfluence.core.calibration.multi_gauge.metrics import MultiGaugeMetrics
 from symfluence.core.calibration.workers.base_worker import BaseWorker, run_worker_task
 from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.modeling.utilities.routing_decider import RoutingDecider
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
@@ -118,7 +119,7 @@ class FUSEWorker(BaseWorker):
 
             # Determine regionalization mode
             regionalization_method = config.get('PARAMETER_REGIONALIZATION', 'lumped') if config else 'lumped'
-            if config and config.get('USE_TRANSFER_FUNCTIONS', False):
+            if config and resolve_config_value(config, lambda: config.model.fuse.use_transfer_functions, False, 'USE_TRANSFER_FUNCTIONS'):
                 regionalization_method = 'transfer_function'
 
             # Update constraints file (skip in regionalization mode)
@@ -165,8 +166,8 @@ class FUSEWorker(BaseWorker):
         regionalization_method: str
     ) -> None:
         """Update para_def.nc file using appropriate strategy."""
-        domain_name = config.get('DOMAIN_NAME', '')
-        experiment_id = config.get('EXPERIMENT_ID', 'run_1')
+        domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
+        experiment_id = resolve_config_value(config, lambda: config.domain.experiment_id, 'run_1', 'EXPERIMENT_ID')
         fuse_id = resolve_fuse_id(config, experiment_id)
         para_def_path = fuse_settings_dir / f"{domain_name}_{fuse_id}_para_def.nc"
 
@@ -350,8 +351,8 @@ class FUSEWorker(BaseWorker):
     ) -> Dict[str, Any]:
         """Calculate metrics from FUSE output."""
         try:
-            domain_name = config.get('DOMAIN_NAME')
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             project_dir = data_dir / f"domain_{domain_name}"
 
             # Find simulation output
@@ -368,7 +369,7 @@ class FUSEWorker(BaseWorker):
 
             # Multi-gauge sources its own observations from MULTI_GAUGE_OBS_DIR,
             # so skip the single-gauge load_observations gate when enabled.
-            multi_gauge_enabled = config.get('MULTI_GAUGE_CALIBRATION', False)
+            multi_gauge_enabled = resolve_config_value(config, lambda: config.optimization.multi_gauge.calibration, False, 'MULTI_GAUGE_CALIBRATION')
             if multi_gauge_enabled and use_routed:
                 kwargs_clean = {k: v for k, v in kwargs.items() if k != 'project_dir'}
                 return self._calculate_multi_gauge_metrics(
@@ -428,7 +429,7 @@ class FUSEWorker(BaseWorker):
 
     def _get_catchment_area(self, config: Dict[str, Any], project_dir: Path) -> float:
         """Get catchment area for FUSE unit conversion."""
-        domain_name = config.get('DOMAIN_NAME')
+        domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
         return self._streamflow_metrics.get_catchment_area(config, project_dir, domain_name)
 
     # =========================================================================
@@ -444,12 +445,12 @@ class FUSEWorker(BaseWorker):
     ) -> Dict[str, Any]:
         """Calculate performance metrics across multiple stream gauges."""
         try:
-            gauge_mapping_path = config.get('GAUGE_SEGMENT_MAPPING')
-            obs_dir = config.get('MULTI_GAUGE_OBS_DIR')
-            gauge_ids = config.get('MULTI_GAUGE_IDS')
-            exclude_ids = config.get('MULTI_GAUGE_EXCLUDE_IDS', [])
-            aggregation = config.get('MULTI_GAUGE_AGGREGATION', 'mean')
-            min_gauges = config.get('MULTI_GAUGE_MIN_GAUGES', 5)
+            gauge_mapping_path = resolve_config_value(config, lambda: config.optimization.multi_gauge.gauge_segment_mapping, None, 'GAUGE_SEGMENT_MAPPING')
+            obs_dir = resolve_config_value(config, lambda: config.optimization.multi_gauge.obs_dir, None, 'MULTI_GAUGE_OBS_DIR')
+            gauge_ids = resolve_config_value(config, lambda: config.optimization.multi_gauge.gauge_ids, None, 'MULTI_GAUGE_IDS')
+            exclude_ids = resolve_config_value(config, lambda: config.optimization.multi_gauge.exclude_ids, [], 'MULTI_GAUGE_EXCLUDE_IDS')
+            aggregation = resolve_config_value(config, lambda: config.optimization.multi_gauge.aggregation, 'mean', 'MULTI_GAUGE_AGGREGATION')
+            min_gauges = resolve_config_value(config, lambda: config.optimization.multi_gauge.min_gauges, 5, 'MULTI_GAUGE_MIN_GAUGES')
 
             if not gauge_mapping_path:
                 self.logger.error("GAUGE_SEGMENT_MAPPING not configured for multi-gauge calibration")
@@ -504,8 +505,8 @@ class FUSEWorker(BaseWorker):
                 if val is not None:
                     filter_config[key] = float(val)
 
-            min_overlap = int(config.get('MULTI_GAUGE_MIN_OVERLAP_DAYS', 10))
-            kge_floor = config.get('MULTI_GAUGE_KGE_FLOOR')
+            min_overlap = int(resolve_config_value(config, lambda: config.optimization.multi_gauge.min_overlap_days, 10, 'MULTI_GAUGE_MIN_OVERLAP_DAYS'))
+            kge_floor = resolve_config_value(config, lambda: config.optimization.multi_gauge.kge_floor, None, 'MULTI_GAUGE_KGE_FLOOR')
             if kge_floor is not None:
                 kge_floor = float(kge_floor)
 
@@ -558,7 +559,7 @@ class FUSEWorker(BaseWorker):
 
     def _parse_calibration_period(self, config: Dict[str, Any]) -> tuple:
         """Parse calibration period from config."""
-        calib_period = config.get('CALIBRATION_PERIOD', '')
+        calib_period = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
         if calib_period and ',' in str(calib_period):
             try:
                 return tuple(s.strip() for s in str(calib_period).split(','))
@@ -593,9 +594,9 @@ class FUSEWorker(BaseWorker):
             import subprocess
 
             # Get mizuRoute executable
-            mizuroute_install = config.get('MIZUROUTE_INSTALL_PATH', 'default')
+            mizuroute_install = resolve_config_value(config, lambda: config.model.mizuroute.install_path, 'default', 'MIZUROUTE_INSTALL_PATH')
             if mizuroute_install == 'default':
-                data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+                data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
                 mizuroute_exe = data_dir / 'installs' / 'mizuRoute' / 'route' / 'bin' / 'mizuRoute.exe'
             else:
                 mizuroute_exe = Path(mizuroute_install) / 'mizuRoute.exe'
@@ -621,7 +622,7 @@ class FUSEWorker(BaseWorker):
                 text=True,
                 encoding='utf-8',
                 errors='replace',
-                timeout=config.get('MIZUROUTE_TIMEOUT', 3600)
+                timeout=resolve_config_value(config, lambda: config.model.mizuroute.timeout, 3600, 'MIZUROUTE_TIMEOUT')
             )
 
             if result.returncode != 0:
@@ -668,8 +669,8 @@ class FUSEWorker(BaseWorker):
             return control_file
 
         # Fallback to main control file
-        domain_name = config.get('DOMAIN_NAME')
-        data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
+        domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+        data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
         project_dir = data_dir / f"domain_{domain_name}"
         return project_dir / 'settings' / 'mizuRoute' / 'mizuroute.control'
 

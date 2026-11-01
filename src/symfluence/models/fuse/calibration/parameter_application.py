@@ -17,6 +17,8 @@ from typing import Any, Dict, Optional, Set
 
 import numpy as np
 
+from symfluence.core.mixins.config import resolve_config_value
+
 logger = logging.getLogger(__name__)
 
 
@@ -292,11 +294,11 @@ def apply_regionalization(
     try:
         # Get regionalization method
         method = config.get('PARAMETER_REGIONALIZATION', 'lumped')
-        if config.get('USE_TRANSFER_FUNCTIONS', False) and method == 'lumped':
+        if resolve_config_value(config, lambda: config.model.fuse.use_transfer_functions, False, 'USE_TRANSFER_FUNCTIONS') and method == 'lumped':
             method = 'transfer_function'
 
         # Get original parameter bounds
-        param_bounds = config.get('FUSE_PARAM_BOUNDS', {})
+        param_bounds = resolve_config_value(config, lambda: config.model.fuse.param_bounds, {}, 'FUSE_PARAM_BOUNDS')
         if not param_bounds:
             log.error("FUSE_PARAM_BOUNDS not configured")
             return params_updated
@@ -309,7 +311,7 @@ def apply_regionalization(
         # Load attributes if needed
         attributes = None
         if method == 'transfer_function':
-            attributes_path = config.get('TRANSFER_FUNCTION_ATTRIBUTES')
+            attributes_path = resolve_config_value(config, lambda: config.model.summa.transfer_function_attributes_path, None, 'TRANSFER_FUNCTION_ATTRIBUTES')
             if attributes_path:
                 attributes = pd.read_csv(attributes_path)
             else:
@@ -450,12 +452,12 @@ def _enforce_numerix_defaults(
     timestep_type = 0.0    # Fixed time steps
 
     if config:
-        cfg_solution = config.get('FUSE_SOLUTION_METHOD')
+        cfg_solution = resolve_config_value(config, lambda: config.model.fuse.solution_method, None, 'FUSE_SOLUTION_METHOD')
         if cfg_solution is not None:
             solution_method = float(cfg_solution)
             log.debug(f"  Using configured FUSE_SOLUTION_METHOD={int(solution_method)}")
 
-        cfg_timestep = config.get('FUSE_TIMESTEP_TYPE')
+        cfg_timestep = resolve_config_value(config, lambda: config.model.fuse.timestep_type, None, 'FUSE_TIMESTEP_TYPE')
         if cfg_timestep is not None:
             timestep_type = float(cfg_timestep)
             log.debug(f"  Using configured FUSE_TIMESTEP_TYPE={int(timestep_type)}")
