@@ -7,16 +7,19 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
-import sys
 import tomllib
 from pathlib import Path
+from typing import Any, Dict
 
 import numpy as np
 import pandas as pd
 import xarray as xr
 
-from symfluence.core.calibration.workers.base_worker import BaseWorker, WorkerTask
-from symfluence.core.constants import ModelDefaults
+from symfluence.core.calibration.workers.base_worker import (
+    MACOS_MALLOC_QUIET_ENV,
+    BaseWorker,
+    run_worker_task,
+)
 from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.process_exec import run as run_subprocess
@@ -355,38 +358,11 @@ class WflowWorker(BaseWorker):
         return _evaluate_wflow_parameters_worker(task_data)
 
 
-def _evaluate_wflow_parameters_worker(task_data):
-    """Module-level worker function for process pool execution."""
-    import os
-    import random
-    import signal
-    import time
-    import traceback
-
-    def signal_handler(signum, frame):
-        sys.exit(1)
-    try:
-        signal.signal(signal.SIGTERM, signal_handler)
-        signal.signal(signal.SIGINT, signal_handler)
-    except ValueError:
-        pass
-
-    os.environ.update({
-        'OMP_NUM_THREADS': '1', 'MKL_NUM_THREADS': '1',
-        'OPENBLAS_NUM_THREADS': '1', 'MallocStackLogging': '0',
-    })
-    time.sleep(random.uniform(0.1, 0.5))
-
-    try:
-        worker = WflowWorker(config=task_data.get('config'))
-        task = WorkerTask.from_legacy_dict(task_data)
-        result = worker.evaluate(task)
-        return result.to_legacy_dict()
-    except Exception as e:  # noqa: BLE001 — calibration resilience
-        return {
-            'individual_id': task_data.get('individual_id', -1),
-            'params': task_data.get('params', {}),
-            'score': ModelDefaults.PENALTY_SCORE,
-            'error': f'Wflow worker exception: {str(e)}\n{traceback.format_exc()}',
-            'proc_id': task_data.get('proc_id', -1)
-        }
+def _evaluate_wflow_parameters_worker(task_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Module-level worker function for process pool execution (delegates to ``run_worker_task``)."""
+    return run_worker_task(
+        WflowWorker,
+        task_data,
+        model_name='Wflow',
+        extra_env=MACOS_MALLOC_QUIET_ENV,
+    )

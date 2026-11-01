@@ -35,7 +35,6 @@ src/symfluence/cli/services/tool_validator.py:ToolValidator._run_test_command:ex
 src/symfluence/cli/services/tool_validator.py:ToolValidator.validate:except Exception as e:  # noqa: BLE001 — top-level fallback
 src/symfluence/core/_bootstrap.py:_discover_plugins:except Exception:  # noqa: BLE001 — never let a broken plugin crash the framework
 src/symfluence/core/base_manager.py:BaseManager._safe_visualize:except Exception as e:  # noqa: BLE001 — must-not-raise contract
-src/symfluence/core/calibration/coupled/worker.py:_evaluate_coupled_parameters_worker:except Exception as e:  # noqa: BLE001 -- calibration resilience
 src/symfluence/core/calibration/eval_watchdog.py:EvalWatchdog._fire:except Exception:  # noqa: BLE001
 src/symfluence/core/calibration/eval_watchdog.py:EvalWatchdog._fire:except Exception:  # noqa: BLE001 — never mask the kill
 src/symfluence/core/calibration/mixins/parallel_execution.py:ParallelExecutionMixin.execute_batch:except Exception as e2:  # noqa: BLE001 — must-not-raise contract
@@ -51,6 +50,7 @@ src/symfluence/core/calibration/optimizers/base_model_optimizer.py:BaseModelOpti
 src/symfluence/core/calibration/optimizers/base_model_optimizer.py:BaseModelOptimizer._recompute_final_eval_windows:except Exception as e:  # noqa: BLE001 — resilience in final eval
 src/symfluence/core/calibration/optimizers/base_model_optimizer.py:BaseModelOptimizer.run_optimization:except Exception as exc:  # noqa: BLE001 — cleanup must not mask the run
 src/symfluence/core/calibration/optimizers/final_evaluation/runner.py:FinalEvaluationRunner._worker_period_metrics:except Exception as e:  # noqa: BLE001 — resilience in final eval
+src/symfluence/core/calibration/workers/base_worker.py:run_worker_task:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/core/config/legacy_aliases.py:iter_legacy_flat_to_nested_aliases:except Exception:  # noqa: BLE001 — registry unavailable in stripped contexts
 src/symfluence/core/config/models/root.py:SymfluenceConfig.validate_model_requirements:except Exception as e:  # noqa: BLE001 — configuration resilience
 src/symfluence/core/exceptions.py:symfluence_error_handler:except Exception as e:  # noqa: BLE001 — error handler implementation
@@ -613,7 +613,6 @@ src/symfluence/models/clm/calibration/worker.py:CLMWorker.apply_parameters:excep
 src/symfluence/models/clm/calibration/worker.py:CLMWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/clm/calibration/worker.py:CLMWorker.run_model._get_cpu_pct:except Exception:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/clm/calibration/worker.py:CLMWorker.run_model:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/clm/calibration/worker.py:_evaluate_clm_parameters_worker:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/clm/domain_generator.py:CLMDomainGenerator._load_hru_shapefile:except Exception:  # noqa: BLE001
 src/symfluence/models/clm/domain_generator.py:CLMDomainGenerator.get_elevation_stats:except Exception:  # noqa: BLE001
 src/symfluence/models/clm/domain_generator.py:CLMDomainGenerator.get_mean_elevation:except Exception:  # noqa: BLE001
@@ -649,7 +648,6 @@ src/symfluence/models/crhm/calibration/worker.py:CRHMWorker._update_prj_file:exc
 src/symfluence/models/crhm/calibration/worker.py:CRHMWorker.apply_parameters:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/crhm/calibration/worker.py:CRHMWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/crhm/calibration/worker.py:CRHMWorker.run_model:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/crhm/calibration/worker.py:_evaluate_crhm_parameters_worker:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/crhm/extractor.py:CRHMResultExtractor.extract_variable:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/crhm/postprocessor.py:CRHMPostProcessor.extract_streamflow:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/crhm/preprocessor.py:CRHMPreProcessor._generate_observation_file:except Exception as e:  # noqa: BLE001 — model execution resilience
@@ -745,7 +743,6 @@ src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker._update_upw_para
 src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker.apply_parameters:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker._run_model:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/gsflow/calibration/worker.py:_evaluate_gsflow_parameters_worker:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/gsflow/extractor.py:GSFLOWResultExtractor._parse_statvar_file:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/gsflow/extractor.py:GSFLOWResultExtractor.extract_variable:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/gsflow/postprocessor.py:GSFLOWPostProcessor._extract_from_file:except Exception as e:  # noqa: BLE001 — model execution resilience
@@ -767,7 +764,6 @@ src/symfluence/models/hype/calibration/worker.py:HYPEWorker.apply_parameters:exc
 src/symfluence/models/hype/calibration/worker.py:HYPEWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/hype/calibration/worker.py:HYPEWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/hype/calibration/worker.py:HYPEWorker.run_model:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/hype/calibration/worker.py:_evaluate_hype_parameters_worker:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/hype/config_manager.py:HYPEConfigManager.write_info_filedir:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/hype/config_manager.py:HYPEConfigManager.write_par_file:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/hype/extractor.py:HYPEResultExtractor._extract_from_text:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
@@ -894,7 +890,6 @@ src/symfluence/models/mhm/calibration/worker.py:MHMWorker._update_namelist_file:
 src/symfluence/models/mhm/calibration/worker.py:MHMWorker.apply_parameters:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/mhm/calibration/worker.py:MHMWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/mhm/calibration/worker.py:MHMWorker.run_model:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/mhm/calibration/worker.py:_evaluate_mhm_parameters_worker:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/mhm/extractor.py:MHMResultExtractor.extract_variable:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/mhm/postprocessor.py:MHMPostProcessor.extract_streamflow:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/mhm/preprocessor.py:MHMPreProcessor._build_distributed_grids._resample_class:except Exception:  # noqa: BLE001
@@ -958,7 +953,6 @@ src/symfluence/models/ngen/visualizer.py:visualize_ngen:except Exception as e:  
 src/symfluence/models/noahmp/calibration/worker.py:NoahMPWorker.apply_parameters:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/noahmp/calibration/worker.py:NoahMPWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/noahmp/calibration/worker.py:NoahMPWorker.run_model:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/noahmp/calibration/worker.py:_evaluate_noahmp_parameters_worker:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/noahmp/preprocessor.py:NoahMPPreProcessor._create_model_configs:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/noahmp/preprocessor.py:NoahMPPreProcessor._prepare_forcing:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/parflow/calibration/parameter_manager.py:ParFlowParameterManager.get_initial_parameters:except Exception as e:  # noqa: BLE001 — calibration resilience
@@ -994,7 +988,6 @@ src/symfluence/models/pihm/calibration/targets.py:PIHMStreamflowTarget._extract_
 src/symfluence/models/pihm/calibration/worker.py:PIHMWorker.apply_parameters:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/pihm/calibration/worker.py:PIHMWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/pihm/calibration/worker.py:PIHMWorker.run_model:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/pihm/calibration/worker.py:_evaluate_pihm_parameters_worker:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/pihm/plotter.py:PIHMPlotter._collect_coupling_data:except Exception:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/pihm/plotter.py:PIHMPlotter._load_observed_streamflow:except Exception:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/pihm/plotter.py:PIHMPlotter.plot_coupling_results:except Exception as e:  # noqa: BLE001 — model execution resilience
@@ -1013,7 +1006,6 @@ src/symfluence/models/prms/calibration/worker.py:PRMSWorker._update_parameter_fi
 src/symfluence/models/prms/calibration/worker.py:PRMSWorker.apply_parameters:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/prms/calibration/worker.py:PRMSWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/prms/calibration/worker.py:PRMSWorker.run_model:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/prms/calibration/worker.py:_evaluate_prms_parameters_worker:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/prms/postprocessor.py:PRMSPostProcessor._parse_statvar_file:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/prms/postprocessor.py:PRMSPostProcessor.extract_streamflow:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/prms/preprocessor.py:PRMSPreProcessor._get_catchment_properties:except Exception as e:  # noqa: BLE001 — model execution resilience
@@ -1035,7 +1027,6 @@ src/symfluence/models/rhessys/calibration/worker.py:RHESSysWorker.apply_paramete
 src/symfluence/models/rhessys/calibration/worker.py:RHESSysWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/rhessys/calibration/worker.py:RHESSysWorker.run_model:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/rhessys/calibration/worker.py:RHESSysWorker.run_model:except Exception:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/rhessys/calibration/worker.py:_evaluate_rhessys_parameters_worker:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/rhessys/climate_generator.py:RHESSysClimateGenerator._process_relative_humidity:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/rhessys/climate_generator.py:RHESSysClimateGenerator._write_base_station_file:except Exception:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/rhessys/extractor.py:RHESSysResultExtractor._extract_from_daily:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
@@ -1125,7 +1116,6 @@ src/symfluence/models/swat/calibration/worker.py:SWATWorker._update_swat_files:e
 src/symfluence/models/swat/calibration/worker.py:SWATWorker.apply_parameters:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/swat/calibration/worker.py:SWATWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/swat/calibration/worker.py:SWATWorker.run_model:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/swat/calibration/worker.py:_evaluate_swat_parameters_worker:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/swat/extractor.py:SWATResultExtractor.extract_variable:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/swat/forcing_generator.py:SWATForcingGenerator.generate_forcing_files:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/swat/postprocessor.py:SWATPostProcessor._parse_output_rch:except Exception as e:  # noqa: BLE001 — model execution resilience
@@ -1151,7 +1141,6 @@ src/symfluence/models/vic/calibration/worker.py:VICWorker._update_params_file:ex
 src/symfluence/models/vic/calibration/worker.py:VICWorker.apply_parameters:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/vic/calibration/worker.py:VICWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/vic/calibration/worker.py:VICWorker.run_model:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/vic/calibration/worker.py:_evaluate_vic_parameters_worker:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/vic/extractor.py:VICResultExtractor.extract_variable:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/vic/postprocessor.py:VICPostProcessor.extract_streamflow:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/vic/preprocessor.py:VICPreProcessor._compute_elevation_bands:except Exception as e:  # noqa: BLE001 — model execution resilience
@@ -1166,7 +1155,6 @@ src/symfluence/models/watflood/calibration/worker.py:WATFLOODWorker._extract_str
 src/symfluence/models/watflood/calibration/worker.py:WATFLOODWorker.apply_parameters:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/watflood/calibration/worker.py:WATFLOODWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/watflood/calibration/worker.py:WATFLOODWorker.run_model:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/watflood/calibration/worker.py:_evaluate_watflood_parameters_worker:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/watflood/extractor.py:WATFLOODResultExtractor._parse_tb0_file:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/watflood/extractor.py:WATFLOODResultExtractor.extract_variable:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/watflood/forcing_adapter.py:WATFLOODForcingAdapter.convert_forcing:except Exception as e:  # noqa: BLE001 — model execution resilience
@@ -1184,7 +1172,6 @@ src/symfluence/models/wflow/calibration/worker.py:WflowWorker._load_observations
 src/symfluence/models/wflow/calibration/worker.py:WflowWorker.apply_parameters:except Exception as e:  # noqa: BLE001
 src/symfluence/models/wflow/calibration/worker.py:WflowWorker.calculate_metrics:except Exception as e:  # noqa: BLE001
 src/symfluence/models/wflow/calibration/worker.py:WflowWorker.run_model:except Exception as e:  # noqa: BLE001
-src/symfluence/models/wflow/calibration/worker.py:_evaluate_wflow_parameters_worker:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/wflow/extractor.py:WflowResultExtractor.extract_variable:except Exception as e:  # noqa: BLE001
 src/symfluence/models/wflow/postprocessor.py:WflowPostProcessor.extract_streamflow:except Exception as e:  # noqa: BLE001
 src/symfluence/models/wflow/postprocessor.py:WflowPostProcessor.extract_streamflow:except Exception as e:  # noqa: BLE001
@@ -1215,7 +1202,6 @@ src/symfluence/models/wrfhydro/calibration/worker.py:WRFHydroWorker.apply_parame
 src/symfluence/models/wrfhydro/calibration/worker.py:WRFHydroWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/wrfhydro/calibration/worker.py:WRFHydroWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/wrfhydro/calibration/worker.py:WRFHydroWorker.run_model:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/wrfhydro/calibration/worker.py:_evaluate_wrfhydro_parameters_worker:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/wrfhydro/extractor.py:WRFHydroResultExtractor._extract_ldasout_streamflow:except Exception:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/wrfhydro/extractor.py:WRFHydroResultExtractor.extract_variable:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/wrfhydro/postprocessor.py:WRFHydroPostProcessor._extract_from_chrtout:except Exception as e:  # noqa: BLE001 — model execution resilience

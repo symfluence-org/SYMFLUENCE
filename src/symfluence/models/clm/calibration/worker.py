@@ -13,7 +13,6 @@ import logging
 import os
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -21,8 +20,11 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from symfluence.core.calibration.workers.base_worker import BaseWorker, WorkerTask
-from symfluence.core.constants import ModelDefaults
+from symfluence.core.calibration.workers.base_worker import (
+    MACOS_MALLOC_QUIET_ENV,
+    BaseWorker,
+    run_worker_task,
+)
 from symfluence.core.logging_utils import log_once
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.registries import R
@@ -776,49 +778,10 @@ class CLMWorker(BaseWorker):
 
 
 def _evaluate_clm_parameters_worker(task_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Module-level worker function for MPI/ProcessPool execution.
-
-    Args:
-        task_data: Task dictionary
-
-    Returns:
-        Result dictionary
-    """
-    import os
-    import random
-    import signal
-    import time
-    import traceback
-
-    def signal_handler(signum, frame):
-        sys.exit(1)
-
-    try:
-        signal.signal(signal.SIGTERM, signal_handler)
-        signal.signal(signal.SIGINT, signal_handler)
-    except ValueError:
-        pass
-
-    os.environ.update({
-        'OMP_NUM_THREADS': '1',
-        'MKL_NUM_THREADS': '1',
-        'OPENBLAS_NUM_THREADS': '1',
-        'MallocStackLogging': '0',
-    })
-
-    time.sleep(random.uniform(0.1, 0.5))
-
-    try:
-        worker = CLMWorker(config=task_data.get('config'))
-        task = WorkerTask.from_legacy_dict(task_data)
-        result = worker.evaluate(task)
-        return result.to_legacy_dict()
-    except Exception as e:  # noqa: BLE001 — calibration resilience
-        return {
-            'individual_id': task_data.get('individual_id', -1),
-            'params': task_data.get('params', {}),
-            'score': ModelDefaults.PENALTY_SCORE,
-            'error': f'CLM worker exception: {str(e)}\n{traceback.format_exc()}',
-            'proc_id': task_data.get('proc_id', -1),
-        }
+    """Module-level worker function for MPI/ProcessPool execution (delegates to ``run_worker_task``)."""
+    return run_worker_task(
+        CLMWorker,
+        task_data,
+        model_name='CLM',
+        extra_env=MACOS_MALLOC_QUIET_ENV,
+    )

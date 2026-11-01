@@ -13,15 +13,13 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
 
-from symfluence.core.calibration.workers.base_worker import BaseWorker, WorkerTask
-from symfluence.core.constants import ModelDefaults
+from symfluence.core.calibration.workers.base_worker import BaseWorker, run_worker_task
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
@@ -755,51 +753,9 @@ class SWATWorker(BaseWorker):
 
 
 def _evaluate_swat_parameters_worker(task_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Module-level worker function for MPI/ProcessPool execution.
-
-    Args:
-        task_data: Task dictionary
-
-    Returns:
-        Result dictionary
-    """
-    import os
-    import random
-    import signal
-    import time
-    import traceback
-
-    # Set up signal handler
-    def signal_handler(signum, frame):
-        sys.exit(1)
-
-    try:
-        signal.signal(signal.SIGTERM, signal_handler)
-        signal.signal(signal.SIGINT, signal_handler)
-    except ValueError:
-        pass
-
-    # Force single-threaded execution
-    os.environ.update({
-        'OMP_NUM_THREADS': '1',
-        'MKL_NUM_THREADS': '1',
-        'OPENBLAS_NUM_THREADS': '1',
-    })
-
-    # Small random delay
-    time.sleep(random.uniform(0.1, 0.5))
-
-    try:
-        worker = SWATWorker(config=task_data.get('config'))
-        task = WorkerTask.from_legacy_dict(task_data)
-        result = worker.evaluate(task)
-        return result.to_legacy_dict()
-    except Exception as e:  # noqa: BLE001 — calibration resilience
-        return {
-            'individual_id': task_data.get('individual_id', -1),
-            'params': task_data.get('params', {}),
-            'score': ModelDefaults.PENALTY_SCORE,
-            'error': f'SWAT worker exception: {str(e)}\n{traceback.format_exc()}',
-            'proc_id': task_data.get('proc_id', -1)
-        }
+    """Module-level worker function for MPI/ProcessPool execution (delegates to ``run_worker_task``)."""
+    return run_worker_task(
+        SWATWorker,
+        task_data,
+        model_name='SWAT',
+    )
