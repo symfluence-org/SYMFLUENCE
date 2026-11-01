@@ -29,6 +29,7 @@ Architecture:
 """
 from __future__ import annotations
 
+import importlib.util
 import logging
 from abc import abstractmethod
 from pathlib import Path
@@ -50,14 +51,10 @@ except ImportError:
     HAS_XARRAY = False
     xr = None
 
-try:
-    import jax
-    import jax.numpy as jnp
-    HAS_JAX = True
-except ImportError:
-    HAS_JAX = False
-    jax = None
-    jnp = None
+# Availability check only: this module never calls jax itself (subclasses
+# import it where they use it). Importing it here cost ~1 s on every
+# `import symfluence`, because optimizer registration reaches this module.
+HAS_JAX = importlib.util.find_spec("jax") is not None
 
 
 class InMemoryModelWorker(BaseWorker):
