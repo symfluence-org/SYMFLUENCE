@@ -1,4 +1,4 @@
-"""Ratchet: no new raw flat-key config reads outside models/, cli/ and config internals.
+"""Ratchet: no new raw flat-key config reads outside cli/, gui/ and config internals.
 
 Config reaches code both as a typed ``SymfluenceConfig`` and as a flat dict,
 which is why reads were spread over several styles. The canonical forms are:
@@ -14,8 +14,11 @@ are what remains, mostly typed-first code whose dict fallback is explicit, or
 keys with no typed field. Counts may only go down: lower the number (or drop the
 entry) when you convert a site.
 
-``models/`` (~600 sites) is the next codemod; ``cli/``, ``gui/`` and
-``core/config/`` legitimately operate on raw YAML dicts.
+``cli/``, ``gui/`` and ``core/config/`` legitimately operate on raw YAML
+dicts. In ``models/`` the remaining reads are keys with no typed field,
+``SYMFLUENCE_DATA_DIR`` reads that rely on the flat value being a ``str``
+(the typed field is a ``Path``), ``config['KEY']`` reads that rely on
+``KeyError``, and ``config.get('A', config.get('B'))`` alias chains.
 """
 from __future__ import annotations
 
@@ -28,8 +31,13 @@ import pytest
 pytestmark = pytest.mark.unit
 
 SRC = Path(__file__).resolve().parents[3] / "src" / "symfluence"
-PACKAGES = ("core", "data", "geospatial", "evaluation", "optimization", "reporting", "project")
-EXCLUDED_PREFIXES = ("core/config/",)
+PACKAGES = ("core", "data", "geospatial", "evaluation", "optimization", "reporting", "project", "models")
+EXCLUDED_PREFIXES = (
+    "core/config/",
+    # models/mhm/ is deliberately not covered yet: it has in-flight work on
+    # another branch, so the codemod skipped it. Convert it and drop this.
+    "models/mhm/",
+)
 _CONFIG_NAMES = {"config", "config_dict", "_config", "flat_config", "cfg"}
 _KEY = re.compile(r"^[A-Z][A-Z0-9_]+$")
 
@@ -46,6 +54,36 @@ BASELINE = {
     "geospatial/geofabric/processors/taudem_executor.py": 1,  # MPI_LAUNCHER (no field)
     "optimization/calibration_targets/base.py": 1,
     "project/pour_point_workflow.py": 1,
+    # models/: see the module docstring for the categories left unconverted.
+    "models/clm/calibration/worker.py": 1,  # SYMFLUENCE_DATA_DIR as str
+    "models/crhm/calibration/worker.py": 1,  # CRHM_WARMUP_DAYS (no field)
+    "models/cwatm/calibration/worker.py": 3,  # SYMFLUENCE_DATA_DIR as str
+    "models/fuse/calibration/metrics_calculation.py": 2,  # OPTIMIZATION_METRIC/CALIBRATION_METRIC chain
+    "models/fuse/calibration/optimizer.py": 1,  # SYMFLUENCE_DATA_DIR as str
+    "models/fuse/calibration/parameter_application.py": 1,  # PARAMETER_REGIONALIZATION (maps to model.fuse)
+    "models/fuse/calibration/worker.py": 1,  # PARAMETER_REGIONALIZATION
+    "models/fuse/utilities/mizuroute_converter.py": 1,  # SYMFLUENCE_DATA_DIR as str
+    "models/hype/calibration/parameter_manager.py": 5,  # HYPE_* param configs (no fields), PARAMETER_REGIONALIZATION
+    "models/hype/calibration/worker.py": 8,  # explicit dict / config_dict branches, SYMFLUENCE_DATA_DIR as str
+    "models/hype/geodata_manager.py": 1,  # SYMFLUENCE_DATA_DIR as str
+    "models/lisflood/calibration/worker.py": 1,  # explicit dict branch
+    "models/mesh/calibration/worker.py": 10,  # flat key falling back to the mesh sub-dict; SYMFLUENCE_DATA_DIR
+    "models/mesh/preprocessing/forcing_processor.py": 2,  # SUB_GRID/DOMAIN_DISCRETIZATION chain
+    "models/modflow/land_adapters.py": 1,  # LAND_SURFACE_MODEL (no field)
+    "models/ngen/extractor.py": 1,  # explicit dict branch
+    "models/pcrglobwb/calibration/worker.py": 3,  # SYMFLUENCE_DATA_DIR as str
+    "models/raven/adapter.py": 8,  # config['KEY'] (KeyError semantics)
+    "models/rhessys/calibration/worker.py": 8,  # RHESSYS_* worker options (no fields)
+    "models/rhessys/climate_generator.py": 2,  # SUB_GRID/DOMAIN_DISCRETIZATION chain
+    "models/summa/calibration/worker.py": 4,  # SYMFLUENCE_DATA_DIR as str, CALIBRATION_METRIC (no field)
+    "models/summa/calibration/worker_impl/metrics_calculation.py": 2,  # FIXED_CATCHMENT_AREA, SYMFLUENCE_DATA_DIR
+    "models/summa/calibration/worker_impl/model_execution.py": 4,  # mizuRoute alias chains
+    "models/summa/calibration/worker_impl/worker_orchestration.py": 1,  # config['KEY']
+    "models/swat/calibration/optimizer.py": 1,  # SWAT_FINAL_EVAL_RETRIES (no field)
+    "models/swat/calibration/worker.py": 2,  # SWAT_MAX_RETRIES, TIME_START (no fields)
+    "models/vic/calibration/worker.py": 1,  # VIC_WARMUP_DAYS (no field)
+    "models/wflow/calibration/worker.py": 7,  # config['KEY'], explicit dict branch, WFLOW_TIMESTEP, DATA_DIR
+    "models/wrfhydro/calibration/worker.py": 1,  # CATCHMENT_AREA_KM2 (no field)
 }
 
 
