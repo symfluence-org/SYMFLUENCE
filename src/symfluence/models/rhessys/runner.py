@@ -165,7 +165,7 @@ class RHESSysRunner(BaseModelRunner):
         # Subgrid variability
         std_scale = self._get_config_value(
             lambda: self.config.model.rhessys.std_scale,
-            default=1.0,
+            default=1.0, dict_key='RHESSYS_STD_SCALE',
         )
         if std_scale > 0:
             cmd.extend(["-stdev", str(std_scale)])
@@ -177,7 +177,7 @@ class RHESSysRunner(BaseModelRunner):
         # Without the patch, RHESSys rejects the unknown flag and exits rc=1.
         use_subsurface_gw = self._get_config_value(
             lambda: self.config.model.rhessys.use_subsurface_gw,
-            default=True,
+            default=True, dict_key='RHESSYS_USE_SUBSURFACE_GW',
         )
         if use_subsurface_gw and self._binary_supports_subsurfacegw():
             cmd.extend(["-subsurfacegw"])

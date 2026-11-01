@@ -53,6 +53,10 @@ class RHESSysConfig(BaseModel):
     timeout: int = Field(default=7200, alias='RHESSYS_TIMEOUT', ge=60, le=86400)  # seconds (1min to 24hr)
     # Grow mode for Farquhar photosynthesis and transpiration (default True)
     use_grow_mode: bool = Field(default=True, alias='RHESSYS_USE_GROW_MODE')
+    # Subgrid variability (-stdev); 0 disables. Read by both runner and calibration worker.
+    std_scale: float = Field(default=1.0, ge=0, alias='RHESSYS_STD_SCALE')
+    # -subsurfacegw (needs the SYMFLUENCE-patched binary; skipped if unsupported).
+    use_subsurface_gw: bool = Field(default=True, alias='RHESSYS_USE_SUBSURFACE_GW')
     param_bounds: Optional[Dict[str, Any]] = Field(default=None, alias='RHESSYS_PARAM_BOUNDS')
 
 

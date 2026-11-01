@@ -78,7 +78,7 @@ class MHMModelOptimizer(BaseModelOptimizer):
         not needed unless explicitly configured.
         """
         routing_integration = self._get_config_value(
-            lambda: self.config.model.mhm.routing_integration,
+            lambda: None,
             default='none',
             dict_key='MHM_ROUTING_INTEGRATION'
         )

@@ -282,7 +282,7 @@ class IGNACIOPostProcessor(BaseModelPostProcessor):
                     return Path(path)
 
         # Check config dict
-        obs_path = self._get_config_value(lambda: self.config.model.ignacio.observed_perimeter, default=None)
+        obs_path = self._get_config_value(lambda: None, default=None, dict_key='IGNACIO_OBSERVED_PERIMETER')
         if obs_path and Path(obs_path).exists():
             return Path(obs_path)
 

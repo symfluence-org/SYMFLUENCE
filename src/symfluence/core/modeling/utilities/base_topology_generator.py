@@ -314,8 +314,8 @@ class BaseTopologyGenerator(ABC):
         self._validate_downstream_refs_arrays(seg_ids, down_seg_ids)
 
         grid_cell_size = self.pp._get_config_value(
-            lambda: self.pp.config.model.mizuroute.grid_cell_size,  # type: ignore[attr-defined]
-            default=1000.0
+            lambda: self.pp.config.domain.grid_cell_size,
+            default=1000.0, dict_key='GRID_CELL_SIZE',
         )
         lengths = np.full(num_cells, float(grid_cell_size))
 
