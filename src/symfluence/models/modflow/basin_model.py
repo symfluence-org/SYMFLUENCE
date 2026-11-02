@@ -36,7 +36,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -114,6 +114,7 @@ class MF6BasinGrid:
     lake_stage: Optional[float] = None       # lake stage (m, DEM datum)
     reduced_zones: list = field(default_factory=list)  # recharge zone ids scaled by zone_recharge_factor
     lake_cell_drains: bool = True            # False: no river/seepage drains in cells that touch the lake
+    lake_zones: list = field(default_factory=list)  # land zones draining to the lake: their seepage is lake inflow
 
     @property
     def has_lake(self) -> bool:
@@ -146,7 +147,8 @@ class MF6BasinGrid:
              'basin_frac': self.basin_frac.round(6).tolist(),
              'river': self.river.to_dict(orient='list'), 'notes': self.notes,
              'reduced_zones': [int(z) if isinstance(z, (int, np.integer)) else z for z in self.reduced_zones],
-             'lake_cell_drains': self.lake_cell_drains}
+             'lake_cell_drains': self.lake_cell_drains,
+             'lake_zones': [int(z) if isinstance(z, (int, np.integer)) else z for z in self.lake_zones]}
         if self.lake_frac is not None:
             d.update(lake_frac=self.lake_frac.round(6).tolist(), lake_stage=self.lake_stage)
         Path(path).write_text(json.dumps(d))
@@ -161,7 +163,7 @@ class MF6BasinGrid:
                    notes=d.get('notes', []),
                    lake_frac=np.array(d['lake_frac'], float) if 'lake_frac' in d else None,
                    lake_stage=d.get('lake_stage'), reduced_zones=d.get('reduced_zones', []),
-                   lake_cell_drains=d.get('lake_cell_drains', True))
+                   lake_cell_drains=d.get('lake_cell_drains', True), lake_zones=d.get('lake_zones', []))
 
     def set_lake(self, lake, stage: float) -> None:
         """Lake polygon(s) (GeoDataFrame/GeoSeries) at ``stage`` (m, DEM datum) -> per-cell lake fraction."""
@@ -280,15 +282,26 @@ def write_parameter_packages(sim_dir: Path, grid: MF6BasinGrid, params: MF6Basin
         'BEGIN OPTIONS\n  SAVE_FLOWS\nEND OPTIONS\n\n'
         f'BEGIN DIMENSIONS\n  MAXBOUND {len(lines)}\nEND DIMENSIONS\n\n'
         'BEGIN PERIOD 1\n' + '\n'.join(lines) + '\nEND PERIOD 1\n')
+    weights = pd.read_csv(d / WEIGHTS_FILE)
     rows, cols = np.nonzero(grid.active)
-    seep = [f'  1 {r + 1} {c + 1} {top[r, c]:.3f} '
-            f'{params.seepage_leakance * max(grid.basin_frac[r, c] - lake[r, c], 0.0) * grid.cell_area:.6g}'
-            for r, c in zip(rows, cols)
-            if grid.basin_frac[r, c] - lake[r, c] > 1e-6 and (grid.lake_cell_drains or lake[r, c] == 0)]
-    (d / 'gwf.seep.drn').write_text(
-        'BEGIN OPTIONS\n  SAVE_FLOWS\nEND OPTIONS\n\n'
-        f'BEGIN DIMENSIONS\n  MAXBOUND {len(seep)}\nEND DIMENSIONS\n\n'
-        'BEGIN PERIOD 1\n' + '\n'.join(seep) + '\nEND PERIOD 1\n')
+    seep: Dict[bool, List[str]] = {False: [], True: []}   # True: SEEPL, seepage in cells whose main recharge zone drains to the lake
+    to_lake = np.zeros((grid.nrow, grid.ncol), bool)
+    if grid.lake_zones:
+        top_zone = weights.sort_values('mult').groupby(['row', 'col']).tail(1)
+        top_zone = top_zone[top_zone.zone_id.isin(grid.lake_zones)]
+        to_lake[top_zone.row.to_numpy(int) - 1, top_zone.col.to_numpy(int) - 1] = True
+    for r, c in zip(rows, cols):
+        if grid.basin_frac[r, c] - lake[r, c] > 1e-6 and (grid.lake_cell_drains or lake[r, c] == 0):
+            seep[bool(to_lake[r, c])].append(
+                f'  1 {r + 1} {c + 1} {top[r, c]:.3f} '
+                f'{params.seepage_leakance * max(grid.basin_frac[r, c] - lake[r, c], 0.0) * grid.cell_area:.6g}')
+    for name, lines in (('seep', seep[False]), ('seepl', seep[True])):
+        if name == 'seepl' and not grid.lake_zones:
+            continue
+        (d / f'gwf.{name}.drn').write_text(
+            'BEGIN OPTIONS\n  SAVE_FLOWS\nEND OPTIONS\n\n'
+            f'BEGIN DIMENSIONS\n  MAXBOUND {len(lines)}\nEND DIMENSIONS\n\n'
+            'BEGIN PERIOD 1\n' + '\n'.join(lines) + '\nEND PERIOD 1\n')
     if grid.has_lake:
         lr, lc = np.nonzero(lake * grid.active > 0)
         ghb = [f'  1 {r + 1} {c + 1} {grid.lake_stage:.3f} {params.lake_leakance * lake[r, c] * grid.cell_area:.6g}'
@@ -297,7 +310,6 @@ def write_parameter_packages(sim_dir: Path, grid: MF6BasinGrid, params: MF6Basin
             'BEGIN OPTIONS\n  SAVE_FLOWS\nEND OPTIONS\n\n'
             f'BEGIN DIMENSIONS\n  MAXBOUND {len(ghb)}\nEND DIMENSIONS\n\n'
             'BEGIN PERIOD 1\n' + '\n'.join(ghb) + '\nEND PERIOD 1\n')
-    weights = pd.read_csv(d / WEIGHTS_FILE)
     factor = {z: params.zone_recharge_factor for z in grid.reduced_zones}
     rch = [f'  1 {int(w.row)} {int(w.col)} {_ts_name(w.zone_id)} {w.mult * factor.get(w.zone_id, 1.0):.8g}'
            for w in weights.itertuples()]
@@ -328,7 +340,8 @@ def write_simulation(sim_dir: Path, grid: MF6BasinGrid, weights: pd.DataFrame, n
         'BEGIN OPTIONS\n  NEWTON UNDER_RELAXATION\nEND OPTIONS\n\n'
         'BEGIN PACKAGES\n  DIS6 gwf.dis\n  IC6 gwf.ic\n  NPF6 gwf.npf\n  STO6 gwf.sto\n'
         '  RCH6 gwf.rch RCH\n  DRN6 gwf.riv.drn RIV\n  DRN6 gwf.seep.drn SEEP\n'
-        + ('  GHB6 gwf.lake.ghb LAKE\n' if grid.has_lake else '') + '  OC6 gwf.oc\nEND PACKAGES\n')
+        + ('  GHB6 gwf.lake.ghb LAKE\n' if grid.has_lake else '')
+        + ('  DRN6 gwf.seepl.drn SEEPL\n' if grid.lake_zones else '') + '  OC6 gwf.oc\nEND PACKAGES\n')
     head_save = {'none': '', 'last': '  SAVE HEAD LAST\n', 'all': '  SAVE HEAD ALL\n'}[save_heads]
     (d / 'gwf.oc').write_text(
         f'BEGIN OPTIONS\n  HEAD FILEOUT gwf.hds\n  BUDGETCSV FILEOUT {BUDGET_CSV}\nEND OPTIONS\n\n'
@@ -401,9 +414,11 @@ def read_budget(sim_dir: Path, start_date) -> pd.DataFrame:
     })
     has_lake = any(c.endswith('(LAKE)_OUT') or c == 'LAKE_OUT' for c in df.columns)
     out['lake'] = (col('LAKE', 'OUT') - col('LAKE', 'IN')) if has_lake else 0.0
+    has_seepl = any(c.endswith('(SEEPL)_OUT') or c == 'SEEPL_OUT' for c in df.columns)
+    out['lake_seepage'] = (col('SEEPL', 'OUT') - col('SEEPL', 'IN')) if has_seepl else 0.0
     sto = [c for c in df.columns if c.startswith('STO-')]
     out['storage_change'] = sum(df[c] for c in sto if c.endswith('_OUT')) - sum(df[c] for c in sto if c.endswith('_IN'))
-    out['discharge'] = out.river + out.seepage + out.lake
+    out['discharge'] = out.river + out.seepage + out.lake + out.lake_seepage
     out['totim'] = df['TIME'].astype(float).to_numpy()
     out['pct_discrepancy'] = df['PERCENT_DIFFERENCE'].astype(float).to_numpy()
     out = out[out.totim > 1.0 + 1e-9]
@@ -501,14 +516,16 @@ def read_groundwater_discharge(sim_dir: Path) -> pd.Series:
     """
     rec = read_coupling_record(sim_dir)
     b = read_budget(sim_dir, rec['recharge_start'])
-    q = b.discharge - b.lake if rec.get('lake_to_land') is not None else b.discharge
+    q = b.discharge - b.lake - b.lake_seepage if rec.get('lake_to_land') is not None else b.discharge
     return (q / 86400.0).rename('gw_discharge_m3s')
 
 
 def read_lake_flux(sim_dir: Path) -> pd.Series:
-    """Daily net groundwater flux into the lake (m3/s; negative = the lake loses water to the aquifer)."""
+    """Daily net groundwater flux into the lake (m3/s; negative = the lake loses water to the aquifer):
+    the lake boundary plus seepage in the lake's catchment (``lake_zones``)."""
     start = read_coupling_record(sim_dir)['recharge_start']
-    return (read_budget(sim_dir, start).lake / 86400.0).rename('lake_flux_m3s')
+    b = read_budget(sim_dir, start)
+    return ((b.lake + b.lake_seepage) / 86400.0).rename('lake_flux_m3s')
 
 
 def mark_lake_to_land(sim_dir: Path, land_id: int) -> None:

@@ -304,18 +304,38 @@ def test_no_lake_cell_drains_leaves_lake_cells_to_the_ghb(grid, tmp_path):
     assert 'MAXBOUND 0' not in seep   # cells away from the lake keep their seepage
 
 
+def test_lake_catchment_seepage_gets_its_own_package(grid, tmp_path):
+    grid.set_lake(_lake(), 520.0)
+    write_simulation(tmp_path / 'a', grid, zone_cell_weights(grid, _zones()), 5, MF6BasinParams())
+    assert not (tmp_path / 'a' / 'gwf.seepl.drn').exists()
+
+    def cond(path):
+        body = path.read_text().split('BEGIN PERIOD 1\n')[1]
+        return {tuple(line.split()[1:3]): float(line.split()[4]) for line in body.splitlines() if line.startswith('  1 ')}
+    seep_all = cond(tmp_path / 'a' / 'gwf.seep.drn')
+    grid.lake_zones = [12, 13]   # the upstream strips drain to the lake
+    grid.to_json(tmp_path / 'g.json')
+    assert MF6BasinGrid.from_json(tmp_path / 'g.json').lake_zones == [12, 13]
+    write_simulation(tmp_path / 'b', grid, zone_cell_weights(grid, _zones()), 5, MF6BasinParams())
+    assert 'DRN6 gwf.seepl.drn SEEPL' in (tmp_path / 'b' / 'gwf.nam').read_text()
+    seep, seepl = cond(tmp_path / 'b' / 'gwf.seep.drn'), cond(tmp_path / 'b' / 'gwf.seepl.drn')
+    assert seep and seepl and not set(seep) & set(seepl)
+    assert {**seep, **seepl} == seep_all              # same drains, split between the two packages
+    assert all(int(c) * 2000 > 3300 for _, c in seepl)  # SEEPL cells lie in zones 12 and 13 (east of x = 3.3 km)
+
+
 def test_lake_flux_routed_to_land_leaves_the_groundwater_discharge(tmp_path):
-    cols = ['time', 'DRN(RIV)_IN', 'DRN(SEEP)_IN', 'GHB(LAKE)_IN', 'RCH(RCH)_IN',
-            'DRN(RIV)_OUT', 'DRN(SEEP)_OUT', 'GHB(LAKE)_OUT', 'RCH(RCH)_OUT', 'PERCENT_DIFFERENCE']
-    rows = [[1, 0, 0, 0, 100, 50, 10, 40, 0, 0],
-            [2, 0, 0, 30, 100, 80, 10, 40, 0, 0],    # lake gains 40, loses 30: net +10
-            [3, 0, 0, 70, 100, 150, 10, 10, 0, 0]]   # net -60: the lake loses water to the aquifer
+    cols = ['time', 'DRN(RIV)_IN', 'DRN(SEEP)_IN', 'GHB(LAKE)_IN', 'DRN(SEEPL)_IN', 'RCH(RCH)_IN',
+            'DRN(RIV)_OUT', 'DRN(SEEP)_OUT', 'GHB(LAKE)_OUT', 'DRN(SEEPL)_OUT', 'RCH(RCH)_OUT', 'PERCENT_DIFFERENCE']
+    rows = [[1, 0, 0, 0, 0, 100, 45, 10, 40, 5, 0, 0],
+            [2, 0, 0, 30, 0, 100, 75, 10, 40, 5, 0, 0],    # lake gains 40 + 5 seepage, loses 30: net +15
+            [3, 0, 0, 70, 0, 100, 145, 10, 10, 5, 0, 0]]   # net -55: the lake loses water to the aquifer
     pd.DataFrame(rows, columns=cols).to_csv(tmp_path / BUDGET_CSV, index=False)
     write_coupling_record(tmp_path, 'HYPE', tmp_path, tmp_path, '2010-01-01')
-    np.testing.assert_allclose(read_lake_flux(tmp_path).to_numpy() * 86400, [10, -60])
+    np.testing.assert_allclose(read_lake_flux(tmp_path).to_numpy() * 86400, [15, -55])
     np.testing.assert_allclose(read_groundwater_discharge(tmp_path).to_numpy() * 86400, [100, 100])
     mark_lake_to_land(tmp_path, 7)
-    np.testing.assert_allclose(read_groundwater_discharge(tmp_path).to_numpy() * 86400, [90, 160])
+    np.testing.assert_allclose(read_groundwater_discharge(tmp_path).to_numpy() * 86400, [85, 155])
 
 
 def test_hype_lake_flux_point_sources(tmp_path):
@@ -379,6 +399,7 @@ def test_mf6_run_with_lake_anisotropy_and_reduced_recharge_conserves_water(grid,
     area = dict(zip(zones.zone_id, zones.to_crs(CRS).area))
     grid.set_lake(_lake(), 515.0)
     grid.reduced_zones = [13]
+    grid.lake_zones = [12]
     w = zone_cell_weights(grid, zones, area)
     days = pd.date_range('2010-01-01', periods=90, freq='D')
     rng = np.random.default_rng(1)
@@ -395,6 +416,7 @@ def test_mf6_run_with_lake_anisotropy_and_reduced_recharge_conserves_water(grid,
     np.testing.assert_allclose(b.rejected_recharge.to_numpy(), rejected.to_numpy(), rtol=1e-5)
     np.testing.assert_allclose((b.recharge + b.rejected_recharge).to_numpy(), land.to_numpy(), rtol=1e-5)
     assert (b.lake != 0).any()
+    assert 'DRN(SEEPL)_OUT' in pd.read_csv(tmp_path / BUDGET_CSV).columns.str.strip().str.upper()
     # everything the land model passed down leaves as discharge or goes into storage
     np.testing.assert_allclose(land - b.discharge - b.storage_change, 0.0, atol=1e-3 * land.mean())
 

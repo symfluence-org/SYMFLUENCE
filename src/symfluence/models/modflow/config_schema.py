@@ -64,6 +64,10 @@ class MODFLOWConfig(BaseModel):
     lake_cell_drains: bool = Field(default=True, alias='MODFLOW_LAKE_CELL_DRAINS',
                                    description='Keep river/seepage drains on the land part of cells that touch the '
                                                'lake; False leaves those cells to the lake boundary alone')
+    lake_catchment_zones: Optional[List[int]] = Field(
+        default=None, alias='MODFLOW_LAKE_CATCHMENT_ZONES',
+        description='Land zones that drain to the lake: seepage in cells mostly recharged by them is lake inflow '
+                    '(own drain package SEEPL; routed with the lake flux)')
     lake_to_land_id: Optional[int] = Field(default=None, alias='MODFLOW_LAKE_TO_LAND_ID',
                                            description='Land-model unit (HYPE subid with an outlet lake) that '
                                                        'receives the lake boundary flux; the land model is rerun')
