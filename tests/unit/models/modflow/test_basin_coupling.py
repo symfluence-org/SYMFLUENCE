@@ -19,8 +19,10 @@ from symfluence.models.modflow.basin_model import (
     MF6BasinGrid,
     MF6BasinParams,
     apply_basin_parameters,
+    mark_lake_to_land,
     read_budget,
     read_groundwater_discharge,
+    read_lake_flux,
     set_simulation_length,
     write_coupling_record,
     write_recharge_timeseries,
@@ -285,6 +287,59 @@ def test_lake_ghb_replaces_drains_under_the_lake(grid, tmp_path):
     seep_cond = sum(float(line.split()[4]) for line in seep.splitlines() if line.startswith('  1 '))
     land = (grid.basin_frac - grid.lake_frac)[grid.active].sum() * grid.cell_area
     assert seep_cond == pytest.approx(0.1 * land, rel=1e-6)
+
+
+def test_no_lake_cell_drains_leaves_lake_cells_to_the_ghb(grid, tmp_path):
+    grid.set_lake(_lake(), 520.0)
+    grid.lake_cell_drains = False
+    grid.to_json(tmp_path / 'g.json')
+    assert MF6BasinGrid.from_json(tmp_path / 'g.json').lake_cell_drains is False
+    write_simulation(tmp_path, grid, zone_cell_weights(grid, _zones()), 5, MF6BasinParams())
+    riv = (tmp_path / 'gwf.riv.drn').read_text()
+    seep = (tmp_path / 'gwf.seep.drn').read_text()
+    touched = list(zip(*np.nonzero(grid.lake_frac > 0)))
+    assert any(0 < grid.lake_frac[r, c] < 1 for r, c in touched)   # shore cells exist and lose their drains too
+    for r, c in touched:
+        assert f'  1 {r + 1} {c + 1} ' not in riv and f'  1 {r + 1} {c + 1} ' not in seep
+    assert 'MAXBOUND 0' not in seep   # cells away from the lake keep their seepage
+
+
+def test_lake_flux_routed_to_land_leaves_the_groundwater_discharge(tmp_path):
+    cols = ['time', 'DRN(RIV)_IN', 'DRN(SEEP)_IN', 'GHB(LAKE)_IN', 'RCH(RCH)_IN',
+            'DRN(RIV)_OUT', 'DRN(SEEP)_OUT', 'GHB(LAKE)_OUT', 'RCH(RCH)_OUT', 'PERCENT_DIFFERENCE']
+    rows = [[1, 0, 0, 0, 100, 50, 10, 40, 0, 0],
+            [2, 0, 0, 30, 100, 80, 10, 40, 0, 0],    # lake gains 40, loses 30: net +10
+            [3, 0, 0, 70, 100, 150, 10, 10, 0, 0]]   # net -60: the lake loses water to the aquifer
+    pd.DataFrame(rows, columns=cols).to_csv(tmp_path / BUDGET_CSV, index=False)
+    write_coupling_record(tmp_path, 'HYPE', tmp_path, tmp_path, '2010-01-01')
+    np.testing.assert_allclose(read_lake_flux(tmp_path).to_numpy() * 86400, [10, -60])
+    np.testing.assert_allclose(read_groundwater_discharge(tmp_path).to_numpy() * 86400, [100, 100])
+    mark_lake_to_land(tmp_path, 7)
+    np.testing.assert_allclose(read_groundwater_discharge(tmp_path).to_numpy() * 86400, [90, 160])
+
+
+def test_hype_lake_flux_point_sources(tmp_path):
+    s = _hype_settings(tmp_path / 'settings')
+    ad = get_land_adapter('HYPE', {})
+    flux = pd.Series([5.0, -2.0, float('nan')], index=pd.date_range('2010-01-01', periods=3))
+    with pytest.raises(ConfigurationError, match='not a HYPE subid'):
+        ad.route_lake_flux(s, 99, flux)
+    ad.route_lake_flux(s, 12, flux)
+    psd = pd.read_csv(s / 'PointSourceData.txt', sep='\t')
+    assert psd.to_dict('list') == {'psid': [1, 2], 'subid': [12, 12], 'ps_type': [1, -1], 'ps_source': [3, 2]}
+    lines = (s / 'PSDailySeries.txt').read_text().splitlines()
+    assert lines[:2] == ['DATE\tflow\tflow', 'psid\t1\t2']
+    assert [line.split('\t') for line in lines[2:]] == [
+        ['2010-01-01', '5.000000', '0.000000'], ['2010-01-02', '0.000000', '2.000000'],
+        ['2010-01-03', '0.000000', '0.000000']]
+    assert 'readpstime\ty' in (s / 'info.txt').read_text()
+    ad.route_lake_flux(s, 12, flux)   # rerouting keeps a single readpstime line
+    assert (s / 'info.txt').read_text().count('readpstime') == 1
+    ad.clear_lake_flux(s)
+    assert not (s / 'PointSourceData.txt').exists() and not (s / 'PSDailySeries.txt').exists()
+    assert 'readpstime\tn' in (s / 'info.txt').read_text()
+    with pytest.raises(ConfigurationError, match='cannot take'):
+        get_land_adapter('SUMMA', {}).route_lake_flux(s, 1, flux)
 
 
 def test_no_lake_keeps_previous_packages(grid, tmp_path):

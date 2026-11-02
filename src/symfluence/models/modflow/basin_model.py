@@ -113,6 +113,7 @@ class MF6BasinGrid:
     lake_frac: Optional[np.ndarray] = None   # (nrow, ncol) fraction of cell under the lake; None = no lake
     lake_stage: Optional[float] = None       # lake stage (m, DEM datum)
     reduced_zones: list = field(default_factory=list)  # recharge zone ids scaled by zone_recharge_factor
+    lake_cell_drains: bool = True            # False: no river/seepage drains in cells that touch the lake
 
     @property
     def has_lake(self) -> bool:
@@ -144,7 +145,8 @@ class MF6BasinGrid:
              'top': np.where(self.active, self.top, 0.0).round(3).tolist(),
              'basin_frac': self.basin_frac.round(6).tolist(),
              'river': self.river.to_dict(orient='list'), 'notes': self.notes,
-             'reduced_zones': [int(z) if isinstance(z, (int, np.integer)) else z for z in self.reduced_zones]}
+             'reduced_zones': [int(z) if isinstance(z, (int, np.integer)) else z for z in self.reduced_zones],
+             'lake_cell_drains': self.lake_cell_drains}
         if self.lake_frac is not None:
             d.update(lake_frac=self.lake_frac.round(6).tolist(), lake_stage=self.lake_stage)
         Path(path).write_text(json.dumps(d))
@@ -158,7 +160,8 @@ class MF6BasinGrid:
                    basin_frac=np.array(d['basin_frac'], float), river=pd.DataFrame(d['river']),
                    notes=d.get('notes', []),
                    lake_frac=np.array(d['lake_frac'], float) if 'lake_frac' in d else None,
-                   lake_stage=d.get('lake_stage'), reduced_zones=d.get('reduced_zones', []))
+                   lake_stage=d.get('lake_stage'), reduced_zones=d.get('reduced_zones', []),
+                   lake_cell_drains=d.get('lake_cell_drains', True))
 
     def set_lake(self, lake, stage: float) -> None:
         """Lake polygon(s) (GeoDataFrame/GeoSeries) at ``stage`` (m, DEM datum) -> per-cell lake fraction."""
@@ -267,8 +270,10 @@ def write_parameter_packages(sim_dir: Path, grid: MF6BasinGrid, params: MF6Basin
         f'  SY\n    CONSTANT {params.sy:.8g}\nEND GRIDDATA\n\n'
         'BEGIN PERIOD 1\n  STEADY-STATE\nEND PERIOD 1\n\nBEGIN PERIOD 2\n  TRANSIENT\nEND PERIOD 2\n')
     riv = grid.river
-    # Reaches drawn through a lake are the lake itself: the GHB handles them
-    riv = riv[lake[riv.row.to_numpy(int) - 1, riv.col.to_numpy(int) - 1] < 0.5]
+    # Reaches drawn through a lake are the lake itself: the GHB handles them. Without lake-cell drains every cell
+    # touching the lake is left to the GHB, so all groundwater discharging there is lake inflow.
+    no_drain = lake > 0 if not grid.lake_cell_drains else lake >= 0.5
+    riv = riv[~no_drain[riv.row.to_numpy(int) - 1, riv.col.to_numpy(int) - 1]]
     lines = [f'  1 {int(r.row)} {int(r.col)} {r.strtop:.3f} {params.river_leakance * r.length:.6g}'
              for r in riv.itertuples()]
     (d / 'gwf.riv.drn').write_text(
@@ -278,7 +283,8 @@ def write_parameter_packages(sim_dir: Path, grid: MF6BasinGrid, params: MF6Basin
     rows, cols = np.nonzero(grid.active)
     seep = [f'  1 {r + 1} {c + 1} {top[r, c]:.3f} '
             f'{params.seepage_leakance * max(grid.basin_frac[r, c] - lake[r, c], 0.0) * grid.cell_area:.6g}'
-            for r, c in zip(rows, cols) if grid.basin_frac[r, c] - lake[r, c] > 1e-6]
+            for r, c in zip(rows, cols)
+            if grid.basin_frac[r, c] - lake[r, c] > 1e-6 and (grid.lake_cell_drains or lake[r, c] == 0)]
     (d / 'gwf.seep.drn').write_text(
         'BEGIN OPTIONS\n  SAVE_FLOWS\nEND OPTIONS\n\n'
         f'BEGIN DIMENSIONS\n  MAXBOUND {len(seep)}\nEND DIMENSIONS\n\n'
@@ -488,9 +494,29 @@ def read_coupling_record(sim_dir: Path) -> Dict:
 
 
 def read_groundwater_discharge(sim_dir: Path) -> pd.Series:
-    """Daily groundwater discharge to the river network (m3/s) of a finished basin run."""
+    """Daily groundwater discharge to the river network (m3/s) of a finished basin run.
+
+    When the lake flux was handed to the land model (``lake_to_land`` in the coupling record), the land model
+    routes it through its lake, so it is left out here.
+    """
+    rec = read_coupling_record(sim_dir)
+    b = read_budget(sim_dir, rec['recharge_start'])
+    q = b.discharge - b.lake if rec.get('lake_to_land') is not None else b.discharge
+    return (q / 86400.0).rename('gw_discharge_m3s')
+
+
+def read_lake_flux(sim_dir: Path) -> pd.Series:
+    """Daily net groundwater flux into the lake (m3/s; negative = the lake loses water to the aquifer)."""
     start = read_coupling_record(sim_dir)['recharge_start']
-    return (read_budget(sim_dir, start).discharge / 86400.0).rename('gw_discharge_m3s')
+    return (read_budget(sim_dir, start).lake / 86400.0).rename('lake_flux_m3s')
+
+
+def mark_lake_to_land(sim_dir: Path, land_id: int) -> None:
+    """Record that the lake flux of ``sim_dir`` was routed into land-model unit ``land_id``."""
+    path = Path(sim_dir, COUPLING_FILE)
+    rec = json.loads(path.read_text())
+    rec['lake_to_land'] = int(land_id)
+    path.write_text(json.dumps(rec, indent=1))
 
 
 def apply_basin_parameters(sim_dir: Path, values: Dict[str, float], base: MF6BasinParams) -> bool:

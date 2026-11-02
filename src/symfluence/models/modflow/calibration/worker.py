@@ -300,7 +300,12 @@ class CoupledGWWorker(BaseWorker):
 
         # Step 1: Run land surface model (writing into land_output)
         from symfluence.models.modflow.land_adapters import adapter_options, get_land_adapter
-        get_land_adapter(self.land_model_name, adapter_options(config)).set_output_dir(land_settings, land_output)
+        adapter = get_land_adapter(self.land_model_name, adapter_options(config))
+        adapter.set_output_dir(land_settings, land_output)
+        lake_to_land = (config.get('MODFLOW_LAKE_TO_LAND_ID') if isinstance(config, dict) else
+                        getattr(getattr(getattr(config, 'model', None), 'modflow', None), 'lake_to_land_id', None))
+        if lake_to_land is not None:
+            adapter.clear_lake_flux(land_settings)   # the first pass makes recharge only
         self.logger.debug(f"Running {self.land_model_name} (land surface)...")
         # Filter kwargs to avoid duplicate keyword arguments when delegating
         land_kwargs = {
@@ -334,6 +339,21 @@ class CoupledGWWorker(BaseWorker):
         except Exception as e:  # noqa: BLE001 — calibration resilience
             self.logger.error(f"MODFLOW execution failed: {e}", exc_info=True)
             return False
+
+        # Step 3 (MODFLOW_LAKE_TO_LAND_ID): the lake boundary flux goes back to the land model, which routes it
+        # through its lake; rerun it with the flux (its recharge does not depend on it, so MODFLOW is not rerun).
+        if lake_to_land is not None:
+            from symfluence.models.modflow.basin_model import mark_lake_to_land, read_lake_flux
+            try:
+                adapter.route_lake_flux(land_settings, int(lake_to_land), read_lake_flux(modflow_output))
+                if not self.land_worker.run_model(config, land_settings, land_output,
+                                                  sim_dir=land_output, **land_kwargs):
+                    self.logger.error(f"{self.land_model_name} rerun with the lake flux failed")
+                    return False
+                mark_lake_to_land(modflow_output, int(lake_to_land))
+            except Exception as e:  # noqa: BLE001 — calibration resilience
+                self.logger.error(f"Routing the lake flux to {self.land_model_name} failed: {e}", exc_info=True)
+                return False
 
         self.logger.debug(
             f"Coupled {self.land_model_name}-MODFLOW run completed successfully"

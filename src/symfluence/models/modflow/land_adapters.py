@@ -115,6 +115,13 @@ class LandRechargeAdapter(ABC):
         """Point the land model's output at ``output_dir`` (no-op when the
         caller configures it, e.g. SUMMA's fileManager)."""
 
+    def route_lake_flux(self, settings_dir: Path, land_id: int, flux: pd.Series) -> None:
+        """Make the next land-model run take the daily lake flux (m3/s, + into the lake) in unit ``land_id``."""
+        raise ConfigurationError(f'{self.name} cannot take the MODFLOW lake flux (MODFLOW_LAKE_TO_LAND_ID)')
+
+    def clear_lake_flux(self, settings_dir: Path) -> None:
+        """Undo :meth:`route_lake_flux` so the land model runs without the lake flux."""
+
     def _zone_shapes(self, settings_dir: Path):
         import geopandas as gpd
         path = self.options.get('zone_shapefile')
@@ -201,6 +208,41 @@ class HYPERechargeAdapter(LandRechargeAdapter):
         par = d / 'par.txt'
         if par.exists() and not any(l.split()[:1] == ['rcgrw'] for l in par.read_text().splitlines()):
             logger.warning('HYPE par.txt has no rcgrw; HYPE default (0, no recharge) applies until calibrated')
+
+    # Daily point sources (HYPE PointSourceData.txt + PSDailySeries.txt, info.txt readpstime). Time-series
+    # inflow is only applied as main-river inflow (ps_source 3), which passes the sub-basin's outlet lake;
+    # the lake's losses to the aquifer are abstracted from the outlet lake (ps_type -1, ps_source 2).
+    PS_FILES = ('PointSourceData.txt', 'PSDailySeries.txt')
+    PS_IN, PS_OUT = 1, 2
+
+    def route_lake_flux(self, settings_dir: Path, land_id: int, flux: pd.Series) -> None:
+        d = Path(settings_dir)
+        gd = _read_geodata(d)
+        if int(land_id) not in gd.index:
+            raise ConfigurationError(f'MODFLOW_LAKE_TO_LAND_ID {land_id} is not a HYPE subid')
+        if 'lake_depth' not in gd or not float(gd.loc[int(land_id), 'lake_depth']) > 0:
+            logger.warning(f'HYPE subid {land_id} has no outlet lake; the lake flux enters its main river')
+        (d / 'PointSourceData.txt').write_text(
+            'psid\tsubid\tps_type\tps_source\n'
+            f'{self.PS_IN}\t{int(land_id)}\t1\t3\n{self.PS_OUT}\t{int(land_id)}\t-1\t2\n')
+        q = flux.astype(float).fillna(0.0)
+        rows = ['DATE\tflow\tflow', f'psid\t{self.PS_IN}\t{self.PS_OUT}']
+        inflow, loss = q.clip(lower=0.0), (-q).clip(lower=0.0) + 0.0   # + 0.0: no '-0.000000'
+        rows += [f'{t:%Y-%m-%d}\t{a:.6f}\t{b:.6f}' for t, a, b in zip(q.index, inflow, loss)]
+        (d / 'PSDailySeries.txt').write_text('\n'.join(rows) + '\n')
+        self._set_info_flag(d, 'readpstime', 'y')
+
+    def clear_lake_flux(self, settings_dir: Path) -> None:
+        d = Path(settings_dir)
+        for f in self.PS_FILES:
+            (d / f).unlink(missing_ok=True)
+        self._set_info_flag(d, 'readpstime', 'n')
+
+    @staticmethod
+    def _set_info_flag(settings_dir: Path, key: str, value: str) -> None:
+        info = Path(settings_dir) / 'info.txt'
+        lines = [l for l in info.read_text().splitlines() if l.split()[:1] != [key]]
+        info.write_text('\n'.join(lines + [f'{key}\t{value}']) + '\n')
 
     def set_output_dir(self, settings_dir: Path, output_dir: Path) -> None:
         info = Path(settings_dir) / 'info.txt'

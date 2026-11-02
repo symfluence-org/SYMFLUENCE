@@ -61,6 +61,12 @@ class MODFLOWConfig(BaseModel):
                                         description='Lake stage (m, same datum as the DEM)')
     lake_leakance: float = Field(default=1.0, alias='MODFLOW_LAKE_LEAKANCE', gt=0,
                                  description='Lake-bed conductance per lake area (1/d)')
+    lake_cell_drains: bool = Field(default=True, alias='MODFLOW_LAKE_CELL_DRAINS',
+                                   description='Keep river/seepage drains on the land part of cells that touch the '
+                                               'lake; False leaves those cells to the lake boundary alone')
+    lake_to_land_id: Optional[int] = Field(default=None, alias='MODFLOW_LAKE_TO_LAND_ID',
+                                           description='Land-model unit (HYPE subid with an outlet lake) that '
+                                                       'receives the lake boundary flux; the land model is rerun')
     # Basin mode: horizontal anisotropy (K22 = K * ratio, major axis at k_angle degrees CCW from grid x)
     k_anisotropy: float = Field(default=1.0, alias='MODFLOW_K_ANISOTROPY', gt=0)
     k_angle: float = Field(default=0.0, alias='MODFLOW_K_ANGLE', ge=-180, le=180)
