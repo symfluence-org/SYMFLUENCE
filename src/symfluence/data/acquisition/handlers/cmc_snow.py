@@ -84,12 +84,9 @@ class CMCSnowAcquirer(BaseAcquisitionHandler):
         _snow_density = float(self._get_config_value(lambda: None, default=DEFAULT_SNOW_DENSITY, dict_key='CMC_SNOW_DENSITY'))  # noqa: F841
 
         # Get Earthdata credentials
-        username, password = self._get_earthdata_credentials()
-        if not username or not password:
-            raise RuntimeError(
-                "Earthdata credentials required for CMC data. "
-                "Set up ~/.netrc with: machine urs.earthdata.nasa.gov login <user> password <pass>"
-            )
+        username, password = self._earthdata_auth().require_credentials(
+            "CMC snow depth (NSIDC)"
+        )
 
         # Create authenticated session
         session = requests.Session()

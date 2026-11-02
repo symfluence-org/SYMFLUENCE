@@ -303,12 +303,9 @@ class MODISNDVIAcquirer(BaseEarthaccessAcquirer):
 
     def _download_via_appeears(self, output_dir: Path, processed_file: Path) -> Path:
         """Download via AppEEARS API (legacy fallback)."""
-        username, password = self._get_earthdata_credentials()
-        if not username or not password:
-            raise RuntimeError(
-                "Earthdata credentials required. Set EARTHDATA_USERNAME and "
-                "EARTHDATA_PASSWORD environment variables or add to ~/.netrc"
-            )
+        username, password = self._earthdata_auth().require_credentials(
+            "MODIS NDVI via AppEEARS"
+        )
 
         product = self._get_config_value(lambda: None, default='MOD13A2', dict_key='MODIS_NDVI_PRODUCT')
         product_id = self.PRODUCTS.get(product, f"{product}.061")

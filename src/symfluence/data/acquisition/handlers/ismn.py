@@ -187,28 +187,20 @@ class ISMNAcquirer(BaseAcquisitionHandler):
             Tuple of (username, password) or None if no credentials found
 
         Note:
-            netrc parsing may fail if .netrc doesn't exist or has permission issues.
-            Silently returns None on any exception (non-fatal fallback).
+            An unreadable or malformed .netrc is skipped (debug log), not raised.
         """
         user = self._get_config_value(lambda: None, default=None, dict_key='ISMN_USERNAME') or os.environ.get("ISMN_USERNAME")
         password = self._get_config_value(lambda: None, default=None, dict_key='ISMN_PASSWORD') or os.environ.get("ISMN_PASSWORD")
         if user and password:
             return (user, password)
 
-        try:
-            import netrc
-            from urllib.parse import urlparse
+        from urllib.parse import urlparse
 
-            host = urlparse(url).hostname
-            if not host:
-                return None
-            auth = netrc.netrc().authenticators(host)
-            if auth:
-                user, _, password = auth
-                return (user, password)
-        except (FileNotFoundError, netrc.NetrcParseError, OSError, KeyError):
-            return None
-        return None
+        from ..utils import read_netrc_credentials
+
+        host = urlparse(url).hostname
+        found = read_netrc_credentials([host], logger=self.logger) if host else None
+        return (found[0], found[1]) if found else None
 
     def _load_station_metadata(self, session: requests.Session, metadata_url: str) -> Optional[pd.DataFrame]:
         try:

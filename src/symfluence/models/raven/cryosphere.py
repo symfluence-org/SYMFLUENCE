@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from symfluence.core.exceptions import ConfigurationError, ValidationError
+from symfluence.core.modeling.utilities.periods import parse_period
 
 
 def glacier_metrics(output, geometry, observations, period, scale=1.0):
@@ -17,7 +18,7 @@ def glacier_metrics(output, geometry, observations, period, scale=1.0):
     This approximate observation operator is not an exact field-date balance.
     Both endpoints must lie inside calibration; no fractional snow proxy is used.
     """
-    start, end = [pd.Timestamp(x.strip()) for x in period.split(',')]
+    start, end = parse_period(period, strict=True)
     if start > end or not np.isfinite(scale) or scale <= 0:
         raise ConfigurationError('Invalid calibration interval or glacier error scale')
     hrus = json.loads(Path(geometry).read_text())['hrus']

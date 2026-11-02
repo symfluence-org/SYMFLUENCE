@@ -19,6 +19,7 @@ from symfluence.core.calibration.multi_gauge.metrics import MultiGaugeMetrics
 from symfluence.core.calibration.workers.base_worker import BaseWorker, run_worker_task
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
+from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.modeling.utilities.routing_decider import RoutingDecider
 from symfluence.core.path_resolver import resolve_install_dir
 from symfluence.core.process_exec import run as run_subprocess
@@ -561,12 +562,7 @@ class FUSEWorker(BaseWorker):
     def _parse_calibration_period(self, config: Dict[str, Any]) -> tuple:
         """Parse calibration period from config."""
         calib_period = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
-        if calib_period and ',' in str(calib_period):
-            try:
-                return tuple(s.strip() for s in str(calib_period).split(','))
-            except (ValueError, AttributeError):
-                pass
-        return None, None
+        return split_period(calib_period) or (None, None)
 
     # =========================================================================
     # Routing (kept in worker — small, delegates to converters/subprocesses)

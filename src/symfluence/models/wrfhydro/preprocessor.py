@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Tuple
 
 import numpy as np
 import pandas as pd
@@ -122,21 +121,8 @@ class WRFHydroPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             d.mkdir(parents=True, exist_ok=True)
         logger.info(f"Created WRF-Hydro directory structure (settings={self.settings_dir}, forcing={self.forcing_dir})")
 
-    def _get_simulation_dates(self) -> Tuple[datetime, datetime]:
-        """Get simulation start and end dates from config."""
-        start = self._get_config_value(
-            lambda: self.config.domain.time_start,
-            default='2000-01-01'
-        )
-        end = self._get_config_value(
-            lambda: self.config.domain.time_end,
-            default='2001-12-31'
-        )
-        if isinstance(start, str):
-            start = pd.Timestamp(start).to_pydatetime()
-        if isinstance(end, str):
-            end = pd.Timestamp(end).to_pydatetime()
-        return start, end
+    # Historical fallback when EXPERIMENT_TIME_START/END are unset.
+    SIMULATION_DATE_DEFAULTS = ('2000-01-01', '2001-12-31')
 
     def _generate_forcing_files(self, start_date: datetime, end_date: datetime) -> None:
         """

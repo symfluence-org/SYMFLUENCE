@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
 
 import geopandas as gpd
 import numpy as np
@@ -131,16 +131,6 @@ class CRHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         self.crhm_forcing_dir.mkdir(parents=True, exist_ok=True)
         self.settings_dir.mkdir(parents=True, exist_ok=True)
         logger.info(f"Created CRHM input directories at {self.crhm_forcing_dir} and {self.settings_dir}")
-
-    def _get_simulation_dates(self) -> Tuple[datetime, datetime]:
-        """Get simulation start and end dates from configuration."""
-        start_str = self._get_config_value(lambda: self.config.domain.time_start)
-        end_str = self._get_config_value(lambda: self.config.domain.time_end)
-
-        start_date = pd.to_datetime(start_str)
-        end_date = pd.to_datetime(end_str)
-
-        return start_date.to_pydatetime(), end_date.to_pydatetime()
 
     def _get_catchment_properties(self) -> Dict:
         """

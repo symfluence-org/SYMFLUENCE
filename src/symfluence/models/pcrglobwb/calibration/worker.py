@@ -17,6 +17,7 @@ import pandas as pd
 from symfluence.core.calibration.workers.base_worker import BaseWorker
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
+from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.path_resolver import resolve_install_dir
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
@@ -160,11 +161,10 @@ class PCRGLOBWBWorker(BaseWorker):
 
             # Filter to calibration period
             cal_period = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
-            if cal_period:
-                parts = cal_period.split(',')
-                if len(parts) == 2:
-                    sim = sim[parts[0].strip():parts[1].strip()]
-                    obs = obs[parts[0].strip():parts[1].strip()]
+            cal_window = split_period(cal_period)
+            if cal_window is not None:
+                sim = sim[cal_window[0]:cal_window[1]]
+                obs = obs[cal_window[0]:cal_window[1]]
 
             # Align
             combined = pd.concat([sim.rename('sim'), obs.rename('obs')], axis=1).dropna()

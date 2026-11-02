@@ -35,10 +35,8 @@ References:
 from __future__ import annotations
 
 import math
-import netrc as netrc_module
 import tempfile
 from pathlib import Path
-from urllib.parse import urlparse
 
 import pandas as pd
 import requests
@@ -48,40 +46,6 @@ from symfluence.core.registries import R
 
 from ..base import BaseAcquisitionHandler
 from ..mixins import ChunkedDownloadMixin, RetryMixin, SpatialSubsetMixin
-
-
-class _EarthdataSession(requests.Session):
-    """Session that re-applies auth during NASA URS redirect flow.
-
-    GES DISC uses redirect-based authentication: requests are redirected to
-    urs.earthdata.nasa.gov for login, then back to GES DISC with cookies.
-    The standard requests library strips Authorization headers on cross-host
-    redirects, so we re-apply credentials when redirected to URS.
-
-    Supports both Bearer token auth and username/password (.netrc) auth.
-    """
-
-    def __init__(self, token: str = None):
-        super().__init__()
-        self._token = token
-        if token:
-            self.headers.update({'Authorization': f'Bearer {token}'})
-
-    def rebuild_auth(self, prepared_request, response):
-        super().rebuild_auth(prepared_request, response)
-        parsed = urlparse(prepared_request.url)
-        if parsed.hostname == 'urs.earthdata.nasa.gov':
-            if self._token:
-                prepared_request.headers['Authorization'] = f'Bearer {self._token}'
-            else:
-                try:
-                    nrc = netrc_module.netrc()
-                    auth = nrc.authenticators('urs.earthdata.nasa.gov')
-                    if auth:
-                        prepared_request.prepare_auth((auth[0], auth[2]))
-                except Exception:  # noqa: BLE001 — netrc fallback is non-critical
-                    pass
-
 
 # OPeNDAP base URL for MERRA-2 at GES DISC
 _OPENDAP_BASE = "https://goldsmr4.gesdisc.eosdis.nasa.gov/opendap/MERRA2"
@@ -212,72 +176,14 @@ class MERRA2Acquirer(
     """
 
     def _get_authenticated_session(self) -> requests.Session:
-        """Get an HTTPS session authenticated for NASA Earthdata GES DISC.
+        """HTTPS session authenticated for NASA Earthdata GES DISC.
 
-        Tries authentication methods in order:
-        1. Bearer token (EARTHDATA_TOKEN env var / config) — most reliable
-        2. .netrc credentials
-        3. earthaccess library (populates .netrc)
-        4. EARTHDATA_USERNAME / EARTHDATA_PASSWORD env vars / config
+        Bearer token first, then username/password (config, env, .netrc,
+        earthaccess login); raises ``EarthdataAuthError`` if neither exists.
         """
-        # 1. Try Bearer token first (most reliable)
-        token = self._get_earthdata_token()
-        if token:
-            self.logger.info("Using Earthdata Bearer token for GES DISC session")
-            return _EarthdataSession(token=token)
-
-        # 2. Check .netrc for URS credentials
-        try:
-            nrc = netrc_module.netrc()
-            auth = nrc.authenticators('urs.earthdata.nasa.gov')
-        except (FileNotFoundError, netrc_module.NetrcParseError):
-            auth = None
-
-        if not auth:
-            # 3. Try earthaccess to populate .netrc
-            try:
-                import earthaccess
-                earthaccess.login()
-                nrc = netrc_module.netrc()
-                auth = nrc.authenticators('urs.earthdata.nasa.gov')
-            except Exception:  # noqa: BLE001 — netrc fallback is non-critical
-                pass
-
-        if not auth:
-            # 4. Try env vars / config
-            username, password = self._get_earthdata_credentials()
-            if username and password:
-                # Write to .netrc so the session can use it
-                netrc_path = Path.home() / '.netrc'
-                self._append_netrc_entry(netrc_path, username, password)
-                auth = (username, None, password)
-
-        if not auth:
-            raise RuntimeError(
-                "NASA Earthdata credentials not found. Either:\n"
-                "  1. Set a Bearer token: export EARTHDATA_TOKEN=<your_token>\n"
-                "     Generate at: https://urs.earthdata.nasa.gov → My Profile → Generate Token\n"
-                "  2. Run: python -c \"import earthaccess; earthaccess.login()\"\n"
-                "  3. Or create ~/.netrc with: machine urs.earthdata.nasa.gov login <user> password <pass>\n"
-                "  4. Or set EARTHDATA_USERNAME and EARTHDATA_PASSWORD env vars"
-            )
-
-        self.logger.info(f"Using Earthdata credentials for user: {auth[0]}")
-        return _EarthdataSession()
-
-    @staticmethod
-    def _append_netrc_entry(netrc_path, username, password):
-        """Append URS entry to .netrc if not already present."""
-        entry = f"\nmachine urs.earthdata.nasa.gov login {username} password {password}\n"
-        if netrc_path.exists():
-            content = netrc_path.read_text()
-            if 'urs.earthdata.nasa.gov' in content:
-                return
-            with open(netrc_path, 'a') as f:
-                f.write(entry)
-        else:
-            netrc_path.write_text(entry)
-            netrc_path.chmod(0o600)
+        return self._earthdata_auth().session(
+            origin_auth=False, required=True, purpose="GES DISC (MERRA-2)",
+        )
 
     def _download_subset_file(self, session, subset_url):
         """Download a subsetted OPeNDAP NetCDF4 file via HTTPS.

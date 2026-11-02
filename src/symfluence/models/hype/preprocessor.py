@@ -20,6 +20,7 @@ import pandas as pd
 
 from symfluence.core.exceptions import ValidationError
 from symfluence.core.modeling.base import BaseModelPreProcessor
+from symfluence.core.modeling.utilities.periods import parse_period
 from symfluence.core.modeling.variable_utils import VariableHandler
 from symfluence.core.registries import R
 from symfluence.models.hype.config_manager import HYPEConfigManager
@@ -172,7 +173,7 @@ class HYPEPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             )
             if spinup_period:
                 try:
-                    start_date, end_date = [pd.to_datetime(s.strip()) for s in spinup_period.split(',')]
+                    start_date, end_date = parse_period(spinup_period, strict=True)
                     self.spinup_days = (end_date - start_date).days
                     self.logger.debug(f"Calculated HYPE spinup days from SPINUP_PERIOD: {self.spinup_days}")
                 except Exception as e:  # noqa: BLE001 — model execution resilience

@@ -123,7 +123,7 @@ class SMAPAcquirer(BaseAcquisitionHandler):
                 candidate_products.append('SMAP_L4_SM_gph_v4')
             candidate_urls = [f"{thredds_base}/{p}/aggregated.ncml" for p in candidate_products]
 
-        # Setup session with Earthdata Auth (check .netrc first, then env vars)
+        # Setup session with Earthdata Auth (config, env, .netrc, earthaccess)
         session = requests.Session()
         user, password = self._get_earthdata_credentials()
         if user and password:
@@ -184,18 +184,8 @@ class SMAPAcquirer(BaseAcquisitionHandler):
 
         self.logger.info("Using earthaccess streaming for efficient cloud access")
 
-        # Authenticate
-        try:
-            earthaccess.login()
-        except (
-            OSError,
-            ValueError,
-            TypeError,
-            RuntimeError,
-            PermissionError,
-            requests.RequestException,
-        ) as e:
-            self.logger.warning(f"earthaccess authentication failed: {e}")
+        # Authenticate (logs a warning on failure)
+        if self._earthdata_auth().earthaccess_login() is None:
             return None
 
         lat_min, lat_max = sorted([self.bbox["lat_min"], self.bbox["lat_max"]])
@@ -448,19 +438,17 @@ class SMAPAcquirer(BaseAcquisitionHandler):
     ) -> bool:
         """Download a spatial subset from OPeNDAP and write as NetCDF."""
         try:
-            import netrc
-
             from pydap.cas.urs import setup_session
             from pydap.client import open_url
 
-            auth = netrc.netrc().authenticators("urs.earthdata.nasa.gov")
-            if not auth:
-                auth = netrc.netrc().authenticators("opendap.earthdata.nasa.gov")
-            if not auth:
-                self.logger.warning("OPeNDAP access denied; missing Earthdata credentials in ~/.netrc")
+            user, password = self._get_earthdata_credentials()
+            if not user or not password:
+                self.logger.warning(
+                    "OPeNDAP access denied; no Earthdata username/password "
+                    "(config, EARTHDATA_USERNAME/PASSWORD, or ~/.netrc)"
+                )
                 return False
 
-            user, _, password = auth
             session = setup_session(user, password, check_url=url)
             dap_url = url.replace("https://", "dap4://")
             dataset = open_url(dap_url, session=session)

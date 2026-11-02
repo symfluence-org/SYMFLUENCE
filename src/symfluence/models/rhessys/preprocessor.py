@@ -19,11 +19,9 @@ Sub-modules:
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from typing import Tuple
 
 import geopandas as gpd
-import pandas as pd
 
 from symfluence.core.modeling.base.base_preprocessor import BaseModelPreProcessor
 from symfluence.core.registries import R
@@ -280,26 +278,6 @@ class RHESSysPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         centroid_proj = gdf_proj.geometry.centroid.iloc[0]
         centroid_ll = gpd.GeoSeries([centroid_proj], crs=utm_crs).to_crs("EPSG:4326").iloc[0]
         return float(centroid_ll.x), float(centroid_ll.y)
-
-    def _get_simulation_dates(self) -> Tuple[datetime, datetime]:
-        """
-        Get simulation start and end dates from configuration.
-
-        Returns:
-            Tuple[datetime, datetime]: Start and end dates for the simulation
-                period, parsed from EXPERIMENT_TIME_START and EXPERIMENT_TIME_END.
-        """
-        start_str = self._get_config_value(
-            lambda: self.config.domain.time_start
-        )
-        end_str = self._get_config_value(
-            lambda: self.config.domain.time_end
-        )
-
-        start_date = pd.to_datetime(start_str)
-        end_date = pd.to_datetime(end_str)
-
-        return start_date.to_pydatetime(), end_date.to_pydatetime()
 
     # ------------------------------------------------------------------ #
     # Climate file generation (delegates to RHESSysClimateGenerator)

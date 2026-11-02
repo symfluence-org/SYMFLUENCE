@@ -33,7 +33,7 @@ class BaseEarthaccessAcquirer(BaseAcquisitionHandler):
     Base class providing NASA Earthdata Cloud functionality via earthaccess/CMR.
 
     This base class handles:
-    - Earthdata credential management (.netrc, environment variables, config)
+    - Earthdata sessions via ``earthdata_auth.EarthdataAuth`` (earthaccess first)
     - CMR (Common Metadata Repository) granule search
     - Direct file downloads via earthaccess authenticated sessions
     - Parallel download management
@@ -173,28 +173,11 @@ class BaseEarthaccessAcquirer(BaseAcquisitionHandler):
         if not urls:
             return []
 
-        try:
-            import earthaccess
-            earthaccess_auth = earthaccess.login()
-            if not earthaccess_auth:
-                raise RuntimeError("earthaccess authentication failed")
-            session = earthaccess.get_requests_https_session()
-        except ImportError:
-            self.logger.warning("earthaccess not installed, using requests with token/.netrc")
-            session = requests.Session()
-            # Try Bearer token first, then fall back to .netrc
-            token = self._get_earthdata_token()
-            if token:
-                session.headers.update({'Authorization': f'Bearer {token}'})
-            else:
-                try:
-                    import netrc
-                    nrc = netrc.netrc()
-                    netrc_auth = nrc.authenticators('urs.earthdata.nasa.gov')
-                    if netrc_auth:
-                        session.auth = (netrc_auth[0], netrc_auth[2])
-                except (ImportError, OSError, ValueError, TypeError, AttributeError):
-                    pass
+        # earthaccess session; without earthaccess (or if its login fails),
+        # a token / username-password session from the same lookup chain.
+        session = self._earthdata_auth().session(
+            prefer_earthaccess=True, purpose="NASA Earthdata Cloud downloads",
+        )
 
         output_dir.mkdir(parents=True, exist_ok=True)
         self.logger.info(f"Downloading {len(urls)} files to {output_dir}")

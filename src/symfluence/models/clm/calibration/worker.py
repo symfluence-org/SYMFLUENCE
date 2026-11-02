@@ -28,6 +28,7 @@ from symfluence.core.calibration.workers.base_worker import (
 from symfluence.core.logging_utils import log_once
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
+from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.registries import R
 
 
@@ -731,11 +732,7 @@ class CLMWorker(BaseWorker):
 
             # Align over calibration period only (not evaluation)
             cal_period_str = resolve_config_value(config, lambda: config.domain.calibration_period, None, 'CALIBRATION_PERIOD')
-            calibration_period = None
-            if cal_period_str:
-                parts = [s.strip() for s in str(cal_period_str).split(',')]
-                if len(parts) == 2:
-                    calibration_period = (parts[0], parts[1])
+            calibration_period = split_period(cal_period_str)
 
             obs_aligned, sim_aligned = self._streamflow_metrics.align_timeseries(
                 sim_series, obs_series,

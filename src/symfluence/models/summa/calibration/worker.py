@@ -17,6 +17,7 @@ from symfluence.core.calibration.workers.base_worker import BaseWorker, WorkerTa
 from symfluence.core.logging_utils import get_worker_logger
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
+from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.path_resolver import resolve_install_dir
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
@@ -569,9 +570,9 @@ class SUMMAWorker(BaseWorker):
     def _parse_calibration_period(self, config: Dict[str, Any]) -> tuple:
         """Parse calibration period from config."""
         cal_period = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
-        if isinstance(cal_period, str) and ',' in cal_period:
-            parts = [p.strip() for p in cal_period.split(',')]
-            return parts[0], parts[1]
+        parts = split_period(cal_period, allow_extra=True) if isinstance(cal_period, str) else None
+        if parts is not None:
+            return parts
         start = resolve_config_value(config, lambda: config.domain.time_start, '', 'EXPERIMENT_TIME_START')
         end = resolve_config_value(config, lambda: config.domain.time_end, '', 'EXPERIMENT_TIME_END')
         return str(start).strip(), str(end).strip()

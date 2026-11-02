@@ -18,6 +18,7 @@ import pandas as pd
 from symfluence.core.constants import SupportedModels
 from symfluence.core.exceptions import EvaluationError, symfluence_error_handler
 from symfluence.core.mixins import ConfigurableMixin
+from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.registries import R
 from symfluence.data.observation.paths import (
     first_existing_path,
@@ -346,8 +347,13 @@ class AnalysisManager(ConfigurableMixin):
                 lambda: self.config.domain.evaluation_period
             )
 
-            calib_start = str(calib_period).split(',')[0].strip()
-            eval_end = str(eval_period).split(',')[1].strip()
+            # Only the calibration start and evaluation end are used. A
+            # missing CALIBRATION_PERIOD is passed through as its string form
+            # (historical behaviour); a missing or single-date
+            # EVALUATION_PERIOD raises, which the handler above logs.
+            calib = split_period(calib_period, allow_extra=True, allow_single=True)
+            calib_start = calib[0] if calib is not None else str(calib_period).strip()
+            eval_end = split_period(eval_period, allow_extra=True, strict=True)[1]
 
             preprocessor.preprocess_benchmark_data(calib_start, eval_end)
 

@@ -18,6 +18,7 @@ from .base_topology_generator import BaseTopologyGenerator, TopologyData
 from .data_quality_handler import DataQualityHandler
 from .dataset_alignment_manager import DatasetAlignmentManager, align_forcing_datasets
 from .forcing_data_processor import ForcingDataProcessor
+from .periods import parse_period, split_period, to_pydatetime
 from .routing_decider import RoutingDecider
 from .runoff_loader import (
     MODEL_CONFIGS,
@@ -41,6 +42,9 @@ __all__ = [
     'RoutingDecider',
     'TopologyData',
     'TimeWindowManager',
+    'parse_period',
+    'split_period',
+    'to_pydatetime',
     'align_forcing_datasets',
     'detect_runoff_variable',
     'fix_time_precision',

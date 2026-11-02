@@ -26,6 +26,7 @@ from symfluence.core.calibration.workers.base_worker import (
 from symfluence.core.exceptions import ValidationError
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
+from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.path_resolver import resolve_install_executable
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
@@ -582,10 +583,10 @@ class VICWorker(BaseWorker):
             period = kwargs.get('period') or resolve_config_value(config, lambda: config.domain.calibration_period, None, 'CALIBRATION_PERIOD') or config.get('domain', {}).get('calibration_period')
             calibration_period = None
             if period:
-                parts = period.split(',') if isinstance(period, str) else period
-                if len(parts) != 2:
+                parts = split_period(period)
+                if parts is None:
                     raise ValidationError('Invalid VIC scoring period')
-                start, end = (pd.Timestamp(str(value).strip()) for value in parts)
+                start, end = pd.Timestamp(parts[0]), pd.Timestamp(parts[1])
                 if pd.isna(start) or pd.isna(end) or start > end:
                     raise ValidationError('Invalid VIC scoring period')
                 calibration_period = (start, end)

@@ -27,6 +27,7 @@ from typing import Any, Dict, Optional
 from symfluence.core.calibration.optimizers.lifecycle import adjust_end_time_for_forcing
 from symfluence.core.mixins import ConfigMixin
 from symfluence.core.modeling.config_schema import parallel_calibration_config
+from symfluence.core.modeling.utilities.periods import split_period
 
 
 class ConfigurationUpdater(ConfigMixin):
@@ -114,27 +115,26 @@ class ConfigurationUpdater(ConfigMixin):
         cal_start = None
         cal_end = None
 
-        if spinup_period:
-            spinup_parts = [p.strip() for p in spinup_period.split(',')]
-            if len(spinup_parts) >= 1:
-                cal_start = spinup_parts[0]
-                # Preserve time-of-day from EXPERIMENT_TIME_START to avoid
-                # SUMMA forcing misalignment (e.g., hourly forcing begins at 01:00)
-                exp_start = self._get_config_value(lambda: self.config.domain.time_start, dict_key='EXPERIMENT_TIME_START')
-                if exp_start and isinstance(exp_start, str):
-                    try:
-                        exp_dt = datetime.strptime(exp_start, '%Y-%m-%d %H:%M')
-                        start_dt = datetime.strptime(cal_start, '%Y-%m-%d')
-                        start_dt = start_dt.replace(hour=exp_dt.hour, minute=exp_dt.minute)
-                        cal_start = start_dt.strftime('%Y-%m-%d %H:%M')
-                    except (KeyError, ValueError, IOError):
-                        # If parsing fails, keep original date string
-                        pass
+        # A single-date SPINUP_PERIOD is accepted as the start.
+        spinup = split_period(spinup_period, allow_extra=True, allow_single=True)
+        if spinup is not None:
+            cal_start = spinup[0]
+            # Preserve time-of-day from EXPERIMENT_TIME_START to avoid
+            # SUMMA forcing misalignment (e.g., hourly forcing begins at 01:00)
+            exp_start = self._get_config_value(lambda: self.config.domain.time_start, dict_key='EXPERIMENT_TIME_START')
+            if exp_start and isinstance(exp_start, str):
+                try:
+                    exp_dt = datetime.strptime(exp_start, '%Y-%m-%d %H:%M')
+                    start_dt = datetime.strptime(cal_start, '%Y-%m-%d')
+                    start_dt = start_dt.replace(hour=exp_dt.hour, minute=exp_dt.minute)
+                    cal_start = start_dt.strftime('%Y-%m-%d %H:%M')
+                except (KeyError, ValueError, IOError):
+                    # If parsing fails, keep original date string
+                    pass
 
-        if cal_period:
-            cal_parts = [p.strip() for p in cal_period.split(',')]
-            if len(cal_parts) >= 2:
-                cal_end = cal_parts[1]
+        cal = split_period(cal_period, allow_extra=True)
+        if cal is not None:
+            cal_end = cal[1]
 
         # Adjust end time to align with forcing timestep
         if cal_end:

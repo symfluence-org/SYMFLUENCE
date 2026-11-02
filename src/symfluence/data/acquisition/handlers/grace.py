@@ -20,8 +20,6 @@ import xarray as xr
 from symfluence.core.registries import R
 
 from ..base import BaseAcquisitionHandler
-from ..utils import resolve_earthdata_token
-from .merra2 import _EarthdataSession
 
 
 @lru_cache(maxsize=1)
@@ -90,7 +88,6 @@ class GRACEAcquirer(BaseAcquisitionHandler):
         }
 
         success_count = 0
-        earthdata_token = resolve_earthdata_token(self.config if isinstance(self.config, dict) else None)
 
         for center, info in datasets.items():
             target_file = output_dir / info['filename']
@@ -118,7 +115,7 @@ class GRACEAcquirer(BaseAcquisitionHandler):
                             continue
                         self.logger.warning("JPL subset download failed; falling back to CMR.")
 
-                    cmr_path = self._download_jpl_from_cmr(output_dir, earthdata_token, force_download)
+                    cmr_path = self._download_jpl_from_cmr(output_dir, force_download)
                     if cmr_path is None:
                         raise RuntimeError(
                             "JPL GRACE download via CMR failed — verify NASA Earthdata "
@@ -248,7 +245,6 @@ class GRACEAcquirer(BaseAcquisitionHandler):
     def _download_jpl_from_cmr(
         self,
         output_dir: Path,
-        earthdata_token: Optional[str],
         force_download: bool,
     ) -> Optional[Path]:
         collection_id = self._get_config_value(
@@ -265,9 +261,9 @@ class GRACEAcquirer(BaseAcquisitionHandler):
         # Redirect-aware session: the granule download on archive.podaac is
         # 302-redirected to urs.earthdata.nasa.gov for OAuth, and the stock
         # requests session strips the Authorization header on that cross-host
-        # hop (→ 401). _EarthdataSession re-applies the token / .netrc creds at
+        # hop (→ 401). EarthdataSession re-applies the token / credentials at
         # the URS host so the redirect chain authenticates correctly.
-        session = _EarthdataSession(token=earthdata_token)
+        session = self._earthdata_auth().session(origin_auth=False, purpose="JPL GRACE (PO.DAAC)")
 
         try:
             resp = session.get(

@@ -50,7 +50,6 @@ BASELINE = {
     "core/modeling/utilities/forcing_data_processor.py": 4,
     "core/path_resolver.py": 7,
     "data/acquisition/handlers/daymet.py": 3,
-    "data/acquisition/utils.py": 3,  # credentials (no fields)
     "geospatial/geofabric/processors/taudem_executor.py": 1,  # MPI_LAUNCHER (no field)
     "optimization/calibration_targets/base.py": 1,
     "project/pour_point_workflow.py": 1,
@@ -66,7 +65,6 @@ BASELINE = {
     "models/hype/calibration/parameter_manager.py": 5,  # HYPE_* param configs (no fields), PARAMETER_REGIONALIZATION
     "models/hype/calibration/worker.py": 8,  # explicit dict / config_dict branches, SYMFLUENCE_DATA_DIR as str
     "models/hype/geodata_manager.py": 1,  # SYMFLUENCE_DATA_DIR as str
-    "models/lisflood/calibration/worker.py": 1,  # explicit dict branch
     "models/mesh/calibration/worker.py": 10,  # flat key falling back to the mesh sub-dict; SYMFLUENCE_DATA_DIR
     "models/mesh/preprocessing/forcing_processor.py": 2,  # SUB_GRID/DOMAIN_DISCRETIZATION chain
     "models/modflow/land_adapters.py": 1,  # LAND_SURFACE_MODEL (no field)

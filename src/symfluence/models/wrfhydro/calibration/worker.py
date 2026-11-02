@@ -25,6 +25,7 @@ from symfluence.core.calibration.workers.base_worker import (
 )
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
+from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.path_resolver import resolve_install_executable
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
@@ -673,10 +674,7 @@ class WRFHydroWorker(BaseWorker):
 
             # Parse calibration period
             cal_period_str = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
-            cal_period_tuple = None
-            if cal_period_str and ',' in str(cal_period_str):
-                parts = str(cal_period_str).split(',')
-                cal_period_tuple = (parts[0].strip(), parts[1].strip())
+            cal_period_tuple = split_period(cal_period_str, allow_extra=True)
 
             # Align and calculate metrics
             obs_aligned, sim_aligned = self._streamflow_metrics.align_timeseries(
