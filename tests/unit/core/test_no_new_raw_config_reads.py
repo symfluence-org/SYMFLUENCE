@@ -80,7 +80,7 @@ BASELINE = {
     "models/swat/calibration/optimizer.py": 1,  # SWAT_FINAL_EVAL_RETRIES (no field)
     "models/swat/calibration/worker.py": 2,  # SWAT_MAX_RETRIES, TIME_START (no fields)
     "models/vic/calibration/worker.py": 1,  # VIC_WARMUP_DAYS (no field)
-    "models/wflow/calibration/worker.py": 6,  # config['KEY'], explicit dict branch, WFLOW_TIMESTEP, DATA_DIR
+    "models/wflow/calibration/worker.py": 5,  # config['KEY'], explicit dict branch, WFLOW_TIMESTEP, DATA_DIR
     "models/wrfhydro/calibration/worker.py": 1,  # CATCHMENT_AREA_KM2 (no field)
 }
 
