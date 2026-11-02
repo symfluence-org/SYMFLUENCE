@@ -646,7 +646,6 @@ src/symfluence/models/crhm/calibration/worker.py:CRHMWorker.run_model:except Exc
 src/symfluence/models/crhm/extractor.py:CRHMResultExtractor.extract_variable:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/crhm/postprocessor.py:CRHMPostProcessor.extract_streamflow:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/crhm/preprocessor.py:CRHMPreProcessor._generate_observation_file:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/crhm/preprocessor.py:CRHMPreProcessor._get_catchment_properties:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/crhm/preprocessor.py:CRHMPreProcessor._load_forcing_data:except Exception:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/crhm/preprocessor.py:CRHMPreProcessor.run_preprocessing:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/fuse/calibration/file_manager.py:_resolve_simulation_dates:except Exception as e:  # noqa: BLE001 — calibration resilience
@@ -722,27 +721,24 @@ src/symfluence/models/gr/postprocessor.py:GRPostProcessor.extract_streamflow:exc
 src/symfluence/models/gr/preprocessor.py:GRPreProcessor._apply_area_weighted_aggregation:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/gr/preprocessor.py:GRPreProcessor.prepare_forcing_data:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/gr/r_environment.py:verify_gr_r_runtime:except Exception as exc:  # noqa: BLE001 - Broad exception required for rpy2 import failures
-src/symfluence/models/gr/runner.py:_load_rpy2:except Exception:  # noqa: BLE001 - Broad exception required for rpy2 import failures
 src/symfluence/models/gr/runner.py:GRRunner._calculate_and_log_metrics:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/gr/runner.py:GRRunner._execute_gr_distributed:except Exception as cleanup_error:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/gr/runner.py:GRRunner._execute_gr_distributed:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/gr/runner.py:GRRunner._execute_gr_lumped:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/gr/runner.py:GRRunner._load_calibrated_defaults:except Exception as e:  # noqa: BLE001 — model execution resilience
+src/symfluence/models/gr/runner.py:_load_rpy2:except Exception:  # noqa: BLE001 - Broad exception required for rpy2 import failures
 src/symfluence/models/gr/visualizer.py:visualize_gr:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/gsflow/calibration/optimizer.py:GSFLOWModelOptimizer.run_final_evaluation:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/gsflow/calibration/parameter_manager.py:GSFLOWParameterManager.apply_parameters:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker._extract_streamflow_from_csv:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker._extract_streamflow_from_statvar:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker._update_parameter_file:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker._update_upw_parameters:except Exception as e:  # noqa: BLE001 — calibration resilience
+src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker._run_model:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker.apply_parameters:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker._run_model:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/gsflow/extractor.py:GSFLOWResultExtractor._parse_statvar_file:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/gsflow/extractor.py:GSFLOWResultExtractor.extract_variable:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/gsflow/postprocessor.py:GSFLOWPostProcessor._extract_from_file:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/gsflow/postprocessor.py:GSFLOWPostProcessor.extract_streamflow:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/gsflow/preprocessor.py:GSFLOWPreProcessor._get_catchment_properties:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/gsflow/preprocessor.py:GSFLOWPreProcessor._get_catchment_properties:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/gsflow/preprocessor.py:GSFLOWPreProcessor._sample_dem_to_grid:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/gsflow/preprocessor.py:GSFLOWPreProcessor.run_preprocessing:except Exception as e:  # noqa: BLE001 — model execution resilience
@@ -888,10 +884,8 @@ src/symfluence/models/mhm/calibration/worker.py:MHMWorker.run_model:except Excep
 src/symfluence/models/mhm/extractor.py:MHMResultExtractor.extract_variable:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/mhm/postprocessor.py:MHMPostProcessor.extract_streamflow:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/mhm/preprocessor.py:MHMPreProcessor._build_distributed_grids._resample_class:except Exception:  # noqa: BLE001
-src/symfluence/models/mhm/preprocessor.py:MHMPreProcessor._build_distributed_grids:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/mhm/preprocessor.py:MHMPreProcessor._generate_forcing_files:except Exception as e:  # noqa: BLE001 — smoke-test fallback only
 src/symfluence/models/mhm/preprocessor.py:MHMPreProcessor._generate_gauge_data:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/mhm/preprocessor.py:MHMPreProcessor._get_catchment_properties:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/mhm/preprocessor.py:MHMPreProcessor.run_preprocessing:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/mizuroute/calibration/optimizer.py:MizuRouteModelOptimizer._get_simulation_results:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/mizuroute/calibration/optimizer.py:MizuRouteModelOptimizer._update_model_parameters:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
@@ -1141,7 +1135,6 @@ src/symfluence/models/vic/postprocessor.py:VICPostProcessor.extract_streamflow:e
 src/symfluence/models/vic/preprocessor.py:VICPreProcessor._compute_elevation_bands:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/vic/preprocessor.py:VICPreProcessor._generate_distributed_domain:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/vic/preprocessor.py:VICPreProcessor._generate_forcing_files:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/vic/preprocessor.py:VICPreProcessor._get_catchment_properties:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/vic/preprocessor.py:VICPreProcessor._load_forcing_data:except Exception:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/vic/preprocessor.py:VICPreProcessor.run_preprocessing:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/watflood/calibration/optimizer.py:WATFLOODModelOptimizer.run_final_evaluation:except Exception as e:  # noqa: BLE001 — calibration resilience

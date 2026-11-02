@@ -7,9 +7,8 @@ from __future__ import annotations
 import configparser
 import math
 import shutil
-from datetime import datetime
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict
 
 import numpy as np
 import pandas as pd
@@ -91,14 +90,6 @@ class PCRGLOBWBPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         self.params_dir = self.settings_dir / 'parameters'
         for d in [self.settings_dir, self.forcing_out_dir, self.output_dir, self.params_dir]:
             d.mkdir(parents=True, exist_ok=True)
-
-    def _get_simulation_dates(self) -> Tuple[datetime, datetime]:
-        start_str = self._get_config_value(lambda: self.config.domain.time_start)
-        end_str = self._get_config_value(lambda: self.config.domain.time_end)
-        return (
-            pd.to_datetime(start_str).to_pydatetime(),
-            pd.to_datetime(end_str).to_pydatetime(),
-        )
 
     def _get_catchment_properties(self) -> Dict:
         # Raises if the catchment shapefile is missing; never fall back to a

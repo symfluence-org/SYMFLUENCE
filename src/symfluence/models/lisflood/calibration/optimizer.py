@@ -11,6 +11,7 @@ from xml.etree import ElementTree as ET  # nosec B405
 
 from symfluence.core.calibration.optimizers.base_model_optimizer import BaseModelOptimizer
 from symfluence.core.mixins.config import resolve_config_value
+from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.registries import R
 
 from .worker import LisfloodWorker  # noqa: F401
@@ -109,10 +110,8 @@ class LisfloodModelOptimizer(BaseModelOptimizer):
             results = {"success": True, "best_params": best_params}
 
             for label, period_str in [("calibration", cal_period), ("evaluation", eval_period)]:
-                if not period_str:
-                    continue
-                parts = [p.strip() for p in period_str.split(",")]
-                if len(parts) != 2:
+                parts = split_period(period_str)
+                if parts is None:
                     continue
                 s = sim.loc[parts[0] : parts[1]]
                 o = obs.loc[parts[0] : parts[1]]

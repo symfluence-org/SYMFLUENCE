@@ -14,6 +14,7 @@ import xarray as xr
 from symfluence.core.calibration.workers.base_worker import BaseWorker
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
+from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -131,12 +132,13 @@ class LisfloodWorker(BaseWorker):
                 median_dt = pd.Series(sim.index).diff().median()
                 if median_dt < pd.Timedelta(days=1):
                     sim = sim.resample("D").mean()
-            cal_period = config.get('CALIBRATION_PERIOD', "") if isinstance(config, dict) else ""
-            if cal_period:
-                parts = [p.strip() for p in cal_period.split(",")]
-                if len(parts) == 2:
-                    sim = sim.loc[parts[0]:parts[1]]  # type: ignore[misc]
-                    obs = obs.loc[parts[0]:parts[1]]  # type: ignore[misc]
+            # Explicit dict guard kept: a typed config scores the whole record.
+            cal_period = (resolve_config_value(config, lambda: config.domain.calibration_period, "", 'CALIBRATION_PERIOD')
+                          if isinstance(config, dict) else "")
+            parts = split_period(cal_period)
+            if parts:
+                sim = sim.loc[parts[0]:parts[1]]  # type: ignore[misc]
+                obs = obs.loc[parts[0]:parts[1]]  # type: ignore[misc]
             sim, obs = sim.align(obs, join="inner")
             common_idx = sim.dropna().index.intersection(obs.dropna().index)
             sim, obs = sim.loc[common_idx], obs.loc[common_idx]

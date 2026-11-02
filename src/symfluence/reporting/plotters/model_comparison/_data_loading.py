@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from symfluence.core.constants import ConfigKeys
+from symfluence.core.modeling.utilities.periods import split_period
 
 
 class ModelComparisonDataLoadingMixin:
@@ -423,9 +424,10 @@ class ModelComparisonDataLoadingMixin:
             dict_key=ConfigKeys.SPINUP_PERIOD,
         )
         spinup_end = None
-        if spinup_period and "," in str(spinup_period):
+        spinup = split_period(spinup_period, allow_extra=True)
+        if spinup is not None:
             try:
-                spinup_end = pd.to_datetime(str(spinup_period).split(",")[1].strip())
+                spinup_end = pd.to_datetime(spinup[1])
             except (ValueError, pd.errors.ParserError, OverflowError):
                 pass
 
@@ -644,14 +646,14 @@ class ModelComparisonDataLoadingMixin:
             dict_key=ConfigKeys.SPINUP_PERIOD,
         )
 
-        if not spinup_period or not isinstance(spinup_period, str):
+        if not isinstance(spinup_period, str):
             return None
-        if "," not in spinup_period:
+        spinup = split_period(spinup_period, allow_extra=True)
+        if spinup is None:
             return None
 
         try:
-            spinup_end_str = spinup_period.split(",")[1].strip()
-            return pd.to_datetime(spinup_end_str)
+            return pd.to_datetime(spinup[1])
         except (ValueError, pd.errors.ParserError, OverflowError) as e:
             self.logger.debug(f"Could not parse spinup period: {e}")
             return None

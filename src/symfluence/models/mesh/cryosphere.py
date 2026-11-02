@@ -15,6 +15,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from symfluence.core.modeling.utilities.periods import parse_period
+
 from .errors import MESHConfigurationError, MESHInputError, MESHOutputError
 from .glacier_runtime import _run_dates, check_finite_output
 
@@ -45,7 +47,7 @@ def calculate_constraints(output_dir, observation_dir, period, snow_scale=.2, mb
     obsdir = Path(observation_dir)
     if not np.isfinite([snow_scale, mb_scale]).all() or min(snow_scale, mb_scale) <= 0:
         raise MESHConfigurationError('Cryosphere error scales must be finite and positive')
-    start, end = [pd.Timestamp(x.strip()) for x in str(period).split(',')]
+    start, end = parse_period(period, strict=True)
     if (start.month, start.day, end.month, end.day) != (10, 1, 9, 30) or end <= start:
         raise MESHConfigurationError('Cryosphere scoring requires complete October–September years')
     check_finite_output(root)

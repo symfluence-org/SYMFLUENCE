@@ -42,6 +42,7 @@ from symfluence.core.calibration.workers.base_worker import BaseWorker, WorkerTa
 from symfluence.core.logging_utils import log_once
 from symfluence.core.metrics import kge, nse
 from symfluence.core.mixins.project import resolve_data_subdir
+from symfluence.core.modeling.utilities.periods import parse_period
 
 # Optional dependencies
 try:
@@ -154,12 +155,10 @@ class InMemoryModelWorker(BaseWorker):
             return None
 
         try:
-            dates = [d.strip() for d in str(cal_period).split(',')]
-            if len(dates) < 2:
+            period = parse_period(cal_period, allow_extra=True)
+            if period is None:
                 return None
-
-            start_date = pd.Timestamp(dates[0])
-            end_date = pd.Timestamp(dates[1])
+            start_date, end_date = period
 
             time_after_warmup = self._time_index[self.warmup_steps():]
             if not isinstance(time_after_warmup, pd.DatetimeIndex):
@@ -726,10 +725,9 @@ class InMemoryModelWorker(BaseWorker):
             cal_period = self._cfg('CALIBRATION_PERIOD', '')
             if cal_period and time_index is not None:
                 try:
-                    dates = [d.strip() for d in cal_period.split(',')]
-                    if len(dates) >= 2:
-                        start_date = pd.Timestamp(dates[0])
-                        end_date = pd.Timestamp(dates[1])
+                    period = parse_period(cal_period, allow_extra=True)
+                    if period is not None:
+                        start_date, end_date = period
 
                         # Ensure time_index is DatetimeIndex
                         if not isinstance(time_index, pd.DatetimeIndex):

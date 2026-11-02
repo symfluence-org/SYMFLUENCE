@@ -8,6 +8,7 @@ import configparser
 from pathlib import Path
 
 from symfluence.core.calibration.optimizers.base_model_optimizer import BaseModelOptimizer
+from symfluence.core.modeling.utilities.periods import parse_period
 from symfluence.core.registries import R
 
 
@@ -102,16 +103,12 @@ class PCRGLOBWBModelOptimizer(BaseModelOptimizer):
             lambda: self.config.domain.calibration_period,
             dict_key='CALIBRATION_PERIOD',
         )
-        if not cal_period:
+        cal_window = parse_period(cal_period)
+        if cal_window is None:
             return
 
-        import pandas as pd
-        parts = cal_period.split(',')
-        if len(parts) != 2:
-            return
-
-        start = pd.to_datetime(parts[0].strip()).strftime('%Y-%m-%d')
-        end = pd.to_datetime(parts[1].strip()).strftime('%Y-%m-%d')
+        start = cal_window[0].strftime('%Y-%m-%d')
+        end = cal_window[1].strftime('%Y-%m-%d')
 
         ini = configparser.ConfigParser()
         ini.optionxform = str

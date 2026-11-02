@@ -133,7 +133,7 @@ class BaseModelOptimizer(
         # Results directory - now includes model name to avoid overwrites between models
         algorithm = self._get_config_value(
             lambda: self.config.optimization.algorithm, default='optimization',
-            dict_key='OPTIMIZATION_ALGORITHM'
+            dict_key='ITERATIVE_OPTIMIZATION_ALGORITHM'
         ).lower()
         model_name = self._get_model_name()
         self.results_dir = (
@@ -160,7 +160,7 @@ class BaseModelOptimizer(
         )
         self.population_size = self._get_config_value(
             lambda: self.config.optimization.population_size, default=self.DEFAULT_POPULATION_SIZE,
-            dict_key='OPTIMIZATION_POPULATION_SIZE'
+            dict_key='POPULATION_SIZE'
         )
         self.target_metric = self._get_config_value(
             lambda: self.config.optimization.metric, default='KGE',

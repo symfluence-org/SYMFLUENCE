@@ -19,6 +19,7 @@ import pandas as pd
 import xarray as xr
 
 from symfluence.core.mixins.logging import _class_logger_name
+from symfluence.core.modeling.utilities.periods import parse_period
 
 logger = logging.getLogger(__name__)
 
@@ -109,31 +110,36 @@ class TimeWindowManager:
         """
         Get calibration period from config.
 
+        Reads ``CALIBRATION_PERIOD_START``/``_END`` when both are set, else
+        the ``CALIBRATION_PERIOD`` ``'start, end'`` string.
+
         Returns:
             Tuple of (start_time, end_time) as pd.Timestamp
         """
-        cal_start = self._get_config_value('CALIBRATION_PERIOD_START', None)
-        cal_end = self._get_config_value('CALIBRATION_PERIOD_END', None)
-
-        if cal_start is None or cal_end is None:
-            raise ValueError("Calibration period not defined in config")
-
-        return self.parse_time_string(cal_start), self.parse_time_string(cal_end)
+        return self._get_period('CALIBRATION', 'Calibration')
 
     def get_evaluation_period(self) -> Tuple[pd.Timestamp, pd.Timestamp]:
         """
         Get evaluation period from config.
 
+        Reads ``EVALUATION_PERIOD_START``/``_END`` when both are set, else
+        the ``EVALUATION_PERIOD`` ``'start, end'`` string.
+
         Returns:
             Tuple of (start_time, end_time) as pd.Timestamp
         """
-        eval_start = self._get_config_value('EVALUATION_PERIOD_START', None)
-        eval_end = self._get_config_value('EVALUATION_PERIOD_END', None)
+        return self._get_period('EVALUATION', 'Evaluation')
 
-        if eval_start is None or eval_end is None:
-            raise ValueError("Evaluation period not defined in config")
+    def _get_period(self, prefix: str, label: str) -> Tuple[pd.Timestamp, pd.Timestamp]:
+        start = self._get_config_value(f'{prefix}_PERIOD_START', None)
+        end = self._get_config_value(f'{prefix}_PERIOD_END', None)
+        if start is not None and end is not None:
+            return self.parse_time_string(start), self.parse_time_string(end)
 
-        return self.parse_time_string(eval_start), self.parse_time_string(eval_end)
+        period = parse_period(self._get_config_value(f'{prefix}_PERIOD', None))
+        if period is None:
+            raise ValueError(f"{label} period not defined in config")
+        return period
 
     def get_forcing_time_range(
         self,

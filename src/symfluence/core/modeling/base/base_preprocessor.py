@@ -26,6 +26,7 @@ from symfluence.core.constants import ModelDefaults, UnitConversion
 from symfluence.core.exceptions import ModelExecutionError, symfluence_error_handler
 from symfluence.core.mixins import ShapefileAccessMixin
 from symfluence.core.modeling.mixins import ModelComponentMixin, ObservationLoaderMixin
+from symfluence.core.modeling.utilities.periods import to_pydatetime
 from symfluence.core.path_resolver import PathResolverMixin
 
 if TYPE_CHECKING:
@@ -443,6 +444,22 @@ class BaseModelPreProcessor(ABC, ModelComponentMixin, PathResolverMixin, Shapefi
         except Exception as exc:  # noqa: BLE001 — model execution resilience
             self.logger.warning(f"Unable to parse simulation time window: {exc}", exc_info=True)
             return None
+
+    #: ``(start, end)`` used by :meth:`_get_simulation_dates` when
+    #: ``EXPERIMENT_TIME_START``/``_END`` are unset. ``None``: a missing value raises.
+    SIMULATION_DATE_DEFAULTS: Optional[Tuple[str, str]] = None
+
+    def _get_simulation_dates(self) -> Tuple[datetime, datetime]:
+        """Simulation start/end (``EXPERIMENT_TIME_START``/``_END``) as ``datetime``.
+
+        Strings are parsed with ``pd.Timestamp``, so a time-of-day is kept.
+        Unset values fall back to ``SIMULATION_DATE_DEFAULTS``; with no
+        default a missing value raises ``ValueError``.
+        """
+        default_start, default_end = self.SIMULATION_DATE_DEFAULTS or (None, None)
+        start = self._get_config_value(lambda: self.config.domain.time_start, default=default_start)
+        end = self._get_config_value(lambda: self.config.domain.time_end, default=default_end)
+        return to_pydatetime(start), to_pydatetime(end)
 
     def subset_to_simulation_time(
         self,

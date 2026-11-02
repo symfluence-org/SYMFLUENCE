@@ -23,6 +23,7 @@ from symfluence.core.calibration.workers.base_worker import (
 from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
+from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -128,7 +129,7 @@ class WflowWorker(BaseWorker):
             self._patch_toml(toml_path, toml_path, settings_dir, output_dir)
             if resolve_config_value(config, lambda: config.model.wflow.calibration_only_period, False, 'WFLOW_CALIBRATION_ONLY_PERIOD'):
                 end = (config['EXPERIMENT_TIME_END'] if kwargs.get('final_evaluation', False)
-                       else config['CALIBRATION_PERIOD'].split(',')[1].strip())
+                       else split_period(config['CALIBRATION_PERIOD'], allow_extra=True, strict=True)[1])
                 native_end = pd.Timestamp(end).normalize() + pd.Timedelta(days=1)
                 content = re.sub(r'^endtime\s*=.*$', f'endtime = {native_end:%Y-%m-%dT00:00:00}',
                                  toml_path.read_text(), flags=re.MULTILINE)
@@ -180,12 +181,12 @@ class WflowWorker(BaseWorker):
                 if median_dt < pd.Timedelta(days=1):
                     sim = sim.resample('D').mean()
             # Filter to calibration period (excludes cold-start spinup)
-            cal_period = config.get('CALIBRATION_PERIOD', '') if isinstance(config, dict) else ''
-            if cal_period:
-                parts = [p.strip() for p in cal_period.split(',')]
-                if len(parts) == 2:
-                    sim = sim.loc[parts[0]:parts[1]]  # type: ignore[misc]
-                    obs = obs.loc[parts[0]:parts[1]]  # type: ignore[misc]
+            cal_period = (resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
+                          if isinstance(config, dict) else '')
+            parts = split_period(cal_period)
+            if parts is not None:
+                sim = sim.loc[parts[0]:parts[1]]  # type: ignore[misc]
+                obs = obs.loc[parts[0]:parts[1]]  # type: ignore[misc]
             sim, obs = sim.align(obs, join='inner')
             common_idx = sim.dropna().index.intersection(obs.dropna().index)
             sim, obs = sim.loc[common_idx], obs.loc[common_idx]

@@ -37,6 +37,7 @@ from symfluence.core.metrics import (
 )
 from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.mixins.project import resolve_data_subdir
+from symfluence.core.modeling.utilities.periods import parse_period
 
 
 def resample_to_timestep(data: pd.Series, target_timestep: str, logger) -> pd.Series:
@@ -630,12 +631,11 @@ def _filter_inline_calibration_period(
         return obs_data, sim_data
 
     try:
-        dates = [d.strip() for d in cal_period.split(',')]
-        if len(dates) < 2:
+        dates = parse_period(cal_period, allow_extra=True)
+        if dates is None:
             return obs_data, sim_data
 
-        start_date = pd.Timestamp(dates[0])
-        end_date = pd.Timestamp(dates[1])
+        start_date, end_date = dates
         obs_period = obs_data[(obs_data.index >= start_date) & (obs_data.index <= end_date)]
 
         sim_time_diff = sim_data.index[1] - sim_data.index[0] if len(sim_data) > 1 else pd.Timedelta(hours=1)

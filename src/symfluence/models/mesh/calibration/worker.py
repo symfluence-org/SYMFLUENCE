@@ -19,6 +19,7 @@ from symfluence.core.calibration.workers.base_worker import BaseWorker, run_work
 from symfluence.core.metrics import StreamflowMetrics, kge, nse
 from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.mixins.project import resolve_data_subdir
+from symfluence.core.modeling.utilities.periods import parse_period
 from symfluence.core.registries import R
 from symfluence.models.mesh.runner import MESHRunner
 
@@ -451,9 +452,7 @@ class MESHWorker(BaseWorker):
                 return {'kge': self.penalty_score, 'error': 'Invalid scoring period'}
             if period:
                 try:
-                    start_str, end_str = [s.strip() for s in str(period).split(',')]
-                    period_start = pd.Timestamp(start_str)
-                    period_end = pd.Timestamp(end_str)
+                    period_start, period_end = parse_period(period, strict=True)
                     sim_df = sim_df.loc[
                         (sim_df.index >= period_start) & (sim_df.index <= period_end)
                     ]

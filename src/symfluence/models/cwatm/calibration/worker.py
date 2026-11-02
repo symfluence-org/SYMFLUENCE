@@ -16,6 +16,7 @@ import pandas as pd
 from symfluence.core.calibration.workers.base_worker import BaseWorker
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
+from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -81,11 +82,10 @@ class CWatMWorker(BaseWorker):
                 return {'KGE': -999.0, 'NSE': -999.0}
 
             cal_period = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
-            if cal_period:
-                parts = cal_period.split(',')
-                if len(parts) == 2:
-                    sim = sim[parts[0].strip():parts[1].strip()]
-                    obs = obs[parts[0].strip():parts[1].strip()]
+            parts = split_period(cal_period)
+            if parts:
+                sim = sim[parts[0]:parts[1]]
+                obs = obs[parts[0]:parts[1]]
 
             combined = pd.concat([sim.rename('sim'), obs.rename('obs')], axis=1).dropna()
             if len(combined) < 30:

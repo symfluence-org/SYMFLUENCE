@@ -47,11 +47,9 @@ src/symfluence/models/gnn/model.py:GNNModel._validate_adjacency_matrix:raise Val
 src/symfluence/models/gnn/model.py:GNNModel.forward:raise ValueError(
 src/symfluence/models/gnn/model.py:GNNModel.forward:raise ValueError(
 src/symfluence/models/gnn/model.py:GNNModel.forward:raise ValueError(
-src/symfluence/models/gnn/preprocessor.py:<module>:raise ImportError(
 src/symfluence/models/gnn/preprocessor.py:GNNPreProcessor.load_graph_structure:raise FileNotFoundError(f"No river network shapefile found in {shapefile_dir}")
 src/symfluence/models/gnn/preprocessor.py:GNNPreProcessor.load_graph_structure:raise ValueError(f"Shapefile missing required column: {col}")
 src/symfluence/models/gnn/preprocessor.py:GNNPreProcessor.process_data:raise ValueError(f"Forcing data missing HRUs required by graph: {missing}")
-src/symfluence/models/gnn/runner.py:<module>:raise ImportError(
 src/symfluence/models/gnn/runner.py:GNNRunner._train_model:raise ValueError(
 src/symfluence/models/gr/calibration/targets.py:GRStreamflowTarget._extract_distributed_gr_streamflow:raise ValueError(f"Neither '{routing_var}' nor 'q_routed' found in {sim_file}. Available: {list(ds.variables)}")
 src/symfluence/models/gr/extractor.py:GRResultExtractor._extract_from_csv:raise ValueError(f"Failed to parse GR CSV output {output_file}: {e}") from e
@@ -92,10 +90,8 @@ src/symfluence/models/lisflood/preprocessor.py:LisfloodPreProcessor._extract_for
 src/symfluence/models/lisflood/preprocessor.py:LisfloodPreProcessor._generate_forcing:raise FileNotFoundError(f"No forcing files found in {forcing_path}")
 src/symfluence/models/lisflood/runner.py:LisfloodRunner.run:raise FileNotFoundError(f"LISFLOOD settings not found: {settings_path}")
 src/symfluence/models/lstm/extractor.py:LSTMResultExtractor.extract_variable:raise ValueError(
-src/symfluence/models/lstm/preprocessor.py:<module>:raise ImportError(
 src/symfluence/models/lstm/preprocessor.py:LSTMPreProcessor.load_data:raise FileNotFoundError(f"No forcing files found in {forcing_path}")
 src/symfluence/models/lstm/preprocessor.py:LSTMPreProcessor.load_data:raise ValueError(f"Missing required variables in forcing data: {missing_vars}")
-src/symfluence/models/lstm/runner.py:<module>:raise ImportError(
 src/symfluence/models/lstm/runner.py:LSTMRunner._load_model_checkpoint:raise FileNotFoundError(f"Model checkpoint not found at {path}")
 src/symfluence/models/lstm/runner.py:LSTMRunner._train_model_with_routing:raise ImportError("droute required for training through routing")
 src/symfluence/models/mesh/calibration/worker.py:MESHWorker.run_model:raise ValueError("SYMFLUENCE_DATA_DIR or system.data_dir is required")

@@ -17,6 +17,7 @@ from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.modeling.base import BaseModelRunner
 from symfluence.core.modeling.base.base_preprocessor import BaseModelPreProcessor
 from symfluence.core.modeling.utilities.elevation_forcing import daily_bands, upper_ice_fractions
+from symfluence.core.modeling.utilities.periods import split_period
 
 from . import native
 
@@ -139,7 +140,7 @@ class RavenWorker(BaseWorker):
         metrics = StreamflowMetrics()
         values, index = metrics.load_observations(config, project, config["DOMAIN_NAME"], resample_freq=None)
         obs = pd.Series(values, index=index)
-        start, end = [x.strip() for x in config["CALIBRATION_PERIOD"].split(",")]
+        start, end = split_period(config["CALIBRATION_PERIOD"], strict=True)
         pair = pd.concat([obs.loc[start:end], sim.loc[start:end]], axis=1).dropna()
         if len(pair) < 365:
             return {"KGE": -999.0}
