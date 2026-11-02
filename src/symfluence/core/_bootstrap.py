@@ -40,7 +40,7 @@ def failed_plugin_entry_points() -> tuple[tuple[str, str], ...]:
 
 def bootstrap() -> None:
     """Populate static registrations.  Safe to call multiple times."""
-    global _bootstrapped  # noqa: PLW0603
+    global _bootstrapped
     if _bootstrapped:
         return
     _bootstrapped = True
@@ -148,7 +148,7 @@ def _seed_model_optimizers() -> None:
     R.parameter_managers.load_modules()
 
 
-def _bootstrap_delineation_aliases(R: type) -> None:  # noqa: N803
+def _bootstrap_delineation_aliases(R: type) -> None:
     """Register canonical delineation aliases."""
     aliases = {
         "delineate": "semidistributed",
@@ -160,7 +160,7 @@ def _bootstrap_delineation_aliases(R: type) -> None:  # noqa: N803
         R.delineation_strategies.alias(alias, canonical)
 
 
-def _bootstrap_bmi_adapters(R: type) -> None:  # noqa: N803
+def _bootstrap_bmi_adapters(R: type) -> None:
     """Register BMI/dCoupler adapters as lazy imports + aliases."""
 
     process_models = {
@@ -192,7 +192,7 @@ def _bootstrap_bmi_adapters(R: type) -> None:  # noqa: N803
     R.bmi_adapters.alias("HEC-HMS", "HECHMS")
 
 
-def _bootstrap_model_aliases(R: type) -> None:  # noqa: N803
+def _bootstrap_model_aliases(R: type) -> None:
     """Alias hyphenated model names to their canonical registry keys.
 
     Some models register their components under a hyphen-free canonical name
@@ -251,7 +251,7 @@ def _bootstrap_model_aliases(R: type) -> None:  # noqa: N803
             registry.alias(alias_key, canonical)
 
 
-def _bootstrap_metrics(R: type) -> None:  # noqa: N803
+def _bootstrap_metrics(R: type) -> None:
     """Seed the unified metrics registry from the existing METRIC_REGISTRY.
 
     We import the existing metric registry dict and re-register each entry
@@ -272,7 +272,7 @@ def _bootstrap_metrics(R: type) -> None:  # noqa: N803
 
     # Use identity normalization for metrics — preserve original casing
     # (metrics registry has mixed case keys like "logNSE", "KGEp", etc.)
-    R.metrics._normalize = lambda s: s  # noqa: E731
+    R.metrics._normalize = lambda s: s
 
     for name in _primary_names:
         if name in METRIC_REGISTRY:

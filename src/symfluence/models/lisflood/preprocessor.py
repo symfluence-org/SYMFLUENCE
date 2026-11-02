@@ -750,7 +750,7 @@ class LisfloodPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
     # ------------------------------------------------------------------
     # lfbinding dictionary builder
     # ------------------------------------------------------------------
-    def _build_lfbinding_dict(  # noqa: PLR0913
+    def _build_lfbinding_dict(
         self,
         cal_start: str,
         sim_start: str,

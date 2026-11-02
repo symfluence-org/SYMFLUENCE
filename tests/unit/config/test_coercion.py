@@ -37,7 +37,7 @@ def test_ensure_config_rejects_non_mapping():
 def test_ensure_config_raises_on_invalid_dict():
     # A dict missing required fields is still a dict, so ensure_config attempts
     # construction and surfaces the validation error (not a silent fallback).
-    with pytest.raises(Exception):  # noqa: B017 - pydantic ValidationError (ValueError subclass)
+    with pytest.raises(Exception):  # pydantic ValidationError (ValueError subclass)
         ensure_config({"DOMAIN_NAME": "x"})
 
 

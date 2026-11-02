@@ -19,7 +19,7 @@ pytestmark = [pytest.mark.unit, pytest.mark.quick]
 class _GoodPlugin(BaseAttributeProcessor):
     """A valid plugin that bypasses the heavy base __init__ for testing."""
 
-    def __init__(self, config, logger):  # noqa: D107
+    def __init__(self, config, logger):
         self.config = config
         self.logger = logger
 
@@ -28,7 +28,7 @@ class _GoodPlugin(BaseAttributeProcessor):
 
 
 class _BrokenPlugin(BaseAttributeProcessor):
-    def __init__(self, config, logger):  # noqa: D107
+    def __init__(self, config, logger):
         self.config = config
         self.logger = logger
 

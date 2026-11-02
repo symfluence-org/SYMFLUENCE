@@ -55,11 +55,11 @@ class _FakeHandler(BaseObservationHandler):
 
     def acquire(self) -> Path:
         type(self).acquire_calls.append(self)
-        return Path('/tmp/fake_raw.csv')  # noqa: S108 - test stub path, never opened
+        return Path('/tmp/fake_raw.csv')  # test stub path, never opened
 
     def process(self, input_path: Path) -> Path:
         type(self).process_calls.append(input_path)
-        return Path('/tmp/fake_processed.csv')  # noqa: S108 - test stub path, never opened
+        return Path('/tmp/fake_processed.csv')  # test stub path, never opened
 
 
 @pytest.fixture

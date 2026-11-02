@@ -144,7 +144,7 @@ class GAAlgorithm(OptimizationAlgorithm):
             # Sort population by fitness (descending)
             sorted_indices = np.argsort(-fitness)
             sorted_population = population[sorted_indices]
-            _sorted_fitness = fitness[sorted_indices]  # noqa: F841 - kept for debugging
+            _sorted_fitness = fitness[sorted_indices]  # kept for debugging
 
             # Elitism: keep top individuals
             new_population = list(sorted_population[:elitism_count])

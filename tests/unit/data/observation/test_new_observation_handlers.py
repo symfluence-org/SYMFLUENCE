@@ -133,7 +133,7 @@ class TestHandlerRegistration:
     def test_observation_registry_new_handlers(self):
         """Test new handlers are registered in ObservationRegistry."""
         # Ensure handlers are imported (triggers registration)
-        import symfluence.data.observation.handlers  # noqa
+        import symfluence.data.observation.handlers
         from symfluence.data.observation.registry import ObservationRegistry
 
         # Check each new handler is registered
@@ -156,7 +156,7 @@ class TestHandlerRegistration:
     def test_acquisition_registry_new_handlers(self):
         """Test new handlers are registered in AcquisitionRegistry."""
         # Ensure handlers are imported
-        import symfluence.data.acquisition.handlers  # noqa
+        import symfluence.data.acquisition.handlers
         from symfluence.data.acquisition.registry import AcquisitionRegistry
 
         # Check each new acquisition handler is registered

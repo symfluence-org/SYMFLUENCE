@@ -136,7 +136,7 @@ class GLUEAlgorithm(OptimizationAlgorithm):
 
         # Process in batches
         n_batches = (n_samples + batch_size - 1) // batch_size
-        _sample_idx = 0  # noqa: F841
+        _sample_idx = 0
 
         for batch in range(n_batches):
             # Determine batch boundaries

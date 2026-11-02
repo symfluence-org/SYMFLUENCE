@@ -307,7 +307,7 @@ class WflowPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         start_date, end_date = self._get_simulation_dates()
         config_file = self._get_config_value(lambda: self.config.model.wflow.config_file, default='wflow_sbm.toml')
         staticmaps_file = self._get_config_value(lambda: self.config.model.wflow.staticmaps_file, default='wflow_staticmaps.nc')
-        _output_file = self._get_config_value(lambda: self.config.model.wflow.output_file, default='output.nc')  # noqa: F841
+        _output_file = self._get_config_value(lambda: self.config.model.wflow.output_file, default='output.nc')
 
         domain_name = self._get_config_value(lambda: self.config.domain.name, default='', dict_key='DOMAIN_NAME')
         experiment_id = self._get_config_value(lambda: self.config.domain.experiment_id, default='run_1', dict_key='EXPERIMENT_ID')

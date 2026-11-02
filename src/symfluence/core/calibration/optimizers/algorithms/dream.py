@@ -401,8 +401,8 @@ class DREAMAlgorithm(OptimizationAlgorithm):
             return float('inf')
 
         # Compute between-chain variance
-        _chain_means = np.mean(chains, axis=1)  # noqa: F841 (n_chains,) for each param
-        _overall_mean = np.mean(chains, axis=0)  # noqa: F841 (n_params,)
+        _chain_means = np.mean(chains, axis=1)  # (n_chains,) for each param
+        _overall_mean = np.mean(chains, axis=0)  # (n_params,)
 
         B = np.var(np.mean(chains, axis=0))  # Simplified: variance of means
 

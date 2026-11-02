@@ -239,12 +239,12 @@ class ANAStreamflowHandler(BaseObservationHandler):
                     try:
                         f.seek(0)
                         df = pd.read_csv(f, sep=sep)
-                        if len(df.columns) >= 2:  # noqa: PLR2004
+                        if len(df.columns) >= 2:
                             break
                     except Exception:  # noqa: BLE001
                         continue
 
-        if df is None or len(df.columns) < 2:  # noqa: PLR2004
+        if df is None or len(df.columns) < 2:
             raise DataAcquisitionError(
                 f"Could not parse streamflow file for station {station_id}"
             )

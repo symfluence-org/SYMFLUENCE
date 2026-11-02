@@ -119,7 +119,7 @@ def run(*popenargs: Any,
         timeout: Optional[float] = None,
         check: bool = False,
         capture_output: bool = False,
-        input: Optional[Any] = None,  # noqa: A002 — mirrors subprocess.run
+        input: Optional[Any] = None,  # mirrors subprocess.run
         **kwargs: Any) -> subprocess.CompletedProcess:
     """Drop-in for ``subprocess.run`` that tolerates unsignaled exits.
 
@@ -128,7 +128,7 @@ def run(*popenargs: Any,
     duplicating).
     """
     if not IS_WINDOWS or input is not None:
-        return subprocess.run(*popenargs, timeout=timeout, check=check,  # noqa: PLW1510 — check forwarded
+        return subprocess.run(*popenargs, timeout=timeout, check=check,  # check forwarded
                               capture_output=capture_output, input=input, **kwargs)
 
     if capture_output:
