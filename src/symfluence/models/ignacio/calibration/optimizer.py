@@ -74,7 +74,7 @@ class IGNACIOModelOptimizer(BaseModelOptimizer):
             return self._worker.run_model(
                 self.config_dict,
                 self.ignacio_input_dir,
-                self.project_dir / 'simulations' / self._get_config_value(lambda: self.config.domain.experiment_id, default='default', dict_key='EXPERIMENT_ID') / 'IGNACIO',
+                self.get_simulation_dir('IGNACIO', self._get_config_value(lambda: self.config.domain.experiment_id, default='default', dict_key='EXPERIMENT_ID')),
             )
         return False
 

@@ -26,6 +26,7 @@ from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.modeling.base import BaseModelPreProcessor
 from symfluence.core.modeling.utilities import ForcingDataProcessor
 from symfluence.core.modeling.utilities.time_window_manager import TimeWindowManager
+from symfluence.core.path_resolver import resolve_install_dir
 from symfluence.core.registries import R
 from symfluence.models.ngen.config_generator import NgenConfigGenerator
 
@@ -248,14 +249,9 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                     self.logger.debug("npm bundle found but missing some NGEN libraries, falling back")
 
         # --- 2. Resolve from install path (explicit or default fallback) ---
-        if install_path == 'default':
-            ngen_base = self.data_dir / 'installs' / 'ngen'
-        else:
-            p = Path(install_path)
-            if p.name == 'cmake_build':
-                ngen_base = p.parent
-            else:
-                ngen_base = p
+        ngen_base = resolve_install_dir(install_path, self.data_dir, 'installs/ngen')
+        if ngen_base.name == 'cmake_build':
+            ngen_base = ngen_base.parent
 
         self.logger.debug(f"Resolved NGEN_BASE to: {ngen_base}")
 
@@ -1085,7 +1081,7 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         nts = int(total_seconds / time_step_seconds)
 
         # Determine output directory for NGEN (where nex-*.csv files will be)
-        ngen_output_dir = self.project_dir / 'simulations' / self.experiment_id / 'NGEN'
+        ngen_output_dir = self.get_simulation_dir('NGEN')
         troute_output_dir = ngen_output_dir / 'troute_output'
 
         # Check if we have a river network for distributed routing

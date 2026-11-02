@@ -183,7 +183,7 @@ class GRPostProcessor(BaseModelPostProcessor):
         ``area_km2 / 86.4`` -- a factor of ~11.6 for a 1000 km² basin.
         """
         exp_id = self._get_config_value(lambda: self.config.domain.experiment_id)
-        mizuroute_output_dir = self.project_dir / 'simulations' / exp_id / 'mizuRoute'
+        mizuroute_output_dir = self.get_simulation_dir('mizuRoute', exp_id)
 
         output_files = list(mizuroute_output_dir.glob(f"{exp_id}*.nc"))
         if not output_files:
@@ -233,7 +233,7 @@ class GRPostProcessor(BaseModelPostProcessor):
         result was low by a factor of 8.64e7.
         """
         exp_id = self._get_config_value(lambda: self.config.domain.experiment_id)
-        gr_output = self.project_dir / 'simulations' / exp_id / 'GR' / \
+        gr_output = self.get_simulation_dir('GR', exp_id) / \
             f"{self.domain_name}_{exp_id}_runs_def.nc"
 
         if not gr_output.exists():
@@ -338,4 +338,4 @@ class GRPostProcessor(BaseModelPostProcessor):
     @property
     def output_path(self):
         """Get output path for backwards compatibility"""
-        return self.project_dir / 'simulations' / self._get_config_value(lambda: self.config.domain.experiment_id) / 'GR'
+        return self.get_simulation_dir('GR', self._get_config_value(lambda: self.config.domain.experiment_id))

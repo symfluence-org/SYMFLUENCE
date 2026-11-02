@@ -21,6 +21,7 @@ from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.modeling.utilities.routing_decider import RoutingDecider
+from symfluence.core.path_resolver import resolve_install_dir
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 from symfluence.models.fuse.calibration.file_manager import (
@@ -591,11 +592,10 @@ class FUSEWorker(BaseWorker):
 
             # Get mizuRoute executable
             mizuroute_install = resolve_config_value(config, lambda: config.model.mizuroute.install_path, 'default', 'MIZUROUTE_INSTALL_PATH')
-            if mizuroute_install == 'default':
-                data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
-                mizuroute_exe = data_dir / 'installs' / 'mizuRoute' / 'route' / 'bin' / 'mizuRoute.exe'
-            else:
-                mizuroute_exe = Path(mizuroute_install) / 'mizuRoute.exe'
+            data_dir = resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR')
+            mizuroute_exe = resolve_install_dir(
+                mizuroute_install, data_dir, 'installs/mizuRoute/route/bin'
+            ) / 'mizuRoute.exe'
 
             if not mizuroute_exe.exists():
                 self.logger.error(f"mizuRoute executable not found: {mizuroute_exe}")

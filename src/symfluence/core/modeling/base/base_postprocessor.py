@@ -144,8 +144,7 @@ class BaseModelPostProcessor(ABC, ModelComponentMixin, PathResolverMixin):  # ty
             >>> def _get_simulation_dir(self) -> Path:
             ...     return self.project_dir / "custom" / "path"
         """
-        return (self.project_dir / 'simulations' /
-                self.experiment_id / self.model_name)
+        return self.get_simulation_dir(self.model_name)
 
     def _setup_model_specific_paths(self) -> None:
         """

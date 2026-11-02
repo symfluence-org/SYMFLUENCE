@@ -145,7 +145,7 @@ class HYPEPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         experiment_id = self._get_config_value(
             lambda: self.config.domain.experiment_id
         )
-        self.hype_results_dir = self.project_dir / "simulations" / experiment_id / "HYPE"
+        self.hype_results_dir = self.get_simulation_dir('HYPE', experiment_id)
         self.hype_results_dir.mkdir(parents=True, exist_ok=True)
         # HYPE results dir MUST have a trailing slash for the info.txt file
         self.hype_results_dir_str = str(self.hype_results_dir).rstrip('/') + '/'

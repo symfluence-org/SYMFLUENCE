@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from symfluence.core.modeling.base import BaseModelRunner
+from symfluence.core.path_resolver import resolve_install_dir
 from symfluence.core.registries import R
 
 
@@ -30,14 +31,11 @@ class CWatMRunner(BaseModelRunner):
             lambda: self.config.model.cwatm.install_path,
             default='default',
         )
-        if install_path == 'default' or install_path is None:
-            data_dir = self._get_config_value(
-                lambda: self.config.system.data_dir,
-                default='.', dict_key='SYMFLUENCE_DATA_DIR',
-            )
-            self.cwatm_dir = Path(data_dir) / 'installs' / 'cwatm'
-        else:
-            self.cwatm_dir = Path(install_path)
+        data_dir = self._get_config_value(
+            lambda: self.config.system.data_dir,
+            default='.', dict_key='SYMFLUENCE_DATA_DIR',
+        )
+        self.cwatm_dir = resolve_install_dir(install_path, data_dir, 'installs/cwatm')
 
         exe_name = self._get_config_value(
             lambda: self.config.model.cwatm.exe,
@@ -64,10 +62,7 @@ class CWatMRunner(BaseModelRunner):
             default=14400,
         )
 
-        log_dir = (
-            self.project_dir / "simulations"
-            / self._get_experiment_id() / "CWATM" / "logs"
-        )
+        log_dir = self.get_simulation_dir('CWATM', self._get_experiment_id()) / 'logs'
         log_dir.mkdir(parents=True, exist_ok=True)
 
         self.logger.info(f"Running CWatM for domain: {self.domain_name}")
@@ -81,10 +76,7 @@ class CWatMRunner(BaseModelRunner):
         if not result.success:
             self.logger.error(f"CWatM simulation failed (rc={result.returncode})")
 
-        output_dir = (
-            self.project_dir / "simulations"
-            / self._get_experiment_id() / "CWATM"
-        )
+        output_dir = self.get_simulation_dir('CWATM', self._get_experiment_id())
         return output_dir if result.success else None
 
     def _get_experiment_id(self) -> str:

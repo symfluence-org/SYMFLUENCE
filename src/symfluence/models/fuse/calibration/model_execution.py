@@ -19,6 +19,7 @@ from typing import Any, Dict, Optional, Tuple
 from symfluence.core.logging_utils import log_once
 from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.mixins.project import resolve_data_subdir
+from symfluence.core.path_resolver import resolve_install_dir
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.models.fuse.calibration.file_manager import resolve_fuse_id
 
@@ -88,11 +89,8 @@ def resolve_fuse_paths(
 
     # Resolve executable
     fuse_install = resolve_config_value(config, lambda: config.model.fuse.install_path, 'default', 'FUSE_INSTALL_PATH')
-    if fuse_install == 'default':
-        data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
-        fuse_exe = data_dir / 'installs' / 'fuse' / 'bin' / 'fuse.exe'
-    else:
-        fuse_exe = Path(fuse_install) / 'fuse.exe'
+    data_dir = resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR')
+    fuse_exe = resolve_install_dir(fuse_install, data_dir, 'installs/fuse/bin') / 'fuse.exe'
 
     # Resolve file manager and execution directory
     if settings_dir.name == 'FUSE':

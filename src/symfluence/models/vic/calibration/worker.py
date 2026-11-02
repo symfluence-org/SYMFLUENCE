@@ -27,6 +27,7 @@ from symfluence.core.exceptions import ValidationError
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.modeling.utilities.periods import split_period
+from symfluence.core.path_resolver import resolve_install_executable
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 from symfluence.models.vic.constants import target_snow_constants
@@ -420,13 +421,7 @@ class VICWorker(BaseWorker):
         install_path = resolve_config_value(config, lambda: config.model.vic.install_path, 'default', 'VIC_INSTALL_PATH')
         exe_name = resolve_config_value(config, lambda: config.model.vic.exe, 'vic_image.exe', 'VIC_EXE')
 
-        if install_path == 'default':
-            return data_dir / "installs" / "vic" / "bin" / exe_name
-
-        install_path = Path(install_path)
-        if install_path.is_dir():
-            return install_path / exe_name
-        return install_path
+        return resolve_install_executable(install_path, data_dir, 'installs/vic/bin', exe_name)
 
     def _get_or_create_global_file(
         self,

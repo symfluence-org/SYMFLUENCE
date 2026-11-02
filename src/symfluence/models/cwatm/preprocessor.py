@@ -28,6 +28,7 @@ from symfluence.core.modeling.model_ready.forcing_reader import (
     forcing_timestep_seconds,
     open_canonical_forcing,
 )
+from symfluence.core.path_resolver import resolve_install_dir
 from symfluence.core.registries import R
 
 
@@ -263,10 +264,7 @@ class CWatMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             lambda: self.config.model.cwatm.install_path,
             default='default',
         )
-        if install_path == 'default' or install_path is None:
-            cwatm_dir = Path(data_dir) / 'installs' / 'cwatm'
-        else:
-            cwatm_dir = Path(install_path)
+        cwatm_dir = resolve_install_dir(install_path, data_dir, 'installs/cwatm')
 
         # Spinup
         spinup_years = self._get_config_value(

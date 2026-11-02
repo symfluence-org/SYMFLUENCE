@@ -15,6 +15,7 @@ from typing import Any, Dict, Optional
 
 from symfluence.core.calibration.optimizers.base_model_optimizer import BaseModelOptimizer
 from symfluence.core.file_utils import copy_file
+from symfluence.core.path_resolver import resolve_install_executable
 from symfluence.core.registries import R
 
 from .parameter_manager import SUMMAParameterManager  # noqa: F401 - trigger param manager registration
@@ -88,9 +89,7 @@ class SUMMAModelOptimizer(BaseModelOptimizer):
         summa_install = self._get_config_value(lambda: self.config.model.summa.install_path, default='default', dict_key='SUMMA_INSTALL_PATH')
         summa_exe_name = self._get_config_value(lambda: self.config.model.summa.exe, default='summa_sundials.exe', dict_key='SUMMA_EXE')
 
-        if summa_install == 'default':
-            return self.data_dir / 'installs' / 'summa' / 'bin' / summa_exe_name
-        return Path(summa_install) / summa_exe_name if Path(summa_install).is_dir() else Path(summa_install)
+        return resolve_install_executable(summa_install, self.data_dir, 'installs/summa/bin', summa_exe_name)
 
     def _get_mizuroute_executable_path(self) -> Path:
         """Get path to mizuRoute executable."""

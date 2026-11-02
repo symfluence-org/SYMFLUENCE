@@ -17,6 +17,7 @@ from symfluence.core.calibration.workers.base_worker import BaseWorker
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.modeling.utilities.periods import split_period
+from symfluence.core.path_resolver import resolve_install_dir
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -47,11 +48,8 @@ class CWatMWorker(BaseWorker):
 
         env = dict(os.environ)
         install_path = resolve_config_value(config, lambda: config.model.cwatm.install_path, 'default', 'CWATM_INSTALL_PATH')
-        data_dir = config.get('SYMFLUENCE_DATA_DIR', '.')
-        if install_path == 'default' or not install_path:
-            cwatm_dir = Path(data_dir) / 'installs' / 'cwatm'
-        else:
-            cwatm_dir = Path(install_path)
+        data_dir = resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR')
+        cwatm_dir = resolve_install_dir(install_path, data_dir, 'installs/cwatm')
 
         env['PYTHONPATH'] = str(cwatm_dir)
 

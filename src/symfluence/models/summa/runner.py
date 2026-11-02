@@ -557,7 +557,7 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
             fm_list = [line.strip() for line in f if line.strip()]
 
         # Create output directory
-        output_path = self.project_dir / 'simulations' / self.experiment_id / 'SUMMA'
+        output_path = self.get_simulation_dir('SUMMA')
         output_path.mkdir(parents=True, exist_ok=True)
 
         # Process each site

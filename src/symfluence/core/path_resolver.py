@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 from symfluence.core.mixins.project import resolve_data_subdir
 
@@ -162,6 +162,65 @@ def resolve_file_path(
         )
 
     return file_path
+
+
+# Values of ``<MODEL>_INSTALL_PATH`` that select the default install location.
+_INSTALL_DEFAULT_VALUES = ('default', '')
+
+
+def _is_default_install(install_path: Any) -> bool:
+    return install_path is None or (
+        isinstance(install_path, str) and install_path in _INSTALL_DEFAULT_VALUES
+    )
+
+
+def resolve_install_dir(
+    install_path: Any,
+    data_dir: Union[str, Path],
+    default_subpath: str,
+) -> Path:
+    """Resolve a model install directory from a ``<MODEL>_INSTALL_PATH`` value.
+
+    A standalone (no-``self``) companion to ``BaseModelRunner.get_install_path``
+    for calibration workers and other code that reads the setting itself (via
+    ``resolve_config_value`` / ``self._get_config_value``) and passes it in.
+
+    * ``'default'``, ``None`` or ``''`` -> ``data_dir / default_subpath``
+      (no code_dir / sibling-data fallback search; that is runner-only).
+    * any other value -> ``Path(install_path)`` unchanged: an absolute path is
+      used as-is and a relative path stays relative to the CWD, exactly as
+      ``get_install_path`` treats it.
+
+    Args:
+        install_path: The configured ``<MODEL>_INSTALL_PATH`` value.
+        data_dir: SYMFLUENCE data directory the default is relative to.
+        default_subpath: Default location under ``data_dir``, e.g. ``'installs/vic/bin'``.
+    """
+    if _is_default_install(install_path):
+        return Path(data_dir) / default_subpath
+    return Path(install_path)
+
+
+def resolve_install_executable(
+    install_path: Any,
+    data_dir: Union[str, Path],
+    default_subpath: str,
+    exe_name: str,
+) -> Path:
+    """Resolve a model executable from a ``<MODEL>_INSTALL_PATH`` value and exe name.
+
+    * default install path -> ``data_dir / default_subpath / exe_name``
+    * override naming an existing directory -> ``override / exe_name``
+    * any other override (a file, or a path that does not exist) -> the
+      override itself, taken as the full executable path.
+
+    Callers whose override is always a directory should use
+    ``resolve_install_dir(...) / exe_name`` instead.
+    """
+    if _is_default_install(install_path):
+        return Path(data_dir) / default_subpath / exe_name
+    path = Path(install_path)
+    return path / exe_name if path.is_dir() else path
 
 
 def find_basin_shapefile(

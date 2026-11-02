@@ -29,14 +29,14 @@ class CWatMPostProcessor(StandardModelPostProcessor):
 
     def _setup_model_specific_paths(self) -> None:
         self.cwatm_output_dir = (
-            self.project_dir / 'simulations' / self.experiment_id / 'CWATM'
+            self.get_simulation_dir('CWATM')
         )
         catchment_file = self._get_catchment_file_path()
         self.catchment_path = catchment_file.parent
         self.catchment_name = catchment_file.name
 
     def _get_output_dir(self) -> Path:
-        return self.project_dir / 'simulations' / self.experiment_id / 'CWATM'
+        return self.get_simulation_dir('CWATM')
 
     def extract_streamflow(self) -> Optional[Path]:
         import pandas as pd

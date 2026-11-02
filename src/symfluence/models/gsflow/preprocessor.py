@@ -47,7 +47,7 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             lambda: self.config.domain.experiment_id,
             default='run_1'
         )
-        self.sim_output_dir = self.project_dir / 'simulations' / experiment_id / self.model_name
+        self.sim_output_dir = self.get_simulation_dir(self.model_name, experiment_id)
 
         # Relative path from setup_dir (CWD at runtime) to sim_output_dir
         self._output_relpath = os.path.relpath(self.sim_output_dir, self.setup_dir)

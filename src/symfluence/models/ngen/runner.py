@@ -19,6 +19,7 @@ from typing import Any, Dict, Optional, Tuple, cast
 
 from symfluence.core.exceptions import ModelExecutionError, symfluence_error_handler
 from symfluence.core.modeling.base import BaseModelRunner
+from symfluence.core.path_resolver import resolve_install_dir
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -198,11 +199,9 @@ class NgenRunner(BaseModelRunner):  # type: ignore[misc]
             default='default'
         )
 
-        if install_path == 'default':
-            ngen_base = self.data_dir / 'installs' / 'ngen'
-        else:
-            p = Path(install_path)
-            ngen_base = p.parent if p.name == 'cmake_build' else p
+        ngen_base = resolve_install_dir(install_path, self.data_dir, 'installs/ngen')
+        if ngen_base.name == 'cmake_build':
+            ngen_base = ngen_base.parent
 
         # Virtual-environment handling
         ngen_venv = ngen_base / "ngen_venv"
@@ -335,12 +334,9 @@ class NgenRunner(BaseModelRunner):  # type: ignore[misc]
                 default='default'
             )
 
-            if install_path == 'default':
-                ngen_base = self.data_dir / 'installs' / 'ngen'
-            else:
-                p = Path(install_path)
-                if p.name == 'cmake_build': ngen_base = p.parent
-                else: ngen_base = p
+            ngen_base = resolve_install_dir(install_path, self.data_dir, 'installs/ngen')
+            if ngen_base.name == 'cmake_build':
+                ngen_base = ngen_base.parent
 
             if 'global' in data and 'formulations' in data['global']:
                 for formulation in data['global']['formulations']:
@@ -379,7 +375,7 @@ class NgenRunner(BaseModelRunner):  # type: ignore[misc]
                                         actual_lib = lib_dir / filename
                                     else:
                                         stem = filename.split('.')[0]
-                                        candidates = []
+                                        candidates: list[Path] = []
                                         for ext in ("dylib", "so"):
                                             candidates.extend(lib_dir.glob(f"{stem}*.{ext}"))
                                         if candidates:

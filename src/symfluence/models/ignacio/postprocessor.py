@@ -50,10 +50,7 @@ class IGNACIOPostProcessor(BaseModelPostProcessor):
         super().__init__(config, logger_instance or logger, reporting_manager)
 
         # IGNACIO-specific paths
-        self.ignacio_output_dir = (
-            self.project_dir / "simulations" /
-            self.config.domain.experiment_id / "IGNACIO"
-        )
+        self.ignacio_output_dir = self.get_simulation_dir('IGNACIO', self.config.domain.experiment_id)
 
     def _get_model_name(self) -> str:
         """Return model name for directory structure."""
@@ -215,10 +212,7 @@ class IGNACIOPostProcessor(BaseModelPostProcessor):
             from symfluence.models.wmfire import FirePerimeterValidator
 
             # Find WMFire output
-            wmfire_output_dir = (
-                self.project_dir / "simulations" /
-                self.config.domain.experiment_id / "RHESSys"
-            )
+            wmfire_output_dir = self.get_simulation_dir('RHESSys', self.config.domain.experiment_id)
 
             # Look for WMFire perimeter files
             wmfire_perimeters = list(wmfire_output_dir.glob('**/fire_perimeter*.shp'))

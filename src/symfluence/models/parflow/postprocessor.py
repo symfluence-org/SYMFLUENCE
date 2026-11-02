@@ -63,10 +63,7 @@ class ParFlowPostProcessor(StandardModelPostProcessor):
             Tuple of (streamflow Series in m3/s, metadata dict)
         """
         if output_dir is None:
-            output_dir = (
-                self.project_dir / "simulations"
-                / self.config.domain.experiment_id / "PARFLOW"
-            )
+            output_dir = self.get_simulation_dir('PARFLOW', self.config.domain.experiment_id)
 
         # Get ParFlow output
         try:
@@ -207,10 +204,7 @@ class ParFlowPostProcessor(StandardModelPostProcessor):
             coupler = SUMMAToParFlowCoupler(self.config_dict, self.logger)
 
             # Find SUMMA output
-            summa_output_dir = (
-                self.project_dir / "simulations"
-                / self.config.domain.experiment_id / "SUMMA"
-            )
+            summa_output_dir = self.get_simulation_dir('SUMMA', self.config.domain.experiment_id)
 
             if not summa_output_dir.exists():
                 logger.warning(

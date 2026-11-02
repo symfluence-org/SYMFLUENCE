@@ -29,6 +29,7 @@ from symfluence.core.calibration.workers.base_worker import (
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.modeling.utilities.periods import split_period
+from symfluence.core.path_resolver import resolve_install_executable
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -133,11 +134,7 @@ class GSFLOWWorker(BaseWorker):
 
             install_path = resolve_config_value(config, lambda: config.model.gsflow.install_path, 'default', 'GSFLOW_INSTALL_PATH')
             exe_name = resolve_config_value(config, lambda: config.model.gsflow.exe, 'gsflow', 'GSFLOW_EXE')
-            if install_path == 'default':
-                gsflow_exe = data_dir / "installs" / "gsflow" / "bin" / exe_name
-            else:
-                p = Path(install_path)
-                gsflow_exe = p / exe_name if p.is_dir() else p
+            gsflow_exe = resolve_install_executable(install_path, data_dir, 'installs/gsflow/bin', exe_name)
 
             # Windows builds land as <name>.exe even though the declared name
             # is bare — mirror BaseModelRunner._exe_name_variants.

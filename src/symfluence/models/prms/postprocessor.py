@@ -44,14 +44,14 @@ class PRMSPostProcessor(StandardModelPostProcessor):
 
     def _setup_model_specific_paths(self) -> None:
         """Set up PRMS-specific paths."""
-        self.prms_output_dir = self.project_dir / 'simulations' / self.experiment_id / 'PRMS'
+        self.prms_output_dir = self.get_simulation_dir('PRMS')
         catchment_file = self._get_catchment_file_path()
         self.catchment_path = catchment_file.parent
         self.catchment_name = catchment_file.name
 
     def _get_output_dir(self) -> Path:
         """PRMS outputs to standard simulation directory."""
-        return self.project_dir / 'simulations' / self.experiment_id / 'PRMS'
+        return self.get_simulation_dir('PRMS')
 
     def extract_streamflow(self) -> Optional[Path]:
         """

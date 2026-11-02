@@ -22,6 +22,7 @@ from symfluence.core.calibration.workers.base_worker import BaseWorker, run_work
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.modeling.utilities.periods import parse_period
+from symfluence.core.path_resolver import resolve_install_dir
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -103,9 +104,8 @@ class PIHMWorker(BaseWorker):
 
             # Get executable
             install_path = resolve_config_value(config, lambda: config.model.pihm.install_path, 'default', 'PIHM_INSTALL_PATH')
-            if install_path == 'default':
-                data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
-                install_path = str(data_dir / 'installs' / 'pihm')
+            data_dir = resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR')
+            install_path = str(resolve_install_dir(install_path, data_dir, 'installs/pihm'))
 
             exe_name = resolve_config_value(config, lambda: config.model.pihm.exe, 'flux-pihm', 'PIHM_EXE')
             # Search order: bin/<exe>, <exe>, bin/pihm, pihm
