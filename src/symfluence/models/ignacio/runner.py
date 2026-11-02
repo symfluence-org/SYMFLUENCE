@@ -81,10 +81,7 @@ class IGNACIORunner(BaseModelRunner):
             error_type=ModelExecutionError
         ):
             # Setup output directory
-            self.output_dir = (
-                self.project_dir / "simulations" /
-                self.config.domain.experiment_id / "IGNACIO"
-            )
+            self.output_dir = self.get_simulation_dir('IGNACIO', self.config.domain.experiment_id)
             self.output_dir.mkdir(parents=True, exist_ok=True)
 
             # Verify config file exists

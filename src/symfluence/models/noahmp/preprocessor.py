@@ -23,6 +23,7 @@ import pandas as pd
 import xarray as xr
 
 from symfluence.core.modeling.base.base_preprocessor import BaseModelPreProcessor
+from symfluence.core.path_resolver import resolve_install_dir
 from symfluence.core.registries import R
 
 logger = logging.getLogger(__name__)
@@ -196,14 +197,11 @@ class NoahMPPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                 default='default',
                 dict_key='NOAHMP_INSTALL_PATH',
             )
-            if install_path == 'default':
-                data_dir = Path(self._get_config_value(
-                    lambda: self.config.system.data_dir,
-                    dict_key='SYMFLUENCE_DATA_DIR',
-                ))
-                install_dir = data_dir / 'installs' / 'noah-owp-modular'
-            else:
-                install_dir = Path(install_path)
+            data_dir = self._get_config_value(
+                lambda: self.config.system.data_dir,
+                dict_key='SYMFLUENCE_DATA_DIR',
+            )
+            install_dir = resolve_install_dir(install_path, data_dir, 'installs/noah-owp-modular')
 
             params_dir = install_dir / 'parameters'
             for tbl in ['GENPARM.TBL', 'SOILPARM.TBL', 'MPTABLE.TBL']:

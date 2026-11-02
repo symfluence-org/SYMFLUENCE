@@ -96,10 +96,7 @@ class MODFLOWRunner(BaseModelRunner):
         ):
             # Setup output directory
             if sim_dir is None:
-                self.output_dir = (
-                    self.project_dir / "simulations"
-                    / self.config.domain.experiment_id / "MODFLOW"
-                )
+                self.output_dir = self.get_simulation_dir('MODFLOW', self.config.domain.experiment_id)
             else:
                 self.output_dir = sim_dir
 

@@ -9,7 +9,7 @@ Provides standard project context attributes like paths and directories.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 from .config import ConfigMixin
 
@@ -42,6 +42,15 @@ def resolve_forcing_basin_path(project_dir: Path) -> Path:
     if store.exists() and any(store.glob('*.nc')):
         return store
     return resolve_data_subdir(project_dir, 'forcing') / 'basin_averaged_data'
+
+
+def simulation_dir(project_dir: Path, experiment_id: str, model_name: str) -> Path:
+    """Conventional model output directory: ``{project_dir}/simulations/{experiment_id}/{model_name}``.
+
+    Pure convention: this deliberately does NOT consult ``EXPERIMENT_OUTPUT_<MODEL>``
+    (callers that honour that override resolve it themselves).
+    """
+    return Path(project_dir) / 'simulations' / experiment_id / model_name
 
 
 class ProjectContextMixin(ConfigMixin):
@@ -148,6 +157,15 @@ class ProjectContextMixin(ConfigMixin):
     def project_simulations_dir(self) -> Path:
         """Directory for model simulations: {project_dir}/simulations"""
         return self.project_dir / 'simulations'
+
+    def get_simulation_dir(self, model_name: str, experiment_id: Optional[str] = None) -> Path:
+        """Model output directory ``{project_dir}/simulations/{experiment_id}/{model_name}``.
+
+        ``experiment_id`` defaults to ``self.experiment_id``. Does not consult
+        ``EXPERIMENT_OUTPUT_<MODEL>``; see :func:`simulation_dir`.
+        """
+        exp_id = self.experiment_id if experiment_id is None else experiment_id
+        return simulation_dir(self.project_dir, exp_id, model_name)
 
     @property
     def project_settings_dir(self) -> Path:

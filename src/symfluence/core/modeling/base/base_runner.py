@@ -223,7 +223,7 @@ class BaseModelRunner(ABC, ModelComponentMixin, PathResolverMixin, ShapefileAcce
             Path to output directory
         """
         experiment_id = self.config.domain.experiment_id
-        return self.project_dir / 'simulations' / experiment_id / self.model_name
+        return self.get_simulation_dir(self.model_name, experiment_id)
 
     # =========================================================================
     # Template Method Hooks for Default run()
@@ -458,7 +458,7 @@ class BaseModelRunner(ABC, ModelComponentMixin, PathResolverMixin, ShapefileAcce
         else:
             # Fallback if output_dir not set
             experiment_id = self.experiment_id
-            log_path = self.project_dir / 'simulations' / experiment_id / self.model_name / log_subdir
+            log_path = self.get_simulation_dir(self.model_name, experiment_id) / log_subdir
 
         return self.ensure_dir(log_path)
 
@@ -907,7 +907,7 @@ class BaseModelRunner(ABC, ModelComponentMixin, PathResolverMixin, ShapefileAcce
             Path to experiment output directory
         """
         exp_id = experiment_id or self.config.domain.experiment_id
-        return self.project_dir / 'simulations' / exp_id / self.model_name
+        return self.get_simulation_dir(self.model_name, exp_id)
 
     def setup_path_aliases(self, aliases: Dict[str, str]) -> None:
         """

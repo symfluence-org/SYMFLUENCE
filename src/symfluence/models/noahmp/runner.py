@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from symfluence.core.modeling.base import BaseModelRunner
+from symfluence.core.path_resolver import resolve_install_dir
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -38,14 +39,11 @@ class NoahMPRunner(BaseModelRunner):
             lambda: self.config.model.noahmp.install_path,
             default='default',
         )
-        if install_path == 'default' or install_path is None:
-            data_dir = self._get_config_value(
-                lambda: self.config.system.data_dir,
-                default='.', dict_key='SYMFLUENCE_DATA_DIR',
-            )
-            self.noahmp_dir = Path(data_dir) / 'installs' / 'noah-owp-modular'
-        else:
-            self.noahmp_dir = Path(install_path)
+        data_dir = self._get_config_value(
+            lambda: self.config.system.data_dir,
+            default='.', dict_key='SYMFLUENCE_DATA_DIR',
+        )
+        self.noahmp_dir = resolve_install_dir(install_path, data_dir, 'installs/noah-owp-modular')
 
         exe_name = self._get_config_value(
             lambda: self.config.model.noahmp.exe,
@@ -83,10 +81,7 @@ class NoahMPRunner(BaseModelRunner):
             default=7200,
         )
 
-        log_dir = (
-            self.project_dir / "simulations"
-            / self._get_experiment_id() / "NOAHMP" / "logs"
-        )
+        log_dir = self.get_simulation_dir('NOAHMP', self._get_experiment_id()) / 'logs'
         log_dir.mkdir(parents=True, exist_ok=True)
 
         self.logger.info(f"Running Noah-MP for domain: {self.domain_name}")
@@ -100,10 +95,7 @@ class NoahMPRunner(BaseModelRunner):
         if not result.success:
             self.logger.error(f"Noah-MP simulation failed (rc={result.returncode})")
 
-        output_dir = (
-            self.project_dir / "simulations"
-            / self._get_experiment_id() / "NOAHMP"
-        )
+        output_dir = self.get_simulation_dir('NOAHMP', self._get_experiment_id())
         return output_dir if result.success else None
 
     def _get_experiment_id(self) -> str:

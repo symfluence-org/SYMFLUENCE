@@ -122,7 +122,7 @@ class StandardModelPostProcessor(BaseModelPostProcessor):
         if self.output_dir_override:
             return self.project_dir / 'simulations' / self.experiment_id / self.output_dir_override
         if self.use_routing_output:
-            return self.project_dir / 'simulations' / self.experiment_id / 'mizuRoute'
+            return self.get_simulation_dir('mizuRoute')
         return self.sim_dir
 
     def _format_pattern(self, pattern: str) -> str:
@@ -532,7 +532,7 @@ class RoutedModelPostProcessor(StandardModelPostProcessor):
 
     def _setup_model_specific_paths(self) -> None:
         """Set up routing-specific paths."""
-        self.mizuroute_dir = self.project_dir / 'simulations' / self.experiment_id / 'mizuRoute'
+        self.mizuroute_dir = self.get_simulation_dir('mizuRoute')
 
     def _extract_from_netcdf(self, file_path: Path) -> Optional[pd.Series]:
         """

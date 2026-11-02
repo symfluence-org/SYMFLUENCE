@@ -246,7 +246,7 @@ class FUSERunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, Miz
         fuse_id = self._get_fuse_file_id()
         domain = self.domain_name
 
-        fuse_out_dir = self.project_dir / "simulations" / experiment_id / "FUSE"
+        fuse_out_dir = self.get_simulation_dir('FUSE', experiment_id)
 
         # Find FUSE output file
         target = next((path for path in self._fuse_output_candidates(fuse_out_dir, fuse_id) if path.exists()), None)
@@ -710,7 +710,7 @@ class FUSERunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, Miz
             # 1) Locate the FUSE output that the control file points to
             #    Control uses: <fname_qsim> DOMAIN_EXPERIMENT_runs_def.nc
             #    Prefer runs_def; fall back to runs_best if needed.
-            out_dir = self.project_dir / "simulations" / self.experiment_id / "FUSE"
+            out_dir = self.get_simulation_dir('FUSE')
             fuse_id = self._get_fuse_file_id()
             base = f"{self.domain_name}_{fuse_id}"
             candidates = [

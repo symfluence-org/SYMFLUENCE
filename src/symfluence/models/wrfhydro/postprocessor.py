@@ -48,14 +48,14 @@ class WRFHydroPostProcessor(StandardModelPostProcessor):
 
     def _setup_model_specific_paths(self) -> None:
         """Set up WRF-Hydro-specific paths."""
-        self.wrfhydro_output_dir = self.project_dir / 'simulations' / self.experiment_id / 'WRFHYDRO'
+        self.wrfhydro_output_dir = self.get_simulation_dir('WRFHYDRO')
         catchment_file = self._get_catchment_file_path()
         self.catchment_path = catchment_file.parent
         self.catchment_name = catchment_file.name
 
     def _get_output_dir(self) -> Path:
         """WRF-Hydro outputs to standard simulation directory."""
-        return self.project_dir / 'simulations' / self.experiment_id / 'WRFHYDRO'
+        return self.get_simulation_dir('WRFHYDRO')
 
     def extract_streamflow(self) -> Optional[Path]:
         """

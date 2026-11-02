@@ -204,7 +204,7 @@ class SummaStructureAnalyzer(BaseStructureEnsembleAnalyzer):
             )
             return {'kge': np.nan, 'kgep': np.nan, 'nse': np.nan, 'mae': np.nan, 'rmse': np.nan}
 
-        sim_dir = self.project_dir / 'simulations' / self.experiment_id / 'SUMMA'
+        sim_dir = self.get_simulation_dir('SUMMA')
         result = evaluator.calculate_metrics(
             sim=sim_dir, calibration_only=False,
         )
@@ -332,7 +332,7 @@ class SummaStructureAnalyzer(BaseStructureEnsembleAnalyzer):
     def _read_summa_native_series(self) -> pd.Series:
         """Fallback: build a m³/s streamflow series from SUMMA's own
         ``averageRoutedRunoff`` (m/s) scaled by HRU area."""
-        summa_dir = self.project_dir / 'simulations' / self.experiment_id / 'SUMMA'
+        summa_dir = self.get_simulation_dir('SUMMA')
         candidates = sorted(summa_dir.glob(f"{self.experiment_id}*.nc"))
         candidates = [p for p in candidates if 'day' not in p.stem]
         if not candidates:

@@ -23,6 +23,7 @@ from symfluence.core.calibration.workers.base_worker import (
 from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
+from symfluence.core.path_resolver import resolve_install_dir
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -112,8 +113,8 @@ class WflowWorker(BaseWorker):
     def run_model(self, config, settings_dir, output_dir, **kwargs):
         try:
             install_path = resolve_config_value(config, lambda: config.model.wflow.install_path, 'default', 'WFLOW_INSTALL_PATH')
-            data_dir = config.get('SYMFLUENCE_DATA_DIR', '.')
-            exe_path = Path(data_dir) / 'installs' / 'wflow' / 'bin' / 'wflow_cli' if install_path == 'default' else Path(install_path) / 'wflow_cli'
+            data_dir = resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR')
+            exe_path = resolve_install_dir(install_path, data_dir, 'installs/wflow/bin') / 'wflow_cli'
             config_file = resolve_config_value(config, lambda: config.model.wflow.config_file, 'wflow_sbm.toml', 'WFLOW_CONFIG_FILE')
             timeout = int(resolve_config_value(config, lambda: config.model.wflow.timeout, 7200, 'WFLOW_TIMEOUT'))
             if not exe_path.exists():

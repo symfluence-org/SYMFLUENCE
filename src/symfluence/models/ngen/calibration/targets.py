@@ -442,7 +442,7 @@ class NgenStreamflowTarget(StreamflowEvaluator):
                 sim = Path(output_dir)
             else:
                 exp_id = experiment_id or self._get_config_value(lambda: self.config.domain.experiment_id, dict_key='EXPERIMENT_ID')
-                sim = self.project_dir / 'simulations' / exp_id / 'NGEN'
+                sim = self.get_simulation_dir('NGEN', exp_id)
 
         # Use base class method with our specialized data extraction
         return super().calculate_metrics(

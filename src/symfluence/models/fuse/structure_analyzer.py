@@ -197,11 +197,11 @@ class FuseStructureAnalyzer(BaseStructureEnsembleAnalyzer):
 
         # FUSE names output files using FUSE_FILE_ID (not experiment_id)
         # due to Fortran CHARACTER(LEN=6) limit in selectmodl.f90
-        sim_file_path = self.project_dir / 'simulations' / self.experiment_id / 'FUSE' / f"{self.domain_name}_{self.fuse_file_id}_runs_best.nc"
+        sim_file_path = self.get_simulation_dir('FUSE') / f"{self.domain_name}_{self.fuse_file_id}_runs_best.nc"
 
         if not sim_file_path.exists():
             # Try runs_def as fallback
-            sim_file_path = self.project_dir / 'simulations' / self.experiment_id / 'FUSE' / f"{self.domain_name}_{self.fuse_file_id}_runs_def.nc"
+            sim_file_path = self.get_simulation_dir('FUSE') / f"{self.domain_name}_{self.fuse_file_id}_runs_def.nc"
 
         # Load observations if not already cached
         if self.observed_streamflow is None:

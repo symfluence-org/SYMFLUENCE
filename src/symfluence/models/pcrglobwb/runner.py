@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from symfluence.core.modeling.base import BaseModelRunner
+from symfluence.core.path_resolver import resolve_install_dir
 from symfluence.core.registries import R
 from symfluence.models.lisflood.runner import _find_pcraster_site_packages
 
@@ -33,14 +34,11 @@ class PCRGLOBWBRunner(BaseModelRunner):
             lambda: self.config.model.pcrglobwb.install_path,
             default='default',
         )
-        if install_path == 'default' or install_path is None:
-            data_dir = self._get_config_value(
-                lambda: self.config.system.data_dir,
-                default='.', dict_key='SYMFLUENCE_DATA_DIR',
-            )
-            self.pcrglobwb_dir = Path(data_dir) / 'installs' / 'pcrglobwb'
-        else:
-            self.pcrglobwb_dir = Path(install_path)
+        data_dir = self._get_config_value(
+            lambda: self.config.system.data_dir,
+            default='.', dict_key='SYMFLUENCE_DATA_DIR',
+        )
+        self.pcrglobwb_dir = resolve_install_dir(install_path, data_dir, 'installs/pcrglobwb')
 
         exe_name = self._get_config_value(
             lambda: self.config.model.pcrglobwb.exe,
@@ -81,10 +79,7 @@ class PCRGLOBWBRunner(BaseModelRunner):
             default=14400,
         )
 
-        log_dir = (
-            self.project_dir / "simulations"
-            / self._get_experiment_id() / "PCRGLOBWB" / "logs"
-        )
+        log_dir = self.get_simulation_dir('PCRGLOBWB', self._get_experiment_id()) / 'logs'
         log_dir.mkdir(parents=True, exist_ok=True)
 
         self.logger.info(f"Running PCRGLOBWB for domain: {self.domain_name}")
@@ -98,10 +93,7 @@ class PCRGLOBWBRunner(BaseModelRunner):
         if not result.success:
             self.logger.error(f"PCRGLOBWB simulation failed (rc={result.returncode})")
 
-        output_dir = (
-            self.project_dir / "simulations"
-            / self._get_experiment_id() / "PCRGLOBWB"
-        )
+        output_dir = self.get_simulation_dir('PCRGLOBWB', self._get_experiment_id())
         return output_dir if result.success else None
 
     def _get_experiment_id(self) -> str:

@@ -61,10 +61,7 @@ class CLMPostProcessor(StandardModelPostProcessor):
             Tuple of (streamflow Series in m3/s, metadata dict)
         """
         if output_dir is None:
-            output_dir = (
-                self.project_dir / "simulations"
-                / self.config.domain.experiment_id / "CLM"
-            )
+            output_dir = self.get_simulation_dir('CLM', self.config.domain.experiment_id)
 
         # Find history files
         hist_files = sorted(output_dir.glob("*.clm2.h0.*.nc"))

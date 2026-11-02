@@ -147,7 +147,7 @@ class LisfloodRunner(BaseModelRunner):
             default=7200,
         )
 
-        log_dir = self.project_dir / "simulations" / self._get_experiment_id() / "LISFLOOD" / "logs"
+        log_dir = self.get_simulation_dir('LISFLOOD', self._get_experiment_id()) / 'logs'
         log_dir.mkdir(parents=True, exist_ok=True)
 
         self.logger.info(f"Running LISFLOOD for domain: {self.domain_name}")
@@ -160,7 +160,7 @@ class LisfloodRunner(BaseModelRunner):
         )
         if not result.success:
             self.logger.error(f"LISFLOOD simulation failed (rc={result.returncode})")
-        output_dir = self.project_dir / "simulations" / self._get_experiment_id() / "LISFLOOD"
+        output_dir = self.get_simulation_dir('LISFLOOD', self._get_experiment_id())
         return output_dir if result.success else None
 
     def _get_experiment_id(self) -> str:

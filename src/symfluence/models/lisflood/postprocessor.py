@@ -30,13 +30,13 @@ class LisfloodPostProcessor(StandardModelPostProcessor):
         return "LISFLOOD"
 
     def _setup_model_specific_paths(self) -> None:
-        self.lisflood_output_dir = self.project_dir / "simulations" / self.experiment_id / "LISFLOOD"
+        self.lisflood_output_dir = self.get_simulation_dir('LISFLOOD')
         catchment_file = self._get_catchment_file_path()
         self.catchment_path = catchment_file.parent
         self.catchment_name = catchment_file.name
 
     def _get_output_dir(self) -> Path:
-        return self.project_dir / "simulations" / self.experiment_id / "LISFLOOD"
+        return self.get_simulation_dir('LISFLOOD')
 
     def extract_streamflow(self) -> Optional[Path]:
         self.logger.info("Extracting streamflow from LISFLOOD outputs")

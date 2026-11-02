@@ -54,10 +54,7 @@ class PIHMPostProcessor(StandardModelPostProcessor):
             Tuple of (streamflow Series in m3/s, metadata dict)
         """
         if output_dir is None:
-            output_dir = (
-                self.project_dir / "simulations"
-                / self.config.domain.experiment_id / "PIHM"
-            )
+            output_dir = self.get_simulation_dir('PIHM', self.config.domain.experiment_id)
 
         try:
             from .extractor import PIHMResultExtractor
@@ -126,10 +123,7 @@ class PIHMPostProcessor(StandardModelPostProcessor):
 
             coupler = SUMAToPIHMCoupler(self.config_dict, self.logger)
 
-            summa_output_dir = (
-                self.project_dir / "simulations"
-                / self.config.domain.experiment_id / "SUMMA"
-            )
+            summa_output_dir = self.get_simulation_dir('SUMMA', self.config.domain.experiment_id)
 
             if not summa_output_dir.exists():
                 logger.warning(

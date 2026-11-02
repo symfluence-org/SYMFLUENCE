@@ -59,10 +59,7 @@ class CLMParFlowPostProcessor(StandardModelPostProcessor):
             Tuple of (streamflow Series in m3/s, metadata dict)
         """
         if output_dir is None:
-            output_dir = (
-                self.project_dir / "simulations"
-                / self.config.domain.experiment_id / "CLMPARFLOW"
-            )
+            output_dir = self.get_simulation_dir('CLMPARFLOW', self.config.domain.experiment_id)
 
         basin_outlet = output_dir / 'clmparflow_basin_outlet.csv'
         if basin_outlet.exists():

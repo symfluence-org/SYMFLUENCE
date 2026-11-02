@@ -46,7 +46,7 @@ class SUMMAPlotter(BasePlotter):
 
         plot_paths: Dict[str, str] = {}
         try:
-            summa_file = self.project_dir / "simulations" / experiment_id / "SUMMA" / f"{experiment_id}_day.nc"
+            summa_file = self.get_simulation_dir('SUMMA', experiment_id) / f"{experiment_id}_day.nc"
             if not summa_file.exists():
                 self.logger.warning(f"SUMMA output file not found: {summa_file}")
                 return {}

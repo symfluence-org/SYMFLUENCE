@@ -48,7 +48,7 @@ class RavenRunner(BaseModelRunner):
         )
 
     def _build_run_command(self):
-        out = self.project_dir / "simulations" / self.experiment_id / "RAVEN"
+        out = self.get_simulation_dir('RAVEN')
         out.mkdir(parents=True, exist_ok=True)
         return [str(self.raven_exe), str(self.settings_dir / "model"), "-o", str(out)]
 

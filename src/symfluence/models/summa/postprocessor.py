@@ -45,7 +45,7 @@ class SUMMAPostProcessor(RoutedModelPostProcessor):
 
     def _extract_native_summa_streamflow(self) -> Optional[Path]:
         summa_dir = (
-            self.project_dir / 'simulations' / self.experiment_id / 'SUMMA'
+            self.get_simulation_dir('SUMMA')
         )
         candidates = sorted(summa_dir.glob(f"{self.experiment_id}*.nc"))
         # Restart files contain state snapshots, not runoff time series, and

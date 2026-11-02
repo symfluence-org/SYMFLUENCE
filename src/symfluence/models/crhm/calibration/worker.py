@@ -20,6 +20,7 @@ from symfluence.core.calibration.workers.base_worker import BaseWorker, run_work
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.mixins.project import resolve_data_subdir
+from symfluence.core.path_resolver import resolve_install_executable
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -297,11 +298,7 @@ class CRHMWorker(BaseWorker):
         install_path = resolve_config_value(config, lambda: config.model.crhm.install_path, 'default', 'CRHM_INSTALL_PATH')
         exe_name = resolve_config_value(config, lambda: config.model.crhm.exe, 'crhm', 'CRHM_EXE')
 
-        if install_path == 'default':
-            exe = data_dir / "installs" / "crhm" / "bin" / exe_name
-        else:
-            install_path = Path(install_path)
-            exe = install_path / exe_name if install_path.is_dir() else install_path
+        exe = resolve_install_executable(install_path, data_dir, 'installs/crhm/bin', exe_name)
         # Windows builds produce <name>.exe even when the config declares a bare
         # name; the calibration worker (unlike the runner) looked only for the
         # bare path, so every eval reported "executable not found" and returned a

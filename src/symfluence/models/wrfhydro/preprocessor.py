@@ -15,13 +15,13 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from pathlib import Path
 from typing import Tuple
 
 import numpy as np
 import pandas as pd
 
 from symfluence.core.modeling.base.base_preprocessor import BaseModelPreProcessor
+from symfluence.core.path_resolver import resolve_install_dir
 from symfluence.core.registries import R
 
 logger = logging.getLogger(__name__)
@@ -764,10 +764,7 @@ class WRFHydroPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             default=None,
             dict_key='WRFHYDRO_INSTALL_PATH'
         )
-        if not install_path or install_path == 'default':
-            install_path = self.data_dir / 'installs' / 'wrfhydro'
-        else:
-            install_path = Path(install_path)
+        install_path = resolve_install_dir(install_path, self.data_dir, 'installs/wrfhydro')
 
         tbl_source_dir = None
 

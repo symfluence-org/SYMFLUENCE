@@ -17,6 +17,7 @@ from symfluence.core.calibration.workers.base_worker import BaseWorker, WorkerTa
 from symfluence.core.logging_utils import get_worker_logger
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
+from symfluence.core.path_resolver import resolve_install_dir
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -193,12 +194,8 @@ class SUMMAWorker(BaseWorker):
 
             summa_install_path = resolve_config_value(config, lambda: config.model.summa.install_path, 'default', 'SUMMA_INSTALL_PATH')
             summa_exe = resolve_config_value(config, lambda: config.model.summa.exe, "summa_sundials.exe", 'SUMMA_EXE')
-            if summa_install_path == 'default':
-                data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
-                summa_exe = data_dir / 'installs' / 'summa' / 'bin' / summa_exe
-            else:
-                summa_install_path = Path(summa_install_path)
-                summa_exe = summa_install_path / summa_exe
+            data_dir = resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR')
+            summa_exe = resolve_install_dir(summa_install_path, data_dir, 'installs/summa/bin') / summa_exe
 
             file_manager = settings_dir / 'fileManager.txt'
             if not file_manager.exists():
@@ -305,11 +302,8 @@ class SUMMAWorker(BaseWorker):
 
             summa_install_path = resolve_config_value(config, lambda: config.model.summa.install_path, 'default', 'SUMMA_INSTALL_PATH')
             summa_exe_name = resolve_config_value(config, lambda: config.model.summa.exe, 'summa_sundials.exe', 'SUMMA_EXE')
-            if summa_install_path == 'default':
-                data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
-                summa_exe = data_dir / 'installs' / 'summa' / 'bin' / summa_exe_name
-            else:
-                summa_exe = Path(summa_install_path) / summa_exe_name
+            data_dir = resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR')
+            summa_exe = resolve_install_dir(summa_install_path, data_dir, 'installs/summa/bin') / summa_exe_name
 
             file_manager = settings_dir / 'fileManager.txt'
 

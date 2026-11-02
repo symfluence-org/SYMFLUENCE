@@ -63,10 +63,7 @@ class MODFLOWPostProcessor(StandardModelPostProcessor):
             Tuple of (streamflow Series in m3/s, metadata dict)
         """
         if output_dir is None:
-            output_dir = (
-                self.project_dir / "simulations"
-                / self.config.domain.experiment_id / "MODFLOW"
-            )
+            output_dir = self.get_simulation_dir('MODFLOW', self.config.domain.experiment_id)
 
         # Get MODFLOW drain discharge
         try:
@@ -152,10 +149,7 @@ class MODFLOWPostProcessor(StandardModelPostProcessor):
             coupler = SUMMAToMODFLOWCoupler(self.config_dict, self.logger)
 
             # Find SUMMA output
-            summa_output_dir = (
-                self.project_dir / "simulations"
-                / self.config.domain.experiment_id / "SUMMA"
-            )
+            summa_output_dir = self.get_simulation_dir('SUMMA', self.config.domain.experiment_id)
 
             if not summa_output_dir.exists():
                 logger.warning(

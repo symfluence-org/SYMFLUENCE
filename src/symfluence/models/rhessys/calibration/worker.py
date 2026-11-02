@@ -23,6 +23,7 @@ from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.logging_utils import log_once
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
+from symfluence.core.path_resolver import resolve_install_executable
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -448,12 +449,8 @@ class RHESSysWorker(BaseWorker):
         """Get RHESSys executable path."""
         install_path = resolve_config_value(config, lambda: config.model.rhessys.install_path, 'default', 'RHESSYS_INSTALL_PATH')
         exe_name = resolve_config_value(config, lambda: config.model.rhessys.exe, 'rhessys', 'RHESSYS_EXE')
-        if install_path == 'default':
-            exe = data_dir / "installs" / "rhessys" / "bin" / exe_name
-        else:
-            # If install_path is a directory, append exe_name; else it's a full path
-            install_path = Path(install_path)
-            exe = install_path / exe_name if install_path.is_dir() else install_path
+        # A directory install_path gets exe_name appended; otherwise it is the full path
+        exe = resolve_install_executable(install_path, data_dir, 'installs/rhessys/bin', exe_name)
         # Windows builds produce <name>.exe even when the config declares a bare
         # name; fall back to the .exe variant when the bare path is absent (else
         # every eval reports "executable not found" -> 100% crash rate).

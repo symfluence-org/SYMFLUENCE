@@ -41,14 +41,14 @@ class CRHMPostProcessor(StandardModelPostProcessor):
 
     def _setup_model_specific_paths(self) -> None:
         """Set up CRHM-specific paths."""
-        self.crhm_output_dir = self.project_dir / 'simulations' / self.experiment_id / 'CRHM'
+        self.crhm_output_dir = self.get_simulation_dir('CRHM')
         catchment_file = self._get_catchment_file_path()
         self.catchment_path = catchment_file.parent
         self.catchment_name = catchment_file.name
 
     def _get_output_dir(self) -> Path:
         """CRHM outputs to standard simulation directory."""
-        return self.project_dir / 'simulations' / self.experiment_id / 'CRHM'
+        return self.get_simulation_dir('CRHM')
 
     def _find_output_file(self) -> Optional[Path]:
         """Locate the CRHM output file."""

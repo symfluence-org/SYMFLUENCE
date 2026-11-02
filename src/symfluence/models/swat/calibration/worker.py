@@ -22,6 +22,7 @@ import pandas as pd
 from symfluence.core.calibration.workers.base_worker import BaseWorker, run_worker_task
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
+from symfluence.core.path_resolver import resolve_install_executable
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -573,13 +574,7 @@ class SWATWorker(BaseWorker):
         install_path = resolve_config_value(config, lambda: config.model.swat.install_path, 'default', 'SWAT_INSTALL_PATH')
         exe_name = resolve_config_value(config, lambda: config.model.swat.exe, 'swat_rel.exe', 'SWAT_EXE')
 
-        if install_path == 'default':
-            return data_dir / "installs" / "swat" / "bin" / exe_name
-
-        install_path = Path(install_path)
-        if install_path.is_dir():
-            return install_path / exe_name
-        return install_path
+        return resolve_install_executable(install_path, data_dir, 'installs/swat/bin', exe_name)
 
     def _cleanup_stale_output(self, output_dir: Path) -> None:
         """Remove stale SWAT output files."""

@@ -57,7 +57,7 @@ BASELINE = {
     # models/: see the module docstring for the categories left unconverted.
     "models/clm/calibration/worker.py": 1,  # SYMFLUENCE_DATA_DIR as str
     "models/crhm/calibration/worker.py": 1,  # CRHM_WARMUP_DAYS (no field)
-    "models/cwatm/calibration/worker.py": 3,  # SYMFLUENCE_DATA_DIR as str
+    "models/cwatm/calibration/worker.py": 2,  # SYMFLUENCE_DATA_DIR as str
     "models/fuse/calibration/metrics_calculation.py": 2,  # OPTIMIZATION_METRIC/CALIBRATION_METRIC chain
     "models/fuse/calibration/optimizer.py": 1,  # SYMFLUENCE_DATA_DIR as str
     "models/fuse/calibration/parameter_application.py": 1,  # PARAMETER_REGIONALIZATION (maps to model.fuse)
@@ -71,7 +71,7 @@ BASELINE = {
     "models/mesh/preprocessing/forcing_processor.py": 2,  # SUB_GRID/DOMAIN_DISCRETIZATION chain
     "models/modflow/land_adapters.py": 1,  # LAND_SURFACE_MODEL (no field)
     "models/ngen/extractor.py": 1,  # explicit dict branch
-    "models/pcrglobwb/calibration/worker.py": 3,  # SYMFLUENCE_DATA_DIR as str
+    "models/pcrglobwb/calibration/worker.py": 2,  # SYMFLUENCE_DATA_DIR as str
     "models/raven/adapter.py": 8,  # config['KEY'] (KeyError semantics)
     "models/rhessys/calibration/worker.py": 7,  # RHESSYS_* worker options (no fields)
     "models/rhessys/climate_generator.py": 2,  # SUB_GRID/DOMAIN_DISCRETIZATION chain
@@ -82,7 +82,7 @@ BASELINE = {
     "models/swat/calibration/optimizer.py": 1,  # SWAT_FINAL_EVAL_RETRIES (no field)
     "models/swat/calibration/worker.py": 2,  # SWAT_MAX_RETRIES, TIME_START (no fields)
     "models/vic/calibration/worker.py": 1,  # VIC_WARMUP_DAYS (no field)
-    "models/wflow/calibration/worker.py": 7,  # config['KEY'], explicit dict branch, WFLOW_TIMESTEP, DATA_DIR
+    "models/wflow/calibration/worker.py": 6,  # config['KEY'], explicit dict branch, WFLOW_TIMESTEP, DATA_DIR
     "models/wrfhydro/calibration/worker.py": 1,  # CATCHMENT_AREA_KM2 (no field)
 }
 

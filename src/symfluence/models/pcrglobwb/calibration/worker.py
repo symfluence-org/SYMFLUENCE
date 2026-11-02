@@ -17,6 +17,7 @@ import pandas as pd
 from symfluence.core.calibration.workers.base_worker import BaseWorker
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
+from symfluence.core.path_resolver import resolve_install_dir
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 from symfluence.models.lisflood.runner import _find_pcraster_site_packages
@@ -113,11 +114,8 @@ class PCRGLOBWBWorker(BaseWorker):
 
         # PCR-GLOBWB install path
         install_path = resolve_config_value(config, lambda: config.model.pcrglobwb.install_path, 'default', 'PCRGLOBWB_INSTALL_PATH')
-        data_dir = config.get('SYMFLUENCE_DATA_DIR', '.')
-        if install_path == 'default' or not install_path:
-            pcrglobwb_dir = Path(data_dir) / 'installs' / 'pcrglobwb'
-        else:
-            pcrglobwb_dir = Path(install_path)
+        data_dir = resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR')
+        pcrglobwb_dir = resolve_install_dir(install_path, data_dir, 'installs/pcrglobwb')
 
         env['PYTHONPATH'] = str(pcrglobwb_dir)
 

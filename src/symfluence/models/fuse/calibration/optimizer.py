@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 from symfluence.core.calibration.optimizers.base_model_optimizer import BaseModelOptimizer
 from symfluence.core.file_utils import copy_file
 from symfluence.core.mixins.config import resolve_config_value
+from symfluence.core.path_resolver import resolve_install_dir
 from symfluence.core.registries import R
 
 from .parameter_manager import FUSEParameterManager  # noqa: F401 - trigger param manager registration
@@ -67,7 +68,7 @@ class FUSEModelOptimizer(BaseModelOptimizer):
         self.domain_name = domain_name_str
         self.project_dir = self.data_dir / f"domain_{self.domain_name}"
 
-        self.fuse_sim_dir = self.project_dir / 'simulations' / exp_id / 'FUSE'
+        self.fuse_sim_dir = self.get_simulation_dir('FUSE', exp_id)
         self.fuse_setup_dir = self.project_dir / 'settings' / 'FUSE'
         self.fuse_exe_path = self._get_fuse_executable_path_pre_init(config)
         # Use 'or' to treat None as "not set" and fallback to exp_id; hash long IDs.
@@ -85,9 +86,7 @@ class FUSEModelOptimizer(BaseModelOptimizer):
     def _get_fuse_executable_path_pre_init(self, config) -> Path:
         """Helper to get FUSE executable path before full initialization."""
         fuse_install = resolve_config_value(config, lambda: config.model.fuse.install_path, 'default', 'FUSE_INSTALL_PATH')
-        if fuse_install == 'default':
-            return self.data_dir / 'installs' / 'fuse' / 'bin' / 'fuse.exe'
-        return Path(fuse_install) / 'fuse.exe'
+        return resolve_install_dir(fuse_install, self.data_dir, 'installs/fuse/bin') / 'fuse.exe'
 
     def _get_model_name(self) -> str:
         """Return model name."""

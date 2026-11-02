@@ -18,6 +18,7 @@ from typing import Optional
 
 from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.modeling.base import BaseModelRunner
+from symfluence.core.path_resolver import resolve_install_executable
 from symfluence.core.process_exec import run as run_subprocess
 
 logger = logging.getLogger(__name__)
@@ -119,13 +120,7 @@ class WATFLOODRunner(BaseModelRunner):
             dict_key='WATFLOOD_EXE'
         )
 
-        if install_path == 'default':
-            return self.data_dir / "installs" / "watflood" / "bin" / exe_name
-
-        install_path = Path(install_path)
-        if install_path.is_dir():
-            return install_path / exe_name
-        return install_path
+        return resolve_install_executable(install_path, self.data_dir, 'installs/watflood/bin', exe_name)
 
     def _collect_outputs(self, settings_dir: Path, output_dir: Path) -> None:
         """Copy WATFLOOD outputs to the standard output directory."""
