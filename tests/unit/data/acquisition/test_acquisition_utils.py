@@ -3,7 +3,7 @@ Unit Tests for Acquisition Utility Functions.
 
 Tests the utility functions:
 - create_robust_session(): session creation with retry adapter
-- resolve_credentials(): environment, netrc, config fallback chain
+- resolve_credentials(): config, environment, netrc fallback chain
 - download_file_streaming(): successful download, atomic write cleanup
 - atomic_write(): context manager for safe file writes
 """
@@ -349,8 +349,8 @@ class TestResolveCredentials:
         assert username == 'config_user'
         assert password == 'config_pass'
 
-    def test_env_takes_priority_over_config(self, clean_environment):
-        """Environment variables should take priority over config."""
+    def test_config_takes_priority_over_env(self, clean_environment):
+        """Config should take priority over environment variables."""
         from symfluence.data.acquisition.utils import resolve_credentials
 
         os.environ['TEST_USERNAME'] = 'env_user'
@@ -368,9 +368,9 @@ class TestResolveCredentials:
                 config=config
             )
 
-            # Env should win
-            assert username == 'env_user'
-            assert password == 'env_pass'
+            # Config should win
+            assert username == 'config_user'
+            assert password == 'config_pass'
         finally:
             os.environ.pop('TEST_USERNAME', None)
             os.environ.pop('TEST_PASSWORD', None)
@@ -510,8 +510,8 @@ class TestResolveEarthdataToken:
         token = resolve_earthdata_token(config=config)
         assert token == 'config-token-456'
 
-    def test_env_takes_precedence_over_config(self, clean_environment):
-        """Environment variable should take precedence over config."""
+    def test_config_takes_precedence_over_env(self, clean_environment):
+        """Config (explicit, per-project) should take precedence over the environment."""
         from symfluence.data.acquisition.utils import resolve_earthdata_token
 
         os.environ['EARTHDATA_TOKEN'] = 'env-token'
@@ -519,7 +519,7 @@ class TestResolveEarthdataToken:
 
         try:
             token = resolve_earthdata_token(config=config)
-            assert token == 'env-token'
+            assert token == 'config-token'
         finally:
             os.environ.pop('EARTHDATA_TOKEN', None)
 

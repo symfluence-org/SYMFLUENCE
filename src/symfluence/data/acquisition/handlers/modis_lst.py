@@ -25,6 +25,7 @@ import requests
 from symfluence.core.registries import R
 
 from ..base import BaseAcquisitionHandler
+from ..earthdata_auth import missing_credentials_message
 
 # AppEEARS API endpoints
 APPEEARS_BASE = "https://appeears.earthdatacloud.nasa.gov/api"
@@ -84,10 +85,7 @@ class MODISLSTAcquirer(BaseAcquisitionHandler):
         # Get credentials
         username, password = self._get_earthdata_credentials()
         if not username or not password:
-            raise ValueError(
-                "NASA Earthdata credentials required. Set via environment variables "
-                "(EARTHDATA_USERNAME, EARTHDATA_PASSWORD) or ~/.netrc"
-            )
+            raise ValueError(missing_credentials_message("MODIS LST"))
 
         # Get configuration
         product = self._get_config_value(lambda: None, default='MOD11A1', dict_key='MODIS_LST_PRODUCT')

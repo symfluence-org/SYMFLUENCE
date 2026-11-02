@@ -61,7 +61,7 @@ class GLDASAcquirer(BaseAcquisitionHandler):
 
         # Authenticate
         self.logger.info("Authenticating with NASA Earthdata...")
-        earthaccess.login(strategy="netrc")
+        self._earthdata_auth().earthaccess_login(strategy="netrc", required=True)
 
         # Search for granules
         self.logger.info(f"Searching GLDAS-2.1 monthly ({start_year}-{end_year})...")

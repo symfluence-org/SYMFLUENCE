@@ -19,7 +19,7 @@ import time
 from contextlib import contextmanager
 from http.client import IncompleteRead
 from pathlib import Path
-from typing import Any, Dict, Generator, List, Optional, Tuple
+from typing import Any, Dict, Generator, List, Optional, Sequence, Tuple
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -37,7 +37,8 @@ def create_robust_session(
     max_retries: int = 5,
     backoff_factor: float = 1.0,
     status_forcelist: List[int] = None,
-    allowed_methods: List[str] = None
+    allowed_methods: List[str] = None,
+    session: Optional[requests.Session] = None,
 ) -> requests.Session:
     """
     Create a requests session with automatic retry logic for network failures.
@@ -49,6 +50,7 @@ def create_robust_session(
         backoff_factor: Factor for exponential backoff, e.g., 1.0 means 1s, 2s, 4s, 8s
         status_forcelist: HTTP status codes to retry on (default: [429, 500, 502, 503, 504])
         allowed_methods: HTTP methods to retry (default: ["HEAD", "GET", "OPTIONS"])
+        session: Existing session to mount the retry adapters on (default: a new one)
 
     Returns:
         Configured requests.Session object with retry adapters mounted
@@ -62,7 +64,8 @@ def create_robust_session(
     if allowed_methods is None:
         allowed_methods = ["HEAD", "GET", "OPTIONS"]
 
-    session = requests.Session()
+    if session is None:
+        session = requests.Session()
 
     retry_strategy = Retry(
         total=max_retries,
@@ -379,6 +382,58 @@ def atomic_write(target_path: Path) -> Generator[Path, None, None]:
 # Credential Management
 # =============================================================================
 
+def netrc_candidate_paths() -> List[Path]:
+    """``.netrc`` files to consult, in order: ``$NETRC``, ``~/.netrc``, ``~/_netrc``.
+
+    Same files ``requests`` and ``earthaccess`` consult; ``_netrc`` is the
+    Windows spelling.
+    """
+    paths = []
+    env_path = os.environ.get('NETRC')
+    if env_path:
+        paths.append(Path(env_path).expanduser())
+    home = Path.home()
+    paths.extend([home / '.netrc', home / '_netrc'])
+    return paths
+
+
+def read_netrc_credentials(
+    hosts: Sequence[str],
+    logger: Optional[logging.Logger] = None,
+) -> Optional[Tuple[str, str, str]]:
+    """The one ``.netrc`` reader for acquisition code (stdlib ``netrc``).
+
+    Checks each file from :func:`netrc_candidate_paths` for each machine in
+    ``hosts`` (file order first, then host order).
+
+    Args:
+        hosts: Machine names to look up, in preference order.
+        logger: Where to log unreadable files (debug; no file contents).
+
+    Returns:
+        ``(login, password, "<path>, <host>")`` for the first entry with both
+        a login and a password, or None.
+    """
+    log = logger or logging.getLogger(__name__)
+    for path in netrc_candidate_paths():
+        if not path.is_file():
+            continue
+        try:
+            nrc = netrc.netrc(str(path))
+        except netrc.NetrcParseError as e:
+            # The parse message can quote file tokens; log only the location.
+            log.debug(f"Could not parse {path} (line {e.lineno})")
+            continue
+        except OSError as e:
+            log.debug(f"Could not read {path}: {type(e).__name__}")
+            continue
+        for host in hosts:
+            auth = nrc.authenticators(host)
+            if auth and auth[0] and auth[2]:
+                return auth[0], auth[2], f"{path}, {host}"
+    return None
+
+
 def resolve_credentials(
     hostname: str,
     env_prefix: str = None,
@@ -386,63 +441,45 @@ def resolve_credentials(
     alt_hostnames: List[str] = None
 ) -> Tuple[Optional[str], Optional[str]]:
     """
-    Resolve credentials from multiple sources.
+    Resolve username/password credentials from multiple sources.
 
-    Checks in order of preference:
-    1. ~/.netrc file (most secure)
+    Checks in order (first complete pair wins):
+    1. Config ({prefix}_USERNAME, {prefix}_PASSWORD keys)
     2. Environment variables ({prefix}_USERNAME, {prefix}_PASSWORD)
-    3. Config dictionary ({prefix}_USERNAME, {prefix}_PASSWORD keys)
+    3. .netrc (see :func:`read_netrc_credentials`), ``hostname`` then
+       ``alt_hostnames``
+
+    For NASA Earthdata use :class:`~.earthdata_auth.EarthdataAuth`, which
+    adds token, session and earthaccess support on the same order.
 
     Args:
         hostname: Primary hostname to look up in .netrc
-        env_prefix: Prefix for environment variables (e.g., "EARTHDATA")
-        config: Optional config dictionary to check
+        env_prefix: Prefix for config keys / environment variables (e.g., "EARTHDATA")
+        config: Optional config (typed or dict) to check
         alt_hostnames: Alternative hostnames to try in .netrc
 
     Returns:
         Tuple of (username, password), or (None, None) if not found
-
-    Example:
-        >>> username, password = resolve_credentials(
-        ...     hostname='urs.earthdata.nasa.gov',
-        ...     env_prefix='EARTHDATA',
-        ...     config=my_config
-        ... )
     """
-    # 1. Try .netrc first (preferred - more secure)
-    try:
-        netrc_path = Path.home() / '.netrc'
-        if netrc_path.exists():
-            nrc = netrc.netrc(str(netrc_path))
-
-            # Try all hostnames
-            hostnames_to_try = [hostname]
-            if alt_hostnames:
-                hostnames_to_try.extend(alt_hostnames)
-
-            for host in hostnames_to_try:
-                auth = nrc.authenticators(host)
-                if auth:
-                    logger.debug(f"Using credentials from ~/.netrc ({host})")
-                    return auth[0], auth[2]
-    except Exception as e:  # noqa: BLE001 — .netrc fallback is non-critical
-        logger.debug(f"Could not read .netrc: {e}")
-
-    # 2. Try environment variables
     if env_prefix:
+        if config is not None:
+            from symfluence.core.mixins.config import resolve_config_value
+            username = resolve_config_value(config, lambda: None, None, f'{env_prefix}_USERNAME')
+            password = resolve_config_value(config, lambda: None, None, f'{env_prefix}_PASSWORD')
+            if username and password:
+                logger.debug(f"Using credentials from config ({env_prefix}_*)")
+                return username, password
+
         username = os.environ.get(f'{env_prefix}_USERNAME')
         password = os.environ.get(f'{env_prefix}_PASSWORD')
         if username and password:
             logger.debug(f"Using credentials from environment variables ({env_prefix}_*)")
             return username, password
 
-    # 3. Try config dictionary
-    if config and env_prefix:
-        username = config.get(f'{env_prefix}_USERNAME')
-        password = config.get(f'{env_prefix}_PASSWORD')
-        if username and password:
-            logger.debug(f"Using credentials from config ({env_prefix}_*)")
-            return username, password
+    found = read_netrc_credentials([hostname, *(alt_hostnames or [])])
+    if found:
+        logger.debug(f"Using credentials from .netrc ({found[2]})")
+        return found[0], found[1]
 
     return None, None
 
@@ -451,58 +488,37 @@ def get_earthdata_credentials(
     config: Dict[str, Any] = None
 ) -> Tuple[Optional[str], Optional[str]]:
     """
-    Get NASA Earthdata credentials.
+    Get NASA Earthdata credentials (config -> env -> .netrc -> earthaccess).
 
-    Convenience wrapper around resolve_credentials for Earthdata services.
+    Convenience wrapper around :meth:`EarthdataAuth.credentials`.
 
     Args:
-        config: Optional config dictionary
+        config: Optional config (typed or dict)
 
     Returns:
         Tuple of (username, password), or (None, None) if not found
     """
-    return resolve_credentials(
-        hostname='urs.earthdata.nasa.gov',
-        env_prefix='EARTHDATA',
-        config=config,
-        alt_hostnames=['earthdata.nasa.gov', 'appeears.earthdatacloud.nasa.gov']
-    )
+    from .earthdata_auth import EarthdataAuth
+    return EarthdataAuth(config).credentials()
 
 
 def resolve_earthdata_token(
     config: Dict[str, Any] = None
 ) -> Optional[str]:
     """
-    Resolve a NASA Earthdata Bearer token from environment or config.
+    Resolve a NASA Earthdata Bearer token (config, then EARTHDATA_TOKEN env var).
 
-    NASA Earthdata supports token-based authentication as an alternative to
-    username/password credentials.  Tokens can be generated at
-    https://urs.earthdata.nasa.gov/users/<user>/user_tokens
-
-    Checks in order:
-    1. EARTHDATA_TOKEN environment variable
-    2. Config dictionary (EARTHDATA_TOKEN key)
+    Tokens can be generated at https://urs.earthdata.nasa.gov/users/<user>/user_tokens.
+    Convenience wrapper around :meth:`EarthdataAuth.token`.
 
     Args:
-        config: Optional config dictionary to check
+        config: Optional config (typed or dict) to check
 
     Returns:
         Token string, or None if not found
     """
-    # 1. Environment variable
-    token = os.environ.get('EARTHDATA_TOKEN')
-    if token:
-        logger.debug("Using Earthdata token from EARTHDATA_TOKEN env var")
-        return token
-
-    # 2. Config dictionary
-    if config:
-        token = config.get('EARTHDATA_TOKEN')
-        if token:
-            logger.debug("Using Earthdata token from config")
-            return token
-
-    return None
+    from .earthdata_auth import EarthdataAuth
+    return EarthdataAuth(config).token()
 
 
 def get_cds_credentials(
@@ -525,8 +541,9 @@ def get_cds_credentials(
         return cds_url, cds_key
 
     if config:
-        cds_url = config.get('CDSAPI_URL')
-        cds_key = config.get('CDSAPI_KEY')
+        from symfluence.core.mixins.config import resolve_config_value
+        cds_url = resolve_config_value(config, lambda: None, None, 'CDSAPI_URL')
+        cds_key = resolve_config_value(config, lambda: None, None, 'CDSAPI_KEY')
         if cds_url and cds_key:
             return cds_url, cds_key
 
@@ -541,6 +558,8 @@ __all__ = [
     'create_robust_session',
     'download_file_streaming',
     'atomic_write',
+    'netrc_candidate_paths',
+    'read_netrc_credentials',
     'resolve_credentials',
     'get_earthdata_credentials',
     'resolve_earthdata_token',

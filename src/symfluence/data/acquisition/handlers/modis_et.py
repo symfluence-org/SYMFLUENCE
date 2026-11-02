@@ -29,7 +29,6 @@ Configuration:
 """
 from __future__ import annotations
 
-import os
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -376,12 +375,9 @@ class MOD16ETAcquirer(BaseEarthaccessAcquirer):
 
     def _download_via_appeears(self, output_dir: Path, processed_file: Path) -> Path:
         """Download via AppEEARS API (legacy fallback)."""
-        username, password = self._get_earthdata_credentials()
-        if not username or not password:
-            raise RuntimeError(
-                "Earthdata credentials required. Set EARTHDATA_USERNAME and "
-                "EARTHDATA_PASSWORD environment variables or add to ~/.netrc"
-            )
+        username, password = self._earthdata_auth().require_credentials(
+            "MOD16 ET via AppEEARS"
+        )
 
         products = self._get_config_value(lambda: None, default=['MOD16A2.061'], dict_key='MOD16_PRODUCTS')
         if isinstance(products, str):
@@ -417,23 +413,6 @@ class MOD16ETAcquirer(BaseEarthaccessAcquirer):
 
         self._process_appeears_products(product_files, processed_file, variable)
         return processed_file
-
-    def _get_earthdata_credentials(self) -> Tuple[Optional[str], Optional[str]]:
-        """Get Earthdata credentials from environment or .netrc."""
-        username = os.environ.get('EARTHDATA_USERNAME')
-        password = os.environ.get('EARTHDATA_PASSWORD')
-
-        if not username or not password:
-            try:
-                import netrc
-                nrc = netrc.netrc()
-                auth = nrc.authenticators('urs.earthdata.nasa.gov')
-                if auth:
-                    username, _, password = auth
-            except (ImportError, OSError, ValueError, TypeError, AttributeError):
-                pass
-
-        return username, password
 
     def _appeears_login(self, username: str, password: str) -> Optional[str]:
         """Login to AppEEARS and get token."""

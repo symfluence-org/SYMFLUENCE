@@ -36,6 +36,7 @@ import xarray as xr
 
 from symfluence.core.registries import R
 from symfluence.data.acquisition.earthaccess_base import BaseEarthaccessAcquirer
+from symfluence.data.acquisition.earthdata_auth import missing_credentials_message
 
 APPEEARS_BASE = "https://appeears.earthdatacloud.nasa.gov/api"
 
@@ -90,10 +91,7 @@ class VIIRSSnowAcquirer(BaseEarthaccessAcquirer):
         # Get credentials
         username, password = self._get_earthdata_credentials()
         if not username or not password:
-            raise ValueError(
-                "NASA Earthdata credentials required. Set via environment variables "
-                "(EARTHDATA_USERNAME, EARTHDATA_PASSWORD) or ~/.netrc"
-            )
+            raise ValueError(missing_credentials_message("VIIRS snow"))
 
         # Get product configuration
         product = self._get_config_value(lambda: None, default='VNP10A1F', dict_key='VIIRS_SNOW_PRODUCT')

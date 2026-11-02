@@ -168,14 +168,11 @@ class FLUXNETAcquirer(BaseAcquisitionHandler):
             return user_id, user_email
 
         # 3. .netrc file (machine ameriflux.lbl.gov login=user_id password=email)
-        try:
-            import netrc
-            nrc = netrc.netrc()
-            auth = nrc.authenticators('ameriflux.lbl.gov')
-            if auth:
-                return auth[0], auth[2]  # login=user_id, password=email
-        except (FileNotFoundError, netrc.NetrcParseError, OSError):
-            pass  # .netrc not found or not readable
+        from ..utils import read_netrc_credentials
+
+        found = read_netrc_credentials(['ameriflux.lbl.gov'], logger=self.logger)
+        if found:
+            return found[0], found[1]  # login=user_id, password=email
 
         return None, None
 

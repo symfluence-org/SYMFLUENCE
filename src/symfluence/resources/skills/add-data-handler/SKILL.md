@@ -146,7 +146,10 @@ def download(self, output_dir: Path) -> Path:
   — the canonical dual Pydantic-path / flat-dict accessor.
 - `self._skip_if_exists(path, force=None)` — idempotency; respects `FORCE_DOWNLOAD`.
 - `self._get_earthdata_credentials()` / `self._get_earthdata_token()` — NASA auth
-  (checks `.netrc`, `EARTHDATA_USERNAME`/`PASSWORD`/`TOKEN` env, then config).
+  (config, then `EARTHDATA_USERNAME`/`PASSWORD`/`TOKEN` env, then `.netrc`, then an
+  in-process earthaccess login). `self._earthdata_auth()` also gives redirect-aware
+  sessions and earthaccess login (`data/acquisition/earthdata_auth.py`); don't parse
+  `.netrc` yourself (use `utils.read_netrc_credentials`).
 - `self._attribute_dir(subdir)` — get/create `attributes/{subdir}`.
 - `self.plot_diagnostics(file_path)` — auto spatial/distribution plots if a
   `reporting_manager` was injected.
