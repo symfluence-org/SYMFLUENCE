@@ -19,7 +19,6 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple
 
 import geopandas as gpd
 import numpy as np
@@ -267,16 +266,8 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
     # ------------------------------------------------------------------
     # Dates
     # ------------------------------------------------------------------
-    def _get_simulation_dates(self) -> Tuple[datetime, datetime]:
-        start = self._get_config_value(
-            lambda: self.config.domain.time_start, default='2002-01-01')
-        end = self._get_config_value(
-            lambda: self.config.domain.time_end, default='2009-12-31')
-        if isinstance(start, str):
-            start = pd.Timestamp(start).to_pydatetime()
-        if isinstance(end, str):
-            end = pd.Timestamp(end).to_pydatetime()
-        return start, end
+    # Historical fallback when EXPERIMENT_TIME_START/END are unset.
+    SIMULATION_DATE_DEFAULTS = ('2002-01-01', '2009-12-31')
 
     # ------------------------------------------------------------------
     # 0.  Per-domain geometry from the model-ready datastore

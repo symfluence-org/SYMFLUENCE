@@ -23,6 +23,7 @@ from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.logging_utils import log_once
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
+from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -914,8 +915,7 @@ class RHESSysWorker(BaseWorker):
                 calib_period_str = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
                 if calib_period_str:
                     try:
-                        start_str, end_str = calib_period_str.split(',')
-                        calib_period_tuple = (start_str.strip(), end_str.strip())
+                        calib_period_tuple = split_period(calib_period_str, strict=True)
                     except (ValueError, IndexError) as e:
                         log_once(self.logger, logging.WARNING, key='rhessys-calib-period-parse',
                                  message=f"Could not parse calibration period '{calib_period_str}': {e}")

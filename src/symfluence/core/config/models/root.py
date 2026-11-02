@@ -16,7 +16,6 @@ from functools import cached_property
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 logger = logging.getLogger(__name__)
@@ -518,8 +517,8 @@ class SymfluenceConfig(BaseModel):
 
     def _parse_period(self, period_str: str):
         """Parse period string 'YYYY-MM-DD, YYYY-MM-DD' into start/end dates"""
-        start_str, end_str = period_str.split(',')
-        return pd.to_datetime(start_str.strip()), pd.to_datetime(end_str.strip())
+        from symfluence.core.modeling.utilities.periods import parse_period
+        return parse_period(period_str, strict=True)
 
     def _parse_models(self):
         """Parse HYDROLOGICAL_MODEL into list of model names"""

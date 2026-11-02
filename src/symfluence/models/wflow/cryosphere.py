@@ -9,11 +9,12 @@ import pandas as pd
 import xarray as xr
 
 from symfluence.core.exceptions import ConfigurationError, EvaluationError, ModelExecutionError
+from symfluence.core.modeling.utilities.periods import parse_period
 
 
 def calculate_constraints(output_dir, settings_dir, project_dir, period,
                           snow_scale=.2, mb_scale=1., snow_threshold=5.):
-    start, end = [pd.Timestamp(x.strip()) for x in period.split(',')]
+    start, end = parse_period(period, strict=True)
     if start > end or min(snow_scale, mb_scale, snow_threshold) <= 0:
         raise ConfigurationError('Explicit ordered calibration period and positive scales required')
     with xr.open_dataset(Path(settings_dir) / 'wflow_staticmaps.nc') as source:

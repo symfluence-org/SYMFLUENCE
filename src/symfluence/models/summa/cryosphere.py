@@ -12,6 +12,7 @@ import pandas as pd
 import xarray as xr
 
 from symfluence.core.exceptions import ConfigurationError, EvaluationError, ModelExecutionError
+from symfluence.core.modeling.utilities.periods import parse_period
 
 
 def glacier_metrics(output_dir, observations, period, scale=1.0):
@@ -27,7 +28,7 @@ def glacier_metrics(output_dir, observations, period, scale=1.0):
     Returns ``glacier_score = 1 - RMSE/scale``, the RMSE and the year count, and
     writes ``cryosphere_metrics.json`` next to the output.
     """
-    start, end = [pd.Timestamp(x.strip()) for x in str(period).split(',')]
+    start, end = parse_period(period, strict=True)
     if start > end or not np.isfinite(scale) or scale <= 0:
         raise ConfigurationError('Invalid calibration interval or glacier error scale')
     storage = None

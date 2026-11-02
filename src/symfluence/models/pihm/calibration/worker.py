@@ -21,6 +21,7 @@ import pandas as pd
 from symfluence.core.calibration.workers.base_worker import BaseWorker, run_worker_task
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
+from symfluence.core.modeling.utilities.periods import parse_period
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -229,13 +230,11 @@ class PIHMWorker(BaseWorker):
 
             # Filter to calibration period if defined
             cal_period = resolve_config_value(config, lambda: config.domain.calibration_period, None, 'CALIBRATION_PERIOD')
-            if cal_period:
-                parts = str(cal_period).split(',')
-                if len(parts) == 2:
-                    cal_start = pd.Timestamp(parts[0].strip())
-                    cal_end = pd.Timestamp(parts[1].strip())
-                    sim_series = sim_series[cal_start:cal_end]
-                    obs_series = obs_series[cal_start:cal_end]
+            cal_window = parse_period(cal_period)
+            if cal_window is not None:
+                cal_start, cal_end = cal_window
+                sim_series = sim_series[cal_start:cal_end]
+                obs_series = obs_series[cal_start:cal_end]
 
             obs_aligned, sim_aligned = self._streamflow_metrics.align_timeseries(
                 sim_series, obs_series

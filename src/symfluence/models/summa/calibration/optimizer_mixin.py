@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from symfluence.core.calibration.optimizers.lifecycle import adjust_end_time_for_forcing
 from symfluence.core.exceptions import FileOperationError
+from symfluence.core.modeling.utilities.periods import split_period
 
 if TYPE_CHECKING:
     pass
@@ -285,10 +286,10 @@ class SUMMAOptimizerMixin:
 
             if calibration_period_str and spinup_period_str:
                 try:
-                    spinup_dates = [d.strip() for d in spinup_period_str.split(',')]
-                    cal_dates = [d.strip() for d in calibration_period_str.split(',')]
+                    spinup_dates = split_period(spinup_period_str, allow_extra=True)
+                    cal_dates = split_period(calibration_period_str, allow_extra=True)
 
-                    if len(spinup_dates) >= 2 and len(cal_dates) >= 2:
+                    if spinup_dates is not None and cal_dates is not None:
                         spinup_start = datetime.strptime(spinup_dates[0], '%Y-%m-%d').replace(hour=1, minute=0)
 
                         forcing_timestep_seconds = self._get_config_value_safe('FORCING_TIME_STEP_SIZE', 3600)

@@ -29,6 +29,7 @@ from symfluence.core.geometry_utils import GeospatialUtilsMixin
 from symfluence.core.modeling.base import BaseModelPreProcessor
 from symfluence.core.modeling.mixins import DatasetBuilderMixin, PETCalculatorMixin, SpatialModeDetectionMixin
 from symfluence.core.modeling.spatial_modes import SpatialMode
+from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.modeling.variable_utils import VariableHandler
 from symfluence.core.registries import R
 
@@ -867,8 +868,9 @@ class FUSEPreProcessor(BaseModelPreProcessor, PETCalculatorMixin, GeospatialUtil
             default=None
         )
         if cal_period:
-            cal_start_time = datetime.strptime(cal_period.split(',')[0], '%Y-%m-%d')
-            cal_end_time = datetime.strptime(cal_period.split(',')[1].strip(), '%Y-%m-%d')
+            cal_start_str, cal_end_str = split_period(cal_period, allow_extra=True, strict=True)
+            cal_start_time = datetime.strptime(cal_start_str, '%Y-%m-%d')
+            cal_end_time = datetime.strptime(cal_end_str, '%Y-%m-%d')
             cal_start_time = max(cal_start_time, start_time)
             cal_end_time = min(cal_end_time, end_time)
         else:

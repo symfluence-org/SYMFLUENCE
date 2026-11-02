@@ -42,6 +42,7 @@ from symfluence.core.modeling.base import BaseModelRunner
 from symfluence.core.modeling.execution import RoutingModel, SpatialOrchestrator
 from symfluence.core.modeling.mixins import SpatialModeDetectionMixin
 from symfluence.core.modeling.spatial_modes import SpatialMode
+from symfluence.core.modeling.utilities.periods import parse_period
 from symfluence.core.registries import R
 
 from ..mizuroute.mixins import MizuRouteConfigMixin
@@ -223,7 +224,7 @@ class LSTMRunner(BaseModelRunner, SpatialOrchestrator, MizuRouteConfigMixin, Spa
                 training_dates = None
                 scaler_dates = None
                 if period and self.spatial_mode == SpatialMode.LUMPED:
-                    start_date, end_date = [pd.Timestamp(v.strip()) for v in period.split(',')]
+                    start_date, end_date = parse_period(period, strict=True)
                     target_dates = common_times[self.preprocessor.lookback:]
                     training_dates = target_dates[(target_dates >= start_date) & (target_dates < end_date + pd.Timedelta(days=1))]
                     if len(training_dates) < 10:

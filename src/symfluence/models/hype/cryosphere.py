@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 
 from symfluence.core.exceptions import ValidationError
+from symfluence.core.modeling.utilities.periods import parse_period
 
 
 def ensure_observations(project_dir, station_id, logger):
@@ -45,7 +46,7 @@ def calculate_constraints(output_dir, project_dir, period, snow_scale=0.2, mb_sc
     """
     if not period:
         raise ValidationError('Cryosphere constraints require an explicit calibration period')
-    start, end = [pd.Timestamp(v.strip()) for v in str(period).split(',')]
+    start, end = parse_period(period, strict=True)
     project_dir, output_dir = Path(project_dir), Path(output_dir)
     obs_dir = project_dir / 'data/observations/cryosphere'
     setup = project_dir / 'settings/HYPE'

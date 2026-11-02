@@ -18,6 +18,7 @@ from symfluence.core.calibration.workers.base_worker import BaseWorker, run_work
 from symfluence.core.logging_utils import log_once
 from symfluence.core.metrics import StreamflowMetrics, kge, nse
 from symfluence.core.mixins.config import resolve_config_value
+from symfluence.core.modeling.utilities.periods import parse_period
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 from symfluence.models.hype.preprocessor import HYPEPreProcessor
@@ -474,9 +475,7 @@ class HYPEWorker(BaseWorker):
                     calib_period = None
             if calib_period:
                 try:
-                    start_str, end_str = [s.strip() for s in str(calib_period).split(',')]
-                    calib_start = pd.to_datetime(start_str)
-                    calib_end = pd.to_datetime(end_str)
+                    calib_start, calib_end = parse_period(calib_period, strict=True)
                     sim_series = sim_series[(sim_series.index >= calib_start) & (sim_series.index <= calib_end)]
                     obs_daily = obs_daily[(obs_daily.index >= calib_start) & (obs_daily.index <= calib_end)]
                 except Exception as e:  # noqa: BLE001 — calibration resilience

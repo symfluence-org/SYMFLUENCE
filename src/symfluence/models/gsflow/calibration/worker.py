@@ -28,6 +28,7 @@ from symfluence.core.calibration.workers.base_worker import (
 )
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
+from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -325,10 +326,7 @@ class GSFLOWWorker(BaseWorker):
 
             # Allow explicit period override (for evaluation-period metrics)
             period_str = kwargs.get('period', '') or resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
-            period_tuple = None
-            if period_str and ',' in str(period_str):
-                parts = str(period_str).split(',')
-                period_tuple = (parts[0].strip(), parts[1].strip())
+            period_tuple = split_period(period_str, allow_extra=True)
 
             obs_aligned, sim_aligned = self._streamflow_metrics.align_timeseries(
                 sim_series, obs_series, calibration_period=period_tuple
