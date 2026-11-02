@@ -85,7 +85,7 @@ class IGNACIOModelOptimizer(BaseModelOptimizer):
     def _setup_parallel_dirs(self) -> None:
         """Set up parallel directories for IGNACIO calibration."""
         self._resolve_sim_base_dir('calibration')
-        n_processors = int(self._get_config_value(lambda: self.config.system.num_processes, default=1, dict_key='NUMBER_OF_PROCESSORS'))
+        n_processors = int(self._get_config_value(lambda: self.config.system.num_processes, default=1, dict_key='NUM_PROCESSES'))
         for i in range(n_processors):
             proc_dir = (
                 self.project_dir / 'simulations' / 'calibration'

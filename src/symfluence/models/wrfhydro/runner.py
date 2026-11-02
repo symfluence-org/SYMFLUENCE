@@ -46,7 +46,7 @@ class WRFHydroRunner(BaseModelRunner):
     def _build_run_command(self) -> Optional[List[str]]:
         """Build WRF-Hydro MPI execution command."""
         mpi_procs = self._get_config_value(
-            lambda: self.config.system.num_processes, dict_key='MPI_PROCESSES',
+            lambda: self.config.system.num_processes, dict_key='NUM_PROCESSES',
             default=1,
         )
         mpirun = find_mpirun(self.wrfhydro_exe)
