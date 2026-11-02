@@ -154,61 +154,14 @@ class NLDASAcquirer(
     """
 
     def _get_authenticated_session(self) -> requests.Session:
-        """Get HTTPS session authenticated for NASA Earthdata GES DISC."""
-        from .merra2 import _EarthdataSession
+        """HTTPS session authenticated for NASA Earthdata GES DISC.
 
-        token = self._get_earthdata_token()
-        if token:
-            self.logger.info("Using Earthdata Bearer token for GES DISC session")
-            return _EarthdataSession(token=token)
-
-        import netrc as netrc_module
-        try:
-            nrc = netrc_module.netrc()
-            auth = nrc.authenticators('urs.earthdata.nasa.gov')
-        except (FileNotFoundError, netrc_module.NetrcParseError):
-            auth = None
-
-        if not auth:
-            try:
-                import earthaccess
-                earthaccess.login()
-                nrc = netrc_module.netrc()
-                auth = nrc.authenticators('urs.earthdata.nasa.gov')
-            except Exception:  # noqa: BLE001
-                pass
-
-        if not auth:
-            username, password = self._get_earthdata_credentials()
-            if username and password:
-                netrc_path = Path.home() / '.netrc'
-                self._append_netrc_entry(netrc_path, username, password)
-                auth = (username, None, password)
-
-        if not auth:
-            raise RuntimeError(
-                "NASA Earthdata credentials not found. Either:\n"
-                "  1. Set a Bearer token: export EARTHDATA_TOKEN=<your_token>\n"
-                "     Generate at: https://urs.earthdata.nasa.gov → My Profile → Generate Token\n"
-                "  2. Run: python -c \"import earthaccess; earthaccess.login()\"\n"
-                "  3. Or create ~/.netrc with: machine urs.earthdata.nasa.gov login <user> password <pass>"
-            )
-
-        self.logger.info(f"Using Earthdata credentials for user: {auth[0]}")
-        return _EarthdataSession()
-
-    @staticmethod
-    def _append_netrc_entry(netrc_path, username, password):
-        entry = f"\nmachine urs.earthdata.nasa.gov login {username} password {password}\n"
-        if netrc_path.exists():
-            content = netrc_path.read_text()
-            if 'urs.earthdata.nasa.gov' in content:
-                return
-            with open(netrc_path, 'a') as f:
-                f.write(entry)
-        else:
-            netrc_path.write_text(entry)
-            netrc_path.chmod(0o600)
+        Bearer token first, then username/password (config, env, .netrc,
+        earthaccess login); raises ``EarthdataAuthError`` if neither exists.
+        """
+        return self._earthdata_auth().session(
+            origin_auth=False, required=True, purpose="GES DISC (NLDAS-2)",
+        )
 
     def _validate_coverage(self):
         """Check that the domain bounding box overlaps NLDAS-2 coverage."""

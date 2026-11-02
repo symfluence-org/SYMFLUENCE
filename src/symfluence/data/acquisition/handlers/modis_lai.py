@@ -27,12 +27,11 @@ Configuration:
 """
 from __future__ import annotations
 
-import os
 import re
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 import numpy as np
 import pandas as pd
@@ -333,12 +332,9 @@ class MODISLAIAcquirer(BaseEarthaccessAcquirer):
 
     def _download_via_appeears(self, output_dir: Path, processed_file: Path) -> Path:
         """Download via AppEEARS API (legacy fallback)."""
-        username, password = self._get_earthdata_credentials()
-        if not username or not password:
-            raise RuntimeError(
-                "Earthdata credentials required. Set EARTHDATA_USERNAME and "
-                "EARTHDATA_PASSWORD environment variables or add to ~/.netrc"
-            )
+        username, password = self._earthdata_auth().require_credentials(
+            "MODIS LAI via AppEEARS"
+        )
 
         product = self._get_config_value(lambda: None, default='MCD15A2H', dict_key='MODIS_LAI_PRODUCT')
         product_id = self.PRODUCTS.get(product, f"{product}.061")
@@ -371,23 +367,6 @@ class MODISLAIAcquirer(BaseEarthaccessAcquirer):
 
         self.logger.info(f"MODIS LAI AppEEARS download complete: {output_dir}")
         return output_dir
-
-    def _get_earthdata_credentials(self) -> Tuple[Optional[str], Optional[str]]:
-        """Get Earthdata credentials from environment or .netrc."""
-        username = os.environ.get('EARTHDATA_USERNAME')
-        password = os.environ.get('EARTHDATA_PASSWORD')
-
-        if not username or not password:
-            try:
-                import netrc
-                nrc = netrc.netrc()
-                auth = nrc.authenticators('urs.earthdata.nasa.gov')
-                if auth:
-                    username, _, password = auth
-            except (OSError, ValueError, TypeError, RuntimeError, KeyError, AttributeError, ImportError, LookupError):
-                pass
-
-        return username, password
 
     def _appeears_login(self, username: str, password: str) -> Optional[str]:
         """Login to AppEEARS and get token."""

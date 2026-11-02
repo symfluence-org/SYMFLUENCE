@@ -39,6 +39,7 @@ from rasterio.merge import merge as rio_merge
 from symfluence.core.registries import R
 
 from ..base import BaseAcquisitionHandler
+from ..earthdata_auth import missing_credentials_message
 from ..mixins import RetryMixin
 from ..utils import create_robust_session
 
@@ -127,10 +128,7 @@ class GEDICanopyHeightAcquirer(BaseAcquisitionHandler):
         # Get credentials
         username, password = self._get_earthdata_credentials()
         if not username or not password:
-            raise ValueError(
-                "NASA Earthdata credentials required. Set via environment variables "
-                "(EARTHDATA_USERNAME, EARTHDATA_PASSWORD) or ~/.netrc"
-            )
+            raise ValueError(missing_credentials_message("GEDI canopy height"))
 
         # Get configuration
         metric = self._get_config_value(lambda: None, default='rh98', dict_key='GEDI_METRIC')

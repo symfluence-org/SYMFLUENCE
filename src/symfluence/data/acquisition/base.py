@@ -22,6 +22,8 @@ from symfluence.geospatial.coordinate_utils import CoordinateUtilsMixin
 if TYPE_CHECKING:
     from symfluence.core.config.models import SymfluenceConfig
 
+    from .earthdata_auth import EarthdataAuth
+
 
 class BaseAcquisitionHandler(ABC, ConfigurableMixin, CoordinateUtilsMixin):
     """
@@ -157,36 +159,27 @@ class BaseAcquisitionHandler(ABC, ConfigurableMixin, CoordinateUtilsMixin):
             return True
         return False
 
-    def _get_earthdata_credentials(self) -> Tuple[Optional[str], Optional[str]]:
-        """
-        Get NASA Earthdata credentials.
+    def _earthdata_auth(self) -> 'EarthdataAuth':
+        """NASA Earthdata auth helper bound to this handler's config and logger.
 
-        Checks in order:
-        1. ~/.netrc file
-        2. Environment variables (EARTHDATA_USERNAME, EARTHDATA_PASSWORD)
-        3. Config settings
-
-        Returns:
-            Tuple of (username, password), or (None, None) if not found
+        Lookup order (see :mod:`~symfluence.data.acquisition.earthdata_auth`):
+        config -> environment -> .netrc -> in-process earthaccess login; the
+        token comes from config, then the environment.
         """
-        from .utils import resolve_credentials
-        return resolve_credentials(
-            hostname='urs.earthdata.nasa.gov',
-            env_prefix='EARTHDATA',
-            config=self.config_dict,
-            alt_hostnames=['earthdata.nasa.gov', 'appeears.earthdatacloud.nasa.gov']
+        from .earthdata_auth import EarthdataAuth
+        return EarthdataAuth(
+            logger=self.logger,
+            config_lookup=lambda key: self._get_config_value(lambda: None, default=None, dict_key=key),
         )
 
+    def _get_earthdata_credentials(self) -> Tuple[Optional[str], Optional[str]]:
+        """NASA Earthdata ``(username, password)``, or ``(None, None)``.
+
+        Order: config, ``EARTHDATA_USERNAME``/``EARTHDATA_PASSWORD`` env vars,
+        .netrc, in-process earthaccess login.
+        """
+        return self._earthdata_auth().credentials()
+
     def _get_earthdata_token(self) -> Optional[str]:
-        """
-        Get NASA Earthdata Bearer token.
-
-        Checks in order:
-        1. EARTHDATA_TOKEN environment variable
-        2. Config settings (EARTHDATA_TOKEN key)
-
-        Returns:
-            Token string, or None if not found
-        """
-        from .utils import resolve_earthdata_token
-        return resolve_earthdata_token(config=self.config_dict)
+        """NASA Earthdata Bearer token (config, then ``EARTHDATA_TOKEN`` env var), or None."""
+        return self._earthdata_auth().token()

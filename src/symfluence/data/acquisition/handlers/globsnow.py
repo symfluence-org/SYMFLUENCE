@@ -119,12 +119,9 @@ class GlobSnowAcquirer(
         use_nsidc = False
 
         if version == 'v2.0':
-            username, password = self._get_earthdata_credentials()
-            if not username or not password:
-                raise RuntimeError(
-                    "Earthdata credentials required for GlobSnow v2.0 (NSIDC). "
-                    "Set up ~/.netrc or use GLOBSNOW_VERSION: v3.0"
-                )
+            username, password = self._earthdata_auth().require_credentials(
+                "GlobSnow v2.0 (NSIDC; or set GLOBSNOW_VERSION: v3.0)"
+            )
             session.auth = (username, password)
             use_nsidc = True
 

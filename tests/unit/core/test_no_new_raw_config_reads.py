@@ -50,7 +50,6 @@ BASELINE = {
     "core/modeling/utilities/forcing_data_processor.py": 4,
     "core/path_resolver.py": 7,
     "data/acquisition/handlers/daymet.py": 3,
-    "data/acquisition/utils.py": 3,  # credentials (no fields)
     "geospatial/geofabric/processors/taudem_executor.py": 1,  # MPI_LAUNCHER (no field)
     "optimization/calibration_targets/base.py": 1,
     "project/pour_point_workflow.py": 1,

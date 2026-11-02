@@ -11,7 +11,6 @@ AppEEARS: https://appeears.earthdatacloud.nasa.gov/
 """
 from __future__ import annotations
 
-import os
 import shutil
 import time
 from pathlib import Path
@@ -28,7 +27,7 @@ class BaseAppEEARSAcquirer(BaseAcquisitionHandler):
     Base class providing NASA AppEEARS API functionality for MODIS data acquisition.
 
     This base class handles:
-    - Earthdata credential management (.netrc, environment variables, config)
+    - Earthdata credentials via the inherited ``_get_earthdata_credentials``
     - AppEEARS API authentication (login/logout)
     - Task submission and status polling
     - Result download from completed tasks
@@ -41,51 +40,6 @@ class BaseAppEEARSAcquirer(BaseAcquisitionHandler):
     """
 
     APPEEARS_BASE = "https://appeears.earthdatacloud.nasa.gov/api"
-
-    # ===== Credential Management =====
-
-    def _get_earthdata_credentials(self) -> Tuple[Optional[str], Optional[str]]:
-        """
-        Get NASA Earthdata credentials.
-
-        Checks in order:
-        1. ~/.netrc file (preferred - more secure)
-        2. Environment variables (EARTHDATA_USERNAME, EARTHDATA_PASSWORD)
-        3. Config file settings
-
-        Returns:
-            Tuple of (username, password), or (None, None) if not found
-        """
-        # 1. Try .netrc first (preferred - more secure)
-        try:
-            import netrc
-            netrc_path = Path.home() / '.netrc'
-            if netrc_path.exists():
-                nrc = netrc.netrc(str(netrc_path))
-                # Try multiple possible host entries
-                for host in ['urs.earthdata.nasa.gov', 'earthdata.nasa.gov', 'appeears.earthdatacloud.nasa.gov']:
-                    auth = nrc.authenticators(host)
-                    if auth:
-                        self.logger.debug(f"Using Earthdata credentials from ~/.netrc ({host})")
-                        return auth[0], auth[2]
-        except (ImportError, OSError, ValueError, TypeError, AttributeError) as e:
-            self.logger.debug(f"Could not read .netrc: {e}")
-
-        # 2. Try environment variables
-        username = os.environ.get('EARTHDATA_USERNAME')
-        password = os.environ.get('EARTHDATA_PASSWORD')
-        if username and password:
-            self.logger.debug("Using Earthdata credentials from environment variables")
-            return username, password
-
-        # 3. Try config file
-        username = self._get_config_value(lambda: None, default=None, dict_key='EARTHDATA_USERNAME')
-        password = self._get_config_value(lambda: None, default=None, dict_key='EARTHDATA_PASSWORD')
-        if username and password:
-            self.logger.debug("Using Earthdata credentials from config file")
-            return username, password
-
-        return None, None
 
     # ===== Authentication =====
 

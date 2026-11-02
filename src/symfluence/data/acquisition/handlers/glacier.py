@@ -16,34 +16,14 @@ from typing import Any, Dict, List, Optional
 import geopandas as gpd
 import numpy as np
 import rasterio
-import requests
 from rasterio import features
 from rasterio.crs import CRS
 from rasterio.transform import from_bounds
-from requests.adapters import HTTPAdapter
 from shapely.geometry import box
-from urllib3.util.retry import Retry
 
 from symfluence.core.registries import R
 
 from ..base import BaseAcquisitionHandler
-
-
-def create_robust_session(max_retries: int = 5, backoff_factor: float = 1.0):
-    """Create a requests session with automatic retry logic."""
-    session = requests.Session()
-    retry_strategy = Retry(
-        total=max_retries,
-        backoff_factor=backoff_factor,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["HEAD", "GET", "OPTIONS"],
-        raise_on_status=False
-    )
-    adapter = HTTPAdapter(max_retries=retry_strategy)
-    session.mount("http://", adapter)
-    session.mount("https://", adapter)
-    return session
-
 
 # RGI 7.0 region information
 # Regions are defined by NSIDC: https://nsidc.org/data/nsidc-0770
@@ -110,17 +90,9 @@ class GlacierAcquirer(BaseAcquisitionHandler):
         self.session = self._create_nsidc_session()
 
     def _create_nsidc_session(self):
-        """Create an authenticated session for NSIDC (NASA Earthdata)."""
-        try:
-            import earthaccess
-            auth = earthaccess.login()
-            if auth:
-                return earthaccess.get_requests_https_session()
-        except ImportError:
-            pass
-        except Exception:  # noqa: BLE001
-            pass
-        return create_robust_session()
+        """Session for NSIDC (NASA Earthdata): earthaccess first, then token /
+        credentials, else unauthenticated (RGI/GLIMS mirrors need no login)."""
+        return self._earthdata_auth().session(prefer_earthaccess=True, max_retries=5)
 
     def download(self, output_dir: Path) -> Path:
         """

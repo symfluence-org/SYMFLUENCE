@@ -40,7 +40,6 @@ from symfluence.core.registries import R
 
 from ..base import BaseAcquisitionHandler
 from ..mixins import RetryMixin
-from ..utils import create_robust_session
 
 # Cloud-hosted ORNL DAAC (replaces legacy daac.ornl.gov which is intermittent)
 _ORNL_CLOUD_BASE = (
@@ -155,39 +154,14 @@ class PelletierAcquirer(BaseAcquisitionHandler, RetryMixin):
         return pelletier_dir
 
     def _create_earthdata_session(self):
-        """Create an authenticated session for NASA Earthdata Cloud."""
-        try:
-            import earthaccess
-            auth = earthaccess.login()
-            if auth:
-                self.logger.info("  Authenticated via earthaccess")
-                return earthaccess.get_requests_https_session()
-        except ImportError:
-            pass
-        except Exception as e:  # noqa: BLE001
-            self.logger.warning(f"  earthaccess login failed: {e}")
+        """Authenticated session for NASA Earthdata Cloud.
 
-        session = create_robust_session(max_retries=3, backoff_factor=2.0)
-
-        token = self._get_earthdata_token()
-        if token:
-            session.headers.update({'Authorization': f'Bearer {token}'})
-            self.logger.info("  Authenticated via EARTHDATA_TOKEN")
-            return session
-
-        username, password = self._get_earthdata_credentials()
-        if username and password:
-            session.auth = (username, password)
-            self.logger.info("  Authenticated via .netrc / env vars")
-            return session
-
-        raise RuntimeError(
-            "NASA Earthdata credentials required for Pelletier data. "
-            "Set up authentication using one of:\n"
-            "  1. pip install earthaccess && python -c "
-            "'import earthaccess; earthaccess.login(persist=True)'\n"
-            "  2. Set EARTHDATA_TOKEN environment variable\n"
-            "  3. Add entry to ~/.netrc for urs.earthdata.nasa.gov"
+        earthaccess first, then a retrying token / username-password session;
+        raises ``EarthdataAuthError`` when no credentials are found.
+        """
+        return self._earthdata_auth().session(
+            prefer_earthaccess=True, required=True, purpose="Pelletier soil/regolith data",
+            max_retries=3, backoff_factor=2.0,
         )
 
     def _download_with_session(self, session, url: str, dst: Path):

@@ -183,6 +183,7 @@ src/symfluence/coupling/worker.py:DCouplerWorker.run_model:except Exception as e
 src/symfluence/data/acquisition/acquisition_service.py:AcquisitionService._route_community_nonstreamflow_obs:except Exception as exc:  # noqa: BLE001 — best-effort; fall back to native
 src/symfluence/data/acquisition/base.py:BaseAcquisitionHandler.plot_diagnostics:except Exception as e:  # noqa: BLE001 — diagnostic plots are non-critical
 src/symfluence/data/acquisition/cds_datasets.py:CDSRegionalReanalysisHandler._retrieve_with_retry:except Exception as e:  # noqa: BLE001 — must-not-raise contract
+src/symfluence/data/acquisition/earthdata_auth.py:EarthdataAuth.earthaccess_login:except Exception as exc:  # noqa: BLE001 — earthaccess raises its own exception types
 src/symfluence/data/acquisition/handlers/__init__.py:<module>:except Exception as _e:  # noqa: BLE001 — optional handler import resilience
 src/symfluence/data/acquisition/handlers/aorc.py:AORCAcquirer._download_latlon_grid:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/data/acquisition/handlers/aorc.py:AORCAcquirer.download:except Exception as fallback_err:  # noqa: BLE001
@@ -208,7 +209,6 @@ src/symfluence/data/acquisition/handlers/fluxnet.py:FLUXNETAcquirer._get_site_da
 src/symfluence/data/acquisition/handlers/fluxnet.py:FLUXNETAcquirer._load_local_data:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/acquisition/handlers/fluxnet.py:FLUXNETAcquirer._wait_for_download:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/acquisition/handlers/glacier.py:GlacierAcquirer._create_intersection_shapefiles:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/acquisition/handlers/glacier.py:GlacierAcquirer._create_nsidc_session:except Exception:  # noqa: BLE001
 src/symfluence/data/acquisition/handlers/glacier.py:GlacierAcquirer._download_from_alternative:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/acquisition/handlers/glacier.py:GlacierAcquirer._download_from_glims_wfs:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/acquisition/handlers/glacier.py:GlacierAcquirer._download_rgi_regions:except Exception as e:  # noqa: BLE001 — preprocessing resilience
@@ -252,9 +252,7 @@ src/symfluence/data/acquisition/handlers/landcover.py:MODISLandcoverAcquirer.dow
 src/symfluence/data/acquisition/handlers/landcover.py:USGSLandcoverAcquirer.download:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/data/acquisition/handlers/merit_hydro.py:MERITHydroAcquirer.download:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/acquisition/handlers/merit_hydro.py:MERITHydroAcquirer.download:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/acquisition/handlers/merra2.py:MERRA2Acquirer._get_authenticated_session:except Exception:  # noqa: BLE001 — netrc fallback is non-critical
 src/symfluence/data/acquisition/handlers/merra2.py:MERRA2Acquirer.download.process_month:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/acquisition/handlers/merra2.py:_EarthdataSession.rebuild_auth:except Exception:  # noqa: BLE001 — netrc fallback is non-critical
 src/symfluence/data/acquisition/handlers/modis.py:MODISSnowAcquirer.download:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/data/acquisition/handlers/modis_lst.py:MODISLSTAcquirer._download_results:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/acquisition/handlers/modis_lst.py:MODISLSTAcquirer._download_results:except Exception as e:  # noqa: BLE001 — preprocessing resilience
@@ -264,9 +262,7 @@ src/symfluence/data/acquisition/handlers/mswep.py:MSWEPAcquirer._rclone_copy_bat
 src/symfluence/data/acquisition/handlers/mswep.py:MSWEPAcquirer._verify_rclone_access:except Exception as e:  # noqa: BLE001
 src/symfluence/data/acquisition/handlers/nex_gddp.py:NEXGDDPCHandler._fetch_year_chunk:except Exception as e:  # noqa: BLE001 — try the next suffix variant
 src/symfluence/data/acquisition/handlers/nldas.py:NLDASAcquirer._download_day:except Exception as e:  # noqa: BLE001
-src/symfluence/data/acquisition/handlers/nldas.py:NLDASAcquirer._get_authenticated_session:except Exception:  # noqa: BLE001
 src/symfluence/data/acquisition/handlers/openet.py:OpenETAcquirer._request_timeseries:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/acquisition/handlers/pelletier.py:PelletierAcquirer._create_earthdata_session:except Exception as e:  # noqa: BLE001
 src/symfluence/data/acquisition/handlers/pelletier.py:PelletierAcquirer.download:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/acquisition/handlers/polaris.py:POLARISAcquirer.download:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/acquisition/handlers/rdrs.py:RDRSAcquirer._download_http:except Exception as e:  # noqa: BLE001 — preprocessing resilience
@@ -296,7 +292,6 @@ src/symfluence/data/acquisition/handlers/wokam.py:WOKAMAcquirer._get_global_shap
 src/symfluence/data/acquisition/handlers/wokam.py:WOKAMAcquirer.download:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/acquisition/handlers/worldclim.py:WorldClimAcquirer.download:except Exception as e:  # noqa: BLE001
 src/symfluence/data/acquisition/maf_pipeline.py:datatoolRunner.execute_datatool_command:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
-src/symfluence/data/acquisition/utils.py:resolve_credentials:except Exception as e:  # noqa: BLE001 — .netrc fallback is non-critical
 src/symfluence/data/cache/forcing_cache.py:RawForcingCache._evict_if_needed:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/cache/forcing_cache.py:RawForcingCache.get_cache_stats:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/data_manager.py:DataManager._ensure_gauge_segment_mapping:except Exception as exc:  # noqa: BLE001 — let downstream errors surface specifics

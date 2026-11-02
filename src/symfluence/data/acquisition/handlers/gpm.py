@@ -131,14 +131,8 @@ class GPMIMERGAcquirer(BaseAcquisitionHandler):
 
         # Setup authenticated session
         session = requests.Session()
-        user, password = self._get_earthdata_credentials()
-        if user and password:
-            session.auth = (user, password)
-        else:
-            raise PermissionError(
-                "Earthdata Login required. Set EARTHDATA_USERNAME/EARTHDATA_PASSWORD "
-                "environment variables or configure ~/.netrc"
-            )
+        # EarthdataAuthError subclasses PermissionError
+        session.auth = self._earthdata_auth().require_credentials("GPM IMERG (GES DISC OPeNDAP)")
 
         # Generate list of dates
         dates = []
