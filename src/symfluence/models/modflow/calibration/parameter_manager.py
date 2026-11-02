@@ -69,6 +69,11 @@ MODFLOW_DEFAULT_BOUNDS = {
         'transform': 'log',
         'description': 'Horizontal anisotropy K22/K (-), K22 across the K_ANGLE direction',
     },
+    'K_ZONE_FACTOR': {
+        'min': 1e-3, 'max': 1.0,
+        'transform': 'log',
+        'description': 'K multiplier inside the K zone (MODFLOW_K_ZONE_SHAPEFILE)',
+    },
     'K_ANGLE': {
         'min': 0.0, 'max': 90.0,
         'transform': 'linear',

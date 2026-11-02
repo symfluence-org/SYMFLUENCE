@@ -64,14 +64,15 @@ class MF6BasinParams:
     k_anisotropy: float = 1.0         # K22 / K (-); 1 = isotropic
     k_angle: float = 0.0              # direction of K, degrees counter-clockwise from the grid x axis
     zone_recharge_factor: float = 1.0  # recharge kept in the grid's reduced recharge zones (0-1)
+    k_zone_factor: float = 1.0        # K multiplier inside the grid's K zone (e.g. older, tighter bedrock)
 
     # Calibration names -> attribute
     NAMES = {'K': 'k', 'SY': 'sy', 'SS': 'ss', 'AQUIFER_THICKNESS': 'thickness',
              'RIVER_LEAKANCE': 'river_leakance', 'SEEPAGE_LEAKANCE': 'seepage_leakance',
              'LAKE_LEAKANCE': 'lake_leakance', 'K_ANISOTROPY': 'k_anisotropy', 'K_ANGLE': 'k_angle',
-             'ZONE_RECHARGE_FACTOR': 'zone_recharge_factor'}
+             'ZONE_RECHARGE_FACTOR': 'zone_recharge_factor', 'K_ZONE_FACTOR': 'k_zone_factor'}
     POSITIVE = ('K', 'SY', 'SS', 'AQUIFER_THICKNESS', 'RIVER_LEAKANCE', 'SEEPAGE_LEAKANCE', 'LAKE_LEAKANCE',
-                'K_ANISOTROPY')
+                'K_ANISOTROPY', 'K_ZONE_FACTOR')
 
     def updated(self, values: Dict[str, float]) -> 'MF6BasinParams':
         kw = dict(self.__dict__)
@@ -115,6 +116,7 @@ class MF6BasinGrid:
     reduced_zones: list = field(default_factory=list)  # recharge zone ids scaled by zone_recharge_factor
     lake_cell_drains: bool = True            # False: no river/seepage drains in cells that touch the lake
     lake_zones: list = field(default_factory=list)  # land zones draining to the lake: their seepage is lake inflow
+    k_zone_frac: Optional[np.ndarray] = None  # (nrow, ncol) fraction of cell in the K zone; None = no K zone
 
     @property
     def has_lake(self) -> bool:
@@ -151,6 +153,8 @@ class MF6BasinGrid:
              'lake_zones': [int(z) if isinstance(z, (int, np.integer)) else z for z in self.lake_zones]}
         if self.lake_frac is not None:
             d.update(lake_frac=self.lake_frac.round(6).tolist(), lake_stage=self.lake_stage)
+        if self.k_zone_frac is not None:
+            d.update(k_zone_frac=self.k_zone_frac.round(6).tolist())
         Path(path).write_text(json.dumps(d))
 
     @classmethod
@@ -163,20 +167,28 @@ class MF6BasinGrid:
                    notes=d.get('notes', []),
                    lake_frac=np.array(d['lake_frac'], float) if 'lake_frac' in d else None,
                    lake_stage=d.get('lake_stage'), reduced_zones=d.get('reduced_zones', []),
-                   lake_cell_drains=d.get('lake_cell_drains', True), lake_zones=d.get('lake_zones', []))
+                   lake_cell_drains=d.get('lake_cell_drains', True), lake_zones=d.get('lake_zones', []),
+                   k_zone_frac=np.array(d['k_zone_frac'], float) if 'k_zone_frac' in d else None)
 
-    def set_lake(self, lake, stage: float) -> None:
-        """Lake polygon(s) (GeoDataFrame/GeoSeries) at ``stage`` (m, DEM datum) -> per-cell lake fraction."""
+    def _cell_fraction(self, polygons, what: str) -> np.ndarray:
         cells = self.cell_polygons()
-        geom = lake.to_crs(self.crs).union_all()
+        geom = polygons.to_crs(self.crs).union_all()
         frac = np.zeros((self.nrow, self.ncol))
         for r, c, g in zip(cells.row, cells.col, cells.geometry):
             a = g.intersection(geom).area
             if a > 0:
                 frac[r - 1, c - 1] = min(a / self.cell_area, 1.0)
         if not (frac > 0).any():
-            raise ValidationError('The lake polygon does not overlap the active MODFLOW grid')
-        self.lake_frac, self.lake_stage = frac, float(stage)
+            raise ValidationError(f'The {what} polygon does not overlap the active MODFLOW grid')
+        return frac
+
+    def set_lake(self, lake, stage: float) -> None:
+        """Lake polygon(s) (GeoDataFrame/GeoSeries) at ``stage`` (m, DEM datum) -> per-cell lake fraction."""
+        self.lake_frac, self.lake_stage = self._cell_fraction(lake, 'lake'), float(stage)
+
+    def set_k_zone(self, zone) -> None:
+        """K-zone polygon(s): inside, K and K22 are scaled by ``k_zone_factor`` (by cell area fraction)."""
+        self.k_zone_frac = self._cell_fraction(zone, 'K zone')
 
 
 def grid_from_basin_geometry(geo) -> MF6BasinGrid:
@@ -258,14 +270,21 @@ def write_parameter_packages(sim_dir: Path, grid: MF6BasinGrid, params: MF6Basin
     # Start near the land surface; the steady-state first period sets the heads.
     (d / 'gwf.ic').write_text(
         f'BEGIN GRIDDATA\n  STRT\n    INTERNAL\n{_array(top - 0.1 * params.thickness, "{:.3f}")}\nEND GRIDDATA\n')
+    if grid.k_zone_frac is not None:   # K zone: area-weighted mix of K and k_zone_factor * K per cell
+        kmult = 1.0 + grid.k_zone_frac * (params.k_zone_factor - 1.0)
+
+        def k_block(scale: float) -> str:
+            return f'    INTERNAL\n{_array(params.k * scale * kmult, "{:.8g}")}\n'
+    else:
+        def k_block(scale: float) -> str:
+            return f'    CONSTANT {params.k * scale:.8g}\n'
     aniso = ''
     if params.k_anisotropy != 1.0:
         # MF6 orients K along ANGLE1 and K22 perpendicular to it (ellipse formulation)
-        aniso = (f'  K22\n    CONSTANT {params.k * params.k_anisotropy:.8g}\n'
-                 f'  ANGLE1\n    CONSTANT {params.k_angle:.6g}\n')
+        aniso = f'  K22\n{k_block(params.k_anisotropy)}  ANGLE1\n    CONSTANT {params.k_angle:.6g}\n'
     (d / 'gwf.npf').write_text(
         'BEGIN OPTIONS\n  SAVE_FLOWS\n  SAVE_SPECIFIC_DISCHARGE\nEND OPTIONS\n\n'
-        f'BEGIN GRIDDATA\n  ICELLTYPE\n    CONSTANT 1\n  K\n    CONSTANT {params.k:.8g}\n{aniso}END GRIDDATA\n')
+        f'BEGIN GRIDDATA\n  ICELLTYPE\n    CONSTANT 1\n  K\n{k_block(1.0)}{aniso}END GRIDDATA\n')
     (d / 'gwf.sto').write_text(
         'BEGIN OPTIONS\n  SAVE_FLOWS\nEND OPTIONS\n\n'
         f'BEGIN GRIDDATA\n  ICONVERT\n    CONSTANT 1\n  SS\n    CONSTANT {params.ss:.8g}\n'
@@ -477,7 +496,8 @@ def params_from_config(cfg) -> MF6BasinParams:
     return MF6BasinParams(k=float(cfg.k), sy=float(cfg.sy), ss=float(cfg.ss), thickness=float(cfg.aquifer_thickness),
                           river_leakance=float(cfg.river_leakance), seepage_leakance=float(cfg.seepage_leakance),
                           lake_leakance=float(cfg.lake_leakance), k_anisotropy=float(cfg.k_anisotropy),
-                          k_angle=float(cfg.k_angle), zone_recharge_factor=float(cfg.zone_recharge_factor))
+                          k_angle=float(cfg.k_angle), zone_recharge_factor=float(cfg.zone_recharge_factor),
+                          k_zone_factor=float(cfg.k_zone_factor))
 
 
 def params_from_flat(config: Dict) -> MF6BasinParams:
@@ -492,7 +512,8 @@ def params_from_flat(config: Dict) -> MF6BasinParams:
                           lake_leakance=float(get('MODFLOW_LAKE_LEAKANCE', d.lake_leakance)),
                           k_anisotropy=float(get('MODFLOW_K_ANISOTROPY', d.k_anisotropy)),
                           k_angle=float(get('MODFLOW_K_ANGLE', d.k_angle)),
-                          zone_recharge_factor=float(get('MODFLOW_ZONE_RECHARGE_FACTOR', d.zone_recharge_factor)))
+                          zone_recharge_factor=float(get('MODFLOW_ZONE_RECHARGE_FACTOR', d.zone_recharge_factor)),
+                          k_zone_factor=float(get('MODFLOW_K_ZONE_FACTOR', d.k_zone_factor)))
 
 
 def write_coupling_record(sim_dir: Path, land: str, land_settings: Path, land_output: Path, start) -> None:

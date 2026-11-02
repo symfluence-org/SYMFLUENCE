@@ -362,6 +362,27 @@ def test_hype_lake_flux_point_sources(tmp_path):
         get_land_adapter('SUMMA', {}).route_lake_flux(s, 1, flux)
 
 
+def test_k_zone_scales_k_and_k22(grid, tmp_path):
+    zone = gpd.GeoDataFrame(geometry=[box(X0 + 6000, Y0 - 6000, X0 + 10000, Y0)], crs=CRS)   # east 4 km
+    grid.set_k_zone(zone)
+    grid.to_json(tmp_path / 'g.json')
+    np.testing.assert_allclose(MF6BasinGrid.from_json(tmp_path / 'g.json').k_zone_frac, grid.k_zone_frac)
+    params = MF6BasinParams(k=10.0, k_anisotropy=0.5, k_angle=30.0).updated({'K_ZONE_FACTOR': 0.1})
+    write_simulation(tmp_path, grid, zone_cell_weights(grid, _zones()), 5, params)
+    npf = (tmp_path / 'gwf.npf').read_text()
+
+    def block(name):
+        rows = npf.split(f'  {name}\n    INTERNAL\n')[1].splitlines()[:grid.nrow]
+        return np.array([[float(v) for v in line.split()] for line in rows])
+    k, k22 = block('K'), block('K22')
+    expected = 10.0 * (1.0 + grid.k_zone_frac * (0.1 - 1.0))
+    np.testing.assert_allclose(k, expected, rtol=1e-6)
+    np.testing.assert_allclose(k22, 0.5 * expected, rtol=1e-6)
+    assert k.min() == pytest.approx(1.0) and k.max() == pytest.approx(10.0)
+    with pytest.raises(ConfigurationError, match='K_ZONE_FACTOR'):
+        MF6BasinParams().updated({'K_ZONE_FACTOR': 0.0})
+
+
 def test_no_lake_keeps_previous_packages(grid, tmp_path):
     write_simulation(tmp_path, grid, zone_cell_weights(grid, _zones()), 5, MF6BasinParams())
     assert 'GHB6' not in (tmp_path / 'gwf.nam').read_text()
@@ -400,11 +421,13 @@ def test_mf6_run_with_lake_anisotropy_and_reduced_recharge_conserves_water(grid,
     grid.set_lake(_lake(), 515.0)
     grid.reduced_zones = [13]
     grid.lake_zones = [12]
+    grid.set_k_zone(gpd.GeoDataFrame(geometry=[box(X0, Y0 - 6000, X0 + 4000, Y0)], crs=CRS))
     w = zone_cell_weights(grid, zones, area)
     days = pd.date_range('2010-01-01', periods=90, freq='D')
     rng = np.random.default_rng(1)
     rec = pd.DataFrame({z: rng.uniform(0, 4e-3, len(days)) for z in area}, index=days)
-    params = MF6BasinParams(k=10.0, sy=0.05, k_anisotropy=0.2, k_angle=30.0, zone_recharge_factor=0.4)
+    params = MF6BasinParams(k=10.0, sy=0.05, k_anisotropy=0.2, k_angle=30.0, zone_recharge_factor=0.4,
+                            k_zone_factor=0.05)
     write_simulation(tmp_path, grid, w, len(days), params, save_heads='none')
     write_recharge_timeseries(tmp_path, rec, sorted(area))
     r = subprocess.run([_mf6()], cwd=tmp_path, capture_output=True, text=True, timeout=300)

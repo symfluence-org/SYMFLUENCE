@@ -78,6 +78,9 @@ class MODFLOWConfig(BaseModel):
     # the rejected recharge returns to the river the same day
     reduced_recharge_zones: Optional[List[int]] = Field(default=None, alias='MODFLOW_REDUCED_RECHARGE_ZONES')
     zone_recharge_factor: float = Field(default=1.0, alias='MODFLOW_ZONE_RECHARGE_FACTOR', ge=0, le=1)
+    # Basin mode: a zone (e.g. older, tighter bedrock) where K and K22 are scaled by k_zone_factor
+    k_zone_shapefile: Optional[str] = Field(default=None, alias='MODFLOW_K_ZONE_SHAPEFILE')
+    k_zone_factor: float = Field(default=1.0, alias='MODFLOW_K_ZONE_FACTOR', gt=0)
     # Land-model recharge zones (basin mode): shapefile whose id field matches
     # the land model's spatial units (HYPE subid, SUMMA hruId)
     land_zone_shapefile: Optional[str] = Field(default=None, alias='MODFLOW_LAND_ZONE_SHAPEFILE')
