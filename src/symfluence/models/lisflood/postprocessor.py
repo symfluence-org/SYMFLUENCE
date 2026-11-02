@@ -10,6 +10,7 @@ from typing import Optional
 import pandas as pd
 
 from symfluence.core.modeling.base import StandardModelPostProcessor
+from symfluence.core.modeling.utilities.periods import to_pydatetime
 from symfluence.core.registries import R
 
 
@@ -133,6 +134,6 @@ class LisfloodPostProcessor(StandardModelPostProcessor):
         return pd.Series(records, index=time_index, name="LISFLOOD_discharge_cms")
 
     def _get_simulation_dates(self):
-        start_str = self._get_config_value(lambda: self.config.domain.time_start)
-        end_str = self._get_config_value(lambda: self.config.domain.time_end)
-        return pd.to_datetime(start_str).to_pydatetime(), pd.to_datetime(end_str).to_pydatetime()
+        start = self._get_config_value(lambda: self.config.domain.time_start)
+        end = self._get_config_value(lambda: self.config.domain.time_end)
+        return to_pydatetime(start), to_pydatetime(end)

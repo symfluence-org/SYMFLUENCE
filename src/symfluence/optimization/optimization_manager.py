@@ -17,6 +17,7 @@ import pandas as pd
 from symfluence.core.base_manager import BaseManager
 from symfluence.core.constants import SupportedModels
 from symfluence.core.mixins.config import resolve_config_value
+from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.registries import R
 from symfluence.optimization.core import TransformationManager
 from symfluence.optimization.optimization_results_manager import OptimizationResultsManager
@@ -478,12 +479,12 @@ class OptimizationManager(BaseManager):
             final_result: Dict[str, Any] = {'best_params': {}}
             for key, period_str in periods.items():
                 final_result[key] = {}
-                if not period_str or ',' not in str(period_str):
+                period = split_period(period_str, allow_extra=True)
+                if period is None:
                     continue
-                parts = [p.strip() for p in str(period_str).split(',')]
                 try:
                     obs_aligned, sim_aligned = sm.align_timeseries(
-                        sim_series, obs_series, calibration_period=(parts[0], parts[1])
+                        sim_series, obs_series, calibration_period=period
                     )
                 except ValueError as e:
                     self.logger.warning(f"{model_name} {key} not computable: {e}")

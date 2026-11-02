@@ -294,3 +294,58 @@ class TestAbstractMethods:
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
+
+
+class TestGetSimulationDates:
+    """Base ``_get_simulation_dates`` (shared by the per-model preprocessors)."""
+
+    def test_parses_config_strings_to_datetime(self, preprocessor):
+        from datetime import datetime
+
+        start, end = preprocessor._get_simulation_dates()
+        assert (start, end) == (datetime(2020, 1, 1), datetime(2020, 1, 2))
+        assert type(start) is datetime and type(end) is datetime
+
+    def test_keeps_time_of_day(self, config, logger, tmp_path):
+        from datetime import datetime
+
+        config = {**config, 'EXPERIMENT_TIME_START': '2020-01-01 01:00',
+                  'EXPERIMENT_TIME_END': '2020-01-02 23:00'}
+        (tmp_path / 'domain_test_domain' / 'settings' / 'TEST').mkdir(parents=True, exist_ok=True)
+        pp = ConcretePreProcessor(config, logger)
+        assert pp._get_simulation_dates() == (datetime(2020, 1, 1, 1), datetime(2020, 1, 2, 23))
+
+    def test_defaults_used_when_unset(self, preprocessor, monkeypatch):
+        from datetime import datetime
+
+        monkeypatch.setattr(preprocessor, '_get_config_value',
+                            lambda accessor, default=None, dict_key=None: default)
+        monkeypatch.setattr(preprocessor, 'SIMULATION_DATE_DEFAULTS', ('2002-01-01', '2009-12-31'))
+        assert preprocessor._get_simulation_dates() == (datetime(2002, 1, 1), datetime(2009, 12, 31))
+
+    def test_unset_without_default_raises(self, preprocessor, monkeypatch):
+        monkeypatch.setattr(preprocessor, '_get_config_value',
+                            lambda accessor, default=None, dict_key=None: default)
+        with pytest.raises(ValueError):
+            preprocessor._get_simulation_dates()
+
+    def test_model_overrides_pass_their_defaults(self, monkeypatch):
+        """PRMS/WRF-Hydro and GSFLOW/WATFLOOD keep their historical defaults."""
+        from datetime import datetime
+
+        from symfluence.models.gsflow.preprocessor import GSFLOWPreProcessor
+        from symfluence.models.prms.preprocessor import PRMSPreProcessor
+        from symfluence.models.watflood.preprocessor import WATFLOODPreProcessor
+        from symfluence.models.wrfhydro.preprocessor import WRFHydroPreProcessor
+
+        expected = {
+            PRMSPreProcessor: (datetime(2000, 1, 1), datetime(2001, 12, 31)),
+            WRFHydroPreProcessor: (datetime(2000, 1, 1), datetime(2001, 12, 31)),
+            GSFLOWPreProcessor: (datetime(2002, 1, 1), datetime(2009, 12, 31)),
+            WATFLOODPreProcessor: (datetime(2002, 1, 1), datetime(2009, 12, 31)),
+        }
+        for cls, dates in expected.items():
+            pp = cls.__new__(cls)
+            monkeypatch.setattr(pp, '_get_config_value',
+                                lambda accessor, default=None, dict_key=None: default, raising=False)
+            assert pp._get_simulation_dates() == dates, cls.__name__

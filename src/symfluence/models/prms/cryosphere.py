@@ -8,12 +8,13 @@ import numpy as np
 import pandas as pd
 
 from symfluence.core.exceptions import ConfigurationError, ModelExecutionError, ValidationError
+from symfluence.core.modeling.utilities.periods import parse_period
 
 
 def calculate_constraints(statvar, parameters, project_dir, period, snow_scale=.2, mb_scale=1.):
     if not period or snow_scale <= 0 or mb_scale <= 0:
         raise ConfigurationError('Explicit period and positive cryosphere scales required')
-    start, end = [pd.Timestamp(x.strip()) for x in period.split(',')]
+    start, end = parse_period(period, strict=True)
     if start > end:
         raise ConfigurationError('Reversed cryosphere period')
     params = {}

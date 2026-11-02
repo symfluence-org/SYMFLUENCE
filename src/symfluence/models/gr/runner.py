@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import geopandas as gpd
 import numpy as np
@@ -30,6 +30,7 @@ from symfluence.core.modeling.execution import SpatialOrchestrator
 from symfluence.core.modeling.mixins import OutputConverterMixin, SpatialModeDetectionMixin
 from symfluence.core.modeling.netcdf_utils import create_netcdf_encoding
 from symfluence.core.modeling.spatial_modes import SpatialMode
+from symfluence.core.modeling.utilities.periods import parse_period
 from symfluence.core.registries import R
 
 from ..mizuroute.mixins import MizuRouteConfigMixin
@@ -94,6 +95,12 @@ def _load_rpy2() -> bool:
         pandas2ri = None
         localconverter = None
     return HAS_RPY2
+
+
+def _period_ymd(period: Any) -> Tuple[str, str]:
+    """``'start, end'`` period as two ``YYYY-MM-DD`` strings (extra parts ignored)."""
+    start, end = parse_period(period, allow_extra=True, strict=True)
+    return start.strftime('%Y-%m-%d'), end.strftime('%Y-%m-%d')
 
 
 @R.runners.add('GR', runner_method='run_gr')
@@ -486,7 +493,7 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
         period = self._get_config_value(lambda: self.config.domain.calibration_period, default=None)
         if not period:
             raise ModelExecutionError("GR glacier mass-balance target needs a calibration period")
-        start, end = (pd.to_datetime(p.strip()) for p in str(period).split(','))
+        start, end = parse_period(period, strict=True)
         first_oct1 = pd.Timestamp(start.year, 10, 1)
         first = first_oct1.year + 1 if start <= first_oct1 else first_oct1.year + 2
         last_sep30 = pd.Timestamp(end.year, 9, 30)
@@ -590,8 +597,7 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
             # Get simulation periods
             time_start = pd.to_datetime(self.time_start)
             time_end = pd.to_datetime(self.time_end)
-            spinup_start = pd.to_datetime(self.spinup_period.split(',')[0].strip()).strftime('%Y-%m-%d')
-            spinup_end = pd.to_datetime(self.spinup_period.split(',')[1].strip()).strftime('%Y-%m-%d')
+            spinup_start, spinup_end = _period_ymd(self.spinup_period)
             run_start = time_start.strftime('%Y-%m-%d')
             run_end = time_end.strftime('%Y-%m-%d')
 
@@ -946,10 +952,8 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
             time_start = pd.to_datetime(self.time_start)
             time_end = pd.to_datetime(self.time_end)
 
-            spinup_start = pd.to_datetime(self.spinup_period.split(',')[0].strip()).strftime('%Y-%m-%d')
-            spinup_end = pd.to_datetime(self.spinup_period.split(',')[1].strip()).strftime('%Y-%m-%d')
-            calib_start = pd.to_datetime(self.calibration_period.split(',')[0].strip()).strftime('%Y-%m-%d')
-            calib_end = pd.to_datetime(self.calibration_period.split(',')[1].strip()).strftime('%Y-%m-%d')
+            spinup_start, spinup_end = _period_ymd(self.spinup_period)
+            calib_start, calib_end = _period_ymd(self.calibration_period)
             run_start = time_start.strftime('%Y-%m-%d')
             run_end = time_end.strftime('%Y-%m-%d')
 

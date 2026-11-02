@@ -15,6 +15,7 @@ from typing import Any, Dict, Optional
 
 from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.mixins.project import resolve_data_subdir
+from symfluence.core.modeling.utilities.periods import split_period
 
 logger = logging.getLogger(__name__)
 
@@ -213,10 +214,9 @@ def _resolve_simulation_dates(
 
     # Calibration period
     calib_period = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
-    if calib_period and ',' in str(calib_period):
-        parts = str(calib_period).split(',')
-        eval_start = parts[0].strip()
-        eval_end = parts[1].strip()
+    parts = split_period(calib_period, allow_extra=True)
+    if parts:
+        eval_start, eval_end = parts
 
     return sim_start, sim_end, eval_start, eval_end
 

@@ -20,6 +20,7 @@ import pandas as pd
 from symfluence.core.constants import UnitConversion
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
+from symfluence.core.modeling.utilities.periods import parse_period
 from symfluence.models.fuse.calibration.file_manager import resolve_fuse_id
 
 logger = logging.getLogger(__name__)
@@ -418,9 +419,7 @@ def align_and_filter(
     calib_period = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
     if calib_period and ',' in str(calib_period):
         try:
-            calib_start, calib_end = [s.strip() for s in str(calib_period).split(',')]
-            calib_start = pd.Timestamp(calib_start)
-            calib_end = pd.Timestamp(calib_end)
+            calib_start, calib_end = parse_period(calib_period, strict=True)
 
             mask_obs = (obs_aligned.index >= calib_start) & (obs_aligned.index <= calib_end)
             mask_sim = (sim_aligned.index >= calib_start) & (sim_aligned.index <= calib_end)

@@ -25,6 +25,7 @@ import pandas as pd
 import xarray as xr
 
 from symfluence.core.mixins import ConfigMixin
+from symfluence.core.modeling.utilities.periods import split_period
 
 from .class_file_manager import CLASSFileManager
 from .config_defaults import MESHConfigDefaults
@@ -834,15 +835,15 @@ class MESHParameterFixer(ConfigMixin):
             dict_key='EVALUATION_PERIOD'
         )
 
-        if cal_period:
-            cal_parts = [p.strip() for p in str(cal_period).split(',')]
-            if len(cal_parts) >= 2:
-                analysis_start = pd.Timestamp(cal_parts[0])
-                if eval_period:
-                    eval_parts = [p.strip() for p in str(eval_period).split(',')]
-                    end_time = pd.Timestamp(eval_parts[1] if len(eval_parts) >= 2 else eval_parts[0])
-                else:
-                    end_time = pd.Timestamp(cal_parts[1])
-                return (analysis_start, end_time)
+        cal_parts = split_period(cal_period, allow_extra=True)
+        if cal_parts:
+            analysis_start = pd.Timestamp(cal_parts[0])
+            if eval_period:
+                eval_parts = split_period(eval_period, allow_extra=True, allow_single=True)
+                # A blank/'default' eval period is parsed as-is, as before.
+                end_time = pd.Timestamp(eval_parts[1] if eval_parts else str(eval_period).strip())
+            else:
+                end_time = pd.Timestamp(cal_parts[1])
+            return (analysis_start, end_time)
 
         return None

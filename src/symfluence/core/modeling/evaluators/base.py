@@ -22,6 +22,7 @@ import xarray as xr
 
 from symfluence.core import metrics
 from symfluence.core.mixins import ConfigurableMixin
+from symfluence.core.modeling.utilities.periods import parse_period
 
 if TYPE_CHECKING:
     from symfluence.core.config.models import SymfluenceConfig
@@ -756,9 +757,9 @@ class ModelEvaluator(ConfigurableMixin, ABC):
             return None, None
 
         try:
-            dates = [d.strip() for d in date_range_str.split(',')]
-            if len(dates) >= 2:
-                return pd.Timestamp(dates[0]), pd.Timestamp(dates[1])
+            period = parse_period(date_range_str, allow_extra=True)
+            if period is not None:
+                return period
         except Exception as e:  # noqa: BLE001 — must-not-raise contract
             self.logger.warning(f"Could not parse date range '{date_range_str}': {str(e)}")
 

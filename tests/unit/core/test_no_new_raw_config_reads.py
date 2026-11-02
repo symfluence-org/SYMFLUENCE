@@ -66,7 +66,6 @@ BASELINE = {
     "models/hype/calibration/parameter_manager.py": 5,  # HYPE_* param configs (no fields), PARAMETER_REGIONALIZATION
     "models/hype/calibration/worker.py": 8,  # explicit dict / config_dict branches, SYMFLUENCE_DATA_DIR as str
     "models/hype/geodata_manager.py": 1,  # SYMFLUENCE_DATA_DIR as str
-    "models/lisflood/calibration/worker.py": 1,  # explicit dict branch
     "models/mesh/calibration/worker.py": 10,  # flat key falling back to the mesh sub-dict; SYMFLUENCE_DATA_DIR
     "models/mesh/preprocessing/forcing_processor.py": 2,  # SUB_GRID/DOMAIN_DISCRETIZATION chain
     "models/modflow/land_adapters.py": 1,  # LAND_SURFACE_MODEL (no field)
@@ -82,7 +81,7 @@ BASELINE = {
     "models/swat/calibration/optimizer.py": 1,  # SWAT_FINAL_EVAL_RETRIES (no field)
     "models/swat/calibration/worker.py": 2,  # SWAT_MAX_RETRIES, TIME_START (no fields)
     "models/vic/calibration/worker.py": 1,  # VIC_WARMUP_DAYS (no field)
-    "models/wflow/calibration/worker.py": 7,  # config['KEY'], explicit dict branch, WFLOW_TIMESTEP, DATA_DIR
+    "models/wflow/calibration/worker.py": 6,  # config['KEY'], explicit dict branch, WFLOW_TIMESTEP, DATA_DIR
     "models/wrfhydro/calibration/worker.py": 1,  # CATCHMENT_AREA_KM2 (no field)
 }
 
