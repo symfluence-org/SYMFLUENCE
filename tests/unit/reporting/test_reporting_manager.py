@@ -20,12 +20,17 @@ def mock_spatial_processor():
         yield mock
 
 @pytest.fixture
-def mock_config():
-    """Create a minimal SymfluenceConfig for testing."""
+def mock_config(tmp_path):
+    """Create a minimal SymfluenceConfig for testing.
+
+    Uses a per-test data dir: a fixed /tmp path can collide with a real
+    directory or symlink on a developer machine (e.g. /tmp/SYMFLUENCE_data on
+    a case-insensitive filesystem), which made test_init fail locally.
+    """
     return SymfluenceConfig.from_minimal(
         domain_name='test_domain',
         model='summa',
-        SYMFLUENCE_DATA_DIR='/tmp/symfluence_data',
+        SYMFLUENCE_DATA_DIR=str(tmp_path / 'symfluence_data'),
         EXPERIMENT_TIME_START='2020-01-01 00:00',
         EXPERIMENT_TIME_END='2020-12-31 23:00'
     )
