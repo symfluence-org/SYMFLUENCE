@@ -74,7 +74,7 @@ class AttributesReader:
         Args:
             store_path: Path to ``{domain}_attributes.nc``.
         """
-        import netCDF4  # noqa: N813
+        import netCDF4
 
         self.store_path = store_path
         with netCDF4.Dataset(str(store_path), 'r') as ds:

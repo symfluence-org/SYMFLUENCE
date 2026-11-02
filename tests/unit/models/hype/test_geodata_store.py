@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-netCDF4 = pytest.importorskip("netCDF4")  # noqa: N816
+netCDF4 = pytest.importorskip("netCDF4")
 gpd = pytest.importorskip("geopandas")
 pytest.importorskip("xarray")
 

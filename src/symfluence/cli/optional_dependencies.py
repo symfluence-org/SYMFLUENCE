@@ -59,7 +59,7 @@ def handle_optional_dependency(
     command = _install_command(error.install_target)
     logger.info("Installing optional dependency group: extra=%s", error.extra)
     try:
-        result = subprocess.run(command, check=False)  # noqa: S603 - fixed argv, no shell
+        result = subprocess.run(command, check=False)  # fixed argv, no shell
     except OSError as exc:
         logger.error("Could not start dependency installer", exc_info=True)
         console.error(f"Could not start the installer: {exc}")

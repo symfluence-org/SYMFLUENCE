@@ -81,19 +81,19 @@ class _LazyMap(dict):
                 self.setdefault(key, path)
 
     # Override all read methods to ensure data is loaded before access.
-    def __getitem__(self, key):  # noqa: D105
+    def __getitem__(self, key):
         self._ensure_loaded()
         return super().__getitem__(key)
 
-    def __contains__(self, key):  # noqa: D105
+    def __contains__(self, key):
         self._ensure_loaded()
         return super().__contains__(key)
 
-    def __iter__(self):  # noqa: D105
+    def __iter__(self):
         self._ensure_loaded()
         return super().__iter__()
 
-    def __len__(self):  # noqa: D105
+    def __len__(self):
         self._ensure_loaded()
         return super().__len__()
 
@@ -122,7 +122,7 @@ class _LazyMap(dict):
         self._ensure_loaded()
         return dict(self)
 
-    def __repr__(self):  # noqa: D105
+    def __repr__(self):
         self._ensure_loaded()
         return super().__repr__()
 

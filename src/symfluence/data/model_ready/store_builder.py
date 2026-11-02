@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 def _is_valid_netcdf(path: Path) -> bool:
     """Report whether *path* is an openable NetCDF file with any content."""
     try:
-        import netCDF4  # noqa: N813
+        import netCDF4
     except ImportError:
         return path.stat().st_size > 0
     try:

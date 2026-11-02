@@ -60,7 +60,7 @@ def test_forward_gradient_at_upper_bound_is_not_zero(mixin):
 
 def test_degenerate_box_yields_zero_without_error(mixin):
     """A zero-width box has no slope to measure; must not divide by zero."""
-    f = lambda x: 1.0  # noqa: E731
+    f = lambda x: 1.0
     grad = mixin.compute_fd_gradients_forward(np.array([0.0]), 1.0, f, epsilon=0.0)
     assert grad[0] == 0.0
 

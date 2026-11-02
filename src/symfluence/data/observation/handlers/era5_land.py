@@ -330,7 +330,7 @@ class ERA5LandHandler(BaseObservationHandler):
         # Identify variables that need sum vs mean
         sum_vars = ['precip', 'et', 'pet', 'runoff', 'evaporation']
         # Mean variables used implicitly via else branch below
-        _mean_vars = ['temp', 'soil_moisture', 'snow', 'swe']  # noqa: F841
+        _mean_vars = ['temp', 'soil_moisture', 'snow', 'swe']
 
         result_cols = {}
         for col in df.columns:

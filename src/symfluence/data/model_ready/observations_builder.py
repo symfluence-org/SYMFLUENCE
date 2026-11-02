@@ -103,7 +103,7 @@ class ObservationsNetCDFBuilder:
         out_path = self.target_dir / f'{self.domain_name}_observations.nc'
 
         try:
-            import netCDF4  # noqa: N813
+            import netCDF4
         except ImportError:
             logger.warning("netCDF4 not available; cannot build observations store")
             return None
@@ -283,7 +283,7 @@ class ObservationsNetCDFBuilder:
         source_meta: Optional[SourceMetadata] = None,
     ) -> None:
         """Write a NetCDF group from a dict of named pandas Series."""
-        import netCDF4  # noqa: N813
+        import netCDF4
 
         # Build common time axis
         all_times = sorted(set().union(*(s.index for s in series_dict.values())))

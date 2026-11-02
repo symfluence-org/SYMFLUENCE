@@ -45,7 +45,7 @@ def test_run_env_includes_rhessys_lib_dir(tmp_path):
 
     captured = {}
 
-    def _fake_run(cmd, **kwargs):  # noqa: ANN001 — test stub
+    def _fake_run(cmd, **kwargs):  # test stub
         captured["env"] = kwargs.get("env")
         return mock.Mock(returncode=0, stdout="", stderr="")
 

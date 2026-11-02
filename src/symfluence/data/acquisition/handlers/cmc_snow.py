@@ -81,7 +81,7 @@ class CMCSnowAcquirer(BaseAcquisitionHandler):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         force_download = self._get_config_value(lambda: self.config.data.force_download, default=False)
-        _snow_density = float(self._get_config_value(lambda: None, default=DEFAULT_SNOW_DENSITY, dict_key='CMC_SNOW_DENSITY'))  # noqa: F841
+        _snow_density = float(self._get_config_value(lambda: None, default=DEFAULT_SNOW_DENSITY, dict_key='CMC_SNOW_DENSITY'))
 
         # Get Earthdata credentials
         username, password = self._earthdata_auth().require_credentials(

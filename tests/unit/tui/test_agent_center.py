@@ -50,7 +50,7 @@ def _fake_claude(monkeypatch):
     import symfluence.agent.launcher as launcher
     import symfluence.tui.services.agent_service as service
 
-    fake = lambda binary: '/usr/bin/claude' if binary == 'claude' else None  # noqa: E731
+    fake = lambda binary: '/usr/bin/claude' if binary == 'claude' else None
     monkeypatch.setattr(launcher.shutil, 'which', fake)
     monkeypatch.setattr(service.shutil, 'which', fake)
     monkeypatch.setenv('SYMFLUENCE_NO_SKILLS', '1')  # no cache writes from tests

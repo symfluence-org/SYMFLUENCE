@@ -408,7 +408,7 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
         cemaneige = [params.get(k, self._load_calibrated_defaults().get(k, d))
                      for k, d in (('CTG', 0.0), ('Kf', 3.69), ('Gratio', 0.1), ('Albedo_diff', 0.1))]
         r_dates = 'as.POSIXct(BasinObs$time, tz = "UTC")'
-        r_vec = lambda v: f"c({', '.join(repr(float(x)) for x in v)})"  # noqa: E731
+        r_vec = lambda v: f"c({', '.join(repr(float(x)) for x in v)})"
         run_r_script(robjects, f'''
             library(airGR)
             BasinObs <- read.csv({r_path(forcing_csv)})

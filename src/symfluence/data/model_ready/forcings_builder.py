@@ -243,7 +243,7 @@ class ForcingsStoreBuilder:
         must therefore leave already-enriched files untouched — not reopen them
         in append mode — so the shared forcing is immutable in steady state.
         """
-        import netCDF4  # noqa: N813
+        import netCDF4
 
         try:
             with netCDF4.Dataset(str(src_file), 'r') as ds:
@@ -269,7 +269,7 @@ class ForcingsStoreBuilder:
         carry the contract are skipped entirely (see ``_needs_enrichment``).
         """
         try:
-            import netCDF4  # noqa: N813
+            import netCDF4
         except ImportError:
             logger.warning("netCDF4 not available; skipping metadata enrichment")
             return

@@ -270,7 +270,7 @@ class Registry(Generic[T]):
             )
         return self._unwrap(nkey, entry)
 
-    def __contains__(self, key: str) -> bool:  # noqa: D105
+    def __contains__(self, key: str) -> bool:
         self._ensure_seeded()
         nkey = self._resolve_alias(self._normalize(key))
         return nkey in self._entries
@@ -295,18 +295,18 @@ class Registry(Generic[T]):
         self._ensure_seeded()
         return [(k, self._unwrap(k, v)) for k, v in sorted(self._entries.items())]
 
-    def __len__(self) -> int:  # noqa: D105
+    def __len__(self) -> int:
         self._ensure_seeded()
         return len(self._entries)
 
-    def __iter__(self) -> Iterator[str]:  # noqa: D105
+    def __iter__(self) -> Iterator[str]:
         self._ensure_seeded()
         return iter(sorted(self._entries.keys()))
 
-    def __repr__(self) -> str:  # noqa: D105
+    def __repr__(self) -> str:
         return f"<Registry {self._name!r} ({len(self)} entries)>"
 
-    def __bool__(self) -> bool:  # noqa: D105
+    def __bool__(self) -> bool:
         return True  # a Registry instance is always truthy
 
     def summary(self) -> Dict[str, Any]:

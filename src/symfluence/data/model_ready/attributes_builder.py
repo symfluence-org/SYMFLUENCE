@@ -107,7 +107,7 @@ class AttributesNetCDFBuilder:
             return None
 
         try:
-            import netCDF4  # noqa: N813, F401
+            import netCDF4  # noqa: F401
         except ImportError:
             logger.warning("netCDF4 not available; cannot build attributes store")
             return None
