@@ -638,18 +638,28 @@ class CLMParFlowPreProcessor(BaseModelPreProcessor):
     def _run_basin_preprocessing(self) -> bool:
         """Basin mode: build the regular grid over the basin (segment inputs are written by the runner)."""
         from .basin import build_basin_grid
-        from .basin.settings import GRID_SUBDIR, basin_inputs
+        from .basin.settings import basin_inputs, grid_dir
 
         cfg = self.config.model.clmparflow
         inputs = basin_inputs(cfg, self.project_dir, self.domain_name)
         grid = build_basin_grid(inputs.outline, inputs.units, inputs.unit_field, inputs.dem, inputs.pour_point,
-                                inputs.crs, inputs.dx, inputs.ice_field, inputs.ice_value, inputs.min_slope)
-        out = self.project_dir / GRID_SUBDIR
+                                inputs.crs, inputs.dx, inputs.ice_field, inputs.ice_value, inputs.min_slope,
+                                rotation=inputs.rotation, k_zone=inputs.k_zone, lake=inputs.lake)
+        out = grid_dir(cfg, self.project_dir)
         grid.save(out)
         info = grid.info
+        extra = ''.join(f", {info[k]} {label}" for k, label in (('kzone_cells', 'K-zone'), ('lake_cells', 'lake'))
+                        if k in info)
+        if grid.rotation:
+            extra += f", axes rotated {grid.rotation:g} deg"
+        if grid.lake is not None and cfg.basin_lake_manning is None:
+            self.logger.warning("CLMPARFLOW_BASIN_LAKE levels the lake cells, but without "
+                                "CLMPARFLOW_BASIN_LAKE_MANNING they store no more water than other cells")
+        if grid.kzone is not None and cfg.basin_k_zone_factor == 1.0 and not cfg.basin_k_zone_soil:
+            self.logger.warning("CLMPARFLOW_BASIN_K_ZONE is set but CLMPARFLOW_BASIN_K_ZONE_FACTOR is 1: no effect")
         self.logger.info(
             f"CLMParFlow basin grid: {info['nx']}x{info['ny']} cells of {inputs.dx:.0f} m, {info['active']} active, "
-            f"{info['ice_cells']} glacier; outlet {info['outlet_rc_north_up']} -> {out}")
+            f"{info['ice_cells']} glacier{extra}; outlet {info['outlet_rc_north_up']} -> {out}")
         return True
 
     def run_preprocessing(self):

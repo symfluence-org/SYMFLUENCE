@@ -194,10 +194,11 @@ class CLMParFlowRunner(BaseModelRunner):
     def _run_basin(self, output_dir: Path) -> Path:
         """Basin mode: run (or resume) the spin-up and production chain; writes the daily outlet discharge."""
         from .basin import BasinGrid, run_chain
-        from .basin.settings import GRID_SUBDIR, basin_inputs, basin_parameters, chain_settings
+        from .basin.settings import basin_inputs, basin_parameters, chain_settings
+        from .basin.settings import grid_dir as basin_grid_dir
 
         cfg = self.config.model.clmparflow
-        grid_dir = self.project_dir / GRID_SUBDIR
+        grid_dir = basin_grid_dir(cfg, self.project_dir)
         if not (grid_dir / 'grid.npz').exists():
             raise ModelExecutionError(f"CLMParFlow basin grid not found in {grid_dir}. Run preprocessing first.")
         grid = BasinGrid.load(grid_dir)

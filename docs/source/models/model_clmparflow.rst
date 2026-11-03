@@ -99,6 +99,44 @@ speed goes in ``UGRD``. ``CLMPARFLOW_BASIN_INITIAL_STATE`` starts the spin-up fr
 same parameters instead of a cold start (water table ``CLMPARFLOW_BASIN_INITIAL_WATER_TABLE_DEPTH`` below the
 surface).
 
+Optional structure
+------------------
+
+Three options, all off by default (unset, every input file is byte-identical to before). Geometry is applied by
+the preprocessing and stored with the grid; the factors are run parameters.
+
+.. code-block:: yaml
+
+   CLMPARFLOW_BASIN_GRID_DIR: /path/grid_dir        # keep an option grid apart from settings/CLMPARFLOW/basin
+   # (a) aquifer anisotropy: multipliers of the aquifer K along grid x, grid y and vertical
+   CLMPARFLOW_BASIN_K_TENSOR: [1.0, 0.033, 0.1]
+   CLMPARFLOW_BASIN_GRID_ROTATION: 45                # grid x axis 45 deg counter-clockwise from east
+   # (b) permeability zone
+   CLMPARFLOW_BASIN_K_ZONE: /path/zone.gpkg
+   CLMPARFLOW_BASIN_K_ZONE_FACTOR: 0.135             # aquifer K x factor in the zone
+   CLMPARFLOW_BASIN_K_ZONE_SOIL: false               # true: also the soil K of non-glacier cells
+   # (c) lake
+   CLMPARFLOW_BASIN_LAKE: /path/lake.gpkg
+   CLMPARFLOW_BASIN_LAKE_MANNING: 3.0e-4             # h m^-1/3 on lake cells
+
+- **Anisotropy** writes cell-wise multipliers ``kx.pfb``, ``ky.pfb``, ``kz.pfb`` (``Perm.TensorType
+  TensorByFile``): ``K_TENSOR`` in the aquifer layers, 1 in the CLM soil layers. ParFlow's tensor is diagonal in
+  the grid axes. A horizontal anisotropy whose major axis is at an angle θ to grid x has the off-diagonal term
+  (K1 − K2) sin θ cos θ, which ParFlow cannot hold; the best grid-aligned approximation keeps the diagonal,
+  kx = K1 cos²θ + K2 sin²θ and ky = K1 sin²θ + K2 cos²θ (at 45°, kx = ky = (K1 + K2)/2: the horizontal
+  anisotropy disappears). ``CLMPARFLOW_BASIN_GRID_ROTATION`` instead rotates the whole grid (about the basin
+  centroid) so grid x follows the strike; the outline, units, DEM, pour point and polygons are sampled with the
+  rotated transform, so ParFlow still sees a regular grid. A rotated grid cannot restart from an unrotated run.
+- **K zone**: cells at least half inside the polygon; their aquifer K (and with ``K_ZONE_SOIL`` the soil K of
+  non-glacier cells) is multiplied by the factor in ``perm.pfb``.
+- **Lake**: cells at least half inside the polygon are levelled to the lake cells' median DEM elevation before the
+  priority flood (so they slope at ``CLMPARFLOW_BASIN_MIN_SLOPE`` towards the lake outlet) and get their own
+  Manning's n (``Mannings.Type PFBFile``). ParFlow's kinematic ``OverlandFlow`` boundary moves ponded water only
+  down each cell's prescribed slope (q = √S / n · h\ :sup:`5/3` per unit width), so an unfilled depression is a
+  sink that never spills. A rougher lake surface instead holds the ponded depth that conveys the lake's
+  throughput: a cascade of nonlinear reservoirs whose storage and delay grow with n. It is not a level pool
+  (depth grows towards the lake outlet, exponent 5/3) and has no open-water evaporation.
+
 Tungnaá at Maríufossar
 ----------------------
 
@@ -113,5 +151,6 @@ Limitations
 
 - CLM 3.0, not CTSM: no frozen-soil impedance (ParFlow solves Richards' equation on liquid water only).
 - Unlimited ice and fixed glacier area; glacier cells by majority at the grid resolution.
-- Soil and aquifer structure is uniform apart from the soil/aquifer split and the glacier bed.
+- Soil and aquifer structure is uniform apart from the soil/aquifer split, the glacier bed and the optional K
+  zone and grid-aligned anisotropy.
 - No automatic calibration in basin mode; each simulated year costs on the order of an hour of computation.
