@@ -162,8 +162,11 @@ def track_steady_state(sim_dir: Path, work_dir: Path, mf6: str, mp7: str,
     lake = grid.lake_array()
     river = np.zeros((grid.nrow, grid.ncol), bool)
     river[grid.river.row.to_numpy(int) - 1, grid.river.col.to_numpy(int) - 1] = True
-    end_class = np.where(lake[r1 - 1, c1 - 1] >= 0.5, 'lake',
-                         np.where(river[r1 - 1, c1 - 1] & (lake[r1 - 1, c1 - 1] < 0.5), 'river', 'seepage'))
+    # Without lake-cell drains (MODFLOW_LAKE_CELL_DRAINS false) the lake boundary is the only sink in any cell touching
+    # the lake, so a particle ending there entered the lake; otherwise only mostly-lake cells count.
+    in_lake = lake > 0 if not grid.lake_cell_drains else lake >= 0.5
+    end_class = np.where(in_lake[r1 - 1, c1 - 1], 'lake',
+                         np.where(river[r1 - 1, c1 - 1], 'river', 'seepage'))
     rech = cell_recharge(sim_dir, grid)
     out = pd.DataFrame({'row0': r0, 'col0': c0, 'row': r1, 'col': c1,
                         'travel_days': ep.time - ep.time0, 'status': ep.status,
