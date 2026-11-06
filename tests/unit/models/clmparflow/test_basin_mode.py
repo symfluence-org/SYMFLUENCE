@@ -411,7 +411,7 @@ def test_option_config_aliases(tmp_path):
     p = basin_parameters(cfg)
     assert p.k_tensor == (1., .033, .1) and p.k_zone_factor == .135 and p.k_zone_soil and p.lake_manning == 3e-4
     inp = basin_inputs(cfg, tmp_path, 'd')
-    assert inp.rotation == 45. and str(inp.k_zone) == '/x/zone.gpkg' and str(inp.lake) == '/x/lake.gpkg'
+    assert inp.rotation == 45. and inp.k_zone == Path('/x/zone.gpkg') and inp.lake == Path('/x/lake.gpkg')
     assert grid_dir(cfg, tmp_path) == tmp_path / 'g'
     with pytest.raises(ConfigurationError, match='K_TENSOR'):
         basin_parameters(SymfluenceConfig(**base, CLMPARFLOW_BASIN_K_TENSOR=[1., 1.]).model.clmparflow)
