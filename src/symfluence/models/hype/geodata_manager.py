@@ -49,6 +49,9 @@ if TYPE_CHECKING:
 GROUNDWATER_OUT_OF_DOMAIN_SUBID = 999999999
 
 
+OLAKE_CLASS_MODEL = 1   # HYPE modvar.f90 olake_model
+
+
 def groundwater_export_enabled(config) -> bool:
     """Regional groundwater leaves HYPE for an external groundwater model.
 
@@ -398,6 +401,9 @@ class HYPEGeoDataManager:
                     n_before, len(base_df),
                     base_df['elev_mean'].min(), base_df['elev_mean'].max(),
                 )
+
+        # 7c. Outlet lakes, keyed by the final (band) sub-basin ids before any shift
+        base_df, slc_df = self._apply_outlet_lakes(base_df, slc_df, glacier_slc_cols)
 
         # 8. Handle ID shifting (HYPE requires IDs > 0)
         base_df = self._shift_ids_if_needed(base_df)
@@ -1087,9 +1093,49 @@ class HYPEGeoDataManager:
             result.loc[mask, 'rivlen'] = float(length)
         return result
 
+    def _apply_outlet_lakes(self, base_df: pd.DataFrame, slc_df: pd.DataFrame,
+                            glacier_slc_cols: list[str]) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """Outlet lakes (HYPE class model 1) in the sub-basins listed in HYPE_OUTLET_LAKES.
+
+        ``HYPE_OUTLET_LAKES`` maps sub-basin id -> ``{depth: mean depth (m), fraction: lake share of the
+        sub-basin (default 1)}``. One lake class (land use HYPE_LAKE_LANDUSE, default 17 = water) is added to
+        GeoClass; in each listed sub-basin it takes ``fraction`` and the other classes are scaled by
+        ``1 - fraction``. GeoData gains ``lake_depth`` (0 elsewhere). The outflow uses HYPE's general rating
+        curve (gratk, gratp; written to par.txt by HYPEConfigManager).
+        """
+        lakes = resolve_config_value(self.config, lambda: self.config.model.hype.outlet_lakes, None, 'HYPE_OUTLET_LAKES')
+        if not lakes:
+            return base_df, slc_df
+        slc = int(slc_df['SLC'].max()) + 1
+        lake_row = {'landcover': int(resolve_config_value(self.config, lambda: self.config.model.hype.lake_landuse, 17, 'HYPE_LAKE_LANDUSE')), 'soil': 1, 'SLC': slc,
+                    'special': OLAKE_CLASS_MODEL}
+        slc_df = pd.concat([slc_df, pd.DataFrame([lake_row])], ignore_index=True)
+        land_cols = [c for c in base_df.columns if c.startswith('SLC_')]
+        col = f'SLC_{slc}'
+        base_df = base_df.copy()
+        base_df[col] = 0.0
+        base_df['lake_depth'] = 0.0
+        for key, spec in lakes.items():
+            subid, spec = int(key), dict(spec or {})
+            depth, frac = float(spec.get('depth', 0.0)), float(spec.get('fraction', 1.0))
+            if not depth > 0 or not 0 < frac <= 1:
+                raise ValidationError(f'HYPE outlet lake {subid}: depth must be > 0 and fraction in (0, 1]')
+            mask = base_df['subid'] == subid
+            if mask.sum() != 1:
+                raise ValidationError(f'HYPE outlet lake subid {subid} does not identify one sub-basin')
+            base_df.loc[mask, land_cols] = base_df.loc[mask, land_cols] * (1.0 - frac)
+            base_df.loc[mask, col] = frac
+            base_df.loc[mask, 'lake_depth'] = depth
+        base_df['glacier_fraction'] = base_df[glacier_slc_cols].sum(axis=1) if glacier_slc_cols else 0.0
+        self.logger.info(f"HYPE outlet lakes in sub-basins {sorted(int(k) for k in lakes)} (class SLC_{slc})")
+        return base_df, slc_df
+
     def _write_geoclass(self, slc_df: pd.DataFrame) -> None:
         """Write GeoClass.txt file with full metadata and specific formatting."""
         combination = slc_df.copy()
+        # Explicit class models (e.g. outlet lakes) win; otherwise glacier land cover -> glacier_model
+        rule = combination['landcover'].apply(lambda x: 3 if x == 15 else 0)
+        special = combination['special'].fillna(rule) if 'special' in combination else rule
         combination = combination.rename(columns={'landcover': 'LULC', 'soil': 'SOIL TYPE'})
         combination = combination[['SLC', 'LULC', 'SOIL TYPE']]
 
@@ -1097,8 +1143,8 @@ class HYPEGeoDataManager:
         combination['Second crop cropid'] = 0
         combination['Crop rotation group'] = 0
         combination['Vegetation type'] = 1
-        # HYPE's glacier_model is 3; code 2 is an internal lake.
-        combination['Special class code'] = combination['LULC'].apply(lambda x: 3 if x == 15 else 0)
+        # HYPE class models: 1 outlet lake, 2 internal lake, 3 glacier (modvar.f90)
+        combination['Special class code'] = special.astype(int).to_numpy()
         soil_depths = resolve_config_value(self.config, lambda: self.config.model.hype.soil_layer_depths, None, 'HYPE_SOIL_LAYER_DEPTHS')
         if soil_depths and len(soil_depths) == 3:
             d1, d2, d3 = [float(d) for d in soil_depths]

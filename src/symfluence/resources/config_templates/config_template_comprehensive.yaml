@@ -265,6 +265,34 @@ HYPE_SOIL_LAYER_DEPTHS: null
 #   Description: Hype Param Bounds
 HYPE_PARAM_BOUNDS: null
 
+# HYPE_OUTLET_LAKES
+#   Type:        Optional[Dict[str, Dict[str, float]]]
+#   Default:     None
+#   Source:      HYPEConfig (models/hype/config_schema.py)
+#   Description: Outlet lakes: sub-basin id -> {depth: mean depth (m), fraction: lake share of the sub-basin (default 1)}
+HYPE_OUTLET_LAKES: null
+
+# HYPE_LAKE_LANDUSE
+#   Type:        int
+#   Default:     17
+#   Source:      HYPEConfig (models/hype/config_schema.py)
+#   Description: Land use id of the outlet-lake class
+HYPE_LAKE_LANDUSE: 17
+
+# HYPE_LAKE_GRATK
+#   Type:        float
+#   Default:     100.0
+#   Source:      HYPEConfig (models/hype/config_schema.py)
+#   Description: Outlet-lake general rating coefficient gratk (written when outlet lakes are set; calibration name gratk)
+HYPE_LAKE_GRATK: 100.0
+
+# HYPE_LAKE_GRATP
+#   Type:        float
+#   Default:     1.5
+#   Source:      HYPEConfig (models/hype/config_schema.py)
+#   Description: Outlet-lake general rating exponent gratp (written when outlet lakes are set; calibration name gratp)
+HYPE_LAKE_GRATP: 1.5
+
 
 # 11. NGEN Model Configuration
 # ================================================================================

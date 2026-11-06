@@ -496,6 +496,14 @@ timeoutput decimals\t3
             if template_file or any(k in (params or {}) for k in ('glacvcoef1', 'glacvexp1')):
                 raise ValidationError('Ice-cap volume preservation requires the default area-volume relation')
             par_content += '\n!! Relation used to preserve parent ice-cap volume across bands\nglacvcoef1\t1.701\nglacvexp1\t1.25\n'
+        lakes = self._get_config_value(lambda: self.config.model.hype.outlet_lakes, dict_key='HYPE_OUTLET_LAKES')
+        if lakes and not re.search(r'^gratk\s', par_content, flags=re.MULTILINE):
+            # HYPE requires gratk, gratp > 0 when lakes exist (hype_tests.f90); outflow = gratk * (w - w0)^gratp
+            depth = max(float(dict(v or {}).get('depth', 0.0)) for v in lakes.values())
+            par_content += ('\n!! Outlet lakes: general rating curve\n'
+                            f'gratk\t{self._get_config_value(lambda: self.config.model.hype.lake_gratk, 100.0, dict_key="HYPE_LAKE_GRATK")}\n'
+                            f'gratp\t{self._get_config_value(lambda: self.config.model.hype.lake_gratp, 1.5, dict_key="HYPE_LAKE_GRATP")}\n'
+                            f'gldepo\t{depth}\n')
         extra = self._get_config_value(lambda: self.config.model.hype.extra_parameters, dict_key='HYPE_EXTRA_PARAMETERS')
         if extra:
             par_content = self._apply_extra_parameters(par_content, extra, max_lu, num_soil)
