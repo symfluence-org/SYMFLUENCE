@@ -207,6 +207,14 @@ def patch_prms_makefile(txt):
             'segment_to_hru.o: segment_to_hru.f90'
         )
 
+    # Fix 6: the glacier conservation patch makes srunoff.f90 USE PRMS_GLACR
+    # (coupled glacr_flow), so glacr_melt must compile first. Harmless unpatched.
+    if 'srunoff.o: srunoff.f90 prms_glacr.mod' not in txt:
+        txt = txt.replace(
+            'srunoff.o: srunoff.f90 prms_module.mod',
+            'srunoff.o: srunoff.f90 prms_glacr.mod prms_module.mod'
+        )
+
     # Fix 4: Add missing gsfmodflow.mod dependency to nhru_summary.o
     if 'nhru_summary.o:' in txt and 'gsfmodflow.mod' not in txt.split('nhru_summary.o:')[1].split('\n')[0]:
         txt = txt.replace(

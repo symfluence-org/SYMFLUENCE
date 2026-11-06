@@ -56,3 +56,12 @@ def test_patched_step_fails_loudly_outside_the_pinned_source(tmp_path):
                        capture_output=True, text=True, timeout=120)
     assert r.returncode != 0
     assert not (tmp_path / 'bin').exists()
+
+
+def test_patch_routes_coupled_glacier_outflow_and_build_orders_srunoff_after_glacr():
+    text = bi.GLACIER_PATCH.read_text()
+    added = '\n'.join(line for line in text.splitlines() if line.startswith('+'))
+    assert 'USE PRMS_GLACR, ONLY: Glacr_flow, Acre_inch2' in added
+    assert 'GSFLOW_flag==ACTIVE .AND. Glacr_flow(i)>0.0' in added   # PRMS-only runs keep hru_outflow
+    commands = '\n'.join(bi.get_gsflow_build_instructions()['build_commands'])
+    assert 'srunoff.o: srunoff.f90 prms_glacr.mod prms_module.mod' in commands
