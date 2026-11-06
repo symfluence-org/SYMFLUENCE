@@ -897,6 +897,7 @@ src/symfluence/models/modflow/calibration/parameter_manager.py:CoupledGWParamete
 src/symfluence/models/modflow/calibration/targets.py:CoupledGWStreamflowTarget.extract_simulated_data:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/modflow/calibration/worker.py:CoupledGWWorker._run_dcoupler:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/modflow/calibration/worker.py:CoupledGWWorker._run_sequential:except Exception as e:  # noqa: BLE001 — calibration resilience
+src/symfluence/models/modflow/calibration/worker.py:CoupledGWWorker._run_sequential:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/modflow/calibration/worker.py:CoupledGWWorker.apply_parameters:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/modflow/calibration/worker.py:CoupledGWWorker.apply_parameters:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/models/modflow/calibration/worker.py:CoupledGWWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience

@@ -121,7 +121,7 @@ class HYPEConfig(BaseModel):
         description='Soil layer depths (m) for GeoData generation'
     )
     param_bounds: Optional[Dict[str, Any]] = Field(default=None, alias='HYPE_PARAM_BOUNDS')
-    outlet_lakes: Optional[Dict[str, Dict[str, float]]] = Field(
+    outlet_lakes: Optional[Dict[int, Dict[str, float]]] = Field(
         default=None, alias='HYPE_OUTLET_LAKES',
         description='Outlet lakes: sub-basin id -> {depth: mean depth (m), fraction: lake share (default 1)}')
     lake_landuse: int = Field(default=17, alias='HYPE_LAKE_LANDUSE', description='Land use id of the lake class')

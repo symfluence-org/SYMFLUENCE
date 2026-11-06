@@ -246,7 +246,11 @@ class MODFLOWPreProcessor(BaseModelPreProcessor):
             if cfg.lake_stage is None:
                 raise ConfigurationError('MODFLOW_LAKE_SHAPEFILE needs MODFLOW_LAKE_STAGE')
             grid.set_lake(gpd.read_file(cfg.lake_shapefile), cfg.lake_stage)
+            grid.lake_cell_drains = bool(cfg.lake_cell_drains)
+            grid.lake_zones = [int(z) for z in (cfg.lake_catchment_zones or [])]
         grid.reduced_zones = [int(z) for z in (cfg.reduced_recharge_zones or [])]
+        if cfg.k_zone_shapefile:
+            grid.set_k_zone(gpd.read_file(cfg.k_zone_shapefile))
 
         land = str(cfg.coupling_source or '').upper()
         if land in ('', 'NONE', 'DEFAULT'):

@@ -19,8 +19,10 @@ from symfluence.models.modflow.basin_model import (
     MF6BasinGrid,
     MF6BasinParams,
     apply_basin_parameters,
+    mark_lake_to_land,
     read_budget,
     read_groundwater_discharge,
+    read_lake_flux,
     set_simulation_length,
     write_coupling_record,
     write_recharge_timeseries,
@@ -287,6 +289,100 @@ def test_lake_ghb_replaces_drains_under_the_lake(grid, tmp_path):
     assert seep_cond == pytest.approx(0.1 * land, rel=1e-6)
 
 
+def test_no_lake_cell_drains_leaves_lake_cells_to_the_ghb(grid, tmp_path):
+    grid.set_lake(_lake(), 520.0)
+    grid.lake_cell_drains = False
+    grid.to_json(tmp_path / 'g.json')
+    assert MF6BasinGrid.from_json(tmp_path / 'g.json').lake_cell_drains is False
+    write_simulation(tmp_path, grid, zone_cell_weights(grid, _zones()), 5, MF6BasinParams())
+    riv = (tmp_path / 'gwf.riv.drn').read_text()
+    seep = (tmp_path / 'gwf.seep.drn').read_text()
+    touched = list(zip(*np.nonzero(grid.lake_frac > 0)))
+    assert any(0 < grid.lake_frac[r, c] < 1 for r, c in touched)   # shore cells exist and lose their drains too
+    for r, c in touched:
+        assert f'  1 {r + 1} {c + 1} ' not in riv and f'  1 {r + 1} {c + 1} ' not in seep
+    assert 'MAXBOUND 0' not in seep   # cells away from the lake keep their seepage
+
+
+def test_lake_catchment_seepage_gets_its_own_package(grid, tmp_path):
+    grid.set_lake(_lake(), 520.0)
+    write_simulation(tmp_path / 'a', grid, zone_cell_weights(grid, _zones()), 5, MF6BasinParams())
+    assert not (tmp_path / 'a' / 'gwf.seepl.drn').exists()
+
+    def cond(path):
+        body = path.read_text().split('BEGIN PERIOD 1\n')[1]
+        return {tuple(line.split()[1:3]): float(line.split()[4]) for line in body.splitlines() if line.startswith('  1 ')}
+    seep_all = cond(tmp_path / 'a' / 'gwf.seep.drn')
+    grid.lake_zones = [12, 13]   # the upstream strips drain to the lake
+    grid.to_json(tmp_path / 'g.json')
+    assert MF6BasinGrid.from_json(tmp_path / 'g.json').lake_zones == [12, 13]
+    write_simulation(tmp_path / 'b', grid, zone_cell_weights(grid, _zones()), 5, MF6BasinParams())
+    assert 'DRN6 gwf.seepl.drn SEEPL' in (tmp_path / 'b' / 'gwf.nam').read_text()
+    seep, seepl = cond(tmp_path / 'b' / 'gwf.seep.drn'), cond(tmp_path / 'b' / 'gwf.seepl.drn')
+    assert seep and seepl and not set(seep) & set(seepl)
+    assert {**seep, **seepl} == seep_all              # same drains, split between the two packages
+    assert all(int(c) * 2000 > 3300 for _, c in seepl)  # SEEPL cells lie in zones 12 and 13 (east of x = 3.3 km)
+
+
+def test_lake_flux_routed_to_land_leaves_the_groundwater_discharge(tmp_path):
+    cols = ['time', 'DRN(RIV)_IN', 'DRN(SEEP)_IN', 'GHB(LAKE)_IN', 'DRN(SEEPL)_IN', 'RCH(RCH)_IN',
+            'DRN(RIV)_OUT', 'DRN(SEEP)_OUT', 'GHB(LAKE)_OUT', 'DRN(SEEPL)_OUT', 'RCH(RCH)_OUT', 'PERCENT_DIFFERENCE']
+    rows = [[1, 0, 0, 0, 0, 100, 45, 10, 40, 5, 0, 0],
+            [2, 0, 0, 30, 0, 100, 75, 10, 40, 5, 0, 0],    # lake gains 40 + 5 seepage, loses 30: net +15
+            [3, 0, 0, 70, 0, 100, 145, 10, 10, 5, 0, 0]]   # net -55: the lake loses water to the aquifer
+    pd.DataFrame(rows, columns=cols).to_csv(tmp_path / BUDGET_CSV, index=False)
+    write_coupling_record(tmp_path, 'HYPE', tmp_path, tmp_path, '2010-01-01')
+    np.testing.assert_allclose(read_lake_flux(tmp_path).to_numpy() * 86400, [15, -55])
+    np.testing.assert_allclose(read_groundwater_discharge(tmp_path).to_numpy() * 86400, [100, 100])
+    mark_lake_to_land(tmp_path, 7)
+    np.testing.assert_allclose(read_groundwater_discharge(tmp_path).to_numpy() * 86400, [85, 155])
+
+
+def test_hype_lake_flux_point_sources(tmp_path):
+    s = _hype_settings(tmp_path / 'settings')
+    ad = get_land_adapter('HYPE', {})
+    flux = pd.Series([5.0, -2.0, float('nan')], index=pd.date_range('2010-01-01', periods=3))
+    with pytest.raises(ConfigurationError, match='not a HYPE subid'):
+        ad.route_lake_flux(s, 99, flux)
+    ad.route_lake_flux(s, 12, flux)
+    psd = pd.read_csv(s / 'PointSourceData.txt', sep='\t')
+    assert psd.to_dict('list') == {'psid': [1, 2], 'subid': [12, 12], 'ps_type': [1, -1], 'ps_source': [3, 2]}
+    lines = (s / 'PSDailySeries.txt').read_text().splitlines()
+    assert lines[:2] == ['DATE\tflow\tflow', 'psid\t1\t2']
+    assert [line.split('\t') for line in lines[2:]] == [
+        ['2010-01-01', '5.000000', '0.000000'], ['2010-01-02', '0.000000', '2.000000'],
+        ['2010-01-03', '0.000000', '0.000000']]
+    assert 'readpstime\ty' in (s / 'info.txt').read_text()
+    ad.route_lake_flux(s, 12, flux)   # rerouting keeps a single readpstime line
+    assert (s / 'info.txt').read_text().count('readpstime') == 1
+    ad.clear_lake_flux(s)
+    assert not (s / 'PointSourceData.txt').exists() and not (s / 'PSDailySeries.txt').exists()
+    assert 'readpstime\tn' in (s / 'info.txt').read_text()
+    with pytest.raises(ConfigurationError, match='cannot take'):
+        get_land_adapter('SUMMA', {}).route_lake_flux(s, 1, flux)
+
+
+def test_k_zone_scales_k_and_k22(grid, tmp_path):
+    zone = gpd.GeoDataFrame(geometry=[box(X0 + 6000, Y0 - 6000, X0 + 10000, Y0)], crs=CRS)   # east 4 km
+    grid.set_k_zone(zone)
+    grid.to_json(tmp_path / 'g.json')
+    np.testing.assert_allclose(MF6BasinGrid.from_json(tmp_path / 'g.json').k_zone_frac, grid.k_zone_frac)
+    params = MF6BasinParams(k=10.0, k_anisotropy=0.5, k_angle=30.0).updated({'K_ZONE_FACTOR': 0.1})
+    write_simulation(tmp_path, grid, zone_cell_weights(grid, _zones()), 5, params)
+    npf = (tmp_path / 'gwf.npf').read_text()
+
+    def block(name):
+        rows = npf.split(f'  {name}\n    INTERNAL\n')[1].splitlines()[:grid.nrow]
+        return np.array([[float(v) for v in line.split()] for line in rows])
+    k, k22 = block('K'), block('K22')
+    expected = 10.0 * (1.0 + grid.k_zone_frac * (0.1 - 1.0))
+    np.testing.assert_allclose(k, expected, rtol=1e-6)
+    np.testing.assert_allclose(k22, 0.5 * expected, rtol=1e-6)
+    assert k.min() == pytest.approx(1.0) and k.max() == pytest.approx(10.0)
+    with pytest.raises(ConfigurationError, match='K_ZONE_FACTOR'):
+        MF6BasinParams().updated({'K_ZONE_FACTOR': 0.0})
+
+
 def test_no_lake_keeps_previous_packages(grid, tmp_path):
     write_simulation(tmp_path, grid, zone_cell_weights(grid, _zones()), 5, MF6BasinParams())
     assert 'GHB6' not in (tmp_path / 'gwf.nam').read_text()
@@ -324,11 +420,14 @@ def test_mf6_run_with_lake_anisotropy_and_reduced_recharge_conserves_water(grid,
     area = dict(zip(zones.zone_id, zones.to_crs(CRS).area))
     grid.set_lake(_lake(), 515.0)
     grid.reduced_zones = [13]
+    grid.lake_zones = [12]
+    grid.set_k_zone(gpd.GeoDataFrame(geometry=[box(X0, Y0 - 6000, X0 + 4000, Y0)], crs=CRS))
     w = zone_cell_weights(grid, zones, area)
     days = pd.date_range('2010-01-01', periods=90, freq='D')
     rng = np.random.default_rng(1)
     rec = pd.DataFrame({z: rng.uniform(0, 4e-3, len(days)) for z in area}, index=days)
-    params = MF6BasinParams(k=10.0, sy=0.05, k_anisotropy=0.2, k_angle=30.0, zone_recharge_factor=0.4)
+    params = MF6BasinParams(k=10.0, sy=0.05, k_anisotropy=0.2, k_angle=30.0, zone_recharge_factor=0.4,
+                            k_zone_factor=0.05)
     write_simulation(tmp_path, grid, w, len(days), params, save_heads='none')
     write_recharge_timeseries(tmp_path, rec, sorted(area))
     r = subprocess.run([_mf6()], cwd=tmp_path, capture_output=True, text=True, timeout=300)
@@ -340,6 +439,7 @@ def test_mf6_run_with_lake_anisotropy_and_reduced_recharge_conserves_water(grid,
     np.testing.assert_allclose(b.rejected_recharge.to_numpy(), rejected.to_numpy(), rtol=1e-5)
     np.testing.assert_allclose((b.recharge + b.rejected_recharge).to_numpy(), land.to_numpy(), rtol=1e-5)
     assert (b.lake != 0).any()
+    assert 'DRN(SEEPL)_OUT' in pd.read_csv(tmp_path / BUDGET_CSV).columns.str.strip().str.upper()
     # everything the land model passed down leaves as discharge or goes into storage
     np.testing.assert_allclose(land - b.discharge - b.storage_change, 0.0, atol=1e-3 * land.mean())
 

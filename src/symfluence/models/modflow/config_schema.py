@@ -61,6 +61,16 @@ class MODFLOWConfig(BaseModel):
                                         description='Lake stage (m, same datum as the DEM)')
     lake_leakance: float = Field(default=1.0, alias='MODFLOW_LAKE_LEAKANCE', gt=0,
                                  description='Lake-bed conductance per lake area (1/d)')
+    lake_cell_drains: bool = Field(default=True, alias='MODFLOW_LAKE_CELL_DRAINS',
+                                   description='Keep river/seepage drains on the land part of cells that touch the '
+                                               'lake; False leaves those cells to the lake boundary alone')
+    lake_catchment_zones: Optional[List[int]] = Field(
+        default=None, alias='MODFLOW_LAKE_CATCHMENT_ZONES',
+        description='Land zones that drain to the lake: seepage in cells mostly recharged by them is lake inflow '
+                    '(own drain package SEEPL; routed with the lake flux)')
+    lake_to_land_id: Optional[int] = Field(default=None, alias='MODFLOW_LAKE_TO_LAND_ID',
+                                           description='Land-model unit (HYPE subid with an outlet lake) that '
+                                                       'receives the lake boundary flux; the land model is rerun')
     # Basin mode: horizontal anisotropy (K22 = K * ratio, major axis at k_angle degrees CCW from grid x)
     k_anisotropy: float = Field(default=1.0, alias='MODFLOW_K_ANISOTROPY', gt=0)
     k_angle: float = Field(default=0.0, alias='MODFLOW_K_ANGLE', ge=-180, le=180)
@@ -68,6 +78,9 @@ class MODFLOWConfig(BaseModel):
     # the rejected recharge returns to the river the same day
     reduced_recharge_zones: Optional[List[int]] = Field(default=None, alias='MODFLOW_REDUCED_RECHARGE_ZONES')
     zone_recharge_factor: float = Field(default=1.0, alias='MODFLOW_ZONE_RECHARGE_FACTOR', ge=0, le=1)
+    # Basin mode: a zone (e.g. older, tighter bedrock) where K and K22 are scaled by k_zone_factor
+    k_zone_shapefile: Optional[str] = Field(default=None, alias='MODFLOW_K_ZONE_SHAPEFILE')
+    k_zone_factor: float = Field(default=1.0, alias='MODFLOW_K_ZONE_FACTOR', gt=0)
     # Land-model recharge zones (basin mode): shapefile whose id field matches
     # the land model's spatial units (HYPE subid, SUMMA hruId)
     land_zone_shapefile: Optional[str] = Field(default=None, alias='MODFLOW_LAND_ZONE_SHAPEFILE')
