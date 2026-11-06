@@ -122,6 +122,8 @@ BOUND_SET: List[str] = [
     'damp',
     'qmean',
     'ilratk',
+    'gratk',
+    'gratp',
     'ilratp',
     'illdepth',
     'cmrad',

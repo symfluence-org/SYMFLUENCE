@@ -856,9 +856,9 @@ def get_depth_bounds() -> Dict[str, Dict[str, float]]:
 
 
 def get_hype_bounds() -> Dict[str, Dict[str, float]]:
-    """HYPE bound set (36 parameters).
+    """HYPE bound set (48 parameters).
 
-    35 solo definitions moved to the package; ``lp`` stays central (HBV
+    47 solo definitions moved to the package; ``lp`` stays central (HBV
     calibrates the same name).
 
     Owned by ``symfluence.models.hype`` (tier A: composition; tier B: solo
