@@ -89,10 +89,15 @@ index 5b3c04a..65eeddf 100644
                IF ( Elev_units==FEET ) THEN !from Oerlemans 1992
                  Glacr_albedo(i) = Albedo_ice(i) +(Albedo_coef(i)/PI)*ATAN( (Alt_above_ela(i)*FEET2METERS+300.0)/200.0 )
 diff --git a/GSFLOW/src/prms/srunoff.f90 b/GSFLOW/src/prms/srunoff.f90
-index 5d2fcf5..8be6281 100644
+index 5d2fcf5..cff9cc3 100644
 --- a/GSFLOW/src/prms/srunoff.f90
 +++ b/GSFLOW/src/prms/srunoff.f90
-@@ -653,7 +653,7 @@
+@@ -650,10 +650,12 @@
+       USE PRMS_CASCADE, ONLY: Ncascade_hru
+       USE PRMS_INTCP, ONLY: Net_rain, Net_snow, Net_ppt, Hru_intcpevap, Net_apply
+       USE PRMS_SNOW, ONLY: Glacrb_melt
++      USE PRMS_GLACR, ONLY: Glacr_flow, Acre_inch2
++      USE PRMS_MODULE, ONLY: GSFLOW_flag
        IMPLICIT NONE
  ! Functions
        INTRINSIC :: SNGL, DBLE
@@ -101,7 +106,7 @@ index 5d2fcf5..8be6281 100644
  ! Local Variables
        INTEGER :: i, k, dprst_chk, frzen, active_glacier, lateral_flow_flag, perv_on, ag_on
        REAL :: srunoff, avail_et, perv_area, availh2o_total, waterin, glacier_free
-@@ -865,10 +865,18 @@
+@@ -865,10 +867,27 @@
              CALL compute_infil(Net_rain(i), Net_ppt(i), Snowmelt(i), Pk_precip(i), Net_apply(i), &
       &                         Snowinfil_max(i), Net_snow(i), Pkwater_equiv(i), Infil(i), lateral_flow_flag)
            ELSE ! glacier and/or with AG
@@ -118,10 +123,19 @@ index 5d2fcf5..8be6281 100644
 +              Infil(i) = Infil(i) + glcrmltb
 +              CALL check_capacity(Snowinfil_max(i), Infil(i))
 +            ENDIF
++! SYMFLUENCE: in coupled GSFLOW the glacier terminus outflow (glacr_flow, inch^3 per time step: melt and rain
++! released by the firn/snow/ice reservoirs) only reaches hru_outflow (routing.f90), which feeds PRMS channel
++! routing. SFR takes lateral inflow from strm_seg_in, so the water was lost. It now infiltrates at the terminus
++! HRU; water beyond the soil capacity and snowinfil_max becomes surface runoff (check_capacity). PRMS-only runs
++! still route it through hru_outflow, so they are unchanged.
++            IF ( GSFLOW_flag==ACTIVE .AND. Glacr_flow(i)>0.0 .AND. perv_area>0.0 ) THEN
++              Infil(i) = Infil(i) + SNGL( DBLE(Glacr_flow(i))/(DBLE(perv_area)*Acre_inch2) )
++              CALL check_capacity(Snowinfil_max(i), Infil(i))
++            ENDIF
            ENDIF
          ELSE ! frozen ground
            IF ( lateral_flow_flag == ACTIVE ) THEN
-@@ -903,7 +911,9 @@
+@@ -903,7 +922,9 @@
  !       **********************************************************
  
          srunoff = 0.0
