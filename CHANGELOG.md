@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **ParFlow-CLM basin mode: anisotropy, K zone, lake (opt-in)**: `CLMPARFLOW_BASIN_K_TENSOR` [kx, ky, kz]
+  multiplies the aquifer K per grid axis (`TensorByFile`), with `CLMPARFLOW_BASIN_GRID_ROTATION` to align the
+  grid with a structural strike; `CLMPARFLOW_BASIN_K_ZONE` + `_K_ZONE_FACTOR` (+ `_K_ZONE_SOIL`) scale K inside
+  a polygon; `CLMPARFLOW_BASIN_LAKE` + `_LAKE_MANNING` level the lake cells and give them their own Manning's n,
+  so ponded water is stored and released (ParFlow's kinematic overland flow cannot spill a depression).
+  `CLMPARFLOW_BASIN_GRID_DIR` keeps such a grid apart from the domain's default. Unset, inputs are byte-identical.
 - **ParFlow-CLM basin mode with glacier water (opt-in)**: `CLMPARFLOW_BASIN_MODE` builds a regular grid over
   the real basin (`CLMPARFLOW_BASIN_DX`, projected `CLMPARFLOW_BASIN_CRS`; mask from the outline, forcing unit and
   glacier flag per cell from the HRU/unit polygons, D4 priority-flood overland slopes to the gauge cell, solid

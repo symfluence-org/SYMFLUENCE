@@ -36,6 +36,9 @@ class BasinInputs:
     ice_field: Optional[str]
     ice_value: str
     forcing: Path
+    rotation: float = 0.0
+    k_zone: Optional[Path] = None
+    lake: Optional[Path] = None
 
 
 def _first(directory: Path, patterns: Iterable[str], what: str) -> Path:
@@ -67,17 +70,31 @@ def basin_inputs(cfg, project_dir: Path, domain_name: str) -> BasinInputs:
     forcing = _path(cfg.basin_forcing, resolve_forcing_basin_path(project_dir))
     return BasinInputs(outline=outline, units=units, unit_field=cfg.basin_unit_field, dem=dem, pour_point=pour,
                        crs=str(cfg.basin_crs), dx=float(cfg.basin_dx), min_slope=float(cfg.basin_min_slope),
-                       ice_field=cfg.basin_ice_field, ice_value=cfg.basin_ice_value, forcing=forcing)
+                       ice_field=cfg.basin_ice_field, ice_value=cfg.basin_ice_value, forcing=forcing,
+                       rotation=float(cfg.basin_grid_rotation or 0.0),
+                       k_zone=Path(cfg.basin_k_zone) if cfg.basin_k_zone else None,
+                       lake=Path(cfg.basin_lake) if cfg.basin_lake else None)
+
+
+def grid_dir(cfg, project_dir: Path) -> Path:
+    """Where the basin grid is written and read: ``CLMPARFLOW_BASIN_GRID_DIR`` or ``settings/CLMPARFLOW/basin``."""
+    return _path(cfg.basin_grid_dir, project_dir / GRID_SUBDIR)
 
 
 def basin_parameters(cfg) -> BasinParameters:
     albedo = cfg.basin_ice_albedo
     if albedo is not None and len(albedo) != 2:
         raise ConfigurationError('CLMPARFLOW_BASIN_ICE_ALBEDO needs two values: visible and near-infrared')
+    tensor = cfg.basin_k_tensor
+    if tensor is not None and (len(tensor) != 3 or min(tensor) <= 0):
+        raise ConfigurationError('CLMPARFLOW_BASIN_K_TENSOR needs three positive multipliers: [kx, ky, kz]')
     return BasinParameters(soil_k=cfg.basin_soil_k, aquifer_k=cfg.basin_aquifer_k, manning=cfg.basin_manning,
                            glacier_bed_k=cfg.basin_glacier_bed_k, precip_scale=cfg.basin_precip_scale,
                            ice_albedo=tuple(albedo) if albedo is not None else None,
-                           initial_water_table_depth=cfg.basin_initial_water_table_depth)
+                           initial_water_table_depth=cfg.basin_initial_water_table_depth,
+                           k_tensor=(float(tensor[0]), float(tensor[1]), float(tensor[2])) if tensor is not None else None,
+                           k_zone_factor=float(cfg.basin_k_zone_factor), k_zone_soil=bool(cfg.basin_k_zone_soil),
+                           lake_manning=cfg.basin_lake_manning)
 
 
 def water_years(start: str, end: str) -> List[int]:

@@ -9,6 +9,19 @@ BC, the only ParFlow BC whose boundary outflow ``PrintOverlandSum`` records). Pe
 in the CLM layers, aquifer K below, and optionally ``glacier_bed_k`` in the CLM layers of glacier cells (the bed
 under the ice is ice, so melt runs off at the surface instead of recharging the aquifer).
 
+Optional structure (each off by default; unset, the inputs are byte-identical to before):
+
+- ``k_tensor`` (kx, ky, kz): aquifer anisotropy, as cell-wise multipliers of the scalar permeability
+  (``Perm.TensorType TensorByFile``: ``kx.pfb``, ``ky.pfb``, ``kz.pfb``; 1 in the CLM layers). ParFlow's tensor
+  is diagonal in the grid axes, so a strike that is not grid-aligned needs a rotated grid (``grid.rotation``).
+- ``k_zone_factor``: scales the aquifer K (and with ``k_zone_soil`` the soil K of non-glacier cells) in the
+  grid's permeability-zone cells (``grid.kzone``).
+- ``lake_manning``: Manning's n of the grid's lake cells (``grid.lake``; ``Mannings.Type PFBFile``,
+  ``mannings.pfb``). ParFlow's kinematic ``OverlandFlow`` moves ponded water only down the prescribed cell slope
+  at q = sqrt(S) / n * h^(5/3) per unit width, so a lake cannot fill a depression and spill; a rougher lake
+  surface instead stores the ponded depth that conveys the lake's throughput, a cascade of nonlinear reservoirs
+  whose rating is set by n.
+
 Forcing: hourly values per forcing unit, each cell taking its unit's column, written as 3-D CLM met files of
 24 hours. Vegetation: IGBP class 15 (snow/ice, CLM land ice) on glacier cells, 16 (barren) elsewhere.
 
@@ -72,10 +85,27 @@ class BasinParameters:
     precip_scale: float = 1.0
     ice_albedo: Optional[Tuple[float, float]] = None
     initial_water_table_depth: float = 3.0
+    # optional structure (defaults leave the run unchanged; see the module docstring)
+    k_tensor: Optional[Tuple[float, float, float]] = None
+    k_zone_factor: float = 1.0
+    k_zone_soil: bool = False
+    lake_manning: Optional[float] = None
 
     @property
     def nz(self) -> int:
         return len(self.dz_top_down)
+
+    def record(self) -> Dict[str, object]:
+        """Parameters for ``meta.json``; the optional-structure fields only when set (old records unchanged)."""
+        out = asdict(self)
+        for key, default in OPTIONAL_DEFAULTS.items():
+            if out[key] == default:
+                del out[key]
+        return out
+
+
+OPTIONAL_DEFAULTS: Dict[str, object] = {'k_tensor': None, 'k_zone_factor': 1.0, 'k_zone_soil': False,
+                                        'lake_manning': None}
 
 
 def parflow_keys(grid: BasinGrid, params: BasinParameters, name: str, hours: int, P: int = 1, Q: int = 1,
@@ -100,10 +130,16 @@ def parflow_keys(grid: BasinGrid, params: BasinParameters, name: str, hours: int
     }
     for i, d in enumerate(params.dz_top_down[::-1]):
         k[f'Cell.{i}.dzScale.Value'] = d
+    k.update({'Geom.Perm.Names': 'domain', 'Geom.domain.Perm.Type': 'PFBFile', 'Geom.domain.Perm.FileName': 'perm.pfb'})
+    if params.k_tensor is None:
+        k.update({'Perm.TensorType': 'TensorByGeom', 'Geom.Perm.TensorByGeom.Names': 'domain',
+                  'Geom.domain.Perm.TensorValX': 1., 'Geom.domain.Perm.TensorValY': 1.,
+                  'Geom.domain.Perm.TensorValZ': 1.})
+    else:  # cell-wise multipliers (aquifer only): K_x = K * kx.pfb, ...
+        k.update({'Perm.TensorType': 'TensorByFile', 'Geom.Perm.TensorByFileNames': 'domain',
+                  'Geom.domain.Perm.TensorFileX': 'kx.pfb', 'Geom.domain.Perm.TensorFileY': 'ky.pfb',
+                  'Geom.domain.Perm.TensorFileZ': 'kz.pfb'})
     k.update({
-        'Geom.Perm.Names': 'domain', 'Geom.domain.Perm.Type': 'PFBFile', 'Geom.domain.Perm.FileName': 'perm.pfb',
-        'Perm.TensorType': 'TensorByGeom', 'Geom.Perm.TensorByGeom.Names': 'domain',
-        'Geom.domain.Perm.TensorValX': 1., 'Geom.domain.Perm.TensorValY': 1., 'Geom.domain.Perm.TensorValZ': 1.,
         'SpecificStorage.Type': 'Constant', 'SpecificStorage.GeomNames': 'domain',
         'Geom.domain.SpecificStorage.Value': params.specific_storage,
         'Phase.Names': 'water', 'Phase.water.Density.Type': 'Constant', 'Phase.water.Density.Value': 1.,
@@ -131,7 +167,9 @@ def parflow_keys(grid: BasinGrid, params: BasinParameters, name: str, hours: int
         'Patch.top.BCPressure.alltime.Value': 0.,
         'TopoSlopesX.Type': 'PFBFile', 'TopoSlopesX.GeomNames': 'domain', 'TopoSlopesX.FileName': 'slope_x.pfb',
         'TopoSlopesY.Type': 'PFBFile', 'TopoSlopesY.GeomNames': 'domain', 'TopoSlopesY.FileName': 'slope_y.pfb',
-        'Mannings.Type': 'Constant', 'Mannings.GeomNames': 'domain', 'Mannings.Geom.domain.Value': params.manning,
+        **({'Mannings.Type': 'Constant', 'Mannings.GeomNames': 'domain', 'Mannings.Geom.domain.Value': params.manning}
+           if not lake_active(grid, params) else
+           {'Mannings.Type': 'PFBFile', 'Mannings.GeomNames': 'domain', 'Mannings.FileName': 'mannings.pfb'}),
         'PhaseSources.water.Type': 'Constant', 'PhaseSources.water.GeomNames': 'domain',
         'PhaseSources.water.Geom.domain.Value': 0., 'KnownSolution': 'NoKnownSolution', 'Solver': 'Richards',
         'Solver.TerrainFollowingGrid': True, 'Solver.MaxIter': 10000000, 'Solver.Nonlinear.MaxIter': 100,
@@ -178,15 +216,63 @@ def open_forcing(path: Path):
     return xr.open_dataset(path)
 
 
+def lake_active(grid: BasinGrid, params: BasinParameters) -> bool:
+    """Whether the run uses a lake Manning's n; raises if the parameter is set but the grid has no lake."""
+    if params.lake_manning is None:
+        return False
+    if grid.lake is None or not grid.lake.any():
+        raise ConfigurationError('CLMPARFLOW_BASIN_LAKE_MANNING is set but the basin grid has no lake cells: set '
+                                 'CLMPARFLOW_BASIN_LAKE and rerun the preprocessing')
+    return True
+
+
+def _zone(grid: BasinGrid, params: BasinParameters) -> Optional[np.ndarray]:
+    if params.k_zone_factor == 1.0 and not params.k_zone_soil:
+        return None
+    if grid.kzone is None or not grid.kzone.any():
+        raise ConfigurationError('CLMPARFLOW_BASIN_K_ZONE_FACTOR is set but the basin grid has no K-zone cells: set '
+                                 'CLMPARFLOW_BASIN_K_ZONE and rerun the preprocessing')
+    return grid.kzone
+
+
 def permeability(grid: BasinGrid, params: BasinParameters) -> np.ndarray:
-    """3-D permeability [z, y, x] (z = 0 at the base): aquifer, soil in the 10 CLM layers, glacier bed."""
+    """3-D permeability [z, y, x] (z = 0 at the base): aquifer, soil in the 10 CLM layers, glacier bed; the
+    K zone scales the aquifer (and optionally the soil of non-glacier cells) by ``k_zone_factor``."""
     ny, nx = grid.shape
     nz = params.nz
     K = np.full((nz, ny, nx), params.aquifer_k)
     K[nz - 10:] = params.soil_k
     if params.glacier_bed_k is not None:
         K[nz - 10:, grid.ice] = params.glacier_bed_k
+    zone = _zone(grid, params)
+    if zone is not None:
+        K[:nz - 10, zone] *= params.k_zone_factor
+        if params.k_zone_soil:
+            soil = zone & ~grid.ice if params.glacier_bed_k is not None else zone
+            K[nz - 10:, soil] *= params.k_zone_factor
     return K
+
+
+def tensor_multipliers(grid: BasinGrid, params: BasinParameters) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Cell-wise (kx, ky, kz) permeability multipliers [z, y, x]: ``k_tensor`` in the aquifer, 1 in the CLM layers."""
+    if params.k_tensor is None or len(params.k_tensor) != 3:
+        raise ConfigurationError('the permeability tensor needs three multipliers (kx, ky, kz)')
+    ny, nx = grid.shape
+    nz = params.nz
+    out = []
+    for value in params.k_tensor:
+        a = np.ones((nz, ny, nx))
+        a[:nz - 10] = float(value)
+        out.append(a)
+    return out[0], out[1], out[2]
+
+
+def mannings(grid: BasinGrid, params: BasinParameters) -> np.ndarray:
+    """2-D Manning's n [y, x]: ``manning`` everywhere, ``lake_manning`` on lake cells."""
+    n = np.full(grid.shape, params.manning)
+    if lake_active(grid, params):
+        n[grid.lake] = params.lake_manning
+    return n
 
 
 def write_static(run: Path, grid: BasinGrid, params: BasinParameters, parflow_dir: Path, P: int = 1,
@@ -196,6 +282,11 @@ def write_static(run: Path, grid: BasinGrid, params: BasinParameters, parflow_di
     pfio.write_pfb(run / 'slope_x.pfb', grid.sx[None], dx=dx, dy=dx, P=P, Q=Q)
     pfio.write_pfb(run / 'slope_y.pfb', grid.sy[None], dx=dx, dy=dx, P=P, Q=Q)
     pfio.write_pfb(run / 'perm.pfb', permeability(grid, params), dx=dx, dy=dx, P=P, Q=Q)
+    if params.k_tensor is not None:
+        for axis, a in zip('xyz', tensor_multipliers(grid, params)):
+            pfio.write_pfb(run / f'k{axis}.pfb', a, dx=dx, dy=dx, P=P, Q=Q)
+    if lake_active(grid, params):
+        pfio.write_pfb(run / 'mannings.pfb', mannings(grid, params)[None], dx=dx, dy=dx, P=P, Q=Q)
     pfio.write_pfb(run / 'mask.pfb', grid.mask[None].astype(float), dx=dx, dy=dx)
     tool = Path(parflow_dir) / 'bin' / 'pfmask-to-pfsol'
     r = subprocess.run([str(tool), '--mask', 'mask.pfb', '--pfsol', 'basin.pfsol', '--vtk', 'basin.vtk',
@@ -272,9 +363,10 @@ def write_clm_files(run: Path, grid: BasinGrid, params: BasinParameters, start: 
     lines = [' x  y  lat    lon    sand clay color  fractional coverage of grid by vegetation class (Must/Should Add to 1.0)',
              '       (Deg)\t (Deg)  (%/100)   index  1    2    3    4    5    6    7    8    9    10   11   12   13   14   15   16   17   18']
     ny, nx = grid.shape
+    xc, yc = grid.cell_centres()
     for j in range(ny):
         for i in range(nx):
-            lon, lat = to_lonlat.transform(grid.x0 + (i + .5) * grid.dx, grid.y0 + (j + .5) * grid.dx)
+            lon, lat = to_lonlat.transform(xc[j, i], yc[j, i])
             frac = np.zeros(18)
             frac[14 if grid.ice[j, i] else 15] = 1
             lines.append(f'{i + 1:4d}{j + 1:4d}{lat:9.3f}{lon:9.3f}  0.65 0.07   4  ' + ' '.join(f'{x:.1f}' for x in frac))
@@ -318,7 +410,7 @@ def write_segment(run: Path, name: str, grid: BasinGrid, params: BasinParameters
     write_clm_files(run, grid, params, start, end, restart=prev is not None, ranks=P * Q)
     pfio.write_pfidb(run / f'{name}.pfidb', parflow_keys(grid, params, name, hours, P, Q, ic_file=ic))
     meta = dict(seg=name, start=start, end=end, hours=hours, prev=prev.name if prev else None, P=P, Q=Q,
-                nx=grid.shape[1], ny=grid.shape[0], params=asdict(params))
+                nx=grid.shape[1], ny=grid.shape[0], params=params.record())
     (run / 'meta.json').write_text(json.dumps(meta, indent=1))
     return meta
 

@@ -131,3 +131,14 @@ class CLMParFlowConfig(BaseModel):
     basin_drift_tol: float = Field(default=0.05, alias='CLMPARFLOW_BASIN_DRIFT_TOL', gt=0)
     basin_max_spinup_cycles: int = Field(default=3, alias='CLMPARFLOW_BASIN_MAX_SPINUP_CYCLES', ge=1)
     basin_initial_state: Optional[str] = Field(default=None, alias='CLMPARFLOW_BASIN_INITIAL_STATE')
+    # Optional structure (all off by default). Geometry (grid rotation, K-zone and lake polygons) is applied by the
+    # preprocessing; the factors and the lake Manning's n are run parameters. CLMPARFLOW_BASIN_GRID_DIR keeps such a
+    # grid apart from the domain's default one (settings/CLMPARFLOW/basin).
+    basin_grid_dir: Optional[str] = Field(default=None, alias='CLMPARFLOW_BASIN_GRID_DIR')
+    basin_grid_rotation: float = Field(default=0.0, alias='CLMPARFLOW_BASIN_GRID_ROTATION', ge=-90, le=90)
+    basin_k_tensor: Optional[List[float]] = Field(default=None, alias='CLMPARFLOW_BASIN_K_TENSOR')
+    basin_k_zone: Optional[str] = Field(default=None, alias='CLMPARFLOW_BASIN_K_ZONE')
+    basin_k_zone_factor: float = Field(default=1.0, alias='CLMPARFLOW_BASIN_K_ZONE_FACTOR', gt=0)
+    basin_k_zone_soil: bool = Field(default=False, alias='CLMPARFLOW_BASIN_K_ZONE_SOIL')
+    basin_lake: Optional[str] = Field(default=None, alias='CLMPARFLOW_BASIN_LAKE')
+    basin_lake_manning: Optional[float] = Field(default=None, alias='CLMPARFLOW_BASIN_LAKE_MANNING', gt=0)
