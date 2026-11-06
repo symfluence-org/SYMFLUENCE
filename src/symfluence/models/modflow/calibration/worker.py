@@ -302,8 +302,8 @@ class CoupledGWWorker(BaseWorker):
         from symfluence.models.modflow.land_adapters import adapter_options, get_land_adapter
         adapter = get_land_adapter(self.land_model_name, adapter_options(config))
         adapter.set_output_dir(land_settings, land_output)
-        lake_to_land = (config.get('MODFLOW_LAKE_TO_LAND_ID') if isinstance(config, dict) else
-                        getattr(getattr(getattr(config, 'model', None), 'modflow', None), 'lake_to_land_id', None))
+        lake_to_land = resolve_config_value(config, lambda: config.model.modflow.lake_to_land_id,
+                                            None, 'MODFLOW_LAKE_TO_LAND_ID')
         if lake_to_land is not None:
             adapter.clear_lake_flux(land_settings)   # the first pass makes recharge only
         self.logger.debug(f"Running {self.land_model_name} (land surface)...")
