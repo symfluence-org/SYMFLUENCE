@@ -23,6 +23,30 @@ from .base import (
 )
 
 
+def _report_failed_steps(symfluence, what: str) -> int:
+    """Return WORKFLOW_ERROR (and name the steps) when any step failed, else SUCCESS.
+
+    With ``--continue-on-error`` / ``STOP_ON_ERROR: false`` a failing step is
+    logged and the run carries on; the command must still exit non-zero.
+    """
+    get_failed = getattr(symfluence, 'get_failed_steps', None)
+    failed = list(get_failed()) if callable(get_failed) else []
+    if failed:
+        BaseCommand._console.error(
+            f"{what} finished with {len(failed)} failed step(s): {', '.join(failed)}"
+        )
+        return ExitCode.WORKFLOW_ERROR
+    return ExitCode.SUCCESS
+
+
+def _force_rerun_overrides(args: Namespace) -> dict:
+    """``--force-rerun`` -> FORCE_RUN_ALL_STEPS override, so step internals
+    (e.g. the forcing remap's per-file skip cache) honour it too."""
+    if BaseCommand.get_arg(args, 'force_rerun', False):
+        return {'FORCE_RUN_ALL_STEPS': True}
+    return {}
+
+
 class WorkflowCommands(BaseCommand):
     """Handlers for workflow category commands."""
 
@@ -51,7 +75,7 @@ class WorkflowCommands(BaseCommand):
 
         # Initialize SYMFLUENCE instance
         BaseCommand._console.info("Starting full workflow execution...")
-        config_overrides = {}
+        config_overrides = _force_rerun_overrides(args)
         if BaseCommand.get_arg(args, 'continue_on_error', False):
             config_overrides['STOP_ON_ERROR'] = False
 
@@ -64,11 +88,16 @@ class WorkflowCommands(BaseCommand):
             quiet_mode=BaseCommand.get_arg(args, 'quiet', False)
         )
 
-        # Execute full workflow
-        symfluence.run_workflow(force_run=BaseCommand.get_arg(args, 'force_rerun', False))
+        # Execute full workflow. Without --force-rerun pass None so the
+        # config's FORCE_RUN_ALL_STEPS decides (False would override it).
+        symfluence.run_workflow(
+            force_run=True if BaseCommand.get_arg(args, 'force_rerun', False) else None
+        )
 
-        BaseCommand._console.success("Workflow execution completed successfully")
-        return ExitCode.SUCCESS
+        exit_code = _report_failed_steps(symfluence, "Workflow")
+        if exit_code == ExitCode.SUCCESS:
+            BaseCommand._console.success("Workflow execution completed successfully")
+        return exit_code
 
     @staticmethod
     @cli_exception_handler_with_profiling
@@ -92,13 +121,9 @@ class WorkflowCommands(BaseCommand):
         BaseCommand._console.info(f"Executing step: {args.step_name}")
         BaseCommand._console.indent(WorkflowCommands.WORKFLOW_STEPS.get(args.step_name, ''))
 
-        # --force-rerun must reach the step internals (e.g. the forcing remap's
-        # per-file skip cache); plumb it as a FORCE_RUN_ALL_STEPS override so the
-        # whole config chain honours it.
-        force_rerun = BaseCommand.get_arg(args, 'force_rerun', False)
         symfluence = SYMFLUENCE(
             config_path,
-            config_overrides={'FORCE_RUN_ALL_STEPS': True} if force_rerun else None,
+            config_overrides=_force_rerun_overrides(args) or None,
             debug_mode=BaseCommand.get_arg(args, 'debug', False),
             visualize=BaseCommand.get_arg(args, 'visualise', False),
             diagnostic=BaseCommand.get_arg(args, 'diagnostic', False),
@@ -108,8 +133,10 @@ class WorkflowCommands(BaseCommand):
         # Run single step
         symfluence.run_individual_steps([args.step_name])
 
-        BaseCommand._console.success(f"Step '{args.step_name}' completed successfully")
-        return ExitCode.SUCCESS
+        exit_code = _report_failed_steps(symfluence, f"Step '{args.step_name}'")
+        if exit_code == ExitCode.SUCCESS:
+            BaseCommand._console.success(f"Step '{args.step_name}' completed successfully")
+        return exit_code
 
     @staticmethod
     @cli_exception_handler_with_profiling
@@ -134,13 +161,9 @@ class WorkflowCommands(BaseCommand):
         for step_name in args.step_names:
             BaseCommand._console.indent(f"{step_name}: {WorkflowCommands.WORKFLOW_STEPS.get(step_name, '')}")
 
-        # --force-rerun must reach the step internals (e.g. the forcing remap's
-        # per-file skip cache); plumb it as a FORCE_RUN_ALL_STEPS override so the
-        # whole config chain honours it.
-        force_rerun = BaseCommand.get_arg(args, 'force_rerun', False)
         symfluence = SYMFLUENCE(
             config_path,
-            config_overrides={'FORCE_RUN_ALL_STEPS': True} if force_rerun else None,
+            config_overrides=_force_rerun_overrides(args) or None,
             debug_mode=BaseCommand.get_arg(args, 'debug', False),
             visualize=BaseCommand.get_arg(args, 'visualise', False),
             diagnostic=BaseCommand.get_arg(args, 'diagnostic', False),
@@ -150,8 +173,10 @@ class WorkflowCommands(BaseCommand):
         # Run multiple steps in order
         symfluence.run_individual_steps(args.step_names)
 
-        BaseCommand._console.success(f"All {len(args.step_names)} steps completed successfully")
-        return ExitCode.SUCCESS
+        exit_code = _report_failed_steps(symfluence, "Steps")
+        if exit_code == ExitCode.SUCCESS:
+            BaseCommand._console.success(f"All {len(args.step_names)} steps completed successfully")
+        return exit_code
 
     @staticmethod
     @cli_exception_handler
@@ -266,8 +291,11 @@ class WorkflowCommands(BaseCommand):
         for step in steps_to_run:
             BaseCommand._console.indent(f"- {step}")
 
+        # resume always re-executes the listed steps; --force-rerun additionally
+        # reaches the step internals (per-file skip caches) via FORCE_RUN_ALL_STEPS.
         symfluence = SYMFLUENCE(
             config_path,
+            config_overrides=_force_rerun_overrides(args) or None,
             debug_mode=BaseCommand.get_arg(args, 'debug', False),
             visualize=BaseCommand.get_arg(args, 'visualise', False),
             diagnostic=BaseCommand.get_arg(args, 'diagnostic', False),
@@ -277,8 +305,10 @@ class WorkflowCommands(BaseCommand):
         # Run steps from resume point
         symfluence.run_individual_steps(steps_to_run)
 
-        BaseCommand._console.success(f"Workflow resumed and completed from '{args.step_name}'")
-        return ExitCode.SUCCESS
+        exit_code = _report_failed_steps(symfluence, "Resumed workflow")
+        if exit_code == ExitCode.SUCCESS:
+            BaseCommand._console.success(f"Workflow resumed and completed from '{args.step_name}'")
+        return exit_code
 
     @staticmethod
     @cli_exception_handler

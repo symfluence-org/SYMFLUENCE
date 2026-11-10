@@ -21,13 +21,12 @@ from symfluence.core.mixins import ConfigMixin
 from symfluence.core.mixins.project import resolve_data_subdir
 from symfluence.core.provenance import record_executable, record_step
 from symfluence.core.stage_marker import (
-    STAGE_CONFIG_SECTIONS,
-    clear_markers,
-    compute_stage_hash,
-    is_stage_current,
-    write_marker,
+    clear_stage_markers,
+    mark_stage_complete,
+    stage_is_current,
 )
 from symfluence.data.observation.paths import observation_output_candidates_by_family
+from symfluence.project import step_completion
 from symfluence.workflow_steps import resolve_workflow_step_name
 
 if TYPE_CHECKING:
@@ -116,6 +115,14 @@ class WorkflowOrchestrator(ConfigMixin):
             raise KeyError("system.data_dir not configured")
 
         self.project_dir = Path(data_dir) / f"domain_{self.domain_name}"
+
+    def failed_step_names(self) -> List[str]:
+        """CLI names of the steps that failed in the most recent run."""
+        return [
+            str(r.get('cli_name') or r.get('name'))
+            for r in self.last_step_results
+            if r.get('status') == 'failed'
+        ]
 
     def _record_step_result(self, step: WorkflowStep, status: str,
                             duration_s: float = 0.0,
@@ -277,10 +284,6 @@ class WorkflowOrchestrator(ConfigMixin):
             List[WorkflowStep]: List of WorkflowStep objects
         """
 
-        # Get configured analyses
-        analyses = self.config.evaluation.analyses or []
-        optimizations = self.config.optimization.methods or []
-
         return [
             # --- Project Initialization ---
             WorkflowStep(
@@ -312,16 +315,14 @@ class WorkflowOrchestrator(ConfigMixin):
                 name="define_domain",
                 cli_name="define_domain",
                 func=self.managers['domain'].define_domain,
-                check_func=lambda: (self.project_dir / "shapefiles" / "river_basins" /
-                        f"{self.domain_name}_riverBasins_{self.config.domain.definition_method}.shp").exists(),
+                check_func=lambda: step_completion.river_basins_exist(self.config, self.project_dir),
                 description="Defining hydrological domain boundaries"
             ),
             WorkflowStep(
                 name="discretize_domain",
                 cli_name="discretize_domain",
                 func=self.managers['domain'].discretize_domain,
-                check_func=lambda: (self.project_dir / "shapefiles" / "catchment" /
-                        f"{self.domain_name}_HRUs_{str(self.config.domain.discretization).replace(',','_')}.shp").exists(),
+                check_func=lambda: step_completion.discretization_exists(self.config, self.project_dir),
                 description="Discretizing domain into hydrological response units"
             ),
 
@@ -360,23 +361,21 @@ class WorkflowOrchestrator(ConfigMixin):
                 name="preprocess_models",
                 cli_name="model_specific_preprocessing",
                 func=self.managers['model'].preprocess_models,
-                check_func=lambda: any((self.project_dir / "settings").glob(f"*_{self.config.model.hydrological_model or 'SUMMA'}*")),
+                check_func=lambda: step_completion.model_settings_exist(self.config, self.project_dir),
                 description="Preprocessing model-specific input files"
             ),
             WorkflowStep(
                 name="run_models",
                 cli_name="run_model",
                 func=self.managers['model'].run_models,
-                check_func=lambda: (self.project_dir / "simulations" /
-                        f"{self.experiment_id}_{self.config.model.hydrological_model or 'SUMMA'}_output.nc").exists(),
+                check_func=lambda: step_completion.model_outputs_exist(self.config, self.project_dir),
                 description="Running hydrological model simulation"
             ),
             WorkflowStep(
                 name="postprocess_results",
                 cli_name="postprocess_results",
                 func=self.managers['model'].postprocess_results,
-                check_func=lambda: (self.project_dir / "simulations" /
-                        f"{self.experiment_id}_postprocessed.nc").exists(),
+                check_func=lambda: step_completion.postprocessed_results_exist(self.config, self.project_dir),
                 description="Post-processing simulation results"
             ),
 
@@ -385,9 +384,7 @@ class WorkflowOrchestrator(ConfigMixin):
                 name="calibrate_model",
                 cli_name="calibrate_model",
                 func=self.managers['optimization'].calibrate_model,
-                check_func=lambda: ('optimization' in optimizations and
-                        (self.project_dir / "optimization" /
-                        f"{self.experiment_id}_parallel_iteration_results.csv").exists()),
+                check_func=lambda: step_completion.calibration_results_exist(self.config, self.project_dir),
                 description="Calibrating model parameters"
             ),
 
@@ -396,8 +393,9 @@ class WorkflowOrchestrator(ConfigMixin):
                 name="run_benchmarking",
                 cli_name="run_benchmarking",
                 func=self.managers['analysis'].run_benchmarking,
-                check_func=lambda: ('benchmarking' in analyses and
-                        (self.project_dir / "evaluation" / "benchmark_scores.csv").exists()),
+                check_func=lambda: step_completion.analysis_output_exists(
+                    self.config, 'benchmarking',
+                    self.project_dir / "evaluation" / "benchmark_scores.csv"),
                 description="Running model benchmarking analysis"
             ),
 
@@ -405,9 +403,10 @@ class WorkflowOrchestrator(ConfigMixin):
                 name="run_decision_analysis",
                 cli_name="run_decision_analysis",
                 func=self.managers['analysis'].run_decision_analysis,
-                check_func=lambda: ('decision' in analyses and
-                        (self.project_dir / "optimization" /
-                        f"{self.experiment_id}_model_decisions_comparison.csv").exists()),
+                check_func=lambda: step_completion.analysis_output_exists(
+                    self.config, 'decision',
+                    self.project_dir / "optimization" /
+                    f"{self.experiment_id}_model_decisions_comparison.csv"),
                 description="Analyzing modeling decisions impact"
             ),
 
@@ -415,10 +414,10 @@ class WorkflowOrchestrator(ConfigMixin):
                 name="run_sensitivity_analysis",
                 cli_name="run_sensitivity_analysis",
                 func=self.managers['analysis'].run_sensitivity_analysis,
-                check_func=lambda: ('sensitivity' in analyses and
-                        (self.project_dir / "reporting" / "sensitivity_analysis" /
-                        self.experiment_id /
-                        "all_sensitivity_results.csv").exists()),
+                check_func=lambda: step_completion.analysis_output_exists(
+                    self.config, 'sensitivity',
+                    self.project_dir / "reporting" / "sensitivity_analysis" /
+                    self.experiment_id / "all_sensitivity_results.csv"),
                 description="Running parameter sensitivity analysis"
             ),
 
@@ -483,9 +482,13 @@ class WorkflowOrchestrator(ConfigMixin):
         failed_steps = 0
         self.last_step_results = []
 
-        # Clear all markers when force-running the entire workflow
+        # Force-run clears only the markers of the steps about to run (for
+        # this experiment): a WORKFLOW_STEPS-scoped re-run must not reset the
+        # other steps, nor a re-run of one experiment the other experiments.
         if force_run:
-            clear_markers(self.project_dir)
+            clear_stage_markers(
+                self._config, self.project_dir, [s.name for s in workflow_steps]
+            )
 
         # Execute each step
         for idx, step in enumerate(workflow_steps, 1):
@@ -502,15 +505,7 @@ class WorkflowOrchestrator(ConfigMixin):
             try:
                 # Determine whether the step needs to run
                 output_exists = step.check_func()
-                sections = STAGE_CONFIG_SECTIONS.get(step_name, [])
-                if sections:
-                    current_hash = compute_stage_hash(self._config, step_name)
-                    marker_current = is_stage_current(
-                        self.project_dir, step_name, current_hash
-                    )
-                else:
-                    current_hash = ""
-                    marker_current = True  # unknown stages fall back to output-only
+                marker_current = stage_is_current(self._config, self.project_dir, step_name)
 
                 needs_run = force_run or not output_exists or not marker_current
 
@@ -535,8 +530,7 @@ class WorkflowOrchestrator(ConfigMixin):
                     duration = (step_end_time - step_start_time).total_seconds()
 
                     # Write marker after successful execution
-                    if sections:
-                        write_marker(self.project_dir, step_name, current_hash)
+                    mark_stage_complete(self._config, self.project_dir, step_name)
 
                     self._log_completion(True, step.description, duration)
 
@@ -725,10 +719,7 @@ class WorkflowOrchestrator(ConfigMixin):
                 duration = (datetime.now() - step_start_time).total_seconds()
 
                 # Write marker after successful execution
-                sections = STAGE_CONFIG_SECTIONS.get(step.name, [])
-                if sections:
-                    current_hash = compute_stage_hash(self._config, step.name)
-                    write_marker(self.project_dir, step.name, current_hash)
+                mark_stage_complete(self._config, self.project_dir, step.name)
 
                 self._log_completion(True, step.description, duration)
 
@@ -796,16 +787,7 @@ class WorkflowOrchestrator(ConfigMixin):
         for step in workflow_steps:
             step_name = step.name
             output_exists = step.check_func()
-
-            sections = STAGE_CONFIG_SECTIONS.get(step_name, [])
-            if sections:
-                current_hash = compute_stage_hash(self._config, step_name)
-                marker_valid = is_stage_current(
-                    self.project_dir, step_name, current_hash
-                )
-            else:
-                marker_valid = True
-                current_hash = ""
+            marker_valid = stage_is_current(self._config, self.project_dir, step_name)
 
             config_stale = output_exists and not marker_valid
             is_complete = output_exists and marker_valid

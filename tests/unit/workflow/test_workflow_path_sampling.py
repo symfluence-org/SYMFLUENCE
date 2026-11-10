@@ -147,13 +147,14 @@ def test_full_walk_writes_a_marker_for_every_stage(model):
         orch.run_workflow()
 
         marker_dir = Path(orch.project_dir) / ".symfluence" / "stage_markers"
-        written = {p.stem for p in marker_dir.glob("*.json")}
+        # Experiment-scoped stages write per-experiment markers in a subdirectory.
+        written = {p.stem for p in marker_dir.rglob("*.json")}
         missing = set(ALL_STAGES) - written
         assert not missing, f"stages with no marker after a full walk: {sorted(missing)}"
 
         # Idempotent: a second walk neither errors nor drops markers.
         orch.run_workflow()
-        assert {p.stem for p in marker_dir.glob("*.json")} >= set(ALL_STAGES)
+        assert {p.stem for p in marker_dir.rglob("*.json")} >= set(ALL_STAGES)
 
 
 # ----------------------------------------------------------------------

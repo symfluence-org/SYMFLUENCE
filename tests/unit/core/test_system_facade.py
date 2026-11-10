@@ -73,3 +73,29 @@ def test_get_workflow_status_delegates(facade):
     sentinel = {"total_steps": 3, "completed_steps": 1, "step_details": []}
     facade.workflow_orchestrator.get_workflow_status.return_value = sentinel
     assert facade.get_workflow_status() == sentinel
+
+
+def test_run_with_failed_steps_is_not_recorded_as_completed(facade):
+    """STOP_ON_ERROR=False: a run with failed steps is summarised as partial/failed."""
+    orch = facade.workflow_orchestrator
+    orch.last_step_results = [
+        {"cli_name": "define_domain", "status": "completed"},
+        {"cli_name": "run_model", "status": "failed", "error": "boom"},
+    ]
+    orch.failed_step_names.return_value = ["run_model"]
+    facade.run_workflow(force_run=False)
+    kwargs = facade.logging_manager.create_run_summary.call_args.kwargs
+    assert kwargs["status"] == "partial"
+    assert kwargs["errors"] == [{"where": "run_model", "error": "boom"}]
+    assert facade.get_failed_steps() == ["run_model"]
+
+
+def test_run_without_cli_flag_uses_config_force_run(facade):
+    orch = facade.workflow_orchestrator
+    orch.last_step_results = []
+    orch.failed_step_names.return_value = []
+    facade.typed_config = facade.typed_config.model_copy(
+        update={"system": facade.typed_config.system.model_copy(update={"force_run_all_steps": True})}
+    )
+    facade.run_workflow(force_run=None)
+    orch.run_workflow.assert_called_once_with(force_run=True)

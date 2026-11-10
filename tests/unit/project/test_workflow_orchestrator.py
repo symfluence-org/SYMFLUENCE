@@ -267,10 +267,9 @@ class TestWorkflowOrchestratorMarkers:
         func_mock.assert_called_once()
 
     def test_force_run_clears_markers(self, tmp_path):
-        """force_run=True clears all existing markers before execution."""
+        """force_run=True clears the markers of the steps it runs, then re-runs them."""
         orch = self._make_orchestrator(tmp_path)
 
-        # Pre-write markers
         write_marker(orch.project_dir, "setup_project", "old")
         write_marker(orch.project_dir, "define_domain", "old")
 
@@ -278,8 +277,39 @@ class TestWorkflowOrchestratorMarkers:
             mock_define.return_value = []
             orch.run_workflow(force_run=True)
 
-        assert read_marker(orch.project_dir, "setup_project") is None
-        assert read_marker(orch.project_dir, "define_domain") is None
+        # Nothing ran, so nothing was cleared (markers belong to steps that run).
+        assert read_marker(orch.project_dir, "setup_project") is not None
+
+        func = MagicMock()
+        with patch.object(orch, 'define_workflow_steps') as mock_define:
+            mock_define.return_value = [
+                WorkflowStep("setup_project", "setup_project", func, lambda: True, "Setup"),
+                WorkflowStep("define_domain", "define_domain", func, lambda: True, "Define"),
+            ]
+            orch.run_workflow(force_run=True)
+
+        assert func.call_count == 2
+        # Re-written with the current hash, not the old one.
+        assert read_marker(orch.project_dir, "setup_project").config_hash != "old"
+
+    def test_scoped_force_run_clears_only_selected_markers(self, tmp_path):
+        """WORKFLOW_STEPS + force_run must not wipe the other steps' markers."""
+        orch = self._make_orchestrator(tmp_path, WORKFLOW_STEPS=["define_domain"])
+
+        write_marker(orch.project_dir, "setup_project", "keep")
+        write_marker(orch.project_dir, "define_domain", "old")
+
+        func = MagicMock()
+        with patch.object(orch, 'define_workflow_steps') as mock_define:
+            mock_define.return_value = [
+                WorkflowStep("setup_project", "setup_project", func, lambda: True, "Setup"),
+                WorkflowStep("define_domain", "define_domain", func, lambda: True, "Define"),
+            ]
+            orch.run_workflow(force_run=True)
+
+        func.assert_called_once()
+        assert read_marker(orch.project_dir, "setup_project").config_hash == "keep"
+        assert read_marker(orch.project_dir, "define_domain").config_hash != "old"
 
     def test_get_workflow_status_includes_marker_fields(self, tmp_path):
         """get_workflow_status() reports marker_valid and config_stale."""
@@ -488,3 +518,30 @@ class TestWorkflowStepsScoping:
         """Unknown step names fail at config parse time with a helpful error."""
         with pytest.raises(Exception, match="unknown step"):
             self._make_orchestrator(tmp_path, WORKFLOW_STEPS=['not_a_step'])
+
+
+class TestContinueOnErrorFailures:
+    """STOP_ON_ERROR=False: failures are tracked and no marker is written."""
+
+    def test_failed_step_tracked_without_marker(self, tmp_path):
+        managers = {name: MagicMock() for name in
+                    ('project', 'domain', 'data', 'model', 'analysis', 'optimization')}
+        config = SymfluenceConfig.from_minimal(
+            domain_name='fail_test', model='SUMMA',
+            time_start='2010-01-01 00:00', time_end='2010-12-31 23:00',
+            SYMFLUENCE_DATA_DIR=tmp_path, STOP_ON_ERROR=False,
+        )
+        orch = WorkflowOrchestrator(managers, config, MagicMock())
+        boom = MagicMock(side_effect=RuntimeError("boom"))
+        ok = MagicMock()
+        with patch.object(orch, 'define_workflow_steps') as mock_define:
+            mock_define.return_value = [
+                WorkflowStep("define_domain", "define_domain", boom, lambda: False, "Define"),
+                WorkflowStep("setup_project", "setup_project", ok, lambda: False, "Setup"),
+            ]
+            orch.run_workflow()  # does not raise
+
+        ok.assert_called_once()
+        assert orch.failed_step_names() == ["define_domain"]
+        assert read_marker(orch.project_dir, "define_domain") is None
+        assert read_marker(orch.project_dir, "setup_project") is not None

@@ -309,13 +309,31 @@ class SYMFLUENCE:
                 force_run = getattr(self.typed_config.system, "force_run_all_steps", False)
 
             # Run the workflow
-            self.workflow_orchestrator.run_workflow(force_run=force_run)
+            self.workflow_orchestrator.run_workflow(force_run=bool(force_run))
 
-            # Collect status information
-            status_info = self.workflow_orchestrator.get_workflow_status()
-            status = "completed" if status_info['total_steps'] == status_info['completed_steps'] else "partial"
+            # Outcome of *this* run (STOP_ON_ERROR=False lets a run finish
+            # with failed steps; those must not be reported as success).
+            failed = self.get_failed_steps()
+            ran = [s for s in getattr(self.workflow_orchestrator, 'last_step_results', [])
+                   if s.get('status') == 'completed']
+            if not failed:
+                status = "completed"
+            elif ran:
+                status = "partial"
+            else:
+                status = "failed"
+            errors.extend(
+                {"where": s.get('cli_name'), "error": s.get('error', '')}
+                for s in getattr(self.workflow_orchestrator, 'last_step_results', [])
+                if s.get('status') == 'failed'
+            )
 
-            self.logger.info("Complete SYMFLUENCE workflow execution completed")
+            if failed:
+                self.logger.error(
+                    "SYMFLUENCE workflow finished with failed step(s): %s", ", ".join(failed)
+                )
+            else:
+                self.logger.info("Complete SYMFLUENCE workflow execution completed")
 
         except (SYMFLUENCEError, FileNotFoundError, PermissionError, ValueError, RuntimeError) as e:
             status = "failed"
@@ -422,6 +440,13 @@ class SYMFLUENCE:
             if self.provenance is not None:
                 manifest = self.provenance.write(self.logging_manager.log_dir)
                 self.logger.info(f"Run manifest written to: {manifest}")
+
+    def get_failed_steps(self) -> List[str]:
+        """CLI names of the steps that failed in the most recent workflow/steps run."""
+        orchestrator = getattr(self, 'workflow_orchestrator', None)
+        if orchestrator is None or not hasattr(orchestrator, 'failed_step_names'):
+            return []
+        return list(orchestrator.failed_step_names())
 
     def get_workflow_status(self) -> Dict[str, Any]:
         """

@@ -11,6 +11,11 @@ import pytest
 from symfluence.cli.commands.base import BaseCommand
 from symfluence.cli.defaults import DEFAULT_CONFIG_PATH
 from symfluence.cli.exit_codes import ExitCode
+from symfluence.core.exceptions import (
+    ConfigurationError,
+    ModelExecutionError,
+    SYMFLUENCEError,
+)
 
 pytestmark = [pytest.mark.unit, pytest.mark.cli, pytest.mark.quick]
 
@@ -238,3 +243,55 @@ class TestConsoleQuietMode:
             assert console.is_quiet is True
         finally:
             console.set_quiet(original)
+
+
+class TestExceptionHandlerFactory:
+    """cli_exception_handler and the profiling variant share one exception table."""
+
+    @pytest.mark.parametrize("exc,code", [
+        (ConfigurationError("c"), 3),
+        (ModelExecutionError("m"), 14),
+        (FileNotFoundError("f"), 5),
+        (PermissionError("p"), 10),
+        (ImportError("i"), 12),
+        (ValueError("v"), 4),
+        (OSError("o"), 1),
+        (SYMFLUENCEError("s"), 1),
+    ])
+    @pytest.mark.parametrize("profiling", [False, True])
+    def test_same_exit_codes(self, exc, code, profiling):
+        from symfluence.cli.commands.base import (
+            cli_exception_handler,
+            cli_exception_handler_with_profiling,
+        )
+
+        deco = cli_exception_handler_with_profiling if profiling else cli_exception_handler
+
+        @deco
+        def cmd(args):
+            raise exc
+
+        assert cmd(Namespace(debug=False, profile=False)) == code
+
+    def test_profiling_finalized_on_error(self):
+        from symfluence.cli.commands import base
+
+        @base.cli_exception_handler_with_profiling
+        def cmd(args):
+            raise ValueError("x")
+
+        with patch.object(base, '_setup_profiling', return_value=("p", "s")) as setup, \
+             patch.object(base, '_finalize_profiling') as finalize:
+            assert cmd(Namespace(debug=False, profile=True)) == 4
+        setup.assert_called_once()
+        finalize.assert_called_once()
+
+    def test_unhandled_exception_propagates(self):
+        from symfluence.cli.commands.base import cli_exception_handler
+
+        @cli_exception_handler
+        def cmd(args):
+            raise KeyError("k")
+
+        with pytest.raises(KeyError):
+            cmd(Namespace(debug=False))
