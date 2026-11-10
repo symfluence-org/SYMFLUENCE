@@ -228,6 +228,27 @@ class TestCalculateKGE:
 
         assert -1.0 < kge <= 1.0
 
+    def test_kge_matches_core_metrics(self, metrics_instance):
+        """Per-gauge KGE uses the shared symfluence.core.metrics definition."""
+        from symfluence.core import metrics as core_metrics
+        rng = np.random.default_rng(0)
+        obs = rng.gamma(2.0, 3.0, 200)
+        sim = 0.8 * obs + rng.normal(0, 1, 200)
+        assert metrics_instance._calculate_kge(obs, sim) == pytest.approx(core_metrics.kge(obs, sim))
+
+    def test_kge_constant_obs_is_invalid(self, metrics_instance):
+        """Constant observations make KGE undefined, not a finite -0.42."""
+        obs = np.full(50, 2.0)
+        sim = np.linspace(1, 3, 50)
+        assert metrics_instance._calculate_kge(obs, sim) == -9999.0
+
+    def test_kge_negative_obs_mean_keeps_bias_term(self, metrics_instance):
+        """A negative observed mean must not force beta to 0."""
+        rng = np.random.default_rng(1)
+        obs = rng.normal(-5.0, 1.0, 100)
+        kge = metrics_instance._calculate_kge(obs, obs.copy())
+        assert kge == pytest.approx(1.0)
+
 
 # =============================================================================
 # Quality Filter Tests

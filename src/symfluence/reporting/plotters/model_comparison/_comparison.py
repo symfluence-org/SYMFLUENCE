@@ -266,10 +266,7 @@ class ModelComparisonDefaultVsCalibratedMixin:
             ax.text(0.5, 0.5, "No observations", transform=ax.transAxes, ha="center", va="center")
             return
 
-        obs_values = obs_series.values
-        sim_values = sim_series.values
-
-        aligned = self._align_valid_pairs(obs_values, sim_values, min_points=10)
+        aligned = self._align_valid_pairs(obs_series, sim_series, min_points=10)
         if aligned is None:
             ax.text(0.5, 0.5, "Insufficient data", transform=ax.transAxes, ha="center", va="center")
             return

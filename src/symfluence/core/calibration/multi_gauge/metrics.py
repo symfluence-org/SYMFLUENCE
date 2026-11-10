@@ -22,6 +22,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from symfluence.core import metrics as core_metrics
+
 
 class MultiGaugeMetrics:
     """
@@ -231,23 +233,13 @@ class MultiGaugeMetrics:
         if len(obs) < 10:  # Minimum data points
             return -9999.0
 
-        # Correlation coefficient — guard against constant series (zero stddev)
-        if np.std(obs) == 0 or np.std(sim) == 0:
-            r = 0.0
-        else:
-            r = np.corrcoef(obs, sim)[0, 1]
-            if np.isnan(r):
-                r = 0.0
-
-        # Ratio of standard deviations (alpha)
-        alpha = np.std(sim) / np.std(obs) if np.std(obs) > 0 else 0.0
-
-        # Ratio of means (beta)
-        beta = np.mean(sim) / np.mean(obs) if np.mean(obs) > 0 else 0.0
-
-        # KGE
-        kge = 1 - np.sqrt((r - 1)**2 + (alpha - 1)**2 + (beta - 1)**2)
-
+        # Shared KGE definition (symfluence.core.metrics). It is undefined
+        # (NaN) for constant observations or a zero observed mean; those
+        # gauges get the same failure sentinel as too-short records instead of
+        # an arbitrary finite score.
+        kge = core_metrics.kge(obs, sim)
+        if not np.isfinite(kge):
+            return -9999.0
         return float(kge)
 
     def _apply_quality_filters(

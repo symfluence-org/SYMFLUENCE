@@ -232,3 +232,26 @@ class TestModelComparisonPlotterPanels:
                 )
             except Exception as e:  # noqa: BLE001
                 pytest.fail(f"_plot_residual_analysis raised: {e}")
+
+
+class TestModelComparisonDateAlignment:
+    """Metrics pair sim and obs by timestamp, not by array position."""
+
+    def test_calculated_metrics_align_on_index(self, model_comparison_plotter):
+        idx = pd.date_range('2010-01-01', periods=400, freq='D')
+        rng = np.random.default_rng(0)
+        obs = pd.Series(rng.gamma(2, 5, len(idx)), index=idx)
+        # Calibrated table covers a later, shorter window but the same dates
+        # carry identical values -> perfect skill when paired by date.
+        cal_df = pd.DataFrame({'SUMMA_discharge_cms': obs.iloc[100:].values}, index=idx[100:])
+        metrics = model_comparison_plotter._calculate_all_metrics(
+            cal_df, obs, ['SUMMA_discharge_cms']
+        )
+        assert metrics['SUMMA']['KGE'] == pytest.approx(1.0)
+
+    def test_align_valid_pairs_with_series(self, model_comparison_plotter):
+        a = pd.Series([1.0, 2.0, 3.0], index=pd.date_range('2010-01-01', periods=3))
+        b = pd.Series([2.0, 3.0, 4.0], index=pd.date_range('2010-01-02', periods=3))
+        obs, sim = model_comparison_plotter._align_valid_pairs(a, b)
+        np.testing.assert_array_equal(obs, [2.0, 3.0])
+        np.testing.assert_array_equal(sim, [2.0, 3.0])
