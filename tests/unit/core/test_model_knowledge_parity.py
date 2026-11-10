@@ -555,8 +555,14 @@ _EXPECTED_ALIASES = {
     "SAC-SMA": "SACSMA",
     "CLM-PARFLOW": "CLMPARFLOW",
     "RHESS": "RHESSYS",
-    "SUMMA-MODFLOW": "COUPLED_GW",
 }
+
+
+def test_summa_modflow_alias_removed():
+    """SUMMA-MODFLOW used to alias COUPLED_GW, which has no runner (dangling)."""
+    from symfluence.core.registries import R
+
+    assert "SUMMA-MODFLOW" not in R.runners
 
 
 @pytest.mark.parametrize("alias,canonical", sorted(_EXPECTED_ALIASES.items()))

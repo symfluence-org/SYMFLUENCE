@@ -644,3 +644,16 @@ class OptimizationConfig(BaseModel):
         if isinstance(v, str):
             return [item.strip() for item in v.split(",") if item.strip()]
         return v
+
+    @field_validator('methods')
+    @classmethod
+    def validate_methods(cls, v):
+        """Reject unknown OPTIMIZATION_METHODS (e.g. 'iteraton' silently disabled calibration)."""
+        from .choices import OPTIMIZATION_METHODS, unknown_value_message
+
+        methods = [v] if isinstance(v, str) else list(v or [])
+        normalized = [str(m).strip().lower() for m in methods if str(m).strip()]
+        for method in normalized:
+            if method not in OPTIMIZATION_METHODS:
+                raise ValueError(unknown_value_message('OPTIMIZATION_METHODS', method, OPTIMIZATION_METHODS))
+        return normalized

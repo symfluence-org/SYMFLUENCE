@@ -530,7 +530,7 @@ class TestIntegrationWithSymfluenceConfig:
 
         model = SymfluenceConfig(**config)
 
-        assert model.model.hydrological_model == 'RHESSys'
+        assert model.model.hydrological_model == 'RHESSYS'  # normalized to the registry key
         # RHESSys config is optional - only validated if provided
         assert model.model.rhessys is None or model.model.rhessys.exe == 'rhessys'
 

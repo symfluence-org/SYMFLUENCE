@@ -74,9 +74,6 @@ system:
   # Stop execution on first error (vs. continue with warnings)
   stop_on_error: true
 
-  # Force re-download of existing data files
-  force_download: false
-
   # Force re-run of all workflow steps (ignore cached results)
   force_run_all_steps: false
 
@@ -216,7 +213,7 @@ domain:
   # Land cover source: modis, nlcd, esa_cci
   land_class_source: "modis"
   land_class_name: default
-  download_land_cover: true
+  download_landcover: true
 
   # Soil data source
   soilgrids_layer: "wrb_0-5cm_mode"
@@ -249,7 +246,7 @@ domain:
     lumped_watershed_method: "TauDEM"
 
     # Routing network delineation: lumped, distributed
-    routing_delineation: "lumped"
+    routing: "lumped"
 
     # Pre-defined geofabric type: na, merit, nwm
     geofabric_type: "na"
@@ -291,18 +288,11 @@ data:
   streamflow_station_id: null
   usgs_site_code: null
 
-  # LamaH-Ice dataset path
-  lamah_ice_path: null
-  download_lamah_ice_data: false
+  # Force re-download of existing data files
+  force_download: false
 
   # ISMN soil moisture data
   download_ismn: false
-
-  # Glacier data from Randolph Glacier Inventory
-  download_glacier_data: false
-
-  # SMHI (Swedish) streamflow data
-  download_smhi_data: false
 
   # Elevation processing parameters
   elev_chunk_size: 10000
@@ -405,7 +395,7 @@ forcing:
   # Supplemental Forcing
   # ---------------------------------------------------------------------------
   # Use secondary dataset for missing variables
-  supplement_forcing: false
+  supplement: false
 
   # ---------------------------------------------------------------------------
   # ERA5 Configuration
@@ -421,7 +411,7 @@ forcing:
     time_step_hours: 1
 
     # Variables to download
-    vars: ['u10', 'v10', 't2m', 'sp', 'd2m', 'ssrd', 'strd', 'tp']
+    variables: ['u10', 'v10', 't2m', 'sp', 'd2m', 'ssrd', 'strd', 'tp']
 
   # ---------------------------------------------------------------------------
   # EM-Earth Configuration
@@ -432,7 +422,7 @@ forcing:
     min_bbox_size: 0.1
     prcp_dir: null
     tmean_dir: null
-    prcp: "prcp"
+    prcp_var: "prcp"
 
   # ---------------------------------------------------------------------------
   # NEX-GDDP Configuration
@@ -528,7 +518,7 @@ model:
     gru_per_job: 5
 
     # Parallel SUMMA (actors framework)
-    use_parallel_summa: false
+    use_parallel: false
     parallel_backend: slurm  # Options: slurm, local
     parallel_exe: "summa_actors.exe"
     parallel_path: default
@@ -602,7 +592,7 @@ model:
     exe: "hype"
     install_path: default
     settings_path: default
-    info: "info.txt"
+    info_file: "info.txt"
 
     # Spin-up period (days)
     spinup_days: 365
@@ -646,7 +636,7 @@ model:
     exe: "mesh.exe"
     install_path: default
     settings_path: default
-    settings_input: default
+    input_file: default
     experiment_output: default
 
     # Spatial mode: lumped, distributed
@@ -1163,20 +1153,20 @@ evaluation:
   modis_snow:
     # Data paths
     path: default
-    dir: default
+    data_dir: default
 
     # Product settings
     product: "MOD10A1.006"
-    sca_products: ['MOD10A1.061', 'MYD10A1.061']
+    products: ['MOD10A1.061', 'MYD10A1.061']
 
     # Processing options
     min_pixels: 100
-    sca_merge: true
-    sca_merge_strategy: "max"
-    sca_cloud_filter: true
-    sca_min_valid_ratio: 0.1
-    sca_normalize: true
-    sca_use_catchment_mask: false
+    merge: true
+    merge_strategy: "max"
+    cloud_filter: true
+    min_valid_ratio: 0.1
+    normalize: true
+    use_catchment_mask: false
 
     # Download settings
     download: false
@@ -1187,7 +1177,7 @@ evaluation:
   modis_et:
     # Data path
     path: default
-    dir: default
+    data_dir: default
 
     # Product
     product: "MOD16A2.061"
@@ -1217,6 +1207,19 @@ evaluation:
     groundwater_path: default
     forest_height_path: default
     streamflow_path: default
+
+  # SMHI (Swedish) streamflow data
+  smhi:
+    download: false
+
+  # LamaH-Ice (Iceland) streamflow data
+  lamah_ice:
+    download: false
+    path: null
+
+  # Glacier data from Randolph Glacier Inventory
+  glacier:
+    download: false
 
 
 # ==============================================================================
@@ -1269,39 +1272,34 @@ paths:
   # ---------------------------------------------------------------------------
   # Shapefile Configuration
   # ---------------------------------------------------------------------------
-  shapefiles:
-    # Catchment shapefile
-    catchment:
-      path: default
-      name: default
-      hruid: "HRU_ID"
-      gruid: "GRU_ID"
-      area: "HRU_area"
-      lat: "center_lat"
-      lon: "center_lon"
-      plot_dir: default
+  # Catchment shapefile
+  catchment_path: default
+  catchment_name: default
+  catchment_hruid: "HRU_ID"
+  catchment_gruid: "GRU_ID"
+  catchment_area: "HRU_area"
+  catchment_lat: "center_lat"
+  catchment_lon: "center_lon"
+  catchment_plot_dir: default
 
-    # Pour point shapefile
-    pour_point:
-      path: default
-      name: default
+  # Pour point shapefile
+  pour_point_path: default
+  pour_point_name: default
 
-    # River basins shapefile
-    river_basins:
-      path: default
-      name: default
-      area: "GRU_area"
-      rm_gruid: "GRU_ID"
-      hru_to_seg: "gru_to_seg"
+  # River basins shapefile
+  river_basins_path: default
+  river_basins_name: default
+  river_basin_area: "GRU_area"
+  river_basin_rm_gruid: "GRU_ID"
+  river_basin_hru_to_seg: "gru_to_seg"
 
-    # River network shapefile
-    river_network:
-      path: default
-      name: default
-      segid: "LINKNO"
-      downsegid: "DSLINKNO"
-      length: "Length"
-      slope: "Slope"
+  # River network shapefile
+  river_network_path: default
+  river_network_name: default
+  river_network_segid: "LINKNO"
+  river_network_downsegid: "DSLINKNO"
+  river_network_length: "Length"
+  river_network_slope: "Slope"
 
   # ---------------------------------------------------------------------------
   # Source Geofabric

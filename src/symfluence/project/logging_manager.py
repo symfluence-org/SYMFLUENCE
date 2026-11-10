@@ -139,6 +139,32 @@ def get_logger(name: Optional[str] = None) -> logging.Logger:
     short = name[len("symfluence."):] if name.startswith("symfluence.") else name
     return logging.getLogger(f"symfluence.{short}")
 
+_SENSITIVE_KEY_RE = re.compile(
+    r'PASSWORD|PASSWD|SECRET|TOKEN|API_?KEY|CREDENTIAL', re.IGNORECASE
+)
+MASKED_VALUE = '***MASKED***'
+
+
+def mask_sensitive_config(value: Any) -> Any:
+    """Return a copy of *value* with credential-like keys masked, recursively.
+
+    A key is sensitive when it contains (case-insensitive) PASSWORD, PASSWD,
+    SECRET, TOKEN, API_KEY/APIKEY or CREDENTIAL. ``None``/empty values are
+    left as-is (nothing to hide, and it keeps "unset" visible).
+    """
+    if isinstance(value, dict):
+        out = {}
+        for k, v in value.items():
+            if isinstance(k, str) and _SENSITIVE_KEY_RE.search(k) and v not in (None, ''):
+                out[k] = MASKED_VALUE
+            else:
+                out[k] = mask_sensitive_config(v)
+        return out
+    if isinstance(value, list):
+        return [mask_sensitive_config(v) for v in value]
+    return value
+
+
 class LoggingManager(ConfigMixin):
     """
     Manages logging configuration and setup for the SYMFLUENCE framework.
@@ -474,11 +500,9 @@ class LoggingManager(ConfigMixin):
         # Use config_dict to get a mutable dict (config.copy() returns Pydantic model)
         config_to_log = self.config_dict.copy()
 
-        # Mask any potential sensitive fields (add as needed)
-        sensitive_fields = ['PASSWORD', 'API_KEY', 'SECRET']
-        for field in sensitive_fields:
-            if field in config_to_log:
-                config_to_log[field] = '***MASKED***'
+        # Mask credentials (any key naming a password/secret/token/API key,
+        # at any nesting depth) before the copy lands in _workLog.
+        config_to_log = mask_sensitive_config(config_to_log)
 
         # Add metadata
         metadata = {

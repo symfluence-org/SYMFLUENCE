@@ -32,7 +32,7 @@ def config(tmp_path):
         'EXPERIMENT_TIME_START': '2020-01-01',
         'EXPERIMENT_TIME_END': '2020-01-02',
         'FORCING_DATASET': 'ERA5',
-        'HYDROLOGICAL_MODEL': 'TEST',
+        'HYDROLOGICAL_MODEL': 'GR',  # must be a registered model (validated at load)
         'DOMAIN_NAME': 'test_domain',
         'SUB_GRID_DISCRETIZATION': 'lumped',
         'DOMAIN_DEFINITION_METHOD': 'lumped',

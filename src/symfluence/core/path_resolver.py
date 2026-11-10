@@ -10,6 +10,7 @@ code duplication across model preprocessors, managers, and utilities.
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
@@ -62,9 +63,16 @@ def resolve_path(
         Path('/custom/forcing/path')
     """
     path_value = config.get(config_key)
+    if isinstance(path_value, str):
+        path_value = path_value.strip()
+        # '', 'default' (any case) mean "unset" -> use the default location.
+        if path_value == '' or path_value.lower() == 'default':
+            path_value = None
+        else:
+            path_value = os.path.expandvars(os.path.expanduser(path_value))
 
-    # Handle 'default' or None values -> use default path relative to project_dir
-    if path_value == 'default' or path_value is None:
+    # Handle unset values -> use default path relative to project_dir
+    if path_value is None:
         # Check if default_subpath starts with a migrated data subdirectory
         parts = default_subpath.split('/', 1)
         if parts[0] in _DATA_SUBDIRS:

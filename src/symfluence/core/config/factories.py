@@ -210,6 +210,14 @@ def from_file_factory(
     with open(path, "r", encoding="utf-8") as f:
         file_config = yaml.safe_load(f) or {}
 
+    # Archived configs (``_workLog_*/config_*.yaml``) carry a ``_metadata``
+    # block written by LoggingManager; it is provenance, not configuration.
+    if isinstance(file_config, dict):
+        file_config = {
+            k: v for k, v in file_config.items()
+            if not (isinstance(k, str) and k.lower() == '_metadata')
+        }
+
     # 2. Detect if config is in nested or flat format
     is_nested = _is_nested_config(file_config)
 
@@ -223,7 +231,8 @@ def from_file_factory(
 
         # Apply environment variable overrides (converted to nested format)
         if use_env:
-            env_overrides = _load_env_overrides()
+            model_section = nested_config.get('model') if isinstance(nested_config.get('model'), dict) else {}
+            env_overrides = _load_env_overrides(model_section.get('hydrological_model'))
             if env_overrides:
                 # Transform env overrides to nested and merge
                 env_nested = transform_flat_to_nested(env_overrides)
@@ -238,6 +247,12 @@ def from_file_factory(
                 normalized_overrides = {_normalize_key(k): v for k, v in overrides.items()}
                 override_nested = transform_flat_to_nested(normalized_overrides)
                 nested_config = _deep_merge(nested_config, override_nested)
+
+        # Unknown-key validation for nested configs (warn; raise in strict
+        # mode) — previously only the flat branch was checked, so misplaced
+        # nested keys were silently ignored.
+        from symfluence.core.config.key_validation import validate_known_nested_keys
+        validate_known_nested_keys(nested_config, source=str(path))
     else:
         # Handle flat config format — Pydantic Field defaults are the single
         # source of truth; no pre-seeding with a separate defaults dict.
@@ -261,7 +276,10 @@ def from_file_factory(
 
         # Override with environment variables
         if use_env:
-            env_overrides = _load_env_overrides()
+            hydrological_model = config_dict.get('HYDROLOGICAL_MODEL')
+            if isinstance(hydrological_model, list):
+                hydrological_model = ','.join(str(m) for m in hydrological_model)
+            env_overrides = _load_env_overrides(hydrological_model)
             config_dict.update(env_overrides)
 
         # Apply CLI overrides (highest priority)

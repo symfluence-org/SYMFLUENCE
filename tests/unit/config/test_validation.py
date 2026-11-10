@@ -120,10 +120,10 @@ class TestFieldValidators:
     def test_list_fields_comma_separated_to_list(self):
         """Test that comma-separated strings become lists"""
         config = self._get_minimal_config()
-        config['OPTIMIZATION_METHODS'] = 'iteration,differentiable'
+        config['OPTIMIZATION_METHODS'] = 'iteration,emulation'
         config['EVALUATION_DATA'] = 'streamflow,snow'
         model = SymfluenceConfig(**config)
-        assert model.OPTIMIZATION_METHODS == ['iteration', 'differentiable']
+        assert model.OPTIMIZATION_METHODS == ['iteration', 'emulation']
         assert model.EVALUATION_DATA == ['streamflow', 'snow']
 
     def test_list_fields_already_list_unchanged(self):

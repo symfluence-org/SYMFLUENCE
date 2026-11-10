@@ -270,6 +270,81 @@ def find_unknown_nested_keys(data: Dict[str, Any], model: Optional[type] = None)
     return sorted(unknown)
 
 
+def _sibling_names(path: str, model: Optional[type] = None) -> Set[str]:
+    """Field names/aliases valid next to the dotted *path* (for suggestions)."""
+    if model is None:
+        from symfluence.core.config.models import SymfluenceConfig
+        model = SymfluenceConfig
+    current: Optional[type] = model
+    for part in path.split('.')[:-1]:
+        field = _field_for_key(current, part) if current is not None else None
+        current = _resolve_basemodel_annotation(field.annotation) if field is not None else None
+        if current is None:
+            return set()
+    return set(current.model_fields)
+
+
+def validate_known_nested_keys(
+    nested_config: Dict[str, Any],
+    *,
+    strict: Optional[bool] = None,
+    source: Optional[str] = None,
+) -> List[str]:
+    """Nested-format counterpart of :func:`validate_known_flat_keys`.
+
+    Unknown keys are reported as dotted paths (``domain.download_land_cover``)
+    with a did-you-mean suggestion from the same section. Warns by default;
+    raises :class:`ConfigValidationError` in strict mode (top-level
+    ``STRICT_CONFIG`` / ``system.strict_config`` or ``SYMFLUENCE_STRICT_CONFIG``).
+    ``ALLOW_UNKNOWN_KEYS`` entries may name a dotted path or a leaf key.
+    """
+    unknown = find_unknown_nested_keys(nested_config)
+    if not unknown:
+        return []
+
+    control: Dict[str, Any] = {
+        k: v for k, v in nested_config.items()
+        if isinstance(k, str) and k.upper() in RESERVED_CONTROL_KEYS
+    }
+    system = nested_config.get('system')
+    if isinstance(system, dict):
+        for k, v in system.items():
+            if isinstance(k, str) and k.upper() in RESERVED_CONTROL_KEYS:
+                control.setdefault(k.upper(), v)
+    allowed = _allowed_unknown(control)
+    unknown = [
+        path for path in unknown
+        if path.upper() not in allowed and path.rsplit('.', 1)[-1].upper() not in allowed
+        and path.rsplit('.', 1)[-1].upper() not in RESERVED_CONTROL_KEYS
+    ]
+    if not unknown:
+        return []
+
+    where = f" in {source}" if source else ""
+    lines = [f"Unrecognized configuration key(s){where}:"]
+    for path in unknown:
+        leaf = path.rsplit('.', 1)[-1]
+        matches = get_close_matches(leaf, _sibling_names(path), n=1, cutoff=0.6) if '.' in path else []
+        if matches:
+            parent = path.rsplit('.', 1)[0]
+            lines.append(f"  - {path}  (did you mean '{parent}.{matches[0]}'?)")
+        else:
+            lines.append(f"  - {path}")
+    lines.append(
+        "Fix the spelling/section, or list intentional custom keys under "
+        "ALLOW_UNKNOWN_KEYS to silence this."
+    )
+    message = "\n".join(lines)
+
+    if strict is None:
+        strict = is_strict_config_mode(control)
+    if strict:
+        from symfluence.core.exceptions import ConfigValidationError
+        raise ConfigValidationError(message)
+    logger.warning(message)
+    return unknown
+
+
 def _format_message(unknown: List[str], known_keys: Set[str], source: Optional[str]) -> str:
     """Build a user-facing message with 'did you mean?' suggestions."""
     where = f" in {source}" if source else ""

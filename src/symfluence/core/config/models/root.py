@@ -269,6 +269,25 @@ class SymfluenceConfig(BaseModel):
                 logger=logger,
             )
 
+            # Each sub-period must parse and run forwards (start <= end)
+            for label, value in (
+                ('CALIBRATION_PERIOD', self.domain.calibration_period),
+                ('EVALUATION_PERIOD', self.domain.evaluation_period),
+                ('SPINUP_PERIOD', self.domain.spinup_period),
+            ):
+                if not value:
+                    continue
+                try:
+                    p_start, p_end = self._parse_period(value)
+                except (ValueError, TypeError) as e:
+                    raise ConfigurationError(
+                        f"{label} must be 'YYYY-MM-DD, YYYY-MM-DD', got {value!r}: {e}"
+                    ) from e
+                if p_start > p_end:
+                    raise ConfigurationError(
+                        f"{label} ({value}) is reversed: start {p_start} is after end {p_end}"
+                    )
+
             # Validate calibration period is within experiment period
             if self.domain.calibration_period:
                 cal_start, cal_end = self._parse_period(self.domain.calibration_period)

@@ -169,6 +169,23 @@ class DomainConfig(BaseModel):
     # Catchment area (km2) - used for unit conversions (e.g., CLM QRUNOFF mm/s -> m3/s)
     catchment_area: Optional[float] = Field(default=None, alias='CATCHMENT_AREA')
 
+    @field_validator('discretization')
+    @classmethod
+    def validate_discretization(cls, v):
+        """Each comma-separated SUB_GRID_DISCRETIZATION attribute must be a known method."""
+        from .choices import (
+            DISCRETIZATION_ACCEPTED,
+            DISCRETIZATION_METHODS,
+            unknown_value_message,
+        )
+
+        for attr in str(v).split(','):
+            token = attr.strip().lower()
+            if token not in DISCRETIZATION_ACCEPTED:
+                raise ValueError(unknown_value_message(
+                    'SUB_GRID_DISCRETIZATION', attr.strip(), DISCRETIZATION_METHODS))
+        return v
+
     @property
     def catchment_area_km2(self) -> Optional[float]:
         """Compatibility accessor for model plugins using explicit area units."""
