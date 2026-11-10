@@ -410,7 +410,8 @@ class ParFlowPreProcessor(BaseModelPreProcessor):
         solver = str(self._get_pf_cfg('SOLVER', 'Richards'))
 
         n_steps, timestep_hours, n_hours = self._get_time_info()
-        dump_interval = float(self._get_pf_cfg('DUMP_INTERVAL_HOURS', 24.0))
+        from symfluence.models.parflow.extractor import resolve_dump_interval_hours
+        dump_interval = resolve_dump_interval_hours(self.config, 'parflow')
 
         # Default: unsaturated start (negative pressure head)
         if initial_pressure is None:

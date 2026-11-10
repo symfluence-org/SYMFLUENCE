@@ -103,8 +103,10 @@ class ParFlowPostProcessor(StandardModelPostProcessor):
                 dict_key='PARFLOW_DZ',
             )
 
+            from symfluence.models.parflow.extractor import resolve_dump_interval_hours
             common_kwargs = dict(
                 timestep_hours=float(timestep_hours),
+                dump_interval_hours=resolve_dump_interval_hours(self.config, 'parflow'),
                 start_date=str(start_date),
                 k_sat=float(k_sat),
                 dx=float(dx),
@@ -266,22 +268,13 @@ class ParFlowPostProcessor(StandardModelPostProcessor):
             logger.debug(f"Could not generate ParFlow coupling plot: {e}", exc_info=True)
 
     def _get_catchment_area(self) -> float:
-        """Get catchment area in km2."""
+        """Get catchment area in km2 (config, else domain shapefile; raises if neither)."""
         area = self._get_config_value(
             lambda: self.config.domain.catchment_area,
             default=None,
             dict_key='CATCHMENT_AREA',
         )
-        if area:
-            return float(area)
-
-        try:
-            from symfluence.core.metrics.streamflow_metrics import StreamflowMetrics
-            metrics = StreamflowMetrics()
-            return metrics.get_catchment_area(
-                self.config_dict, self.project_dir, self.domain_name,
-                source='shapefile'
-            )
-        except Exception:  # noqa: BLE001 — model execution resilience
-            logger.warning("Could not determine catchment area, using default 2210 km2", exc_info=True)
-            return 2210.0
+        from symfluence.core.metrics.streamflow_metrics import require_catchment_area_km2
+        return require_catchment_area_km2(
+            self.config_dict, self.project_dir, self.domain_name, configured_km2=area,
+        )

@@ -796,6 +796,45 @@ def get_catchment_area(
     return _streamflow_metrics.get_catchment_area(config, project_dir, domain_name, source, settings_dir)
 
 
+def require_catchment_area_km2(
+    config: Dict[str, Any],
+    project_dir: Path,
+    domain_name: str,
+    configured_km2: Optional[float] = None,
+) -> float:
+    """Catchment area (km2) from config or the domain shapefiles, or raise.
+
+    Resolution: an explicit ``configured_km2`` (CATCHMENT_AREA), then
+    FIXED_CATCHMENT_AREA / the river-basin / catchment shapefile via
+    :meth:`StreamflowMetrics.get_catchment_area`. Unlike that method this
+    never substitutes a placeholder area: model unit conversions and mesh
+    sizes built on an invented area (the old 2210 km2 / 27 km2 fallbacks)
+    produce plausible-looking but wrong discharge, so a missing area is a
+    hard error instead.
+
+    Raises:
+        ValueError: if no positive, finite area can be determined.
+    """
+    if configured_km2 is not None:
+        try:
+            value = float(configured_km2)
+        except (TypeError, ValueError):
+            value = float('nan')
+        if np.isfinite(value) and value > 0:
+            return value
+    area = _streamflow_metrics.get_catchment_area(
+        config, Path(project_dir), domain_name,
+        source='shapefile', default_area=float('nan'),
+    )
+    if area is None or not np.isfinite(area) or area <= 0:
+        raise ValueError(
+            f"Could not determine the catchment area for domain '{domain_name}': "
+            f"set CATCHMENT_AREA (km2) or provide the river-basin/catchment "
+            f"shapefile under {Path(project_dir) / 'shapefiles'}"
+        )
+    return float(area)
+
+
 def calculate_metrics(
     obs: np.ndarray,
     sim: np.ndarray,

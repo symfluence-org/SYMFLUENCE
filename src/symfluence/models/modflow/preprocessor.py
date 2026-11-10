@@ -91,15 +91,17 @@ class MODFLOWPreProcessor(BaseModelPreProcessor):
         1. Explicit CATCHMENT_AREA config key (km2)
         2. config.domain.catchment_area
         3. Auto-detect from watershed shapefile (UTM projection)
-        4. Fallback default (27 km2)
+        4. Domain river-basin/catchment shapefile; raises ValueError if none
         """
         area_km2 = getattr(self.config.domain, 'catchment_area', None)
         if area_km2 is None:
             # Try to compute from watershed shapefile
             area_km2 = self._detect_catchment_area_km2()
         if area_km2 is None:
-            self.logger.warning("CATCHMENT_AREA not set and no shapefile found, using default 27 km2")
-            area_km2 = 27.0
+            from symfluence.core.metrics.streamflow_metrics import require_catchment_area_km2
+            area_km2 = require_catchment_area_km2(
+                self.config_dict, self.project_dir, self.domain_name,
+            )
         return float(area_km2) * 1e6
 
     def _detect_catchment_area_km2(self):
