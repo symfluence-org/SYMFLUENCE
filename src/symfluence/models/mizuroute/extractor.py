@@ -13,7 +13,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, List, cast
 
-import numpy as np
 import pandas as pd
 import xarray as xr
 
@@ -80,24 +79,19 @@ class MizuRouteResultExtractor(ModelResultExtractor):
                 if var_name in ds.variables:
                     var = ds[var_name]
 
-                    # Find outlet based on spatial dimension
-                    if 'seg' in var.dims:
-                        # Older mizuRoute: segment-based
-                        segment_means = var.mean(dim='time').values
-                        outlet_seg_idx = np.argmax(segment_means)
-                        result = cast(pd.Series, var.isel(seg=outlet_seg_idx).to_pandas())
-                        return result
-
-                    elif 'reachID' in var.dims:
-                        # Newer mizuRoute: reach-based
-                        reach_means = var.mean(dim='time').values
-                        outlet_reach_idx = np.argmax(reach_means)
-                        result = cast(pd.Series, var.isel(reachID=outlet_reach_idx).to_pandas())
-                        return result
-
-                    else:
-                        # No spatial dimension - use as-is
-                        return cast(pd.Series, var.to_pandas())
+                    # Find outlet: shared reach rule (SIM_REACH_ID, topology
+                    # outlet, else highest mean flow)
+                    if 'seg' in var.dims or 'reachID' in var.dims:
+                        from symfluence.core.modeling.utilities.reach_selection import (
+                            select_outlet_series,
+                            topology_candidates,
+                        )
+                        return select_outlet_series(
+                            ds, var, kwargs.get('sim_reach_id'),
+                            topology_candidates(near=output_file),
+                        )
+                    # No spatial dimension - use as-is
+                    return cast(pd.Series, var.to_pandas())
 
             raise ModelExecutionError(
                 f"No suitable routed runoff variable found in {output_file}. "

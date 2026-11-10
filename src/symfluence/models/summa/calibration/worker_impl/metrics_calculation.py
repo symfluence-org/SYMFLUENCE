@@ -443,7 +443,7 @@ def _extract_inline_simulated_streamflow(
     try:
         with xr.open_dataset(sim_file) as ds:
             if use_mizuroute:
-                return _extract_inline_mizuroute_streamflow(ds, logger)
+                return _extract_inline_mizuroute_streamflow(ds, logger, config, sim_file)
             return _extract_inline_summa_streamflow(ds, summa_dir, config, catchment_area, logger)
     except (ValueError, KeyError, ZeroDivisionError, FileNotFoundError) as e:
         logger.error(f"Exception extracting simulated streamflow: {str(e)}")
@@ -452,7 +452,7 @@ def _extract_inline_simulated_streamflow(
         return None
 
 
-def _extract_inline_mizuroute_streamflow(ds, logger) -> Optional[pd.Series]:
+def _extract_inline_mizuroute_streamflow(ds, logger, config=None, sim_file=None) -> Optional[pd.Series]:
     routing_vars = ['IRFroutedRunoff', 'KWTroutedRunoff', 'averageRoutedRunoff']
     routing_var = next((name for name in routing_vars if name in ds.variables), None)
     if routing_var is None:
@@ -460,14 +460,18 @@ def _extract_inline_mizuroute_streamflow(ds, logger) -> Optional[pd.Series]:
 
     var = ds[routing_var]
     try:
-        if 'seg' in var.dims:
-            outlet_idx = np.argmax(var.mean(dim='time').values)
-            sim_data = var.isel(seg=outlet_idx).to_pandas()
-        elif 'reachID' in var.dims:
-            outlet_idx = np.argmax(var.mean(dim='time').values)
-            sim_data = var.isel(reachID=outlet_idx).to_pandas()
-        else:
+        if 'seg' not in var.dims and 'reachID' not in var.dims:
             return None
+        # Shared reach rule (SIM_REACH_ID, topology outlet, else highest mean)
+        from symfluence.core.modeling.utilities.reach_selection import (
+            select_outlet_series,
+            sim_reach_id_from_config,
+            topology_candidates_from_config,
+        )
+        sim_data = select_outlet_series(
+            ds, var, sim_reach_id_from_config(config),
+            topology_candidates_from_config(config, near=sim_file), logger,
+        )
         logger.debug(
             f"Extracted {routing_var} (mizuRoute), mean = {float(sim_data.mean().item()):.2f} m³/s"
         )
@@ -545,32 +549,13 @@ def _try_inline_area_weighted_aggregation(
             return None
 
         with xr.open_dataset(attrs_file) as attrs:
-            if 'hru' in var.dims and 'HRUarea' in attrs:
-                areas = attrs['HRUarea']
-                if areas.sizes['hru'] == var.sizes['hru']:
-                    logger.debug(
-                        f"Worker: Performing area-weighted aggregation for {var_name} (HRU). "
-                        f"Total area: {float(areas.values.sum()):.1f} m²"
-                    )
-                    return (var * areas).sum(dim='hru').to_pandas()
-
-            if 'gru' in var.dims and 'GRUarea' in attrs:
-                areas = attrs['GRUarea']
-                if areas.sizes['gru'] == var.sizes['gru']:
-                    logger.debug(
-                        f"Worker: Performing area-weighted aggregation for {var_name} (GRU). "
-                        f"Total area: {float(areas.values.sum()):.1f} m²"
-                    )
-                    return (var * areas).sum(dim='gru').to_pandas()
-
-            if 'gru' in var.dims and 'HRUarea' in attrs and attrs.sizes['hru'] == var.sizes['gru']:
-                areas = attrs['HRUarea']
-                dim_name = 'hru' if 'hru' in areas.dims else 'gru'
-                logger.debug(
-                    f"Worker: Performing area-weighted aggregation for {var_name} (GRU fallback). "
-                    f"Total area: {float(areas.values.sum()):.1f} m²"
-                )
-                return (var * areas).sum(dim=dim_name).to_pandas()
+            # Same rule as the evaluator and postprocessor: HRU areas, or GRU
+            # areas (HRUarea summed by hru2gruId when nHRU != nGRU).
+            from symfluence.core.modeling.utilities.area_weighting import area_weighted_discharge
+            weighted = area_weighted_discharge(var, attrs)
+            if weighted is not None:
+                logger.debug(f"Worker: Performing area-weighted aggregation for {var_name}")
+                return weighted.to_pandas()
     except (ValueError, KeyError, FileNotFoundError) as e:
         logger.debug(f"Aggregation failed, falling back: {e}")
 
