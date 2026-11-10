@@ -60,13 +60,18 @@ class FileProcessor(ConfigMixin):
         self.output_dir = output_dir
         self.logger = logger or logging.getLogger(__name__)
         self.validator = FileValidator(self.logger)
+        # Identity of the HRU set being remapped onto. The resampler sets it
+        # before naming any output; without it names carry the method only.
+        self.target_geometry = None
 
-    def determine_output_filename(self, input_file: Path) -> Path:
+    def determine_output_filename(self, input_file: Path, token: Optional[str] = None) -> Path:
         """
         Determine the expected output filename for a given input file.
 
         Args:
             input_file: Input forcing file path
+            token: Override the filename token. ``''`` gives the pre-#379
+                untokened name; used to find files written under older names.
 
         Returns:
             Path: Expected output file path
@@ -75,14 +80,15 @@ class FileProcessor(ConfigMixin):
         forcing_dataset = self._get_config_value(lambda: self.config.forcing.dataset, dict_key='FORCING_DATASET')
         input_stem = input_file.stem
 
-        # Namespace the remapped forcing by the run's spatial discretization so a
-        # lumped (hru=1) remap and, say, a 12-band elevation (hru=12) remap of the
-        # SAME domain get distinct, self-describing names instead of colliding
-        # under a shared {domain}_{forcing}_remapped_* namespace (issue #339).
-        from symfluence.core.modeling.forcing_naming import discretization_token
-        disc = self._get_config_value(
-            lambda: self.config.domain.discretization, dict_key='SUB_GRID_DISCRETIZATION')
-        token = discretization_token(disc)
+        # Namespace the remapped forcing by the HRU set it is remapped onto
+        # ({method}-h{count}-{digest8}), so two discretizations or two
+        # geometries of the SAME domain never share a name (issue #339).
+        if token is None:
+            from symfluence.core.modeling.forcing_naming import forcing_token
+            disc = self._get_config_value(
+                lambda: self.config.domain.discretization, dict_key='SUB_GRID_DISCRETIZATION')
+            token = forcing_token(disc, self.target_geometry)
+        infix = f"remapped_{token}_" if token else "remapped_"
 
         # Extract the date tag from the filename. Only the part AFTER the
         # domain name is searched, and the LAST digit-bounded date token wins:
@@ -92,7 +98,7 @@ class FileProcessor(ConfigMixin):
         date_tag = self._extract_date_tag(input_stem, domain_name)
 
         if date_tag:
-            output_filename = f"{domain_name}_{forcing_dataset}_remapped_{token}_{date_tag}.nc"
+            output_filename = f"{domain_name}_{forcing_dataset}_{infix}{date_tag}.nc"
         else:
             # Fallback logic: prevent redundant prefixing
             clean_stem = input_stem
@@ -105,7 +111,7 @@ class FileProcessor(ConfigMixin):
             clean_stem = clean_stem.replace(f"{forcing_dataset.lower()}_", "")
             clean_stem = clean_stem.replace("remapped_", "").replace("merged_", "")
 
-            output_filename = f"{domain_name}_{forcing_dataset}_remapped_{token}_{clean_stem}.nc"
+            output_filename = f"{domain_name}_{forcing_dataset}_{infix}{clean_stem}.nc"
 
         return self.output_dir / output_filename
 

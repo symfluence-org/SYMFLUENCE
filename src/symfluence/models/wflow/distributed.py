@@ -41,7 +41,8 @@ def offset_temperature(forcing, bands, offsets):
 def prepare(pre):
     c = pre.config
     s = c.model.wflow
-    bands, forcing = daily_bands(c.paths.forcing_path, s.hru_file, c.domain.time_start, c.domain.time_end)
+    bands, forcing = daily_bands(
+        c.paths.forcing_path, s.hru_file, c.domain.time_start, c.domain.time_end, c.domain.discretization)
     if s.temperature_offsets:
         forcing = offset_temperature(forcing, bands, s.temperature_offsets)
     projected = bands.to_crs(3057)

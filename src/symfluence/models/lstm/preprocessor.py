@@ -165,11 +165,10 @@ class LSTMPreProcessor(BaseModelPreProcessor):
         if not forcing_files:
             raise FileNotFoundError(f"No forcing files found in {forcing_path}")
 
-        # Scope to THIS run's discretization: a shared store may hold a lumped
-        # (hru=1) forcing beside an elevation (hru=12) forcing; concatenating both
-        # on 'time' would raise on conflicting 'hru' sizes (issue #339).
-        from symfluence.core.modeling.forcing_naming import select_forcing_files
-        forcing_files = [str(f) for f in select_forcing_files(forcing_files, self.forcing_discretization)]
+        # Scope to THIS run's HRU set: a shared store may hold a lumped (hru=1)
+        # forcing beside an elevation (hru=12) forcing; concatenating both on
+        # 'time' would raise on conflicting 'hru' sizes (issue #339).
+        forcing_files = [str(f) for f in self._select_run_forcing(sorted(Path(f) for f in forcing_files))]
 
         forcing_files.sort()
         datasets = [xr.open_dataset(file) for file in forcing_files]

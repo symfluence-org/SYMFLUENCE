@@ -16,7 +16,7 @@ import gc
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Callable, Dict, List, Optional, cast
 
 # Third-party imports
 import geopandas as gpd
@@ -76,7 +76,8 @@ class SummaForcingProcessor(BaseForcingProcessor):
         data_step: int,
         gruId: str,
         hruId: str,
-        catchment_name: str
+        catchment_name: str,
+        forcing_selector: Optional[Callable[[List[Path]], List[Path]]] = None,
     ):
         """
         Initialize the SUMMA forcing processor.
@@ -96,6 +97,8 @@ class SummaForcingProcessor(BaseForcingProcessor):
             gruId: GRU ID field name
             hruId: HRU ID field name
             catchment_name: Catchment shapefile filename
+            forcing_selector: Narrows basin forcing files to this run's HRU
+                set (the preprocessor's ``_select_run_forcing``, issue #339)
         """
         super().__init__(
             config=config,
@@ -105,7 +108,8 @@ class SummaForcingProcessor(BaseForcingProcessor):
             intersect_path=intersect_path,
             catchment_path=catchment_path,
             project_dir=project_dir,
-            setup_dir=setup_dir
+            setup_dir=setup_dir,
+            forcing_selector=forcing_selector,
         )
         # Keep original attribute names for backward compatibility
         self.forcing_basin_path = self.input_path
@@ -203,7 +207,8 @@ class SummaForcingProcessor(BaseForcingProcessor):
 
     def _check_already_corrected(self) -> bool:
         """Check whether basin-averaged files carry the ``elevation_corrected`` attribute."""
-        nc_files = sorted(self.forcing_basin_path.glob("*.nc"))
+        # Read this run's forcing: another HRU set's file may differ (issue #339).
+        nc_files = self._select_run_files(sorted(self.forcing_basin_path.glob("*.nc")))
         if not nc_files:
             return False
         try:
@@ -336,6 +341,9 @@ class SummaForcingProcessor(BaseForcingProcessor):
             if f.startswith(f"{self.domain_name}") and f.endswith('.nc')
         ]
         forcing_files.sort()
+        # Only the forcing remapped onto this run's HRUs (issue #339).
+        forcing_files = [p.name for p in self._select_run_files(
+            [self.forcing_basin_path / f for f in forcing_files])]
         self.logger.info(f"Found {len(forcing_files)} forcing files to process")
         if not forcing_files:
             raise FileOperationError(f"No forcing files found in {self.forcing_basin_path}")
@@ -381,6 +389,8 @@ class SummaForcingProcessor(BaseForcingProcessor):
             ]
         except OSError:
             return False
+        sources = [p.name for p in self._select_run_files(
+            sorted(self.forcing_basin_path / f for f in sources))]
         if not sources:
             return False
 
@@ -400,11 +410,18 @@ class SummaForcingProcessor(BaseForcingProcessor):
         Runs after the new files are in place, so a concurrent reader never
         sees a gap where its forcing used to be.
         """
+        from symfluence.core.modeling.forcing_naming import discretization_key_from_name
+
         prefix = self._stale_forcing_prefix()
+        # The directory is shared by every experiment on the domain, which may
+        # run on other HRU sets: only replace outputs of the tokens written here.
+        kept_tokens = {discretization_key_from_name(name) for name in keep}
         for existing_file in self.forcing_summa_path.glob("*.nc"):
             if not existing_file.name.lower().startswith(prefix):
                 continue
             if existing_file.name in keep:
+                continue
+            if keep and discretization_key_from_name(existing_file.name) not in kept_tokens:
                 continue
             try:
                 existing_file.unlink()
@@ -1704,10 +1721,13 @@ class SummaForcingProcessor(BaseForcingProcessor):
                 f"No {forcing_dataset} forcing files found in {forcing_path}"
             )
 
-        from symfluence.core.modeling.forcing_naming import select_forcing_files
-        candidates = select_forcing_files(
-            [forcing_path / name for name in forcing_files],
-            self._get_config_value(lambda: self.config.domain.discretization))
+        candidates = [forcing_path / name for name in forcing_files]
+        if getattr(self, 'forcing_selector', None) is not None:
+            candidates = self._select_run_files(candidates)
+        else:
+            from symfluence.core.modeling.forcing_naming import select_forcing_files
+            candidates = select_forcing_files(
+                candidates, self._get_config_value(lambda: self.config.domain.discretization))
         forcing_files = [path.name for path in self._select_forcing_by_time(candidates)]
 
         self.logger.info(

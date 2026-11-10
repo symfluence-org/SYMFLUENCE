@@ -147,7 +147,8 @@ class PIHMPreProcessor(BaseModelPreProcessor):
             )
             return []
 
-        nc_files = sorted(forcing_dir.glob("*.nc"))
+        # Only the forcing remapped onto this run's HRUs (issue #339).
+        nc_files = self._select_run_forcing(sorted(forcing_dir.glob("*.nc")))
         if not nc_files:
             self.logger.warning(
                 f"No NetCDF files found in {forcing_dir}. "

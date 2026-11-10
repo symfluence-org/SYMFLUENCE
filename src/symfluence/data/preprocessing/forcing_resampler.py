@@ -219,6 +219,7 @@ class _ParallelWorker:
         cached_target_shp_wgs84: str,
         cached_hru_field: str,
         domain_name: str,
+        target_geometry=None,
     ):
         self.config_dict = config_dict
         self.project_dir = Path(project_dir)
@@ -228,6 +229,7 @@ class _ParallelWorker:
         self.cached_target_shp_wgs84 = Path(cached_target_shp_wgs84)
         self.cached_hru_field = cached_hru_field
         self.domain_name = domain_name
+        self.target_geometry = target_geometry
 
         # These will be initialized per-worker
         self._weight_applier = None
@@ -286,6 +288,7 @@ class _ParallelWorker:
             self.output_dir,
             self._logger
         )
+        self._file_processor.target_geometry = self.target_geometry
 
     def __call__(self, args: Tuple[str, int]) -> bool:
         """Process a single file. Called by pool.map()."""
@@ -552,6 +555,67 @@ class ForcingResampler(PathResolverMixin):
 
         self.logger.debug("Forcing remapping process completed")
 
+    def _set_target_geometry(self, target: Path):
+        """Hash the target catchment so output names carry its HRU set (#339)."""
+        from symfluence.core.modeling.forcing_naming import hru_geometry
+
+        if not Path(target).exists():
+            self.logger.warning(
+                f"Catchment shapefile {target} not found; remapped forcing names carry the "
+                "discretization only, not the HRU geometry")
+            return None
+        hru_field = self._get_config_value(
+            lambda: self.config.paths.catchment_hruid, default='HRU_ID', dict_key='CATCHMENT_SHP_HRUID')
+        geometry = hru_geometry(target, hru_field)
+        self.file_processor.target_geometry = geometry
+        return geometry
+
+    def _adopt_legacy_outputs(self, files, is_current) -> int:
+        """Rename outputs written under pre-geometry names to the current names.
+
+        Forcing remapped before the geometry token was named
+        ``_remapped_{method}_`` (or carried no token before #379). Where such a
+        file is still current for THIS HRU set (*is_current*, e.g. its
+        remapping signature matches), rename it in place instead of remapping
+        again. Files that are not current are left alone: they may belong to
+        another configuration of the domain, and readers never select them once
+        geometry-named files exist.
+        """
+        import os
+
+        from symfluence.core.modeling.forcing_naming import discretization_token
+
+        if self.file_processor.target_geometry is None:
+            return 0
+        disc = self._get_config_value(
+            lambda: self.config.domain.discretization, dict_key='SUB_GRID_DISCRETIZATION')
+        legacy_tokens = (discretization_token(disc), '')
+        adopted = 0
+        for file in files:
+            new = self.file_processor.determine_output_filename(file)
+            if new.exists():
+                continue
+            for token in legacy_tokens:
+                old = self.file_processor.determine_output_filename(file, token=token)
+                if old != new and old.exists() and is_current(old):
+                    os.replace(old, new)
+                    adopted += 1
+                    break
+        if adopted:
+            self.logger.info(
+                f"Renamed {adopted} existing remapped forcing file(s) to HRU-geometry names (issue #339)")
+        return adopted
+
+    @staticmethod
+    def _point_output_is_current(path: Path, hru_count: int) -> bool:
+        """Whether a legacy point-scale output was extracted for *hru_count* HRUs."""
+        try:
+            with xr.open_dataset(path) as ds:
+                return (ds.attrs.get('point_extraction_method') == 'nearest_coordinate_v1'
+                        and int(ds.sizes.get('hru', 1)) == hru_count)
+        except (OSError, ValueError):
+            return False
+
     def _process_point_scale_forcing(self):
         """Process forcing files using point-scale extraction."""
         forcing_files = self.file_processor.get_forcing_files(self.merged_forcing_path)
@@ -562,6 +626,10 @@ class ForcingResampler(PathResolverMixin):
 
         # Use backward-compatible catchment path resolution
         catchment_file_path = self._get_catchment_file_path(self.catchment_name)
+        geometry = self._set_target_geometry(catchment_file_path)
+        if geometry is not None:
+            self._adopt_legacy_outputs(
+                forcing_files, lambda old: self._point_output_is_current(old, geometry.count))
 
         self.point_scale_extractor.process(
             forcing_files=forcing_files,
@@ -607,6 +675,7 @@ class ForcingResampler(PathResolverMixin):
         for file in forcing_files:
             groups.setdefault(grid_signature(file, coordinates), []).append(file)
         target = self._get_catchment_file_path(self.catchment_name)
+        self._set_target_geometry(target)
         # Only remap-relevant configuration enters the cache signature (field
         # names, source-geometry construction, target identity); see
         # remap_config_signature. Hashing the whole config made an unrelated
@@ -665,6 +734,7 @@ class ForcingResampler(PathResolverMixin):
                 self.weight_generator.cached_target_shp_wgs84,
                 self.weight_generator.cached_hru_field,
             )
+            self._adopt_legacy_outputs(files, lambda old, sig=signature: output_matches(old, sig))
             remaining = set(self.file_processor.filter_processed_files(files))
             remaining.update(file for file in files if not output_matches(
                 self.file_processor.determine_output_filename(file), signature))
@@ -700,6 +770,7 @@ class ForcingResampler(PathResolverMixin):
             cached_target_shp_wgs84=str(self.weight_generator.cached_target_shp_wgs84),
             cached_hru_field=self.weight_generator.cached_hru_field,
             domain_name=self._get_config_value(lambda: self.config.domain.name),
+            target_geometry=self.file_processor.target_geometry,
         )
 
         return self._run_parallel_with_worker(files, num_cpus, worker)
