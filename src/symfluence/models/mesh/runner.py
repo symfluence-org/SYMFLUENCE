@@ -17,10 +17,54 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from symfluence.core.exceptions import ModelExecutionError, symfluence_error_handler
+from symfluence.core.exceptions import (
+    ConfigurationError,
+    ModelExecutionError,
+    symfluence_error_handler,
+)
 from symfluence.core.modeling.base import BaseModelRunner
 from symfluence.core.registries import R
 from symfluence.models.mesh.glacier_runtime import check_finite_output, check_finite_runtime
+
+#: Line MESH prints at the very end of a normal run (``MESH_driver.f90``).
+MESH_NORMAL_TERMINATION = 'Program has terminated normally.'
+
+
+def parse_run_options_dates(run_options: Path):
+    """Simulation (start, stop) datetimes from ``MESH_input_run_options.ini``.
+
+    The run options file ends with two ``YYYY JJJ HH MM`` lines: the start
+    and the (exclusive) stop. This is the single parser shared by the runner,
+    the postprocessor and the calibration worker.
+
+    Raises:
+        ConfigurationError: if the file is missing or the two date lines cannot be
+            found -- callers must not silently assume a start date.
+    """
+    from datetime import timedelta
+
+    run_options = Path(run_options)
+    try:
+        lines = run_options.read_text(encoding='utf-8').splitlines()
+    except OSError as e:
+        raise ConfigurationError(f"Cannot read MESH run options {run_options}: {e}") from e
+
+    date_lines = []
+    for line in lines:
+        parts = line.strip().split()
+        if len(parts) == 4 and all(p.isdigit() for p in parts):
+            year, jday, hour, minute = (int(p) for p in parts)
+            if 1 <= jday <= 366 and 0 <= hour <= 23 and minute in (0, 30):
+                date_lines.append((year, jday, hour, minute))
+    if len(date_lines) < 2:
+        raise ConfigurationError(
+            f"No start/stop 'YYYY JJJ HH MM' lines in MESH run options {run_options}"
+        )
+
+    def _to_dt(entry):
+        return datetime(entry[0], 1, 1) + timedelta(days=entry[1] - 1, hours=entry[2], minutes=entry[3])
+
+    return _to_dt(date_lines[-2]), _to_dt(date_lines[-1])
 
 
 @R.runners.add('MESH', runner_method='run_mesh')
@@ -186,12 +230,25 @@ class MESHRunner(BaseModelRunner):  # type: ignore[misc]
                 from symfluence.models.mesh.spatial_routing import route_spatial_runoff
                 route_spatial_runoff(self.forcing_mesh_path, routing_kernel)
             outputs_ok = self._verify_outputs()
-            # Check execution success (accept non-zero if outputs are valid)
-            if outputs_ok:
-                if not result.success:
+            # A non-zero exit is a failure even when output files exist (they
+            # can be partial). The only accepted exception is a run whose log
+            # reached MESH's normal-termination banner -- i.e. the simulation
+            # finished and the non-zero code came from teardown (e.g. an MPI
+            # finalize / runtime exit-time fault); MESH itself exits 1 via
+            # program_abort() on every model error.
+            if outputs_ok and not result.success:
+                if self._log_reports_normal_termination(log_file):
                     self.logger.warning(
-                        f"MESH exited with code {result.return_code} but required outputs were found; treating as success."
+                        f"MESH exited with code {result.return_code} after logging "
+                        f"'{MESH_NORMAL_TERMINATION}'; treating as success."
                     )
+                else:
+                    self.logger.error(
+                        f"MESH exited with code {result.return_code} without reaching "
+                        f"normal termination; existing outputs are not trusted"
+                    )
+                    outputs_ok = False
+            if outputs_ok:
                 # Copy outputs from forcing directory to output directory
                 self._copy_outputs()
 
@@ -394,39 +451,23 @@ class MESHRunner(BaseModelRunner):  # type: ignore[misc]
 
         return True
 
+    @staticmethod
+    def _log_reports_normal_termination(log_file: Path) -> bool:
+        """True when the MESH run log contains the normal-termination banner."""
+        try:
+            with open(log_file, 'r', encoding='utf-8', errors='replace') as f:
+                return any(MESH_NORMAL_TERMINATION in line for line in f)
+        except OSError:
+            return False
+
     def _get_expected_days(self) -> Optional[int]:
         """Infer expected simulation length from run options."""
         run_options = self.forcing_mesh_path / 'MESH_input_run_options.ini'
         if not run_options.exists():
             return None
-
         try:
-            with open(run_options, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-        except OSError:
-            return None
-
-        date_lines = []
-        for line in lines:
-            parts = line.strip().split()
-            if len(parts) == 4 and all(p.isdigit() for p in parts):
-                year = int(parts[0])
-                jday = int(parts[1])
-                hour = int(parts[2])
-                minute = int(parts[3])
-                if 1 <= jday <= 366 and 0 <= hour <= 23 and minute in (0, 30):
-                    date_lines.append((year, jday, hour, minute))
-
-        if len(date_lines) < 2:
-            return None
-
-        start = date_lines[-2]
-        end = date_lines[-1]
-        try:
-            from datetime import timedelta
-            start_dt = datetime(start[0], 1, 1) + timedelta(days=start[1] - 1, hours=start[2], minutes=start[3])
-            end_dt = datetime(end[0], 1, 1) + timedelta(days=end[1] - 1, hours=end[2], minutes=end[3])
-        except ValueError:
+            start_dt, end_dt = parse_run_options_dates(run_options)
+        except ConfigurationError:
             return None
 
         if end_dt < start_dt:
@@ -532,6 +573,7 @@ class MESHRunner(BaseModelRunner):  # type: ignore[misc]
             'SNO_H.csv', 'LQWSSNO_H.csv', 'cryosphere_metrics.json',
             'MESH_spatial_streamflow.csv', 'MESH_routing_tail.csv', 'MESH_routing_balance.json',
             'MESH_output_*.csv', 'MESH_output_*.txt',
+            'MESH_streamflow_Gauge_*.txt',
             'Basin_average_water_balance.csv',
             'GRU_water_balance.csv',
         ]

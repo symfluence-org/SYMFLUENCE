@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
+from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.modeling.base import StandardModelPostProcessor
 from symfluence.core.registries import R
 
@@ -53,12 +54,22 @@ class VICPostProcessor(StandardModelPostProcessor):
         """VIC outputs to standard simulation directory."""
         return self.get_simulation_dir('VIC')
 
+    def _get_domain_file(self) -> Path:
+        """VIC domain file (cell areas) written by the preprocessor."""
+        domain_file = self._get_config_value(
+            lambda: self.config.model.vic.domain_file,
+            default='vic_domain.nc',
+            dict_key='VIC_DOMAIN_FILE',
+        )
+        return self.project_dir / 'settings' / 'VIC' / 'parameters' / domain_file
+
     def extract_streamflow(self) -> Optional[Path]:
         """
         Extract streamflow from VIC outputs.
 
         VIC total streamflow = OUT_RUNOFF + OUT_BASEFLOW.
-        Sums both components and converts from mm/day to m³/s.
+        Sums both components, takes the area-weighted basin mean over grid
+        cells (shared with the calibration worker) and converts mm/day to m³/s.
 
         Returns:
             Path to processed streamflow file, or None if extraction fails.
@@ -82,38 +93,16 @@ class VICPostProcessor(StandardModelPostProcessor):
         try:
             import xarray as xr
 
-            ds = xr.open_dataset(output_file)
+            from .extractor import basin_mean_vic_runoff, load_vic_cell_area
 
-            # Find runoff variable
-            runoff = None
-            for var in ['OUT_RUNOFF', 'RUNOFF']:
-                if var in ds.data_vars:
-                    runoff = ds[var]
-                    break
-
-            if runoff is None:
-                self.logger.error("No runoff variable found in VIC output")
-                ds.close()
-                return None
-
-            # Aggregate spatially if needed
-            spatial_dims = [d for d in runoff.dims if d not in ['time']]
-            if spatial_dims:
-                total_runoff = runoff.sum(dim=spatial_dims)
-            else:
-                total_runoff = runoff
-
-            # Add baseflow
-            for var in ['OUT_BASEFLOW', 'BASEFLOW']:
-                if var in ds.data_vars:
-                    baseflow = ds[var]
-                    if spatial_dims:
-                        baseflow = baseflow.sum(dim=spatial_dims)
-                    total_runoff = total_runoff + baseflow
-                    break
-
-            streamflow = total_runoff.to_series()
-            ds.close()
+            cell_area = load_vic_cell_area(self._get_domain_file())
+            with xr.open_dataset(output_file) as ds:
+                try:
+                    total_runoff = basin_mean_vic_runoff(ds, cell_area)
+                except ModelExecutionError as e:
+                    self.logger.error(f"{e}")
+                    return None
+                streamflow = total_runoff.to_series()
 
             # Convert mm/day to m³/s
             streamflow = self.convert_mm_per_day_to_cms(streamflow)

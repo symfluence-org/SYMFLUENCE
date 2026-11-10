@@ -74,13 +74,10 @@ class SnowEvaluator(ModelEvaluator):
             **kwargs: Optional target override (target='swe' or target='sca')
         """
         # Allow target override from kwargs (for multivariate calibration)
-        self._target_override = kwargs.get('target')
-        super().__init__(config, project_dir, logger)
+        super().__init__(config, project_dir, logger, target=kwargs.get('target'))
 
         # Determine variable target: swe or sca
         self.optimization_target = self._target_override
-        if self.optimization_target:
-            self.optimization_target = self.optimization_target.lower()
 
         if not self.optimization_target:
             # Get from typed config, with fallback to flat config keys and CALIBRATION_VARIABLE
@@ -350,7 +347,7 @@ class SnowEvaluator(ModelEvaluator):
         if self.optimization_target == 'swe':
             # Check for exact match first
             for col in columns:
-                if col.lower() in ['swe', 'swe_mm']:
+                if col.lower() in ['swe', 'swe_mm', 'swe_in']:
                     return col
             # Then check for patterns
             for col in columns:
@@ -414,9 +411,12 @@ class SnowEvaluator(ModelEvaluator):
             if self.optimization_target == 'swe':
                 # Convert if data is likely in inches (common for NRCS SNOTEL data)
                 # Uses centralized UnitConverter for consistent unit handling
-                obs_series = UnitConverter.swe_inches_to_mm(
+                # Units come from the column name (swe_mm / swe_in) written
+                # by the observation handler; magnitude guessing is a
+                # warned legacy fallback only.
+                obs_series = UnitConverter.swe_series_to_mm(
                     obs_series,
-                    auto_detect=True,
+                    data_col,
                     logger=self.logger
                 )
                 obs_series = obs_series[obs_series >= 0]

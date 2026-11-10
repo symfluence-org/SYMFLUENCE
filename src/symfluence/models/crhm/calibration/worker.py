@@ -393,19 +393,10 @@ class CRHMWorker(BaseWorker):
             if flow_col is None:
                 return {'kge': self.penalty_score, 'error': 'No flow variable in output'}
 
-            sim_series = df[flow_col].astype(float)
-            sim_series.index = pd.to_datetime(sim_series.index)
-
-            # CRHM basinflow is in m^3/interval; resample to daily mean (m^3/s)
-            # Interval is typically 1 hour, so m^3/hr -> convert to m^3/s = /3600
-            interval_seconds = 3600  # Default 1-hour interval
-            if len(sim_series) > 1:
-                dt = (sim_series.index[1] - sim_series.index[0]).total_seconds()
-                if dt > 0:
-                    interval_seconds = dt
-            sim_series = sim_series / interval_seconds  # Convert to m^3/s
-            # Native CRHM output is labelled at the end of each interval.
-            sim_series.index = sim_series.index - pd.Timedelta(seconds=interval_seconds)
+            # CRHM basinflow is m^3/interval, end-labelled -> m^3/s,
+            # start-labelled (shared with the postprocessor), then daily mean.
+            from symfluence.models.crhm.extractor import basinflow_to_cms
+            sim_series = basinflow_to_cms(df[flow_col])
             sim_series = sim_series.resample('D').mean()
 
             # Skip warmup period
@@ -439,7 +430,7 @@ class CRHMWorker(BaseWorker):
             )
 
             results = self._streamflow_metrics.calculate_metrics(
-                obs_aligned, sim_aligned, metrics=['kge', 'nse']
+                obs_aligned, sim_aligned, metrics=self._requested_metrics(config)
             )
             return results
 

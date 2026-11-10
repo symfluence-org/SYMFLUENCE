@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, cast
 
 import numpy as np
 import torch
@@ -206,16 +206,11 @@ class DCouplerWorker(BaseWorker):
             if sim is None:
                 return {"KGE": -999.0}
 
-            # Load observations
-            obs = self._load_observations(config)
-            if obs is None:
+            # Load observations and pair them with the simulation by date
+            aligned = self._align_simulation_and_observations(sim, config)
+            if aligned is None:
                 return {"KGE": -999.0}
-
-            # Apply warmup period
-            warmup = int(config.get('WARMUP_DAYS', 0))
-            if warmup > 0:
-                sim = sim[warmup:]
-                obs = obs[warmup:]
+            sim, obs = aligned
 
             # Calculate metrics
             metrics = self._compute_metrics(sim, obs, config)
@@ -237,18 +232,100 @@ class DCouplerWorker(BaseWorker):
                         return outputs[comp_name][var]
         return None
 
-    def _load_observations(self, config: dict) -> Optional[torch.Tensor]:
-        """Load observation data for metric calculation."""
+    def _load_observations(self, config: dict) -> Optional[Any]:
+        """Load observation data for metric calculation.
+
+        Returns a ``pd.Series`` indexed by date when the file's first column
+        parses as dates (value column: the second column, or the first data
+        column), otherwise a dateless 1-D tensor of the second column.
+        """
         obs_file = config.get("OBSERVATIONS_FILE")
         if obs_file is None:
             return None
         try:
             import pandas as pd
             df = pd.read_csv(obs_file)
-            return torch.tensor(df.iloc[:, 1].values, dtype=torch.float32)
+            value_col = df.columns[1] if df.shape[1] > 1 else df.columns[0]
+            values = pd.to_numeric(df[value_col], errors='coerce')
+            if df.shape[1] > 1:
+                dates = pd.to_datetime(df.iloc[:, 0], errors='coerce')
+                if len(dates) and dates.notna().mean() >= 0.9:
+                    series = pd.Series(values.values, index=pd.DatetimeIndex(dates))
+                    series = series[series.index.notna()]
+                    return series[~series.index.duplicated(keep='first')].sort_index()
+            return torch.tensor(values.values, dtype=torch.float32)
         except Exception as e:  # noqa: BLE001 — must-not-raise contract
             self.logger.error(f"Failed to load observations: {e}")
             return None
+
+    def _simulation_time_index(self, n_steps: int, config: dict):
+        """Dates of the simulated steps, from EXPERIMENT_TIME_START and dt.
+
+        Returns None when the simulation start is not configured.
+        """
+        import pandas as pd
+        start = config.get("EXPERIMENT_TIME_START")
+        if not start and isinstance(self.config, dict):
+            start = self.config.get("EXPERIMENT_TIME_START")
+        if not start:
+            return None
+        try:
+            start_ts = pd.Timestamp(start)
+        except (TypeError, ValueError):
+            return None
+        dt = float(self._dt or 86400.0)  # same default as run_model()
+        return pd.date_range(start_ts, periods=n_steps, freq=pd.Timedelta(seconds=dt))
+
+    def _align_simulation_and_observations(
+        self, sim: torch.Tensor, config: dict
+    ) -> Optional[Tuple[torch.Tensor, torch.Tensor]]:
+        """Return (sim, obs) tensors paired by date, after warm-up removal.
+
+        With dated observations the simulated steps are stamped from
+        EXPERIMENT_TIME_START and the model dt, and only steps whose date
+        matches an observation date are kept (sim keeps its autograd graph).
+        WARMUP_DAYS is counted in days from the simulation start. A dateless
+        observation file (or an unknown simulation start) falls back to the
+        legacy positional pairing with a warning.
+        """
+        import pandas as pd
+        obs = self._load_observations(config)
+        if obs is None:
+            return None
+        warmup_days = int(config.get('WARMUP_DAYS', 0) or 0)
+        n_sim = int(sim.shape[0])
+
+        sim_index = None
+        if isinstance(obs, pd.Series):
+            sim_index = self._simulation_time_index(n_sim, config)
+            if sim_index is None:
+                self.logger.warning(
+                    "Observations are dated but EXPERIMENT_TIME_START is not set; "
+                    "pairing simulation and observations by position"
+                )
+
+        if isinstance(obs, pd.Series) and sim_index is not None:
+            obs = obs.dropna()
+            if warmup_days > 0:
+                cutoff = sim_index[0] + pd.Timedelta(days=warmup_days)
+                obs = obs[obs.index >= cutoff]
+            pos = sim_index.get_indexer(obs.index)
+            keep = pos >= 0
+            if not keep.any():
+                self.logger.error("No observation dates fall on simulated timesteps")
+                return None
+            sim_sel = sim[torch.as_tensor(pos[keep], dtype=torch.long)]
+            obs_t = torch.tensor(obs.values[keep], dtype=torch.float32)
+            return sim_sel, obs_t
+
+        # Legacy positional pairing (dateless observations)
+        obs_t = obs if isinstance(obs, torch.Tensor) else torch.tensor(
+            obs.values, dtype=torch.float32)
+        if warmup_days > 0:
+            sim = sim[warmup_days:]
+            obs_t = obs_t[warmup_days:]
+        min_len = min(len(sim), len(obs_t))
+        return sim[:min_len], obs_t[:min_len]
 
     def _compute_metrics(
         self,
@@ -256,46 +333,34 @@ class DCouplerWorker(BaseWorker):
         obs: torch.Tensor,
         config: dict,
     ) -> Dict[str, float]:
-        """Compute KGE and other metrics."""
-        # Align lengths
-        min_len = min(len(sim), len(obs))
-        sim = sim[:min_len].detach().cpu()
-        obs = obs[:min_len]
+        """Compute KGE/NSE with the shared symfluence.core.metrics definitions.
 
-        # Remove NaN
-        valid = ~(torch.isnan(sim) | torch.isnan(obs))
-        sim = sim[valid]
-        obs = obs[valid]
+        ``sim`` and ``obs`` must already be paired (see
+        _align_simulation_and_observations). Undefined metrics (e.g. constant
+        observations) are reported as the -999 failure sentinel.
+        """
+        from symfluence.core import metrics as core_metrics
 
-        if len(sim) < 10:
+        sim_np = sim.detach().cpu().numpy().astype(float).ravel()
+        obs_np = obs.detach().cpu().numpy().astype(float).ravel()
+        min_len = min(len(sim_np), len(obs_np))
+        sim_np, obs_np = sim_np[:min_len], obs_np[:min_len]
+
+        valid = ~(np.isnan(sim_np) | np.isnan(obs_np))
+        sim_np, obs_np = sim_np[valid], obs_np[valid]
+        if len(sim_np) < 10:
             return {"KGE": -999.0}
 
-        # KGE
-        sim_mean = sim.mean()
-        obs_mean = obs.mean()
-        sim_std = sim.std()
-        obs_std = obs.std()
-
-        if obs_std < 1e-10:
+        comps = cast("dict[str, float]", core_metrics.kge(obs_np, sim_np, return_components=True))
+        kge_value = comps["KGE"]
+        if not np.isfinite(kge_value):
             return {"KGE": -999.0}
-
-        r = torch.corrcoef(torch.stack([sim, obs]))[0, 1]
-        alpha = sim_std / obs_std
-        beta = sim_mean / obs_mean
-
-        kge = 1.0 - torch.sqrt((r - 1) ** 2 + (alpha - 1) ** 2 + (beta - 1) ** 2)
-
-        # NSE
-        ss_res = torch.sum((sim - obs) ** 2)
-        ss_tot = torch.sum((obs - obs_mean) ** 2)
-        nse = 1.0 - ss_res / (ss_tot + 1e-10)
-
         return {
-            "KGE": float(kge.item()),
-            "NSE": float(nse.item()),
-            "r": float(r.item()),
-            "alpha": float(alpha.item()),
-            "beta": float(beta.item()),
+            "KGE": float(kge_value),
+            "NSE": float(core_metrics.nse(obs_np, sim_np)),
+            "r": float(comps["r"]),
+            "alpha": float(comps["alpha"]),
+            "beta": float(comps["beta"]),
         }
 
     def evaluate_with_gradient(
@@ -332,7 +397,10 @@ class DCouplerWorker(BaseWorker):
         # Compute differentiable loss
         from dcoupler.losses.hydrological import kge_loss, nse_loss
         sim = self._extract_simulation(outputs, self.config)
-        obs = self._load_observations(self.config)
+        aligned = self._align_simulation_and_observations(sim, self.config)
+        if aligned is None:
+            raise RuntimeError("No observations aligned with the simulation")
+        sim, obs = aligned
 
         loss_fn = kge_loss if metric == "kge" else nse_loss
         loss = loss_fn(sim, obs)

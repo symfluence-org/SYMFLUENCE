@@ -323,10 +323,13 @@ class HubEauStreamflowHandler(BaseObservationHandler):
 
         # Resample to target timestep
         resample_freq = self._get_resample_freq()
-        resampled = df['discharge_cms'].resample(resample_freq).mean()
-
-        # Interpolate small gaps (up to 3 days)
-        resampled = resampled.interpolate(method='time', limit_direction='both', limit=72)
+        if data_type == 'daily':
+            # QmJ daily means: step within each day, no interpolation/gap fill.
+            resampled = self._daily_streamflow_to_target(df['discharge_cms'])
+        else:
+            resampled = df['discharge_cms'].resample(resample_freq).mean()
+            # Interpolate small gaps in the sub-daily real-time series (up to 3 days)
+            resampled = resampled.interpolate(method='time', limit_direction='both', limit=72)
 
         # Create metadata
         station_id = self._get_station_id()

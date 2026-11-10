@@ -14,6 +14,7 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
+from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.modeling.base import ModelResultExtractor
 
 
@@ -116,6 +117,13 @@ class PRMSResultExtractor(ModelResultExtractor):
         """
         var_names = self.get_variable_names(variable_type)
 
+        if variable_type == 'streamflow':
+            # Shared reader: correct column from header counts, cfs -> m3/s
+            from .statvar import read_netcdf_streamflow, read_statvar_streamflow
+            if output_file.suffix == '.nc':
+                return read_netcdf_streamflow(output_file)
+            return read_statvar_streamflow(output_file)
+
         if output_file.suffix == '.nc':
             return self._extract_from_netcdf(output_file, var_names)
         else:
@@ -156,34 +164,21 @@ class PRMSResultExtractor(ModelResultExtractor):
         return series
 
     def _extract_from_statvar(self, output_file: Path, var_names: List[str]) -> pd.Series:
-        """Extract variable from statvar text file."""
-        lines = output_file.read_text().strip().split('\n')
+        """Extract a variable from a statvar text file (mean over its elements)."""
+        from .statvar import parse_statvar
 
-        # Find header and variable positions
-        data_start = 0
-        for i, line in enumerate(lines):
-            if line.strip().startswith('####'):
-                data_start = i + 1
-                break
-
-        # Parse data
-        dates = []
-        values = []
-        for line in lines[data_start:]:
-            parts = line.strip().split()
-            if len(parts) >= 7:
-                try:
-                    year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
-                    date = pd.Timestamp(year=year, month=month, day=day)
-                    dates.append(date)
-                    values.append(float(parts[6]))
-                except (ValueError, IndexError):
-                    continue
-
-        if dates:
-            return pd.Series(values, index=dates, name=var_names[0])
-
-        raise ValueError(f"Could not extract data from {output_file}")
+        header, df = parse_statvar(output_file)
+        counts = dict(header)
+        for name in var_names:
+            if name not in counts:
+                continue
+            if counts[name] == 1:
+                return df[name].rename(name)
+            cols = [f"{name}_{i + 1}" for i in range(counts[name])]
+            return df[cols].mean(axis=1).rename(name)
+        raise ModelExecutionError(
+            f"None of {var_names} in {output_file}; header has {list(counts)}"
+        )
 
     def extract_streamflow(
         self,
@@ -194,7 +189,7 @@ class PRMSResultExtractor(ModelResultExtractor):
         """
         Extract streamflow from PRMS output.
 
-        PRMS seg_outflow is in cms by default.
+        basin_cfs / seg_outflow are converted from cfs to m3/s.
 
         Args:
             output_dir: Directory containing PRMS outputs

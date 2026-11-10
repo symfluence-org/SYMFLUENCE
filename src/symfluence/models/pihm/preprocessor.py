@@ -108,9 +108,10 @@ class PIHMPreProcessor(BaseModelPreProcessor):
             area_km2 = None
         if area_km2 is None:
             area_km2 = self._get_pihm_cfg('CATCHMENT_AREA')
-        if area_km2 is None:
-            self.logger.warning("CATCHMENT_AREA not set, using default 2210 km2")
-            area_km2 = 2210.0
+        from symfluence.core.metrics.streamflow_metrics import require_catchment_area_km2
+        area_km2 = require_catchment_area_km2(
+            self.config_dict, self.project_dir, self.domain_name, configured_km2=area_km2,
+        )
         return float(area_km2) * 1e6
 
     def _get_time_info(self):

@@ -326,6 +326,49 @@ class UnitConverter:
                 logger.debug("Converting SWE from inches to mm (forced)")
             return data * cls.INCHES_TO_MM
 
+    @staticmethod
+    def swe_column_units(column_name: str) -> Optional[str]:
+        """Units encoded in a processed SWE column name, or None if absent.
+
+        Observation handlers write the unit into the column name
+        (``swe_mm`` for CanSWE/NorSWE, ``swe_in`` for SNOTEL) so readers do
+        not have to guess it from the data magnitude.
+        """
+        name = str(column_name).strip().lower()
+        if name.endswith(('_mm', '(mm)', '_kg_m2', '_kgm-2')):
+            return 'mm'
+        if name.endswith(('_in', '_inch', '_inches', '(in)')):
+            return 'in'
+        return None
+
+    @classmethod
+    def swe_series_to_mm(
+        cls,
+        data: 'pd.Series',
+        column_name: str,
+        logger: Optional[logging.Logger] = None
+    ) -> 'pd.Series':
+        """Convert a processed SWE column to mm using the unit in its name.
+
+        Only legacy files whose column carries no unit (e.g. a bare ``swe``
+        written by older SNOTEL processing) fall back to magnitude detection,
+        with a warning: shallow-snow mm series (max < 250 mm) are otherwise
+        indistinguishable from inches and would be inflated 25.4x.
+        """
+        units = cls.swe_column_units(column_name)
+        if units == 'mm':
+            return data
+        if units == 'in':
+            return data * cls.INCHES_TO_MM
+        if logger:
+            logger.warning(
+                f"SWE column '{column_name}' does not state its units; guessing "
+                f"from magnitude (max < {cls.SWE_UNIT_THRESHOLD} -> inches). "
+                "Re-run observation processing to write a unit-explicit column "
+                "(swe_mm / swe_in)."
+            )
+        return cls.swe_inches_to_mm(data, auto_detect=True, logger=logger)
+
     @classmethod
     def detect_and_convert_mass_flux(
         cls,

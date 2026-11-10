@@ -129,8 +129,11 @@ class CLMParFlowPlotter(BasePlotter):
             default=0.0, dict_key='CLMPARFLOW_BOT',
         ))
 
+        from symfluence.models.parflow.extractor import resolve_dump_interval_hours
         common_kwargs = dict(
-            timestep_hours=timestep_hours, start_date=start_date,
+            timestep_hours=timestep_hours,
+            dump_interval_hours=resolve_dump_interval_hours(self.config, 'clmparflow'),
+            start_date=start_date,
             k_sat=k_sat, dx=dx, dy=dy, dz=dz,
         )
 

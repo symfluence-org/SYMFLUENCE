@@ -102,104 +102,55 @@ def calculate_specific_humidity(dewpoint_K: xr.DataArray, pressure_Pa: xr.DataAr
     return spechum
 
 
-def _is_cumulative_accumulation(data: xr.DataArray) -> bool:
-    """
-    Detect whether data is cumulatively accumulated (values increase
-    monotonically within forecast periods with periodic resets) or
-    per-step accumulated (each timestep is independent).
+# ERA5 accumulated fields on both ARCO (``ar/full_37-1h-0p25deg``) and CDS
+# single-levels are totals over the hour ending at the timestamp, not
+# cumulative forecast accumulations (ERA5-Land is different). When the ARCO
+# loader keeps every N-th hour it first sums the N hourly totals and records N
+# in this dataset attribute, so the total always covers the whole interval.
+ACCUMULATION_HOURS_ATTR = 'symfluence_accumulation_hours'
 
-    ERA5 data from different sources may use different conventions:
-    - CDS: Cumulatively accumulated from forecast init (values increase within periods)
-    - ARCO: May provide per-step values (each hour's total independently)
-
-    Returns:
-        True if data appears cumulatively accumulated, False if per-step.
-    """
-    diff = data.diff('time')
-    n_negative = int((diff < 0).sum())
-    n_total = int(diff.size)
-    if n_total == 0:
-        return True
-    negative_fraction = n_negative / n_total
-    # Cumulative data has negative diffs only at forecast resets (~8% for 12h cycles).
-    # Per-step data has negative diffs whenever the flux decreases (~30-50% typically).
-    return negative_fraction < 0.15
+# ARCO accumulated variables (per-hour totals) that must be summed, not
+# subsampled, when the time step is coarser than one hour.
+ARCO_ACCUMULATED_VARIABLES = (
+    'total_precipitation',
+    'surface_solar_radiation_downwards',
+    'surface_thermal_radiation_downwards',
+)
 
 
-def deaccumulate_to_rate(
-    accumulated: xr.DataArray,
-    time_seconds: xr.DataArray,
+def per_step_total_to_rate(
+    total: xr.DataArray,
+    step_seconds: float,
     scale_factor: float = 1.0,
     negate_if_negative: bool = False,
-    var_name: str = ''
+    var_name: str = '',
 ) -> xr.DataArray:
-    """
-    Convert accumulated ERA5 variable to instantaneous rate.
-
-    ERA5 accumulated variables (precipitation, radiation) need to be
-    de-accumulated by taking the time difference and dividing by the
-    time step duration. This function auto-detects whether the data is
-    cumulatively accumulated (values increase within forecast periods)
-    or per-step accumulated (each timestep contains its own total).
+    """Convert an ERA5 per-step accumulated total to a mean rate over the step.
 
     Args:
-        accumulated: Accumulated variable values
-        time_seconds: Time step durations in seconds
-        scale_factor: Scaling factor to apply (e.g., 1000 for m to mm conversion)
-        negate_if_negative: If True, negate values if minimum is negative
-                           (handles ERA5's negative downward flux convention)
-        var_name: Variable name for range clamping (e.g., 'precipitation_flux', 'surface_downwelling_longwave_flux')
+        total: Accumulated total over each step ending at the timestamp
+            (m for precipitation, J m-2 for radiation).
+        step_seconds: Length of the accumulation interval in seconds.
+        scale_factor: Scaling factor (e.g. 1000 for m -> mm).
+        negate_if_negative: Flip sign if the field uses a negative-downward
+            convention.
+        var_name: Output variable name, for valid-range clamping.
 
     Returns:
-        Instantaneous rate values
+        Mean rate over each step (float32).
     """
-    logger = logging.getLogger(__name__)
-    val = accumulated
+    val = total
+    if negate_if_negative and float(val.min()) < 0.0:
+        val = -val
+    val = xr.where(np.isfinite(val), val, 0.0)
+    rate = (val / float(step_seconds)) * scale_factor
 
-    # Handle ERA5's negative downward flux convention if needed
-    if negate_if_negative:
-        if float(val.min()) < 0.0:
-            val = -val
-
-    is_cumulative = _is_cumulative_accumulation(val)
-
-    if is_cumulative:
-        # Standard de-accumulation: take time difference
-        diff = val.diff('time')
-
-        # Handle accumulation resets (when diff is negative, indicating new accumulation period)
-        # For resets, use the current value as the increment
-        diff = xr.where(diff >= 0, diff, val.isel(time=slice(1, None)))
-
-        # Handle NaN/inf
-        diff = xr.where(np.isfinite(diff), diff, 0.0)
-
-        # Convert to rate and scale
-        rate = (diff / time_seconds) * scale_factor
-    else:
-        # Per-step data: each timestep is an independent accumulated total.
-        # Just divide by the time step duration to get the rate.
-        # Slice off the first timestep to match the time dimension of diff-based output.
-        per_step = val.isel(time=slice(1, None))
-
-        # Handle NaN/inf
-        per_step = xr.where(np.isfinite(per_step), per_step, 0.0)
-
-        # Convert to rate and scale
-        rate = (per_step / time_seconds) * scale_factor
-        logger.debug(
-            f"Detected per-step accumulation for {var_name or 'variable'} "
-            f"(using direct division instead of differencing)"
-        )
-
-    # Apply valid range if specified
     if var_name in ERA5_VARIABLE_RANGES:
         min_val = ERA5_VARIABLE_RANGES[var_name]['min']
         max_val = ERA5_VARIABLE_RANGES[var_name]['max']
         rate = xr.where(np.isfinite(rate), rate, min_val).clip(min=min_val, max=max_val)
     else:
         rate = xr.where(np.isfinite(rate), rate, 0.0).clip(min=0.0)
-
     return rate.astype('float32')
 
 
@@ -286,9 +237,6 @@ def era5_to_summa_schema(
 
     processed_vars = {}
 
-    # Calculate time step duration in seconds
-    dt = (ds['time'].diff('time') / np.timedelta64(1, 's')).astype('float32')
-
     # === Instantaneous variables ===
 
     # Temperature
@@ -336,8 +284,9 @@ def era5_to_summa_schema(
         processed_vars['specific_humidity'] = calculate_specific_humidity(dewpoint, pressure)
         logger.debug(f"Calculated specific humidity from {dew_var}, {pres_var}")
 
-    # CDS ERA5 single-levels supplies one-hour totals, not cumulative
-    # forecasts (ERA5-Land is different). Never infer this from monotonicity.
+    # ERA5 single-levels (CDS and ARCO) supplies per-hour totals, not
+    # cumulative forecasts (ERA5-Land is different). Never infer this from
+    # monotonicity.
     for logical, name, scale, negate in [
         ('precipitation', 'precipitation_flux', 1000.0, False),
         ('sw_radiation', 'surface_downwelling_shortwave_flux', 1.0, False),
@@ -349,8 +298,14 @@ def era5_to_summa_schema(
         if source == 'cds':
             rate = ds[variable] * (scale / 3600.0)
         else:
-            rate = deaccumulate_to_rate(ds[variable], dt, scale_factor=scale,
-                                        negate_if_negative=negate, var_name=name)
+            # ARCO: per-hour totals, or N-hour sums when the loader kept every
+            # N-th hour. The first step is dropped like the instantaneous
+            # variables (it is the continuity step from the previous chunk).
+            step_hours = float(ds.attrs.get(ACCUMULATION_HOURS_ATTR, 1))
+            rate = per_step_total_to_rate(
+                ds[variable].isel(time=slice(1, None)), step_hours * 3600.0,
+                scale_factor=scale, negate_if_negative=negate, var_name=name,
+            )
         processed_vars[name] = rate
         processed_vars[name].attrs = SUMMA_VARIABLE_ATTRS[name]
 

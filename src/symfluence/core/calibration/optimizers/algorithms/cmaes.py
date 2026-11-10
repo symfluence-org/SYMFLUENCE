@@ -118,7 +118,7 @@ class CMAESAlgorithm(OptimizationAlgorithm):
 
         # Initialize state
         # Mean at center of normalized space [0, 1]
-        mean = np.full(n_params, 0.5)
+        mean = self._start_point(n_params, kwargs, np.full(n_params, 0.5))
 
         sigma = self._get_config_value(
             lambda: self.config.optimization.cmaes.initial_sigma,

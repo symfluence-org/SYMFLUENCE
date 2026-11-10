@@ -84,27 +84,12 @@ class FileProcessor(ConfigMixin):
             lambda: self.config.domain.discretization, dict_key='SUB_GRID_DISCRETIZATION')
         token = discretization_token(disc)
 
-        # Try to extract a date from the filename
-        date_tag = None
-
-        # Pattern 1: YYYY-MM-DD-HH-MM-SS
-        match = re.search(r"(\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2})", input_stem)
-        if match:
-            date_tag = match.group(1)
-        else:
-            # Pattern 2: YYYYMMDD or YYYYMM
-            match = re.search(r"(19|20)(\d{4,6})", input_stem)
-            if match:
-                date_str = match.group(0)
-                try:
-                    if len(date_str) == 6:
-                        dt = datetime.strptime(date_str, "%Y%m")
-                        date_tag = dt.strftime("%Y-%m-01-00-00-00")
-                    elif len(date_str) == 8:
-                        dt = datetime.strptime(date_str, "%Y%m%d")
-                        date_tag = dt.strftime("%Y-%m-%d-00-00-00")
-                except ValueError:
-                    pass
+        # Extract the date tag from the filename. Only the part AFTER the
+        # domain name is searched, and the LAST digit-bounded date token wins:
+        # a digit-bearing domain name (e.g. 'usgs_13201010') or dataset name
+        # must never be read as the date, or every monthly file maps to the
+        # same output name and the months overwrite each other.
+        date_tag = self._extract_date_tag(input_stem, domain_name)
 
         if date_tag:
             output_filename = f"{domain_name}_{forcing_dataset}_remapped_{token}_{date_tag}.nc"
@@ -123,6 +108,44 @@ class FileProcessor(ConfigMixin):
             output_filename = f"{domain_name}_{forcing_dataset}_remapped_{token}_{clean_stem}.nc"
 
         return self.output_dir / output_filename
+
+    _FULL_DATE_RE = re.compile(r"(?<!\d)(\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2})(?!\d)")
+    _COMPACT_DATE_RE = re.compile(
+        r"(?<!\d)((?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])?)(?!\d)")
+
+    @classmethod
+    def _extract_date_tag(cls, input_stem: str, domain_name: Optional[str]) -> Optional[str]:
+        """Return the ``YYYY-MM-DD-HH-MM-SS`` date tag encoded in *input_stem*.
+
+        The domain name prefix is stripped before matching and the last
+        digit-bounded token is used, so digits inside the domain or dataset
+        name are never mistaken for the file's date.
+        """
+        stem = input_stem
+        if domain_name:
+            for prefix in (f"domain_{domain_name}_", f"{domain_name}_"):
+                if stem.startswith(prefix):
+                    stem = stem[len(prefix):]
+                    break
+            else:
+                idx = stem.rfind(str(domain_name))
+                if idx >= 0:
+                    stem = stem[idx + len(str(domain_name)):]
+
+        full = cls._FULL_DATE_RE.findall(stem)
+        if full:
+            return full[-1]
+
+        compact = cls._COMPACT_DATE_RE.findall(stem)
+        if compact:
+            date_str = compact[-1]
+            try:
+                if len(date_str) == 6:
+                    return datetime.strptime(date_str, "%Y%m").strftime("%Y-%m-01-00-00-00")
+                return datetime.strptime(date_str, "%Y%m%d").strftime("%Y-%m-%d-00-00-00")
+            except ValueError:
+                return None
+        return None
 
     def filter_processed_files(self, forcing_files: List[Path]) -> List[Path]:
         """

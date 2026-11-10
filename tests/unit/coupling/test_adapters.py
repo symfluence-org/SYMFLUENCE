@@ -117,3 +117,72 @@ class TestJAXAdapters:
                 assert lo <= params[pname].item() <= hi, f"{pname} out of bounds"
         except ImportError:
             pytest.skip("Snow-17 model not available")
+
+
+def _physical_params(comp) -> dict:
+    return {k: float(v.detach().reshape(-1)[0]) for k, v in comp.get_physical_parameters().items()}
+
+
+def _run_adapter(comp, n: int, precip: float, temp: float, pet: float):
+    state = comp.get_initial_state()
+    inputs = {
+        "precip": torch.tensor(precip),
+        "temp": torch.tensor(temp),
+        "pet": torch.tensor(pet),
+    }
+    runoff = []
+    for _ in range(n):
+        out, state = comp.step(inputs, state, 86400.0)
+        runoff.append(float(out["runoff"].reshape(-1)[0]))
+    return runoff, state
+
+
+class TestJAXAdapterStepParity:
+    """The HBV and TOPMODEL adapters must step and match the plugins' own simulate().
+
+    Regression: HBV called get_routing_buffer_length(lag_days=...) and raised
+    TypeError on construction; TOPMODEL passed ti_mean/n_classes to
+    generate_ti_distribution and packed per-TI-class vectors into 5 scalar slots.
+    """
+
+    @pytest.fixture(autouse=True)
+    def check_jax(self):
+        pytest.importorskip("jax")
+
+    def test_hbv_matches_plugin_simulate(self):
+        np = pytest.importorskip("numpy")
+        jhbv_model = pytest.importorskip("jhbv.model")
+        from symfluence.coupling.adapters.jax_adapters import HBVJAXComponent
+
+        comp = HBVJAXComponent()
+        n = 40
+        runoff, state = _run_adapter(comp, n, precip=5.0, temp=10.0, pet=2.0)
+        assert state.shape == (comp.state_size,)
+
+        init = jhbv_model.create_initial_state(
+            initial_snow=0.0, initial_sm=0.0, initial_suz=0.0, initial_slz=0.0,
+            use_jax=False,
+        )
+        q, _ = jhbv_model.simulate(
+            np.full(n, 5.0), np.full(n, 10.0), np.full(n, 2.0),
+            params=_physical_params(comp), initial_state=init,
+            warmup_days=0, use_jax=False,
+        )
+        np.testing.assert_allclose(runoff, np.asarray(q), rtol=1e-4, atol=1e-5)
+
+    def test_topmodel_matches_plugin_simulate(self):
+        np = pytest.importorskip("numpy")
+        jtop_model = pytest.importorskip("jtopmodel.model")
+        from symfluence.coupling.adapters.jax_adapters import TopmodelJAXComponent
+
+        comp = TopmodelJAXComponent()
+        n = 40
+        runoff, state = _run_adapter(comp, n, precip=5.0, temp=10.0, pet=2.0)
+        # State must not grow from step to step (it did with (1,)-shaped params).
+        assert state.shape == (comp.state_size,)
+
+        q, _ = jtop_model.simulate(
+            np.full(n, 5.0), np.full(n, 10.0), np.full(n, 2.0),
+            params=_physical_params(comp), warmup_days=0, use_jax=False,
+        )
+        np.testing.assert_allclose(runoff, np.asarray(q), rtol=1e-4, atol=1e-4)

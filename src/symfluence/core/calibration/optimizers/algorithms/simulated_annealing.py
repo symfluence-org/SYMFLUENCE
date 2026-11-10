@@ -131,7 +131,7 @@ class SimulatedAnnealingAlgorithm(OptimizationAlgorithm):
         )
 
         # Initialize current solution randomly
-        current = np.random.uniform(0, 1, n_params)
+        current = self._start_point(n_params, kwargs, np.random.uniform(0, 1, n_params))
         current_fit = evaluate_solution(current, 0)
 
         # Track best solution (global best)

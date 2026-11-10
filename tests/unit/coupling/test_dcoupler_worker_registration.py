@@ -209,3 +209,51 @@ class TestDCouplerWorkerMetrics:
         mock_graph.components = {'land': mock_comp, 'routing': mock_comp2}
 
         assert worker.supports_native_gradients() is False
+
+
+class TestDCouplerWorkerDateAlignment:
+    """Observations are paired with simulated steps by date, not position."""
+
+    def _obs_csv(self, tmp_path, dates, values):
+        import pandas as pd
+        path = tmp_path / 'obs.csv'
+        pd.DataFrame({'date': dates, 'q': values}).to_csv(path, index=False)
+        return path
+
+    def test_obs_starting_later_paired_by_date(self, tmp_path):
+        import pandas as pd
+
+        from symfluence.coupling.worker import DCouplerWorker
+
+        rng = np.random.default_rng(0)
+        sim_vals = rng.gamma(2, 5, 365)
+        sim = torch.tensor(sim_vals, dtype=torch.float32)
+        dates = pd.date_range('2010-03-01', periods=200, freq='D')
+        # Obs equal the sim on matching dates (sim starts 2010-01-01)
+        offset = (dates[0] - pd.Timestamp('2010-01-01')).days
+        path = self._obs_csv(tmp_path, dates.strftime('%Y-%m-%d'), sim_vals[offset:offset + 200])
+        config = {'OBSERVATIONS_FILE': str(path), 'EXPERIMENT_TIME_START': '2010-01-01'}
+        worker = DCouplerWorker(config)
+        worker._last_outputs = {'routing': {'discharge': sim}}
+        metrics = worker.calculate_metrics(str(tmp_path), config)
+        assert metrics['KGE'] == pytest.approx(1.0, abs=1e-5)
+
+    def test_constant_obs_matches_core_semantics(self, tmp_path):
+        from symfluence.coupling.worker import DCouplerWorker
+
+        worker = DCouplerWorker({})
+        sim = torch.linspace(1, 2, 50)
+        obs = torch.full((50,), 3.0)
+        assert worker._compute_metrics(sim, obs, {})['KGE'] == -999.0
+
+    def test_metrics_match_core(self):
+        from symfluence.core import metrics as core_metrics
+        from symfluence.coupling.worker import DCouplerWorker
+
+        rng = np.random.default_rng(1)
+        obs = rng.gamma(2, 5, 100)
+        sim = obs * 1.2 + rng.normal(0, 1, 100)
+        out = DCouplerWorker({})._compute_metrics(
+            torch.tensor(sim, dtype=torch.float64), torch.tensor(obs, dtype=torch.float64), {})
+        assert out['KGE'] == pytest.approx(core_metrics.kge(obs, sim))
+        assert out['NSE'] == pytest.approx(core_metrics.nse(obs, sim))

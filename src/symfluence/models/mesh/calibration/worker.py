@@ -232,7 +232,6 @@ class MESHWorker(BaseWorker):
         Returns:
             Dictionary of metric names to values
         """
-        from datetime import datetime
 
         from symfluence.models.mesh.extractor import MESHResultExtractor
 
@@ -290,11 +289,9 @@ class MESHWorker(BaseWorker):
                 start_date = kwargs.get('start_date')
                 if start_date is None:
                     # Try to parse from run options if available
-                    run_opts = output_dir / 'MESH_input_run_options.ini'
-                    if run_opts.exists():
-                        start_date = self._parse_start_date_from_run_options(run_opts)
-                    else:
-                        start_date = datetime(2001, 1, 1)
+                    start_date = self._parse_start_date_from_run_options(
+                        output_dir / 'MESH_input_run_options.ini'
+                    )
 
                 # Extract daily runoff using extractor
                 sim_series = extractor.extract_variable(
@@ -539,26 +536,14 @@ class MESHWorker(BaseWorker):
             return {'kge': self.penalty_score}
 
     def _parse_start_date_from_run_options(self, run_opts_path: Path):
-        """Parse simulation start date from MESH run options file."""
-        from datetime import datetime
+        """Simulation start date from the MESH run options file.
 
-        try:
-            with open(run_opts_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-
-            # Look for simulation start line (format: YYYY JJJ HH MM)
-            import re
-            # The start date line typically looks like: 2001 001   1   0
-            match = re.search(r'(\d{4})\s+(\d{1,3})\s+\d+\s+\d+\s*$', content, re.MULTILINE)
-            if match:
-                year = int(match.group(1))
-                jday = int(match.group(2))
-                from datetime import timedelta
-                return datetime(year, 1, 1) + timedelta(days=jday - 1)
-        except (IOError, ValueError):
-            pass
-
-        return datetime(2001, 1, 1)  # Default
+        Uses the runner's strict parser (last two ``YYYY JJJ HH MM`` lines)
+        and raises ConfigurationError rather than assuming a start date.
+        """
+        from symfluence.models.mesh.runner import parse_run_options_dates
+        start, _ = parse_run_options_dates(run_opts_path)
+        return start
 
     def _parse_spinup_from_run_options(self, run_opts_path: Path) -> int:
         """Parse actual METRICSSPINUP days from MESH run options file.

@@ -17,6 +17,27 @@ import pandas as pd
 from symfluence.core.modeling.base import ModelResultExtractor
 
 
+def basinflow_to_cms(volume: pd.Series) -> pd.Series:
+    """CRHM basinflow (m3 per interval, end-labelled) -> m3/s, start-labelled.
+
+    Shared by the calibration worker and the postprocessor. The interval is
+    inferred from the first two timestamps (1 h when undeterminable). CRHM
+    stamps each value at the *end* of the interval it covers, so labels are
+    moved back one interval before any daily resampling -- otherwise the last
+    hour of each day is attributed to the next day.
+    """
+    series = volume.astype(float).copy()
+    series.index = pd.DatetimeIndex(series.index)
+    interval_seconds = 3600.0
+    if len(series) > 1:
+        dt = (series.index[1] - series.index[0]).total_seconds()
+        if dt > 0:
+            interval_seconds = dt
+    series = series / interval_seconds
+    series.index = series.index - pd.Timedelta(seconds=interval_seconds)
+    return series
+
+
 class CRHMResultExtractor(ModelResultExtractor):
     """CRHM-specific result extraction.
 

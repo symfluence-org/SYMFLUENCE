@@ -25,7 +25,7 @@ from shapely.validation import make_valid
 from symfluence.core.exceptions import ShapefileError
 from symfluence.core.geometry_utils import clean_geometry
 from symfluence.core.path_resolver import PathResolverMixin
-from symfluence.geospatial.raster_utils import analyze_raster_values
+from symfluence.geospatial.raster_utils import analyze_raster_values, valid_pixel_mask
 
 from .artifacts import DiscretizationArtifacts
 from .attributes import aspect, combined, elevation, grus, landclass, radiation, soilclass
@@ -358,8 +358,16 @@ class DomainDiscretizer(PathResolverMixin):
 
         # Open the classification raster once and mask per GRU; reopening the
         # same file inside the loop is pure per-GRU overhead.
+        output_crs = gru_gdf.crs
         with rasterio.open(raster_path) as src:
             nodata_value = src.nodata
+
+            # Masking and the vectorised HRU shapes are in the raster's CRS,
+            # so the GRUs must be too; reprojected back to the GRU CRS below.
+            if src.crs is not None and gru_gdf.crs is not None and gru_gdf.crs != src.crs:
+                self.logger.info(
+                    f"Reprojecting GRUs from {gru_gdf.crs} to raster CRS {src.crs} for masking")
+                gru_gdf = gru_gdf.to_crs(src.crs)
 
             # Process each GRU individually
             for gru_idx, gru_row in gru_gdf.iterrows():
@@ -385,15 +393,7 @@ class DomainDiscretizer(PathResolverMixin):
                     )
                     continue
 
-                # Create mask for valid pixels
-                if nodata_value is not None:
-                    valid_mask = out_image != nodata_value
-                else:
-                    valid_mask = (
-                        ~np.isnan(out_image)
-                        if out_image.dtype == np.float64
-                        else np.ones_like(out_image, dtype=bool)
-                    )
+                valid_mask = valid_pixel_mask(out_image, nodata_value)
 
                 if not np.any(valid_mask):
                     self.logger.warning(f"No valid pixels found in GRU {gru_id}")
@@ -432,7 +432,11 @@ class DomainDiscretizer(PathResolverMixin):
                 hru_id_counter += len(gru_hrus)
 
         self.logger.info(f"Created {len(all_hrus)} HRUs across all GRUs")
-        return gpd.GeoDataFrame(all_hrus, crs=gru_gdf.crs)
+        hrus = gpd.GeoDataFrame(all_hrus, geometry='geometry', crs=gru_gdf.crs) if all_hrus \
+            else gpd.GeoDataFrame(all_hrus, crs=gru_gdf.crs)
+        if output_crs is not None and hrus.crs is not None and hrus.crs != output_crs:
+            hrus = hrus.to_crs(output_crs)
+        return hrus
 
     def _create_hrus_from_bands(
         self,

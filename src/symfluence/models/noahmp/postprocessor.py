@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
+from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.modeling.base import StandardModelPostProcessor
 from symfluence.core.registries import R
 
@@ -20,14 +21,15 @@ from symfluence.core.registries import R
 class NoahMPPostProcessor(StandardModelPostProcessor):
     """Postprocessor for standalone Noah-MP.
 
-    Extracts total runoff (SFCRNOFF + UGDRNOFF) from the output NetCDF,
-    converting from kg/m2 to mm.
+    Extracts total runoff (SFCRNOFF + UGDRNOFF) from the output NetCDF and
+    converts it to daily discharge (m3/s) exactly as the calibration worker
+    does, writing the standard ``NOAHMP_discharge_cms`` column.
     """
 
     model_name = "NOAHMP"
     output_file_pattern = "output*.nc"
     streamflow_variable = "total_runoff"
-    streamflow_unit = "mm"
+    streamflow_unit = "cms"
 
     def _get_model_name(self) -> str:
         return "NOAHMP"
@@ -44,9 +46,6 @@ class NoahMPPostProcessor(StandardModelPostProcessor):
         return self.get_simulation_dir('NOAHMP')
 
     def extract_streamflow(self) -> Optional[Path]:
-        import pandas as pd
-        import xarray as xr
-
         self.logger.info("Extracting runoff from Noah-MP outputs")
         # The namelist uses a relative output_filename, so the model writes
         # output.nc into its working directory (settings/NOAHMP) for the
@@ -74,40 +73,29 @@ class NoahMPPostProcessor(StandardModelPostProcessor):
             return None
 
         try:
-            ds = xr.open_dataset(nc_file)
+            # Same conversion as the calibration worker: SFCRNOFF + UGDRNOFF
+            # (mm/step) -> daily m3/s with the shapefile area, then the
+            # calibrated Nash cascade (settings/NOAHMP/route_k.txt).
+            from symfluence.core.metrics.streamflow_metrics import StreamflowMetrics
 
-            runoff = None
-            if 'SFCRNOFF' in ds.data_vars and 'UGDRNOFF' in ds.data_vars:
-                runoff = ds['SFCRNOFF'] + ds['UGDRNOFF']
-            else:
-                for var in ['SFCRNOFF', 'UGDRNOFF', 'QINSUR', 'RUNSRF', 'RUNSUB']:
-                    if var in ds.data_vars:
-                        runoff = ds[var]
-                        break
+            from .extractor import noahmp_daily_discharge_cms, read_route_k
 
-            if runoff is None:
-                self.logger.error(f"No runoff variable in {nc_file}")
-                ds.close()
-                return None
-
-            spatial_dims = [d for d in runoff.dims if d not in ['time']]
-            if spatial_dims:
-                runoff = runoff.mean(dim=spatial_dims)
-
-            streamflow = runoff.to_series()
-            ds.close()
-
-            if not isinstance(streamflow.index, pd.DatetimeIndex):
-                streamflow.index = pd.to_datetime(streamflow.index)
+            area_km2 = StreamflowMetrics().get_catchment_area(
+                self.config_dict, self.project_dir, self.domain_name, source='shapefile'
+            )
+            streamflow = noahmp_daily_discharge_cms(
+                nc_file, area_km2 * 1e6,
+                read_route_k(self.project_dir / 'settings' / 'NOAHMP'),
+            )
             streamflow.index.name = 'datetime'
 
             if self.resample_frequency:
                 streamflow = streamflow.resample(self.resample_frequency).mean()
 
             return self.save_streamflow_to_results(
-                streamflow, model_column_name='NOAHMP_runoff_mm'
+                streamflow, model_column_name='NOAHMP_discharge_cms'
             )
-        except (OSError, ValueError, KeyError, TypeError) as e:
+        except (OSError, ValueError, KeyError, TypeError, ModelExecutionError) as e:
             import traceback
             self.logger.error(f"Error extracting Noah-MP runoff: {e}")
             self.logger.debug(traceback.format_exc())

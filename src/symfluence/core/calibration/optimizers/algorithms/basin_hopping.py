@@ -142,7 +142,7 @@ class BasinHoppingAlgorithm(OptimizationAlgorithm):
         )
 
         # Initialize at random point or center
-        current_pos = np.random.uniform(0, 1, n_params)
+        current_pos = self._start_point(n_params, kwargs, np.random.uniform(0, 1, n_params))
         current_fit = evaluate_solution(current_pos, 0)
 
         # Local minimize the starting point

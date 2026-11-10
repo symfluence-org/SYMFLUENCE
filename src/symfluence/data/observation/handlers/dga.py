@@ -154,11 +154,8 @@ class DGAStreamflowHandler(BaseObservationHandler):
             )
 
         # Resample to target timestep
-        resample_freq = self._get_resample_freq()
-        resampled = df['discharge_cms'].resample(resample_freq).mean()
-        resampled = resampled.interpolate(
-            method='time', limit_direction='both', limit=30
-        )
+        # DGA (CAMELS-CL) values are daily means, never interpolated.
+        resampled = self._daily_streamflow_to_target(df['discharge_cms'])
 
         # Save
         output_dir = self.project_observations_dir / "streamflow" / "preprocessed"

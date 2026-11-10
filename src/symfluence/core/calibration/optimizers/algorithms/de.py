@@ -93,7 +93,7 @@ class DEAlgorithm(OptimizationAlgorithm):
 
         # Initialize population
         self.logger.info(f"Evaluating initial population ({pop_size} individuals)...")
-        population = np.random.uniform(0, 1, (pop_size, n_params))
+        population = self._seed_population(np.random.uniform(0, 1, (pop_size, n_params)), kwargs)
         fitness = evaluate_population(population, 0)
 
         # Record initial best with enhanced tracking

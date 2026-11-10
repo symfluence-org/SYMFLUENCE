@@ -17,6 +17,7 @@ import numpy as np
 import xarray as xr
 from shapely.geometry import Polygon
 
+from symfluence.core.exceptions import DataAcquisitionError
 from symfluence.core.registries import R
 
 from ...utils import VariableStandardizer
@@ -218,13 +219,26 @@ class HRRRHandler(BaseDatasetHandler):
             ds["wind_speed"] = windspd
 
         # Precipitation rate
-        # NOTE: HRRR analysis fields do not contain valid precipitation data
-        # Create zero-precipitation fallback if missing
+        # NOTE: HRRR analysis fields do not contain valid precipitation data.
+        # A silent all-zero precipitation forcing produces a model run that
+        # looks fine but has no water input, so refuse unless the user opts in
+        # explicitly (e.g. because precipitation is merged from MRMS/Stage IV
+        # downstream).
         if "precipitation_flux" not in ds:
+            allow_zero = self._get_config_value(
+                lambda: None, default=False, dict_key='HRRR_ALLOW_ZERO_PRECIP')
+            if str(allow_zero).strip().lower() not in ('true', '1', 'yes'):
+                raise DataAcquisitionError(
+                    "HRRR analysis fields contain no precipitation, so HRRR alone "
+                    "cannot force a hydrological model. Use a forcing dataset with "
+                    "precipitation (e.g. AORC, CONUS404), or set "
+                    "HRRR_ALLOW_ZERO_PRECIP: true if you supply precipitation "
+                    "from another source and accept a zero placeholder here."
+                )
             self.logger.warning(
                 "HRRR analysis fields do not contain precipitation data. "
-                "Creating zero-precipitation fallback. "
-                "Users should supplement with MRMS, Stage IV, or HRRR forecast fields."
+                "HRRR_ALLOW_ZERO_PRECIP is set: writing a zero-precipitation "
+                "placeholder. Supplement with MRMS, Stage IV, or HRRR forecast fields."
             )
             # Create zero precipitation with same dimensions as other variables
             template_var = ds["air_temperature"] if "air_temperature" in ds else list(ds.data_vars.values())[0]

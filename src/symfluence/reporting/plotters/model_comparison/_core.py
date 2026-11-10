@@ -88,13 +88,30 @@ class ModelComparisonCoreMixin:
 
     @staticmethod
     def _align_valid_pairs(
-        obs_values: np.ndarray,
-        sim_values: np.ndarray,
+        obs_values: Any,
+        sim_values: Any,
         min_points: int = 1,
     ) -> Optional[Tuple[np.ndarray, np.ndarray]]:
-        valid_mask = ~(np.isnan(obs_values) | np.isnan(sim_values))
-        obs_clean = obs_values[valid_mask]
-        sim_clean = sim_values[valid_mask]
+        """Return NaN-free (obs, sim) arrays paired by timestamp.
+
+        When both inputs are pandas Series they are joined on their index, so
+        a simulation table and an observation series covering different
+        periods (e.g. the default and the calibrated run) are compared only on
+        matching dates, never element-by-element. Plain arrays keep positional
+        pairing and must already be aligned.
+        """
+        if isinstance(obs_values, pd.Series) and isinstance(sim_values, pd.Series):
+            obs_s = obs_values[~obs_values.index.duplicated(keep="first")]
+            sim_s = sim_values[~sim_values.index.duplicated(keep="first")]
+            joined = pd.concat([obs_s, sim_s], axis=1, join="inner")
+            obs_arr = pd.to_numeric(joined.iloc[:, 0], errors="coerce").to_numpy(dtype=float)
+            sim_arr = pd.to_numeric(joined.iloc[:, 1], errors="coerce").to_numpy(dtype=float)
+        else:
+            obs_arr = np.asarray(obs_values, dtype=float)
+            sim_arr = np.asarray(sim_values, dtype=float)
+        valid_mask = ~(np.isnan(obs_arr) | np.isnan(sim_arr))
+        obs_clean = obs_arr[valid_mask]
+        sim_clean = sim_arr[valid_mask]
         if len(obs_clean) < min_points:
             return None
         return obs_clean, sim_clean
@@ -110,12 +127,8 @@ class ModelComparisonCoreMixin:
         if obs_series is None:
             return metrics_dict
 
-        obs_values = obs_series.values
-
         for col in model_cols:
-            sim_values = results_df[col].values
-
-            aligned = self._align_valid_pairs(obs_values, sim_values, min_points=10)
+            aligned = self._align_valid_pairs(obs_series, results_df[col], min_points=10)
             if aligned is None:
                 continue
             obs_clean, sim_clean = aligned
@@ -141,8 +154,8 @@ class ModelComparisonCoreMixin:
     ) -> None:
         if obs_series is not None:
             ax.plot(
-                results_df.index,
-                obs_series,
+                obs_series.index,
+                obs_series.values,
                 color="black",
                 linewidth=1.5,
                 label="Observed",
@@ -219,12 +232,8 @@ class ModelComparisonCoreMixin:
         if obs_series is None:
             return
 
-        obs_values = obs_series.values
-
         for i, (ax, col) in enumerate(zip(axes, model_cols[: len(axes)])):
-            sim_values = results_df[col].values
-
-            aligned = self._align_valid_pairs(obs_values, sim_values, min_points=10)
+            aligned = self._align_valid_pairs(obs_series, results_df[col], min_points=10)
             if aligned is None:
                 ax.text(0.5, 0.5, "Insufficient data", transform=ax.transAxes, ha="center", va="center")
                 continue
@@ -308,7 +317,8 @@ class ModelComparisonCoreMixin:
         positions = np.arange(1, 13)
 
         if obs_series is not None:
-            obs_monthly = [obs_series[months == m].dropna().values for m in range(1, 13)]
+            obs_months = pd.DatetimeIndex(obs_series.index).month
+            obs_monthly = [obs_series[obs_months == m].dropna().values for m in range(1, 13)]
             bp_obs = ax.boxplot(obs_monthly, positions=positions - 0.2, widths=0.15, patch_artist=True)
             for patch in bp_obs["boxes"]:
                 patch.set_facecolor("black")
@@ -358,8 +368,9 @@ class ModelComparisonCoreMixin:
         month_names = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"]
 
         col = model_cols[0]
-        obs_values = obs_series.values
-        sim_values = results_df[col].values
+        # Pair observations with the simulation by timestamp
+        obs_values = obs_series[~obs_series.index.duplicated(keep="first")].reindex(results_df.index).to_numpy(dtype=float)
+        sim_values = results_df[col].to_numpy(dtype=float)
 
         monthly_bias = []
         for m in range(1, 13):

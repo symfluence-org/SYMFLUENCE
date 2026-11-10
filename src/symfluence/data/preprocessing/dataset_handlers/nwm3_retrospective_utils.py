@@ -101,7 +101,12 @@ class NWM3RetrospectiveHandler(BaseDatasetHandler):
 
             units = (precip_attrs.get('units') or p.attrs.get('units', '')).lower()
             units_no_space = units.replace(' ', '')
-            dt_seconds = float(self.forcing_timestep_seconds)
+            # The stored precipitation is an HOURLY accumulation (native
+            # dataset period; the acquisition handler writes rate x 3600 s).
+            # Divide by that accumulation period, not by the model forcing
+            # step: FORCING_TIME_STEP_SIZE=10800 would otherwise cut every
+            # hourly total by 3x.
+            dt_seconds = float(UnitConversion.SECONDS_PER_HOUR)
 
             # Clean inputs
             p = xr.where(np.isfinite(p), p, 0.0)
@@ -112,10 +117,11 @@ class NWM3RetrospectiveHandler(BaseDatasetHandler):
             accum_keywords = [
                 'kgm-2', 'kgm^-2', 'kg/m^2', 'kg/m2', 'kgm**-2', 'mm'
             ]
-            if any(k in units_no_space for k in accum_keywords):
-                p_rate = p / dt_seconds
-            elif any(k in units_no_space for k in ['kgm-2s-1', 'kgm^-2s^-1', 'kg/m^2s', 'mm/s']):
+            # Rates first: 'kgm-2' is a substring of 'kgm-2s-1'.
+            if any(k in units_no_space for k in ['kgm-2s-1', 'kgm^-2s^-1', 'kg/m^2s', 'mm/s']):
                 p_rate = p  # already a rate
+            elif any(k in units_no_space for k in accum_keywords):
+                p_rate = p / dt_seconds
             else:
                 self.logger.warning(
                     f"Unrecognized precip units for NWM3: '{units}', assuming accumulation."

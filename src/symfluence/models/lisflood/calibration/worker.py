@@ -12,6 +12,7 @@ import pandas as pd
 import xarray as xr
 
 from symfluence.core.calibration.workers.base_worker import BaseWorker
+from symfluence.core.exceptions import ConfigurationError
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.modeling.utilities.periods import split_period
@@ -116,7 +117,7 @@ class LisfloodWorker(BaseWorker):
 
     def calculate_metrics(self, output_dir, config, **kwargs):
         try:
-            sim = self._load_simulated_streamflow(Path(output_dir))
+            sim = self._load_simulated_streamflow(Path(output_dir), config)
             if sim is None:
                 self.logger.warning(f"No sim data found in {output_dir}")
                 return {"KGE": -999.0, "NSE": -999.0}
@@ -152,7 +153,7 @@ class LisfloodWorker(BaseWorker):
             self.logger.error(f"Metric calculation failed: {e}")
             return {"KGE": -999.0, "NSE": -999.0}
 
-    def _load_simulated_streamflow(self, output_dir: Path):
+    def _load_simulated_streamflow(self, output_dir: Path, config=None):
         # Try NetCDF discharge output
         for pattern in ["dis*.nc", "*discharge*.nc"]:
             matches = list(output_dir.glob(pattern))
@@ -170,26 +171,20 @@ class LisfloodWorker(BaseWorker):
         for pattern in ["dis*.tss", "*discharge*.tss"]:
             matches = list(output_dir.glob(pattern))
             if matches:
-                return self._read_tss_file(matches[0])
+                return self._read_tss_file(matches[0], config)
         return None
 
     @staticmethod
-    def _read_tss_file(tss_path: Path):
-        lines = tss_path.read_text().strip().split("\n")
-        header_lines = 0
-        for i, line in enumerate(lines):
-            line = line.strip()
-            if line and not line.replace(".", "").replace("-", "").replace(" ", "").isdigit():
-                header_lines = i + 1
-            else:
-                break
-        data_lines = lines[header_lines:]
-        records = []
-        for line in data_lines:
-            parts = line.split()
-            if len(parts) >= 2:
-                records.append(float(parts[-1]))
-        return pd.Series(records, name="discharge_cms")
+    def _read_tss_file(tss_path: Path, config=None):
+        """Dated TSS discharge (shared with the postprocessor)."""
+        from symfluence.models.lisflood.extractor import (
+            read_tss_series,
+            resolve_lisflood_timestep_seconds,
+        )
+        start = resolve_config_value(config, lambda: config.domain.time_start, None, 'EXPERIMENT_TIME_START')
+        if start is None:
+            raise ConfigurationError("EXPERIMENT_TIME_START is required to date LISFLOOD .tss output")
+        return read_tss_series(tss_path, start, resolve_lisflood_timestep_seconds(config))
 
     def _load_observations(self, config):
         try:

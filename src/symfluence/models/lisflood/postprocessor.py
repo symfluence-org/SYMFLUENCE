@@ -104,34 +104,21 @@ class LisfloodPostProcessor(StandardModelPostProcessor):
         return None
 
     def _read_tss_file(self, tss_path: Path) -> pd.Series:
-        """Read LISFLOOD TSS (time series) format.
+        """Read LISFLOOD TSS (time series) output as a dated series.
 
-        TSS files have a header with column count and station numbers, then
-        whitespace-delimited rows of timestep + values.
+        Uses the shared reader (``extractor.read_tss_series``) with the
+        model step the preprocessor writes as DtSec
+        (LISFLOOD_FORCING_TIMESTEP, default 86400 s) -- the same rule the
+        calibration worker uses.
         """
-        lines = tss_path.read_text().strip().split("\n")
-        header_lines = 0
-        for i, line in enumerate(lines):
-            line = line.strip()
-            if line and not line.replace(".", "").replace("-", "").replace(" ", "").isdigit():
-                header_lines = i + 1
-            else:
-                break
-        data_lines = lines[header_lines:]
-        records = []
-        for line in data_lines:
-            parts = line.split()
-            if len(parts) >= 2:
-                records.append(float(parts[-1]))
+        from .extractor import DEFAULT_LISFLOOD_TIMESTEP_SECONDS, read_tss_series
 
-        # Reconstruct time index from settings
-        start_date, end_date = self._get_simulation_dates()
-        timestep_secs = self._get_config_value(
-            lambda: self.config.forcing.time_step_size, default=86400, dict_key="FORCING_TIME_STEP_SIZE"
-        )
-        freq = f"{timestep_secs}s"
-        time_index = pd.date_range(start=start_date, periods=len(records), freq=freq)
-        return pd.Series(records, index=time_index, name="LISFLOOD_discharge_cms")
+        start_date, _ = self._get_simulation_dates()
+        timestep_secs = int(self._get_config_value(
+            lambda: self.config.model.lisflood.forcing_timestep,
+            default=DEFAULT_LISFLOOD_TIMESTEP_SECONDS, dict_key="LISFLOOD_FORCING_TIMESTEP",
+        ))
+        return read_tss_series(tss_path, start_date, timestep_secs).rename("LISFLOOD_discharge_cms")
 
     def _get_simulation_dates(self):
         start = self._get_config_value(lambda: self.config.domain.time_start)

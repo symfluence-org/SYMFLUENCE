@@ -13,6 +13,29 @@ from symfluence.core.exceptions import ConfigurationError
 from symfluence.core.modeling.base import ModelResultExtractor
 
 
+def is_distributed_wflow(config) -> bool:
+    """True when the run is native-routing distributed Wflow (WFLOW_SPATIAL_MODE)."""
+    from symfluence.core.mixins.config import resolve_config_value
+    if not config:
+        return False
+    return resolve_config_value(
+        config, lambda: config.model.wflow.spatial_mode, None, 'WFLOW_SPATIAL_MODE'
+    ) == 'distributed'
+
+
+def to_period_start_labels(q: pd.Series) -> pd.Series:
+    """Relabel distributed Wflow output from end-of-day to start-of-day.
+
+    Native distributed Wflow writes daily values stamped at the end of the
+    day they cover (00:00 of the next day). SYMFLUENCE observations are
+    labelled by the day they describe, so every reader -- calibration worker,
+    extractor and postprocessor -- shifts the labels back one day.
+    """
+    q = q.copy()
+    q.index = pd.DatetimeIndex(q.index) - pd.Timedelta(days=1)
+    return q
+
+
 class WflowResultExtractor(ModelResultExtractor):
     """Wflow-specific result extraction."""
 
@@ -38,7 +61,7 @@ class WflowResultExtractor(ModelResultExtractor):
             df = pd.read_csv(output_file, parse_dates=['time'])
             # New native-routing distributed output is daily, end-labelled.
             if 'WB_max' in df:
-                return pd.Series(df.Q.values, index=pd.DatetimeIndex(df.time)-pd.Timedelta(days=1))
+                return to_period_start_labels(pd.Series(df.Q.values, index=pd.DatetimeIndex(df.time)))
             raise ConfigurationError('Legacy lumped CSV requires its area-aware worker extractor')
         import xarray as xr
         var_names = self.get_variable_names(variable_type)

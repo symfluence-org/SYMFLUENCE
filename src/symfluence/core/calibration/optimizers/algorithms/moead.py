@@ -32,6 +32,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
+from symfluence.core.metrics.penalty import is_penalty
+
 from .base_algorithm import OptimizationAlgorithm
 from .config_schema import MOEADDefaults
 
@@ -82,6 +84,8 @@ class MOEADAlgorithm(OptimizationAlgorithm):
         # Dedicated per-run RNG (OptimizationAlgorithm._new_rng); set in the
         # dispatcher so both single- and multi-objective paths share it.
         self._rng = self._new_rng()
+        # Run-scoped kwargs (initial_guess) for the two mode implementations.
+        self._run_kwargs = kwargs
 
         # Check if multi-objective
         objective_names = kwargs.get('objective_names', ['KGE', 'NSE'])
@@ -158,7 +162,7 @@ class MOEADAlgorithm(OptimizationAlgorithm):
             self.logger.warning(f"MOEA/D validation: {msg}")
 
         # Initialize population
-        population = self._rng.uniform(0, 1, (pop_size, n_params))
+        population = self._seed_population(self._rng.uniform(0, 1, (pop_size, n_params)), getattr(self, '_run_kwargs', {}))
         fitness = evaluate_population(population, 0)
 
         # For single objective, all weight vectors point to same direction
@@ -310,12 +314,10 @@ class MOEADAlgorithm(OptimizationAlgorithm):
         neighborhoods = self._create_neighborhoods_by_weights(weights, n_neighbors)
 
         # Initialize population
-        population = self._rng.uniform(0, 1, (actual_pop_size, n_params))
+        population = self._seed_population(
+            self._rng.uniform(0, 1, (actual_pop_size, n_params)), getattr(self, '_run_kwargs', {}))
         # Evaluate entire population at once to get proper individual_id assignment
         objectives = np.asarray(evaluate_objectives(population, objective_names, 0))
-
-        # Matches nsga2.py's threshold for the same all-penalty test.
-        PENALTY_THRESHOLD = -900.0
 
         # Some workers advertise a multi-objective callback but return penalty
         # objectives for every candidate (multi-objective evaluation is not
@@ -323,7 +325,7 @@ class MOEADAlgorithm(OptimizationAlgorithm):
         # evaluated — like NSGA-II does — rather than on a separate probe:
         # the evidence is stronger (pop_size candidates, not one) and it costs
         # neither an extra model run nor an extra draw from the seeded RNG.
-        if objectives.size == 0 or np.all(objectives < PENALTY_THRESHOLD):
+        if objectives.size == 0 or np.all(is_penalty(objectives, self.penalty_score)):
             if fallback_to_single_objective is not None:
                 self.logger.warning(
                     "MOEA/D: multi-objective evaluation returned all-penalty "
@@ -333,8 +335,8 @@ class MOEADAlgorithm(OptimizationAlgorithm):
                 return fallback_to_single_objective()
             raise ValueError(
                 f"All {actual_pop_size} individuals in the MOEA/D initial "
-                f"population returned penalty objectives (all values < "
-                f"{PENALTY_THRESHOLD}), and no single-objective fallback was "
+                f"population returned penalty objectives (all values equal "
+                f"the penalty score or non-finite), and no single-objective fallback was "
                 f"available. This indicates a broken model or forcing setup "
                 f"for this run rather than a multi-objective limitation."
             )

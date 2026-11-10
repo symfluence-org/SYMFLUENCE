@@ -18,9 +18,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, Optional, Set
 
-import numpy as np
 import pandas as pd
-import xarray as xr
 
 from symfluence.core.calibration.workers.base_worker import (
     MACOS_MALLOC_QUIET_ENV,
@@ -346,34 +344,14 @@ class NoahMPWorker(BaseWorker):
     @staticmethod
     def _read_route_k(settings_dir) -> Optional[float]:
         """Read the calibrated Nash routing time constant (days), if present."""
-        if not settings_dir:
-            return None
-        f = Path(settings_dir) / 'route_k.txt'
-        if not f.exists():
-            return None
-        try:
-            return float(f.read_text().strip())
-        except (OSError, ValueError):
-            return None
+        from symfluence.models.noahmp.extractor import read_route_k
+        return read_route_k(settings_dir)
 
     @staticmethod
     def _route_nash(series: 'pd.Series', k_days: float, n: int = 2) -> 'pd.Series':
-        """Route a flow series through an n-reservoir Nash cascade.
-
-        Each linear reservoir is y[t] = a*y[t-1] + (1-a)*x[t] with
-        a = exp(-1/k). Volume-preserving; attenuates and delays the response.
-        """
-        if k_days is None or k_days <= 0 or len(series) < 2:
-            return series
-        a = float(np.exp(-1.0 / k_days))
-        y = series.to_numpy(dtype=float)
-        for _ in range(max(1, int(n))):
-            out = np.empty_like(y)
-            out[0] = y[0]
-            for i in range(1, len(y)):
-                out[i] = a * out[i - 1] + (1.0 - a) * y[i]
-            y = out
-        return pd.Series(y, index=series.index)
+        """Route a flow series through an n-reservoir Nash cascade (shared)."""
+        from symfluence.models.noahmp.extractor import route_nash
+        return route_nash(series, k_days, n=n)
 
     def calculate_metrics(
         self,
@@ -393,16 +371,6 @@ class NoahMPWorker(BaseWorker):
             if not output_nc.exists():
                 return {'kge': self.penalty_score, 'error': 'No output.nc'}
 
-            ds = xr.open_dataset(output_nc)
-
-            # Total runoff = surface + subsurface (kg/m2 = mm)
-            sfcrnoff = ds['SFCRNOFF'].values.flatten() if 'SFCRNOFF' in ds else np.zeros(ds.dims.get('time', 0))
-            ugdrnoff = ds['UGDRNOFF'].values.flatten() if 'UGDRNOFF' in ds else np.zeros(ds.dims.get('time', 0))
-            total_runoff_mm = sfcrnoff + ugdrnoff
-
-            times = pd.to_datetime(ds['time'].values)
-            ds.close()
-
             # Convert mm -> m3/s
             domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
             data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
@@ -411,24 +379,15 @@ class NoahMPWorker(BaseWorker):
             area_km2 = self._streamflow_metrics.get_catchment_area(
                 config, project_dir, domain_name, source='shapefile'
             )
-            area_m2 = area_km2 * 1e6
 
-            # mm/timestep -> m3/s (assuming hourly timestep)
-            dt_hours = 1.0
-            if len(times) > 1:
-                dt_hours = (times[1] - times[0]).total_seconds() / 3600.0
-            streamflow_m3s = total_runoff_mm * area_m2 / (1000.0 * dt_hours * 3600.0)
-
-            sim_series = pd.Series(streamflow_m3s, index=times).resample('D').mean()
-
-            # Route the (unrouted column) runoff through a Nash cascade if a
-            # routing time constant was calibrated (route_k, in days). This is
-            # the dominant skill lever for Noah-MP: a 1-D column emits runoff
-            # ~10x too flashy, and a 2-reservoir cascade attenuates it into a
-            # realistic hydrograph (Bow at Banff: KGE -0.18 -> ~0.85).
-            route_k = self._read_route_k(kwargs.get('settings_dir'))
-            if route_k and route_k > 0:
-                sim_series = self._route_nash(sim_series, route_k, n=2)
+            # SFCRNOFF + UGDRNOFF -> daily m3/s, then the calibrated Nash
+            # cascade (route_k, days): a 1-D column emits runoff ~10x too
+            # flashy (Bow at Banff: KGE -0.18 -> ~0.85 with routing). Shared
+            # with the postprocessor so the results CSV matches calibration.
+            from symfluence.models.noahmp.extractor import noahmp_daily_discharge_cms
+            sim_series = noahmp_daily_discharge_cms(
+                output_nc, area_km2 * 1e6, self._read_route_k(kwargs.get('settings_dir')),
+            )
 
             # Load observations
             obs_values, obs_index = self._streamflow_metrics.load_observations(
@@ -449,7 +408,7 @@ class NoahMPWorker(BaseWorker):
             )
 
             return self._streamflow_metrics.calculate_metrics(
-                obs_aligned, sim_aligned, metrics=['kge', 'nse']
+                obs_aligned, sim_aligned, metrics=self._requested_metrics(config)
             )
 
         except Exception as e:  # noqa: BLE001 — calibration resilience

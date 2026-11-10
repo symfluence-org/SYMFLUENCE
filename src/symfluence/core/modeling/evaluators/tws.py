@@ -86,7 +86,13 @@ class TWSEvaluator(ModelEvaluator):
         'scalarSWE', 'scalarCanopyWat', 'scalarTotalSoilWat', 'scalarAquiferStorage'
     ]
 
-    def __init__(self, config: 'SymfluenceConfig', project_dir: Path, logger: logging.Logger):
+    def __init__(
+        self,
+        config: 'SymfluenceConfig',
+        project_dir: Path,
+        logger: logging.Logger,
+        target: Optional[str] = None,
+    ):
         """Initialize TWS evaluator with storage component and signal processing options.
 
         Configures water storage components to sum (SWE, canopy, soil, aquifer, glacier),
@@ -118,9 +124,9 @@ class TWSEvaluator(ModelEvaluator):
         Raises:
             None (uses defaults for missing config values)
         """
-        super().__init__(config, project_dir, logger)
+        super().__init__(config, project_dir, logger, target=target)
 
-        self.optimization_target = self._get_config_value(
+        self.optimization_target = self._target_override_if_valid(('stor_grace', 'stor_mb')) or self._get_config_value(
             lambda: self.config.optimization.target,
             default='streamflow',
             dict_key='OPTIMIZATION_TARGET'
@@ -792,8 +798,13 @@ class TWSEvaluator(ModelEvaluator):
                     self.logger.info("[TWS] Scaling model variability to match observed")
                     sim_anomaly = self._scale_to_obs_variability(sim_anomaly, obs_anomaly)
 
-            # Calculate metrics
-            metrics = self._calculate_performance_metrics(obs_anomaly, sim_anomaly)
+            # Calculate metrics. GRACE comparisons are on centred anomalies,
+            # whose means are ~0 by construction, so the KGE bias term is
+            # undefined there and is left out (see _calculate_anomaly_metrics).
+            if self.optimization_target == 'stor_mb':
+                metrics = self._calculate_performance_metrics(obs_anomaly, sim_anomaly)
+            else:
+                metrics = self._calculate_anomaly_metrics(obs_anomaly, sim_anomaly)
             self.logger.debug(f"[TWS] Calculated metrics: {metrics}")
             return metrics
 
@@ -802,6 +813,34 @@ class TWSEvaluator(ModelEvaluator):
             import traceback
             self.logger.debug(f"[TWS] Traceback: {traceback.format_exc()}")
             return None
+
+    def _calculate_anomaly_metrics(
+        self, obs_anomaly: pd.Series, sim_anomaly: pd.Series
+    ) -> Dict[str, float]:
+        """Metrics for zero-mean anomaly series (GRACE TWS).
+
+        Both series are centred on a baseline mean before comparison, so
+        ``beta = mean(sim) / mean(obs)`` is a ratio of two near-zero residuals:
+        it swings arbitrarily (and can flip sign) between otherwise identical
+        runs, which made the standard KGE effectively random. Here KGE keeps only
+        the correlation and variability terms::
+
+            KGE = 1 - sqrt((r - 1)**2 + (alpha - 1)**2)
+
+        ``beta`` and ``PBIAS`` (also normalised by the ~0 observed mean) are
+        reported as NaN. NSE, RMSE, MAE and r are unchanged.
+        """
+        result = self._calculate_performance_metrics(obs_anomaly, sim_anomaly)
+        r = result.get('r', np.nan)
+        alpha = result.get('alpha', np.nan)
+        if r is None or alpha is None or not (np.isfinite(r) and np.isfinite(alpha)):
+            kge_value = np.nan
+        else:
+            kge_value = float(1.0 - np.sqrt((r - 1.0) ** 2 + (alpha - 1.0) ** 2))
+        result['KGE'] = kge_value
+        result['beta'] = np.nan
+        result['PBIAS'] = np.nan
+        return result
 
     def get_diagnostic_data(self, sim_dir: Path) -> Dict[str, Any]:
         """Export diagnostic data for visualization and detailed analysis.

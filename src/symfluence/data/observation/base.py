@@ -602,22 +602,75 @@ class BaseObservationHandler(ABC, ConfigurableMixin, CoordinateUtilsMixin):
 
     def _find_col(self, columns: List[str], candidates: List[str]) -> Optional[str]:
         """
-        Find a column name from a list of candidates using case-insensitive matching.
+        Find a column name from a priority-ordered list of candidates.
+
+        Candidates are tried in order, so earlier candidates win. An exact
+        (case-insensitive) match on any candidate beats a substring match:
+        first every candidate is tried as an exact name, then every candidate
+        as a substring, in candidate order (file column order breaks ties).
+        This keeps e.g. ``['discharge_vol', 'discharge_spec', 'discharge']``
+        from returning ``discharge_spec`` because it sits first in the file,
+        and ``'date'`` from grabbing ``update_date`` over ``date``.
 
         Args:
             columns: List of column names to search
-            candidates: List of candidate names to match against
+            candidates: Candidate names, most preferred first
 
         Returns:
-            First matching column name, or None if no match found
+            Best matching column name, or None if no match found
 
         Example:
             datetime_col = self._find_col(df.columns, ['datetime', 'date_time', 'dateTime'])
         """
-        for col in columns:
-            if any(c.lower() in col.lower() for c in candidates):
-                return col
+        cols = [str(c) for c in columns]
+        lowered = [c.lower() for c in cols]
+        for cand in candidates:
+            target = cand.lower()
+            for col, low in zip(cols, lowered):
+                if low == target:
+                    return col
+        for cand in candidates:
+            target = cand.lower()
+            for col, low in zip(cols, lowered):
+                if target in low:
+                    return col
         return None
+
+    def _daily_streamflow_to_target(self, series: 'pd.Series') -> 'pd.Series':
+        """Put a DAILY-MEAN discharge series on the forcing timestep, honestly.
+
+        Daily-mean archives (WSC daily means, SMHI, CAMELS, DGA, ANA, Hub'Eau
+        QmJ) must not be linearly interpolated onto an hourly grid: that
+        changes each day's mean when the series is aggregated back to daily
+        and, with a gap limit, invents observations inside data gaps.
+
+        - Sub-daily target: each hour carries its own day's mean (step
+          function within the day); no interpolation across days and no gap
+          filling (a missing day stays missing for all its hours), so the
+          daily aggregate of the output equals the source daily mean.
+        - Daily or coarser target: plain mean resample.
+
+        The LamaH-Ice handler avoids the same problem by keeping its daily
+        series native; both preserve the daily calibration target.
+        """
+        import pandas as pd
+
+        series = series.sort_index()
+        daily = series.resample('D').mean()
+        freq = self._get_resample_freq()
+        step = pd.to_timedelta(1, unit='D') if freq == 'D' else pd.to_timedelta(
+            freq if freq[0].isdigit() else f'1{freq}')
+        if step >= pd.Timedelta(days=1) or daily.empty:
+            return daily if freq == 'D' else daily.resample(freq).mean()
+        sub_index = pd.date_range(
+            daily.index[0], daily.index[-1] + pd.Timedelta(days=1) - step, freq=step
+        )
+        # Every calendar day is present in ``daily`` (NaN when missing), so a
+        # forward reindex never carries a value past its own day.
+        out = daily.reindex(sub_index, method='ffill')
+        out.index.name = series.index.name
+        out.name = series.name
+        return out
 
     def _get_resample_freq(self) -> str:
         """
