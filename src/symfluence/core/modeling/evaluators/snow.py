@@ -74,13 +74,10 @@ class SnowEvaluator(ModelEvaluator):
             **kwargs: Optional target override (target='swe' or target='sca')
         """
         # Allow target override from kwargs (for multivariate calibration)
-        self._target_override = kwargs.get('target')
-        super().__init__(config, project_dir, logger)
+        super().__init__(config, project_dir, logger, target=kwargs.get('target'))
 
         # Determine variable target: swe or sca
         self.optimization_target = self._target_override
-        if self.optimization_target:
-            self.optimization_target = self.optimization_target.lower()
 
         if not self.optimization_target:
             # Get from typed config, with fallback to flat config keys and CALIBRATION_VARIABLE

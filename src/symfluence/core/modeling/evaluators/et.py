@@ -119,14 +119,29 @@ class ETEvaluator(ModelEvaluator):
 
     @property
     def variable_type(self) -> str:
-        """ET is a flux variable - use sum aggregation when resampling.
+        """ET is a flux variable.
 
         Returns:
-            'flux' to indicate sum aggregation should be used
+            'flux'
         """
         return 'flux'
 
-    def __init__(self, config: 'SymfluenceConfig', project_dir: Path, logger: logging.Logger):
+    @property
+    def values_are_rates(self) -> bool:
+        """Simulated and observed ET are rates (mm/day, or W m-2 for latent heat).
+
+        Rates are averaged, never summed, when aggregating to a coarser step:
+        summing 24 hourly mm/day values would report 24x the daily ET.
+        """
+        return True
+
+    def __init__(
+        self,
+        config: 'SymfluenceConfig',
+        project_dir: Path,
+        logger: logging.Logger,
+        target: Optional[str] = None,
+    ):
         """Initialize ET evaluator with target and source determination.
 
         Determines evaluation target (ET vs latent heat) and observation source
@@ -155,14 +170,16 @@ class ETEvaluator(ModelEvaluator):
             config: Typed configuration object (SymfluenceConfig)
             project_dir: Project root directory
             logger: Logger instance
+            target: Optional override ('et' or 'latent_heat'); other values
+                are ignored and the configured target is used.
 
         Raises:
             None (invalid sources trigger warning + default, not exceptions)
         """
-        super().__init__(config, project_dir, logger)
+        super().__init__(config, project_dir, logger, target=target)
 
-        # Determine ET variable type from config
-        self.optimization_target = self._get_config_value(
+        # Determine ET variable type from the override, then config
+        self.optimization_target = self._target_override_if_valid(('et', 'latent_heat')) or self._get_config_value(
             lambda: self.config.optimization.target,
             default='streamflow',
             dict_key='OPTIMIZATION_TARGET'
@@ -686,7 +703,7 @@ class ETEvaluator(ModelEvaluator):
                                 if self.temporal_aggregation == 'daily_mean':
                                     obs_data = obs_data.resample('D').mean().dropna()
                                 elif self.temporal_aggregation == 'daily_sum':
-                                    obs_data = obs_data.resample('D').sum().dropna()
+                                    obs_data = obs_data.resample('D').sum(min_count=1).dropna()
                         self.logger.info(f"Loaded {len(obs_data)} ET observations from {obs_path.name}")
                         return obs_data
             except (pd.errors.ParserError, KeyError, ValueError) as e:
@@ -723,7 +740,7 @@ class ETEvaluator(ModelEvaluator):
             if self.temporal_aggregation == 'daily_mean':
                 obs_daily = obs_data.resample('D').mean()
             elif self.temporal_aggregation == 'daily_sum':
-                obs_daily = obs_data.resample('D').sum()
+                obs_daily = obs_data.resample('D').sum(min_count=1)
             else:
                 obs_daily = obs_data
 

@@ -56,10 +56,16 @@ class ModelEvaluator(ConfigurableMixin, ABC):
         config: 'SymfluenceConfig',
         project_dir: Optional[Path] = None,
         logger: Optional[logging.Logger] = None,
+        target: Optional[str] = None,
     ):
         self.config = config
         self._project_dir = project_dir or Path(".")
         self._logger = logger
+        # Optional per-instance target override (e.g. 'swe', 'et', 'stor_grace').
+        # Multivariate calibration builds one evaluator per variable and passes
+        # target=<variable>; subclasses honour it when it names one of their
+        # targets and otherwise fall back to the configured target.
+        self._target_override: Optional[str] = str(target).lower() if target else None
 
         # Parse time periods from typed config (with dict_key fallback for worker dicts)
         calibration_period_str = self._get_config_value(
@@ -103,6 +109,125 @@ class ModelEvaluator(ConfigurableMixin, ABC):
             'flux' for flux/accumulation variables - use sum aggregation
         """
         return 'state'
+
+    @property
+    def values_are_rates(self) -> bool:
+        """Whether flux values are expressed as rates (per unit time).
+
+        A rate (mm/day, W m-2, m3/s) keeps its meaning under averaging, so it is
+        aggregated with the mean whatever the timestep. Only flux variables whose
+        values are per-step amounts (mm per timestep) are summed. Override in
+        subclasses whose flux series are rates.
+        """
+        return False
+
+    def _aggregation_method(self) -> str:
+        """Return 'sum' for per-step flux amounts, 'mean' for states and rates."""
+        if self.variable_type == 'flux' and not self.values_are_rates:
+            return 'sum'
+        return 'mean'
+
+    def _target_override_if_valid(self, valid_targets) -> Optional[str]:
+        """Return the constructor ``target`` override if it is one of ``valid_targets``."""
+        override = getattr(self, '_target_override', None)
+        if override and override in valid_targets:
+            return override
+        return None
+
+    @staticmethod
+    def _infer_timestep(index: pd.Index) -> Optional[pd.Timedelta]:
+        """Infer the nominal timestep of a DatetimeIndex.
+
+        Uses the most frequent spacing between consecutive stamps (median on a
+        tie), so a single missing or duplicated observation does not change the
+        detected step. Returns None for fewer than two stamps.
+        """
+        if index is None or len(index) < 2:
+            return None
+        idx = pd.DatetimeIndex(index).sort_values()
+        diffs = pd.Series(idx[1:] - idx[:-1])
+        diffs = diffs[diffs > pd.Timedelta(0)]
+        if diffs.empty:
+            return None
+        counts = diffs.value_counts()
+        modes = counts[counts == counts.max()].index
+        if len(modes) == 1:
+            return pd.Timedelta(modes[0])
+        return pd.Timedelta(diffs.median())
+
+    @staticmethod
+    def _period_mask(index: pd.DatetimeIndex, period: Tuple) -> np.ndarray:
+        """Boolean mask of stamps inside ``period``.
+
+        A period end given as a bare date (00:00) covers the whole end day, so
+        sub-daily data keep their last 23 hours; an explicit end time is
+        inclusive as written.
+        """
+        start, end = pd.Timestamp(period[0]), pd.Timestamp(period[1])
+        if end == end.normalize():
+            return np.asarray((index >= start) & (index < end + pd.Timedelta(days=1)))
+        return np.asarray((index >= start) & (index <= end))
+
+    def _spinup_cutoff(self, sim_data: pd.Series) -> Optional[pd.Timestamp]:
+        """First stamp after EVALUATION_SPINUP_YEARS, counted from the simulation start."""
+        spinup_years = self._get_config_value(
+            lambda: self.config.evaluation.spinup_years,
+            default=0,
+            dict_key='EVALUATION_SPINUP_YEARS'
+        )
+        try:
+            spinup_years = int(float(spinup_years))
+        except (TypeError, ValueError):
+            spinup_years = 0
+        if spinup_years <= 0 or sim_data is None or len(sim_data) == 0:
+            return None
+        return pd.Timestamp(sim_data.index.min()) + pd.DateOffset(years=spinup_years)
+
+    def _aggregate_to_observation_steps(self, sim: pd.Series, obs: pd.Series) -> pd.Series:
+        """Aggregate a finer simulation onto coarser observation intervals.
+
+        Each observation stamp ``t`` is taken to represent ``[t, t + step)``
+        where ``step`` is the observation timestep. Simulated values falling in
+        that interval are averaged (summed for per-step flux amounts), and the
+        result is labelled with ``t``. Intervals where fewer than half of the
+        expected simulation steps are present are dropped.
+
+        Only sub-daily simulations are aggregated onto observation steps of at
+        most one day (e.g. hourly sim vs daily-mean obs). Sparser observations
+        (snow courses, satellite snapshots) are usually instantaneous and are
+        still compared at their own stamps, as are series where the observation
+        step is not coarser than the simulation step.
+        """
+        obs_step = self._infer_timestep(obs.index)
+        sim_step = self._infer_timestep(sim.index)
+        if (
+            obs_step is None or sim_step is None
+            or obs_step <= sim_step * 1.5
+            or obs_step > pd.Timedelta(days=1)
+        ):
+            return sim
+
+        sim = sim.sort_index()
+        obs_idx = pd.DatetimeIndex(obs.index).sort_values()
+        pos = obs_idx.searchsorted(sim.index, side='right') - 1
+        valid = pos >= 0
+        pos_valid = np.where(valid, pos, 0)
+        in_interval = valid & (sim.index < obs_idx[pos_valid] + obs_step)
+        if not in_interval.any():
+            return sim.iloc[0:0]
+
+        labels = obs_idx[pos_valid[in_interval]]
+        values = pd.to_numeric(sim[in_interval], errors='coerce')
+        grouped = pd.Series(values.values, index=labels).groupby(level=0)
+        agg = grouped.sum(min_count=1) if self._aggregation_method() == 'sum' else grouped.mean()
+        counts = grouped.count()
+        expected = obs_step / sim_step
+        agg = agg[counts >= 0.5 * expected]
+        self.logger.debug(
+            f"Aggregated {sim_step} simulation onto {obs_step} observation steps "
+            f"({len(agg)} intervals, {self._aggregation_method()})"
+        )
+        return agg.dropna()
 
     def evaluate(self, sim: Any, obs: Optional[pd.Series] = None,
                  mizuroute_dir: Optional[Path] = None,
@@ -420,50 +545,31 @@ class ModelEvaluator(ConfigurableMixin, ABC):
             if not isinstance(sim_data.index, pd.DatetimeIndex):
                 sim_data.index = pd.to_datetime(sim_data.index)
 
-            # EXPLICIT filtering for both datasets (consistent with parallel worker)
-            # Round BOTH indices to ensure alignment (fixes misalignment with daily data)
+            # Round BOTH indices to the hour so near-identical stamps align
+            obs_data = obs_data.copy()
+            obs_data.index = obs_data.index.round('h')
+            sim_data = sim_data.copy()
+            sim_data.index = sim_data.index.round('h')
+
+            # Spin-up is removed once, counted from the simulation start, so it
+            # trims only the start of the run, never the start of every period.
+            cutoff = self._spinup_cutoff(sim_data)
+            if cutoff is not None:
+                obs_data = obs_data[obs_data.index >= cutoff]
+                sim_data = sim_data[sim_data.index >= cutoff]
+                self.logger.debug(f"Applied spinup removal from simulation start, cutoff: {cutoff}")
+
             if period[0] and period[1]:
-                # Round both observed and simulated indices consistently
-                obs_data_rounded = obs_data.copy()
-                obs_data_rounded.index = obs_data_rounded.index.round('h')
-                sim_data_rounded = sim_data.copy()
-                sim_data_rounded.index = sim_data_rounded.index.round('h')
-
-                # Filter observed data to period
-                obs_period_mask = (obs_data_rounded.index >= period[0]) & (obs_data_rounded.index <= period[1])
-                obs_period = obs_data_rounded[obs_period_mask].copy()
-
-                # Explicitly filter simulated data to same period (like parallel worker)
-                sim_period_mask = (sim_data_rounded.index >= period[0]) & (sim_data_rounded.index <= period[1])
-                sim_period = sim_data_rounded[sim_period_mask].copy()
-
-                # Apply spinup removal if configured
-                spinup_years = self._get_config_value(
-                    lambda: self.config.evaluation.spinup_years,
-                    default=0,
-                    dict_key='EVALUATION_SPINUP_YEARS'
-                )
-                try:
-                    spinup_years = int(float(spinup_years))
-                except (TypeError, ValueError):
-                    spinup_years = 0
-
-                if spinup_years > 0 and not obs_period.empty:
-                    cutoff = obs_period.index.min() + pd.DateOffset(years=spinup_years)
-                    obs_period = obs_period[obs_period.index >= cutoff]
-                    sim_period = sim_period[sim_period.index >= cutoff]
-                    self.logger.debug(f"Applied {spinup_years} year spinup removal, cutoff: {cutoff}")
+                obs_period = obs_data[self._period_mask(obs_data.index, period)].copy()
+                sim_period = sim_data[self._period_mask(sim_data.index, period)].copy()
 
                 # Log filtering results for debugging
                 self.logger.debug(f"{prefix} period filtering: {period[0]} to {period[1]}")
                 self.logger.debug(f"{prefix} observed points in period: {len(obs_period)}")
                 self.logger.debug(f"{prefix} simulated points in period: {len(sim_period)}")
             else:
-                # Round BOTH indices consistently for alignment
-                obs_period = obs_data.copy()
-                obs_period.index = obs_period.index.round('h')
-                sim_period = sim_data.copy()
-                sim_period.index = sim_period.index.round('h')
+                obs_period = obs_data
+                sim_period = sim_data
 
             # ENHANCED: Normalize timezones before intersection to ensure match
             # Some datasets come from NetCDF (UTC) while others from CSV (naive)
@@ -486,6 +592,13 @@ class ModelEvaluator(ConfigurableMixin, ABC):
                 # DEBUG: Log after resampling
                 if len(obs_period) > 0 and len(sim_period) > 0:
                     self.logger.debug(f"AFTER resample - obs: {obs_period.min():.3f} to {obs_period.max():.3f}, sim: {sim_period.min():.3f} to {sim_period.max():.3f}")
+
+            elif len(obs_period) > 1 and len(sim_period) > 1:
+                # Native timestep: when observations are coarser than the
+                # simulation (e.g. daily obs, hourly sim), compare the simulation
+                # averaged over each observation interval, not the single
+                # simulated instant that shares the observation's stamp.
+                sim_period = self._aggregate_to_observation_steps(sim_period, obs_period)
 
             # Final check: ensure both are midnight-aligned if daily
             if self.eval_timestep == 'daily':
@@ -554,21 +667,12 @@ class ModelEvaluator(ConfigurableMixin, ABC):
             return data
 
         try:
-            # Infer current frequency
-            inferred_freq = pd.infer_freq(data.index)
-            if inferred_freq is None:
-                # Try to infer from first few differences
-                if len(data) > 1:
-                    time_diff = data.index[1] - data.index[0]
-                    self.logger.debug(f"Inferred time difference: {time_diff}")
-                else:
-                    self.logger.warning("Cannot infer frequency from single data point")
-                    return data
-            else:
-                self.logger.debug(f"Inferred frequency: {inferred_freq}")
-
-            # Determine current timestep
-            time_diff = data.index[1] - data.index[0] if len(data) > 1 else pd.Timedelta(hours=1)
+            # Determine current timestep from the modal spacing (robust to gaps)
+            time_diff = self._infer_timestep(data.index)
+            if time_diff is None:
+                self.logger.warning("Cannot infer frequency from single data point")
+                return data
+            self.logger.debug(f"Inferred timestep: {time_diff}")
 
             # Check if already at target timestep
             if target_timestep == 'hourly' and pd.Timedelta(minutes=45) <= time_diff <= pd.Timedelta(minutes=75):
@@ -579,14 +683,14 @@ class ModelEvaluator(ConfigurableMixin, ABC):
                 return data
 
             # Determine aggregation function based on variable type
-            agg_func = 'sum' if self.variable_type == 'flux' else 'mean'
+            agg_func = self._aggregation_method()
 
             # Perform resampling
             if target_timestep == 'hourly':
                 if time_diff < pd.Timedelta(hours=1):
                     # Aggregation: sub-hourly to hourly
                     self.logger.debug(f"Aggregating {time_diff} data to hourly using {agg_func}")
-                    resampled = pd.Series(data.resample('h').agg(agg_func))
+                    resampled = self._resample_agg(data, 'h', agg_func)
                 elif time_diff > pd.Timedelta(hours=1):
                     # Upsampling: daily/coarser to hourly - REJECT
                     raise ValueError(
@@ -601,7 +705,7 @@ class ModelEvaluator(ConfigurableMixin, ABC):
                 if time_diff < pd.Timedelta(days=1):
                     # Aggregation: hourly/sub-daily to daily
                     self.logger.debug(f"Aggregating {time_diff} data to daily using {agg_func}")
-                    resampled = pd.Series(data.resample('D').agg(agg_func))
+                    resampled = self._resample_agg(data, 'D', agg_func)
                 elif time_diff > pd.Timedelta(days=1):
                     # Upsampling: weekly/monthly to daily - REJECT
                     raise ValueError(
@@ -630,6 +734,14 @@ class ModelEvaluator(ConfigurableMixin, ABC):
             self.logger.error(f"Error resampling to {target_timestep}: {str(e)}")
             self.logger.warning("Returning original data without resampling")
             return data
+
+    @staticmethod
+    def _resample_agg(data: pd.Series, rule: str, agg_func: str) -> pd.Series:
+        """Resample with ``agg_func``; empty bins stay NaN (never a 0 sum)."""
+        resampler = data.resample(rule)
+        if agg_func == 'sum':
+            return pd.Series(resampler.sum(min_count=1))
+        return pd.Series(resampler.mean())
 
     def _calculate_likelihood_metrics(
         self,
@@ -781,8 +893,12 @@ class ModelEvaluator(ConfigurableMixin, ABC):
         if sim.empty or obs.empty:
             return sim, obs
 
+        # Spin-up is counted from the simulation start, not the first observation
         common_start = max(sim.index.min(), obs.index.min())
-        cutoff = common_start + pd.DateOffset(years=spinup_years) if spinup_years else common_start
+        cutoff = (
+            max(sim.index.min() + pd.DateOffset(years=spinup_years), common_start)
+            if spinup_years else common_start
+        )
 
         sim_trimmed = sim[sim.index >= cutoff]
         obs_trimmed = obs[obs.index >= cutoff]

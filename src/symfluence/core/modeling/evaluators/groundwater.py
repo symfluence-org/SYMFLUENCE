@@ -84,7 +84,13 @@ class GroundwaterEvaluator(ModelEvaluator):
         grace_center: GRACE processing center ('csr', 'jpl', 'gsfc')
     """
 
-    def __init__(self, config: 'SymfluenceConfig', project_dir: Path, logger: logging.Logger):
+    def __init__(
+        self,
+        config: 'SymfluenceConfig',
+        project_dir: Path,
+        logger: logging.Logger,
+        target: Optional[str] = None,
+    ):
         """Initialize groundwater evaluator with target determination.
 
         Determines evaluation target (well depth vs GRACE) from configuration
@@ -95,9 +101,9 @@ class GroundwaterEvaluator(ModelEvaluator):
             project_dir: Project root directory
             logger: Logger instance
         """
-        super().__init__(config, project_dir, logger)
+        super().__init__(config, project_dir, logger, target=target)
 
-        self.optimization_target = self._get_config_value(
+        self.optimization_target = self._target_override_if_valid(('gw_depth', 'gw_grace')) or self._get_config_value(
             lambda: self.config.optimization.target,
             default='streamflow',
             dict_key='OPTIMIZATION_TARGET'

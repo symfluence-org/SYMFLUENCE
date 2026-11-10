@@ -103,16 +103,18 @@ class StreamflowEvaluator(ModelEvaluator):
         - calibration_period: (start_date, end_date) tuple for evaluation
     """
 
-    def __init__(self, config, project_dir: Optional[Path] = None, logger=None, *,
+    def __init__(self, config, project_dir: Optional[Path] = None, logger=None,
+                 target: Optional[str] = None, *,
                  model_name: Optional[str] = None):
         """Initialise the evaluator.
 
         Args:
+            target: Optional target override, as accepted by ``ModelEvaluator``.
             model_name: Model whose registered ``ModelResultExtractor`` and
                 ``results/<exp>_results.csv`` column to use. Defaults to
                 ``HYDROLOGICAL_MODEL`` when that names a single model.
         """
-        super().__init__(config, project_dir, logger)
+        super().__init__(config, project_dir, logger, target=target)
         self._model_name_override = model_name.upper() if model_name else None
 
     def get_simulation_files(self, sim_dir: Path) -> List[Path]:

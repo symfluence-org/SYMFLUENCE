@@ -16,6 +16,7 @@ from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 
+from symfluence.core import metrics as core_metrics
 from symfluence.core.modeling.base import StandardModelPostProcessor
 from symfluence.core.registries import R
 
@@ -239,42 +240,21 @@ class NgenPostProcessor(StandardModelPostProcessor):
             return None
 
     def _calculate_nse(self, observed: np.ndarray, simulated: np.ndarray) -> float:
-        """Calculate Nash-Sutcliffe Efficiency."""
-        # Remove NaN values
-        mask = ~(np.isnan(observed) | np.isnan(simulated))
-        obs = observed[mask]
-        sim = simulated[mask]
+        """Nash-Sutcliffe Efficiency (shared symfluence.core.metrics definition).
 
-        if len(obs) == 0:
-            return np.nan
-
-        numerator = np.sum((obs - sim) ** 2)
-        denominator = np.sum((obs - np.mean(obs)) ** 2)
-
-        if denominator == 0:
-            return np.nan
-
-        return 1 - (numerator / denominator)
+        NaN pairs are dropped; constant observations give NaN.
+        """
+        return float(core_metrics.nse(np.asarray(observed, dtype=float),
+                                      np.asarray(simulated, dtype=float)))
 
     def _calculate_kge(self, observed: np.ndarray, simulated: np.ndarray) -> float:
-        """Calculate Kling-Gupta Efficiency."""
-        # Remove NaN values
-        mask = ~(np.isnan(observed) | np.isnan(simulated))
-        obs = observed[mask]
-        sim = simulated[mask]
+        """Kling-Gupta Efficiency (shared symfluence.core.metrics definition).
 
-        if len(obs) == 0:
-            return np.nan
-
-        # Calculate components
-        r = np.corrcoef(obs, sim)[0, 1]  # Correlation
-        alpha = np.std(sim) / np.std(obs)  # Variability ratio
-        beta = np.mean(sim) / np.mean(obs)  # Bias ratio
-
-        # Calculate KGE
-        kge = 1 - np.sqrt((r - 1)**2 + (alpha - 1)**2 + (beta - 1)**2)
-
-        return kge
+        NaN pairs are dropped; constant observations or a zero observed mean
+        give NaN instead of a division-by-zero result.
+        """
+        return float(core_metrics.kge(np.asarray(observed, dtype=float),
+                                      np.asarray(simulated, dtype=float)))
 
     # -----------------------------------------------------------------
     # mizuRoute integration: convert NGEN CSV output → NetCDF
