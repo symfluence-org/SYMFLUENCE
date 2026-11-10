@@ -13,6 +13,7 @@ import traceback
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
+from symfluence.core.metrics.penalty import is_failure_sentinel
 from symfluence.core.mixins.config import resolve_config_value
 
 from .file_manager_updater import FileManagerUpdater
@@ -237,11 +238,9 @@ class FinalEvaluationRunner:
             for k, v in m.items():
                 if v is None:
                     continue
-                try:  # skip penalty sentinels (-999 / -9999)
-                    if float(v) <= -900:
-                        continue
-                except (TypeError, ValueError):
-                    pass
+                # skip raw-metric failure sentinels (-999 / -9999 / NaN)
+                if isinstance(v, (int, float)) and is_failure_sentinel(v):
+                    continue
                 out[f"{prefix}_{k}"] = v
         if out:
             self.logger.info(

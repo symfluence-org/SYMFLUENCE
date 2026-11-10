@@ -246,7 +246,7 @@ class WATFLOODWorker(BaseWorker):
                 sim_series, obs_series, calibration_period=cal_period_tuple
             )
             return self._streamflow_metrics.calculate_metrics(
-                obs_aligned, sim_aligned, metrics=['kge', 'nse']
+                obs_aligned, sim_aligned, metrics=self._requested_metrics(config)
             )
         except Exception as e:  # noqa: BLE001 — calibration resilience
             self.logger.error(f"Error calculating WATFLOOD metrics: {e}", exc_info=True)

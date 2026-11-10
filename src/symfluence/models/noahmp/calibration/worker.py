@@ -449,7 +449,7 @@ class NoahMPWorker(BaseWorker):
             )
 
             return self._streamflow_metrics.calculate_metrics(
-                obs_aligned, sim_aligned, metrics=['kge', 'nse']
+                obs_aligned, sim_aligned, metrics=self._requested_metrics(config)
             )
 
         except Exception as e:  # noqa: BLE001 — calibration resilience

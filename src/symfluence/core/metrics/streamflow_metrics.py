@@ -9,6 +9,7 @@ Consolidates duplicate implementations from GR, FUSE, SUMMA, MESH, HYPE, and NGE
 """
 from __future__ import annotations
 
+import inspect
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
@@ -18,6 +19,9 @@ import pandas as pd
 
 from symfluence.core.constants import ModelDefaults, UnitConversion
 from symfluence.core.metrics import kge, kge_prime, mae, nse, rmse
+from symfluence.core.metrics.metric_transformer import MetricTransformer
+from symfluence.core.metrics.metrics_registry import get_metric_function
+from symfluence.core.metrics.penalty import raw_failure_value
 from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.mixins.project import resolve_data_subdir
 from symfluence.core.path_resolver import find_basin_shapefile
@@ -616,6 +620,13 @@ class StreamflowMetrics:
         'RMSE_LOG': ('rmse', 'log'),
     }
 
+    @classmethod
+    def supports(cls, metric: str) -> bool:
+        """True when :meth:`calculate_metrics` can compute ``metric``."""
+        return (metric in cls.TRANSFORMED_METRICS
+                or metric in ('kge', 'nse', 'rmse', 'mae', 'kge_prime')
+                or get_metric_function(metric) is not None)
+
     def calculate_metrics(
         self,
         obs: np.ndarray,
@@ -641,21 +652,33 @@ class StreamflowMetrics:
         """
         if metrics is None:
             metrics = ['kge', 'nse']
+
+        def failed(name: str) -> float:
+            # Direction-aware failure value: transforms to exactly the penalty
+            # in score space (+|penalty| for RMSE, not -9999 -> +9999).
+            return raw_failure_value(name, self.penalty_score)
+
         try:
-            # Check for zero variance in simulation (common during spinup)
-            if np.std(sim) == 0:
-                logger.warning("Zero variance in simulation - returning penalty scores")
-                return {m: -1.0 for m in metrics}  # Bad but not penalty
+            # Zero variance in simulation (common during spinup): correlation
+            # based skill scores are undefined, so report them as bad (-1, not
+            # the penalty). Error metrics (RMSE, MAE) stay well defined and are
+            # computed normally -- a constant -1 there would score as +1.
+            zero_variance = bool(np.std(sim) == 0)
+            if zero_variance:
+                logger.warning("Zero variance in simulation - skill metrics set to -1.0")
 
             result = {}
             for metric in metrics:
+                if zero_variance and not MetricTransformer.is_minimize_metric(metric):
+                    result[metric] = -1.0
+                    continue
                 try:
                     # Check if this is a transformed metric (e.g., kge_log, kge_inv)
                     if metric in self.TRANSFORMED_METRICS:
                         base_metric, transform = self.TRANSFORMED_METRICS[metric]
                         obs_t, sim_t = self._transform_data(obs, sim, transform)
                         if len(obs_t) == 0:
-                            val = self.penalty_score
+                            val = failed(metric)
                         elif base_metric == 'kge':
                             val = kge(obs_t, sim_t, transfo=1)
                         elif base_metric == 'nse':
@@ -663,7 +686,7 @@ class StreamflowMetrics:
                         elif base_metric == 'rmse':
                             val = rmse(obs_t, sim_t, transfo=1)
                         else:
-                            val = self.penalty_score
+                            val = failed(metric)
                     elif metric == 'kge':
                         val = kge(obs, sim, transfo=1)
                     elif metric == 'nse':
@@ -674,19 +697,25 @@ class StreamflowMetrics:
                         val = mae(obs, sim, transfo=1)
                     elif metric == 'kge_prime':
                         val = kge_prime(obs, sim, transfo=1)
+                    elif (func := get_metric_function(metric)) is not None:
+                        # Any other registry metric (pbias, nrmse, mare, ...)
+                        if 'transfo' in inspect.signature(func).parameters:
+                            val = func(obs, sim, transfo=1)
+                        else:
+                            val = func(obs, sim)
                     else:
                         logger.warning(f"Unknown metric: {metric}")
-                        val = self.penalty_score
+                        val = failed(metric)
 
                     # Handle NaN/Inf values
                     if pd.isna(val) or np.isinf(val):
-                        val = self.penalty_score
+                        val = failed(metric)
 
                     result[metric] = float(val)
 
                 except Exception as e:  # noqa: BLE001 — must-not-raise contract
                     logger.warning(f"Error calculating {metric}: {e}")
-                    result[metric] = self.penalty_score
+                    result[metric] = failed(metric)
 
             return result
 

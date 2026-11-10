@@ -109,6 +109,40 @@ class OptimizationAlgorithm(ConfigMixin, ABC):
             return np.random.default_rng()
         return np.random.default_rng(int(seed))
 
+    def _initial_guess(self, n_params: int, kwargs: Dict[str, Any]) -> Optional[np.ndarray]:
+        """Normalized ``INITIAL_GUESS`` passed by the optimizer, or None.
+
+        ``BaseModelOptimizer`` normalizes the config's INITIAL_GUESS and
+        passes it as ``kwargs['initial_guess']``. Returns it clipped to
+        [0, 1], or None when absent or of the wrong length.
+        """
+        guess = kwargs.get('initial_guess')
+        if guess is None:
+            return None
+        guess = np.asarray(guess, dtype=float).reshape(-1)
+        if guess.size != n_params:
+            self.logger.warning(
+                f"Ignoring initial_guess with {guess.size} values for {n_params} parameters"
+            )
+            return None
+        return np.clip(guess, 0.0, 1.0)
+
+    def _start_point(self, n_params: int, kwargs: Dict[str, Any], default: np.ndarray) -> np.ndarray:
+        """Start point for single-point methods: the initial guess, else ``default``."""
+        guess = self._initial_guess(n_params, kwargs)
+        if guess is None:
+            return default
+        self.logger.info(f"{self.name}: starting from INITIAL_GUESS")
+        return guess
+
+    def _seed_population(self, population: np.ndarray, kwargs: Dict[str, Any]) -> np.ndarray:
+        """Put the initial guess (if any) into the population as member 0."""
+        guess = self._initial_guess(population.shape[1], kwargs)
+        if guess is not None and len(population) > 0:
+            population[0] = guess
+            self.logger.info(f"{self.name}: seeded INITIAL_GUESS as population member 0")
+        return population
+
     @property
     @abstractmethod
     def name(self) -> str:
@@ -311,8 +345,11 @@ class OptimizationAlgorithm(ConfigMixin, ABC):
             f_plus = evaluate_func(x_plus, 0)
             f_minus = evaluate_func(x_minus, 0)
 
-            # Central difference (for maximization, gradient points uphill)
-            gradient[i] = (f_plus - f_minus) / (2 * epsilon)
+            # Central difference (for maximization, gradient points uphill).
+            # Divide by the step actually taken: at a bound one side is
+            # clipped, and dividing by 2*eps would halve the slope there.
+            step = x_plus[i] - x_minus[i]
+            gradient[i] = (f_plus - f_minus) / step if step > 0 else 0.0
 
         return f_center, gradient
 

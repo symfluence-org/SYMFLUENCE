@@ -21,6 +21,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
+from symfluence.core.metrics.penalty import is_penalty
+
 from .base_algorithm import OptimizationAlgorithm
 from .config_schema import NSGA2Defaults
 
@@ -32,6 +34,23 @@ class NSGA2Algorithm(OptimizationAlgorithm):
     def name(self) -> str:
         """Algorithm identifier for logging and result tracking."""
         return "NSGA-II"
+
+    def _clean_objectives(self, objectives: np.ndarray, label: str) -> np.ndarray:
+        """Replace rows with any NaN/inf objective by the (finite) penalty.
+
+        Applied to the initial population as well as to offspring: a NaN
+        there poisons non-dominated sorting, crowding distance and the
+        ``argmax`` that picks the reported best.
+        """
+        objectives = np.array(objectives, dtype=float)
+        invalid_mask = ~np.isfinite(objectives).all(axis=1)
+        if invalid_mask.any():
+            self.logger.warning(
+                f"{label}: {invalid_mask.sum()} individual(s) returned invalid "
+                f"objectives, assigning penalty"
+            )
+            objectives[invalid_mask] = self.penalty_score
+        return objectives
 
     def optimize(
         self,
@@ -102,7 +121,7 @@ class NSGA2Algorithm(OptimizationAlgorithm):
 
         # Initialize population
         self.logger.debug(f"Initializing population ({pop_size} individuals)...")
-        population = self._rng.uniform(0, 1, (pop_size, n_params))
+        population = self._seed_population(self._rng.uniform(0, 1, (pop_size, n_params)), kwargs)
         objectives = np.full((pop_size, num_objectives), np.nan)
 
         # Evaluate initial population
@@ -120,19 +139,20 @@ class NSGA2Algorithm(OptimizationAlgorithm):
         # objective columns -- this yields a valid calibration result and matches the
         # behaviour of workers that only expose single-objective evaluation, so the
         # algorithm x model matrix stays consistent instead of leaving holes.
-        PENALTY_THRESHOLD = -900.0
-        if np.all(objectives < PENALTY_THRESHOLD) and multiobjective and evaluate_population is not None:
+        objectives = self._clean_objectives(objectives, "Initial population")
+        if np.all(is_penalty(objectives, self.penalty_score)) and multiobjective and evaluate_population is not None:
             self.logger.warning(
                 "Multi-objective evaluation returned all-penalty objectives; falling back "
                 "to single-objective (%s) evaluation for NSGA-II.", objective_names[0]
             )
             fitness = np.asarray(evaluate_population(population, 0)).reshape(-1)
             objectives = np.repeat(fitness.reshape(-1, 1), num_objectives, axis=1)
+            objectives = self._clean_objectives(objectives, "Initial population")
 
-        if np.all(objectives < PENALTY_THRESHOLD):
+        if np.all(is_penalty(objectives, self.penalty_score)):
             raise ValueError(
                 f"All {pop_size} individuals in the initial population returned penalty "
-                f"objectives (all values < {PENALTY_THRESHOLD}), even after falling back to "
+                f"objectives (all penalty or non-finite), even after falling back to "
                 f"single-objective evaluation. This indicates a broken model or forcing "
                 f"setup for this run rather than a multi-objective limitation."
             )
@@ -200,13 +220,9 @@ class NSGA2Algorithm(OptimizationAlgorithm):
                         offspring_objectives[:, 1] = offspring_fitness
 
                 # Handle NaN/Inf objective values
-                invalid_mask = ~np.isfinite(offspring_objectives).all(axis=1)
-                if invalid_mask.any():
-                    self.logger.warning(
-                        f"Generation {generation}: {invalid_mask.sum()} offspring "
-                        f"returned invalid objectives, assigning penalty"
-                    )
-                    offspring_objectives[invalid_mask] = float('-inf')
+                offspring_objectives = self._clean_objectives(
+                    offspring_objectives, f"Generation {generation} offspring"
+                )
 
                 # Combine parent and offspring populations
                 combined_pop = np.vstack([population, offspring])
