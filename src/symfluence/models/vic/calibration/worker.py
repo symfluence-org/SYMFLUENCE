@@ -23,7 +23,7 @@ from symfluence.core.calibration.workers.base_worker import (
     BaseWorker,
     run_worker_task,
 )
-from symfluence.core.exceptions import ValidationError
+from symfluence.core.exceptions import ModelExecutionError, ValidationError
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.modeling.utilities.periods import split_period
@@ -511,50 +511,29 @@ class VICWorker(BaseWorker):
             # Extract streamflow
             ds = xr.open_dataset(sim_file)
 
-            # Get runoff + baseflow
-            runoff = None
-            baseflow = None
-
-            for var in ['OUT_RUNOFF', 'RUNOFF']:
-                if var in ds:
-                    runoff = ds[var]
-                    break
-
-            for var in ['OUT_BASEFLOW', 'BASEFLOW']:
-                if var in ds:
-                    baseflow = ds[var]
-                    break
-
-            if runoff is None:
+            # Basin-mean runoff + baseflow depth: the same area-weighted
+            # aggregation the postprocessor uses for the results CSV.
+            from symfluence.models.vic.extractor import (
+                basin_mean_vic_runoff,
+                load_vic_cell_area,
+            )
+            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
+            project_dir = data_dir / f'domain_{domain_name}'
+            domain_file = resolve_config_value(
+                config, lambda: config.model.vic.domain_file, 'vic_domain.nc', 'VIC_DOMAIN_FILE'
+            )
+            cell_area = load_vic_cell_area(project_dir / 'settings' / 'VIC' / 'parameters' / domain_file)
+            try:
+                total_runoff = basin_mean_vic_runoff(ds, cell_area).values
+            except ModelExecutionError:
                 ds.close()
                 return {'kge': self.penalty_score, 'error': 'No runoff variable'}
-
-            # Aggregate spatially — sum across grid cells (each cell is mm/day)
-            # For lumped (single-cell) runs, sum == mean. For distributed runs,
-            # we need sum to get the area-weighted total runoff depth.
-            spatial_dims = [d for d in runoff.dims if d not in ['time']]
-            total_runoff = runoff.sum(dim=spatial_dims).values
-            if baseflow is not None:
-                total_runoff += baseflow.sum(dim=spatial_dims).values
-
-            # For distributed runs with multiple cells, divide by number of active
-            # cells to get area-averaged depth (mm/day). For single-cell, this is a no-op.
-            n_active_cells = 1
-            if spatial_dims:
-                # Count non-NaN cells at first timestep
-                first_step = runoff.isel(time=0)
-                n_active_cells = int((~first_step.isnull()).sum().values)
-                if n_active_cells > 1:
-                    total_runoff = total_runoff / n_active_cells
 
             times = pd.to_datetime(ds['time'].values)
             ds.close()
 
             # Convert to m³/s using catchment area
-            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
-            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
-            project_dir = data_dir / f'domain_{domain_name}'
-
             area_km2 = self._streamflow_metrics.get_catchment_area(
                 config, project_dir, domain_name, source='shapefile'
             )
