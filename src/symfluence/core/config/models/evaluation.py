@@ -331,3 +331,20 @@ class EvaluationConfig(BaseModel):
         if isinstance(v, str):
             return [item.strip() for item in v.split(",") if item.strip()]
         return v
+
+    @field_validator('analyses')
+    @classmethod
+    def warn_unknown_analyses(cls, v):
+        """Warn (not error) on unknown ANALYSES: the set is open to plugins."""
+        import logging
+
+        from .choices import KNOWN_ANALYSES, did_you_mean
+
+        for item in v or []:
+            token = str(item).strip().lower()
+            if token and token not in KNOWN_ANALYSES:
+                logging.getLogger(__name__).warning(
+                    "ANALYSES: unrecognized analysis '%s'%s; known: %s",
+                    item, did_you_mean(token, KNOWN_ANALYSES), ', '.join(sorted(KNOWN_ANALYSES)),
+                )
+        return v

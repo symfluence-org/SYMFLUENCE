@@ -227,14 +227,14 @@ def _bootstrap_model_aliases(R: type) -> None:
     #     and jsacsma packages. They are compatibility entries until those
     #     packages adopt the manifest field; keeping them means a config using
     #     the conventional hyphenated spelling keeps resolving meanwhile.
-    #   * SUMMA-MODFLOW — aliases to COUPLED_GW, a calibration pipeline rather
-    #     than a model, so no single package's manifest owns it. The MODFLOW
-    #     package registers COUPLED_GW from its calibration worker, not from a
-    #     manifest keyed on that name.
+    #
+    # (A former "SUMMA-MODFLOW" -> COUPLED_GW alias was removed: COUPLED_GW is
+    # a calibration pipeline with no runner/preprocessor/postprocessor, so the
+    # alias resolved to nothing at run time. HYDROLOGICAL_MODEL validation now
+    # rejects it with a pointer to GROUNDWATER_MODEL: MODFLOW.)
     model_aliases = {
         "HEC-HMS": "HECHMS",
         "SAC-SMA": "SACSMA",
-        "SUMMA-MODFLOW": "COUPLED_GW",
     }
     component_registries = (
         R.runners,

@@ -79,13 +79,10 @@ def test_discretize_domain_dispatches_combined_attributes(tmp_path, monkeypatch)
 
 
 def test_discretize_domain_rejects_unknown_method(tmp_path):
-    config = _base_config(tmp_path, "not_a_method")
-    logger = logging.getLogger("test_discretize_domain_rejects_unknown_method")
-
-    discretizer = DomainDiscretizer(config, logger)
-
-    with pytest.raises(ValueError):
-        discretizer.discretize_domain()
+    # Unknown SUB_GRID_DISCRETIZATION is now rejected when the config is built
+    # (pydantic's ValidationError is a ValueError), before any discretization.
+    with pytest.raises(ValueError, match="SUB_GRID_DISCRETIZATION"):
+        _base_config(tmp_path, "not_a_method")
 
 
 def _base_config_with_shp(tmp_path, discretization, shp_name):

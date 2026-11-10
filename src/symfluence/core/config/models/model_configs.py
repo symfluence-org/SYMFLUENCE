@@ -123,10 +123,68 @@ class ModelConfig(BaseModel):
     @field_validator('hydrological_model')
     @classmethod
     def validate_hydrological_model(cls, v):
-        """Normalize model list to comma-separated string"""
-        if isinstance(v, list):
-            return ",".join(str(i).strip() for i in v)
+        """Normalize to an upper-case comma-separated string and validate.
+
+        Model names are registry keys (upper case): a lower-case ``summa``
+        used to bypass case-sensitive checks downstream (e.g. it silently
+        skipped mizuRoute). Every name must be registered in ``R.runners``
+        or ``R.config_schemas`` (core or plugin, resolved lazily — no model
+        module is imported); unknown names fail with a did-you-mean suggestion.
+        """
+        from .choices import MODEL_NAME_HINTS, did_you_mean
+
+        items = v if isinstance(v, list) else str(v).split(',')
+        names = [str(i).strip().upper() for i in items if str(i).strip()]
+        if not names:
+            raise ValueError("HYDROLOGICAL_MODEL must name at least one model")
+
+        known = R.runners.keys()
+        if known:  # an unseeded/empty registry (stripped test env) can't judge
+            for name in names:
+                if name in MODEL_NAME_HINTS:
+                    raise ValueError(
+                        f"HYDROLOGICAL_MODEL: '{name}' is not a model; {MODEL_NAME_HINTS[name]}"
+                    )
+                if name not in R.runners and name not in R.config_schemas:
+                    raise ValueError(
+                        f"HYDROLOGICAL_MODEL: unknown model '{name}'{did_you_mean(name, known)}. "
+                        f"Registered models: {', '.join(known)} "
+                        "(plugin models must be installed to be recognized)"
+                    )
+        return ",".join(names)
+
+    @field_validator('routing_model')
+    @classmethod
+    def validate_routing_model(cls, v):
+        """ROUTING_MODEL must be 'none' or a registered (routing) runner."""
+        if v is None:
+            return v
+        from .choices import ROUTING_NONE_VALUES, ROUTING_PLUGIN_MODELS, ROUTING_SPELLINGS, did_you_mean
+
+        known = R.runners.keys()
+        if not known:
+            return v
+        for item in str(v).split(','):
+            name = item.strip().upper()
+            if (name in ROUTING_NONE_VALUES or name in ROUTING_SPELLINGS
+                    or name in ROUTING_PLUGIN_MODELS or name in R.runners):
+                continue
+            raise ValueError(
+                f"ROUTING_MODEL: unknown routing model '{item.strip()}'"
+                f"{did_you_mean(name, list(known) + ['NONE'])}. "
+                "Use 'none' or a registered model (e.g. mizuRoute, dRoute, troute)"
+            )
         return v
+
+    @field_validator('coupling_mode')
+    @classmethod
+    def validate_coupling_mode(cls, v):
+        from .choices import COUPLING_MODES, unknown_value_message
+
+        mode = str(v).strip().lower()
+        if mode not in COUPLING_MODES:
+            raise ValueError(unknown_value_message('COUPLING_MODE', str(v), COUPLING_MODES))
+        return mode
 
     @model_validator(mode='before')
     @classmethod

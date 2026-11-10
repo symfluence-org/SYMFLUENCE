@@ -212,7 +212,7 @@ from __future__ import annotations
 
 import os
 from difflib import get_close_matches
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Tuple
 
 from pydantic import ValidationError
 
@@ -282,22 +282,131 @@ def validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError(error_msg) from e
 
 
-def _load_env_overrides() -> Dict[str, Any]:
+# SYMFLUENCE_* environment variables that control the program itself (debug
+# hooks, interpreters, timeouts, strict mode, ...) rather than name a config
+# key. Even if one ever collides with a config alias it is never an override.
+_ENV_CONTROL_KEYS = frozenset({
+    'STRICT_CONFIG', 'ALLOW_UNKNOWN_KEYS',
+})
+
+
+def _load_env_overrides(hydrological_model: Optional[str] = None) -> Dict[str, Any]:
     """
-    Load configuration overrides from environment variables.
+    Load configuration overrides from ``SYMFLUENCE_<KEY>`` environment variables.
+
+    Only variables whose stripped name maps to a recognized config key are
+    applied (``SYMFLUENCE_DEBUG``, ``SYMFLUENCE_PYTHON``,
+    ``SYMFLUENCE_EVAL_WATCHDOG_SECONDS`` ... are program controls, not config,
+    and are ignored). Values are coerced by the *target field's* type, so a
+    string field such as STATION_ID=01013500 or EXPERIMENT_ID=2024 stays a
+    string, and CALIBRATION_PERIOD="a, b" is not split into a list.
     """
-    env_overrides = {}
+    from symfluence.core.config.transformers import build_combined_flat_to_nested_map
+
+    mapping = build_combined_flat_to_nested_map(hydrological_model)
+    env_overrides: Dict[str, Any] = {}
     prefix = "SYMFLUENCE_"
 
     for env_key, env_value in os.environ.items():
-        if env_key.startswith(prefix):
-            config_key = env_key[len(prefix):]
-            # The stripped key normalizes back through NORMALIZATION_ALIASES,
-            # so e.g. SYMFLUENCE_DATA_DIR -> DATA_DIR -> SYMFLUENCE_DATA_DIR.
-            norm_key = _normalize_key(config_key)
-            env_overrides[norm_key] = _coerce_value(env_value)
+        if not env_key.startswith(prefix):
+            continue
+        # The stripped key normalizes back through NORMALIZATION_ALIASES,
+        # so e.g. SYMFLUENCE_DATA_DIR -> DATA_DIR -> SYMFLUENCE_DATA_DIR.
+        norm_key = _normalize_key(env_key[len(prefix):])
+        if norm_key in _ENV_CONTROL_KEYS or norm_key not in mapping:
+            continue
+        env_overrides[norm_key] = _coerce_env_value(env_value, mapping[norm_key])
 
     return env_overrides
+
+
+def _field_annotation(path: Tuple[str, ...]) -> Any:
+    """Annotation of the config field at nested *path*, or None if unresolvable."""
+    from symfluence.core.config.key_validation import (
+        _field_for_key,
+        _resolve_basemodel_annotation,
+    )
+    from symfluence.core.config.models import SymfluenceConfig
+    from symfluence.core.config.models.model_configs import ModelConfig
+
+    model: Any = SymfluenceConfig
+    annotation: Any = None
+    for i, part in enumerate(path):
+        if model is None:
+            return None
+        field = _field_for_key(model, part)
+        if field is None:
+            if model is ModelConfig:
+                from symfluence.core.registries import R
+                model = R.config_schemas.get(part.upper())
+                continue
+            return None
+        annotation = field.annotation
+        if i < len(path) - 1:
+            model = _resolve_basemodel_annotation(annotation)
+    return annotation
+
+
+def _annotation_kinds(annotation: Any) -> set:
+    """Reduce a field annotation to the set of scalar kinds it accepts."""
+    import enum
+    import types
+    import typing
+
+    kinds: set = set()
+    origin = typing.get_origin(annotation)
+    if origin is typing.Annotated:
+        return _annotation_kinds(typing.get_args(annotation)[0])
+    if origin is typing.Union or origin is types.UnionType:
+        for arg in typing.get_args(annotation):
+            if arg is not type(None):
+                kinds |= _annotation_kinds(arg)
+        return kinds
+    if origin is typing.Literal:
+        return {type(a).__name__ for a in typing.get_args(annotation)}
+    if origin in (list, tuple, set, typing.List, typing.Tuple, typing.Set):
+        return {'list'}
+    if annotation is bool:
+        return {'bool'}
+    if annotation in (int, float):
+        return {annotation.__name__}
+    if annotation is str or (isinstance(annotation, type) and issubclass(annotation, (str, enum.Enum))):
+        return {'str'}
+    if annotation in (list, tuple, set):
+        return {'list'}
+    return {'any'}
+
+
+def _coerce_env_value(value: str, path: Tuple[str, ...]) -> Any:
+    """Coerce an environment-variable string by the target field's type."""
+    stripped = value.strip()
+    if stripped.lower() in ('none', 'null', ''):
+        return None
+    annotation = _field_annotation(path)
+    kinds = _annotation_kinds(annotation) if annotation is not None else {'any'}
+    if 'any' in kinds:
+        return _coerce_value(value)
+    if 'list' in kinds and ',' in stripped:
+        return [item.strip() for item in stripped.split(',')]
+    if 'str' in kinds:
+        # A string field keeps its exact text (leading zeros, commas, digits).
+        return stripped
+    if kinds == {'bool'}:
+        lower = stripped.lower()
+        if lower in ('true', 'yes', '1', 'on'):
+            return True
+        if lower in ('false', 'no', '0', 'off'):
+            return False
+        return stripped  # let validation report it
+    for kind, cast in (('int', int), ('float', float)):
+        if kind in kinds:
+            try:
+                return cast(stripped)
+            except ValueError:
+                continue
+    if 'list' in kinds:
+        return [stripped]
+    return stripped
 
 
 def _normalize_key(key: str) -> str:
@@ -335,6 +444,28 @@ def _coerce_value(value: Any) -> Any:
     return stripped
 
 
+_MISSING = object()
+
+
+def _lookup_config_value(config: Dict[str, Any], field: str) -> Any:
+    """Find the user's value for a formatted field label.
+
+    *field* is ``dotted.path`` or ``dotted.path (FLAT_KEY)``; *config* is the
+    flat or nested dict the user supplied.
+    """
+    dotted, _, rest = field.partition(' (')
+    flat_key = rest.rstrip(')') if rest else None
+    for key in (flat_key, dotted, dotted.rsplit('.', 1)[-1].upper()):
+        if key and key in config:
+            return config[key]
+    current: Any = config
+    for part in dotted.split('.'):
+        if not isinstance(current, dict) or part not in current:
+            return _MISSING
+        current = current[part]
+    return current
+
+
 def _format_validation_error(error: ValidationError, config: Dict[str, Any]) -> str:
     """
     Format Pydantic ValidationError with helpful suggestions.
@@ -359,8 +490,16 @@ def _format_validation_error(error: ValidationError, config: Dict[str, Any]) -> 
     # the right comparison set — user configs use flat keys like DOMAIN_NAME.
     valid_fields = {k.upper() for k in FLAT_TO_NESTED_MAP}
 
+    nested_to_flat = {tuple(path): key for key, path in FLAT_TO_NESTED_MAP.items()}
+
     for err in error.errors():
-        field_name = str(err['loc'][0]) if err['loc'] else 'unknown'
+        # Full dotted location (e.g. domain.discretization), not just the
+        # section; append the flat key users write when one maps to it.
+        loc = tuple(str(part) for part in err['loc']) if err['loc'] else ()
+        field_name = '.'.join(loc) if loc else 'unknown'
+        flat_key = nested_to_flat.get(loc)
+        if flat_key and flat_key != field_name:
+            field_name = f"{field_name} ({flat_key})"
         error_type = err['type']
         error_msg = err['msg']
 
@@ -392,8 +531,9 @@ def _format_validation_error(error: ValidationError, config: Dict[str, Any]) -> 
                 error_lines.append(f"    Expected: {ctx['expected']}")
 
             # Add actual value if provided in config
-            if field in config:
-                error_lines.append(f"    Got: {config[field]}")
+            value = _lookup_config_value(config, field)
+            if value is not _MISSING:
+                error_lines.append(f"    Got: {value}")
 
     # Format other validation errors
     if other_errors:
@@ -401,8 +541,9 @@ def _format_validation_error(error: ValidationError, config: Dict[str, Any]) -> 
         error_lines.append("-" * 70)
         for field, msg in other_errors:
             error_lines.append(f"  ✗ {field}: {msg}")
-            if field in config:
-                error_lines.append(f"    Current value: {config[field]}")
+            value = _lookup_config_value(config, field)
+            if value is not _MISSING:
+                error_lines.append(f"    Current value: {value}")
 
     # Check for potential typos in config keys
     config_keys = set(k.upper() for k in config.keys())
