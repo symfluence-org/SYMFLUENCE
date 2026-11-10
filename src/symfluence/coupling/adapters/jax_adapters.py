@@ -10,7 +10,7 @@ JAXComponent, enabling gradient flow through the CouplingGraph.
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from dcoupler.core.component import (
     FluxDirection,
@@ -18,6 +18,9 @@ from dcoupler.core.component import (
     ParameterSpec,
 )
 from dcoupler.wrappers.jax import JAXComponent
+
+if TYPE_CHECKING:
+    import torch
 
 logger = logging.getLogger(__name__)
 
@@ -375,6 +378,8 @@ class HBVJAXComponent(JAXComponent):
         def step_wrapper(inputs, state, params, dt):
             import jax.numpy as jnp
             from jhbv.model import HBVState, create_params_from_dict
+            # Parameters arrive as shape-(1,) arrays; the kernel expects scalars.
+            params = {k: jnp.squeeze(v) for k, v in params.items()}
             hbv_params = create_params_from_dict(params, use_jax=True)
             # Unpack flat array → HBVState namedtuple
             # State: snow, snow_water, sm, suz, slz, routing_buffer
@@ -399,17 +404,18 @@ class HBVJAXComponent(JAXComponent):
             )
             # Pack HBVState back to flat array
             new_state = jnp.concatenate([
-                jnp.stack([
+                jnp.ravel(jnp.stack([
                     new_hbv_state.snow, new_hbv_state.snow_water,
                     new_hbv_state.sm, new_hbv_state.suz, new_hbv_state.slz,
-                ]),
-                new_hbv_state.routing_buffer,
+                ])),
+                jnp.ravel(new_hbv_state.routing_buffer),
             ])
             return runoff, new_state
 
-        # HBV state: 5 core + routing buffer (7 slots for maxbas up to 7)
+        # HBV state: 5 core + routing buffer sized for the largest maxbas
+        # (7 days) at the daily timestep the flux specs declare.
         from jhbv.model import get_routing_buffer_length
-        buf_len = get_routing_buffer_length(lag_days=7, timestep_hours=24)
+        buf_len = get_routing_buffer_length(7.0, timestep_hours=24)
         super().__init__(
             name=name,
             jax_step_fn=step_wrapper,
@@ -542,8 +548,10 @@ class TopmodelJAXComponent(JAXComponent):
     def __init__(self, name: str = "topmodel", config: Optional[dict] = None):
         try:
             jax_step = _get_topmodel_step()
+            from jtopmodel.parameters import N_TI_BINS
         except ImportError:
             raise ImportError("TOPMODEL (jtopmodel) not available") from None
+        n_bins = int(N_TI_BINS)
 
         param_specs = [
             ParameterSpec(pname, lo, hi)
@@ -563,20 +571,24 @@ class TopmodelJAXComponent(JAXComponent):
         def step_wrapper(inputs, state, params, dt):
             import jax.numpy as jnp
             from jtopmodel.model import TopmodelState, create_params_from_dict, generate_ti_distribution
+            # Parameters arrive as shape-(1,) arrays; a (1,) ti_std would make
+            # the TI distribution (n_bins, 1) and the state grow every step.
+            params = {k: jnp.squeeze(v) for k, v in params.items()}
             tm_params = create_params_from_dict(params, use_jax=True)
-            # Unpack flat array → TopmodelState namedtuple
+            # Unpack flat array → TopmodelState namedtuple. srz and suz are
+            # per-TI-class vectors of length n_bins.
             tm_state = TopmodelState(
                 s_bar=state[0],
-                srz=state[1],
-                suz=state[2],
-                swe=state[3],
-                q_routed=state[4],
+                srz=state[1:1 + n_bins],
+                suz=state[1 + n_bins:1 + 2 * n_bins],
+                swe=state[1 + 2 * n_bins],
+                q_routed=state[2 + 2 * n_bins],
             )
-            # Generate topographic index distribution from ti_std parameter
+            # Topographic index distribution from the ti_std parameter
+            # (centred at 0; the absolute TI level is absorbed into lnTe).
             lnaotb, dist_area = generate_ti_distribution(
-                ti_mean=jnp.float32(8.0),
                 ti_std=params.get("ti_std", jnp.float32(3.0)),
-                n_classes=30,
+                n_bins=n_bins,
                 use_jax=True,
             )
             dt_hours = max(1.0, dt / 3600.0)
@@ -592,18 +604,44 @@ class TopmodelJAXComponent(JAXComponent):
                 use_jax=True,
             )
             # Pack TopmodelState back to flat array
-            new_state = jnp.stack([
-                new_tm_state.s_bar, new_tm_state.srz, new_tm_state.suz,
-                new_tm_state.swe, new_tm_state.q_routed,
+            new_state = jnp.concatenate([
+                jnp.atleast_1d(new_tm_state.s_bar),
+                jnp.ravel(new_tm_state.srz),
+                jnp.ravel(new_tm_state.suz),
+                jnp.atleast_1d(new_tm_state.swe),
+                jnp.atleast_1d(new_tm_state.q_routed),
             ])
             return runoff, new_state
 
-        # TopmodelState: 5 variables (s_bar, srz, suz, swe, q_routed)
+        # TopmodelState: s_bar, srz[n_bins], suz[n_bins], swe, q_routed
         super().__init__(
             name=name,
             jax_step_fn=step_wrapper,
             param_specs=param_specs,
-            state_size=5,
+            state_size=3 + 2 * n_bins,
             input_flux_specs=input_flux_specs,
             output_flux_specs=output_flux_specs,
         )
+
+    def get_initial_state(self) -> torch.Tensor:
+        """Plugin initial state from the current S0/Sr0 parameters, not zeros.
+
+        An all-zero state means a fully saturated catchment (s_bar = 0), which
+        TOPMODEL drains as an enormous baseflow pulse.
+        """
+        import numpy as np
+        import torch
+        from jtopmodel.parameters import create_initial_state, create_params_from_dict
+
+        phys = {
+            k: float(v.detach().reshape(-1)[0])
+            for k, v in self.get_physical_parameters().items()
+        }
+        st = create_initial_state(
+            create_params_from_dict(phys, use_jax=False), use_jax=False,
+        )
+        flat = np.concatenate([
+            np.atleast_1d(st.s_bar), np.ravel(st.srz), np.ravel(st.suz),
+            np.atleast_1d(st.swe), np.atleast_1d(st.q_routed),
+        ]).astype(np.float32)
+        return torch.from_numpy(flat)
