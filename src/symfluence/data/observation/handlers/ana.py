@@ -136,11 +136,8 @@ class ANAStreamflowHandler(BaseObservationHandler):
                 f"({self.start_date} to {self.end_date})."
             )
 
-        resample_freq = self._get_resample_freq()
-        resampled = df["discharge_cms"].resample(resample_freq).mean()
-        resampled = resampled.interpolate(
-            method="time", limit_direction="both", limit=30
-        )
+        # ANA values are daily means, never interpolated.
+        resampled = self._daily_streamflow_to_target(df["discharge_cms"])
 
         output_dir = self.project_observations_dir / "streamflow" / "preprocessed"
         output_dir.mkdir(parents=True, exist_ok=True)

@@ -27,6 +27,35 @@ from symfluence.core.registries import R
 
 logger = logging.getLogger(__name__)
 
+#: ParFlow ``TimingInfo.DumpInterval`` the preprocessors write when nothing
+#: else is configured (hours).
+DEFAULT_DUMP_INTERVAL_HOURS = 24.0
+
+
+def resolve_dump_interval_hours(config, model_key: str = 'parflow') -> float:
+    """Return the ParFlow output dump interval (hours) for ``model_key``.
+
+    Single source of truth shared by the preprocessors (which write
+    ``TimingInfo.DumpInterval``), the calibration targets, the
+    postprocessors and the plotters. ``overlandsum`` output is a volume
+    accumulated over one dump interval and the .pfb files are written once
+    per dump interval, so every reader must use the same value or flow is
+    scaled by ``dump/timestep`` and the time axis is compressed.
+
+    Args:
+        config: Typed SYMFLUENCE config (``config.model.<model_key>``) or
+            ``None``.
+        model_key: ``'parflow'`` or ``'clmparflow'``.
+    """
+    try:
+        model_cfg = getattr(config.model, model_key)
+        value = getattr(model_cfg, 'dump_interval_hours', None)
+        if value is not None:
+            return float(value)
+    except (AttributeError, TypeError, ValueError):
+        pass
+    return DEFAULT_DUMP_INTERVAL_HOURS
+
 
 def _read_pfb(filepath: Path) -> np.ndarray:
     """Read a ParFlow .pfb binary file.

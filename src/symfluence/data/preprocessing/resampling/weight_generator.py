@@ -252,7 +252,7 @@ class RemappingWeightGenerator(ConfigMixin):
 
         try:
             # Handle longitude alignment
-            target_shp_for_easymore, disable_lon_correction = self._align_longitudes(
+            source_shp_wgs84, target_shp_for_easymore, disable_lon_correction = self._align_longitudes(
                 source_shp_wgs84, target_shp_wgs84, temp_dir
             )
 
@@ -285,46 +285,73 @@ class RemappingWeightGenerator(ConfigMixin):
         source_shp_wgs84: Path,
         target_shp_wgs84: Path,
         temp_dir: Path
-    ) -> Tuple[Path, bool]:
-        """Align target longitudes to 0-360 if source uses that frame."""
-        target_shp_for_easymore = target_shp_wgs84
-        disable_lon_correction = False
+    ) -> Tuple[Path, Path, bool]:
+        """Put source and target polygons in the same longitude frame.
 
-        try:
-            source_gdf = gpd.read_file(source_shp_wgs84)
-            source_lon_field = self._get_config_value(lambda: self.config.forcing.shape_lon_name, dict_key='FORCING_SHAPE_LON_NAME')
+        Only acts when the SOURCE grid is in the 0-360 frame:
 
-            if source_lon_field in source_gdf.columns:
-                source_lon_max = float(source_gdf[source_lon_field].max())
+        - target entirely west of 0 deg (all longitudes < 0): shift the target
+          +360 into the source frame;
+        - target straddling 0 deg (minx < 0 < maxx): no single shift of the
+          target works (its eastern part would land beyond 360), so instead
+          the source cells east of 180 deg are moved -360 into the -180..180
+          frame. Only the source GEOMETRY moves; its lat/lon attribute fields
+          keep their 0-360 values, which is what EASYMORE uses to map each
+          cell back to the NetCDF grid;
+        - target entirely east of 0 deg: nothing to do.
 
-                if source_lon_max > 180:
-                    target_gdf = gpd.read_file(target_shp_wgs84)
-                    minx, _, maxx, _ = target_gdf.total_bounds
+        Errors are raised, not swallowed: misaligned frames silently yield
+        empty or partial weights.
 
-                    if minx < 0 or maxx < 0:
-                        from shapely.affinity import translate
+        Returns:
+            (source shapefile, target shapefile, longitude-correction-disabled)
+        """
+        from shapely.affinity import translate
 
-                        target_gdf = target_gdf.copy()
-                        target_gdf["geometry"] = target_gdf["geometry"].apply(
-                            lambda geom: translate(geom, xoff=360) if geom is not None else geom
-                        )
+        source_gdf = gpd.read_file(source_shp_wgs84)
+        source_lon_field = self._get_config_value(lambda: self.config.forcing.shape_lon_name, dict_key='FORCING_SHAPE_LON_NAME')
 
-                        target_lon_field = self._get_config_value(lambda: self.config.paths.catchment_lon, dict_key='CATCHMENT_SHP_LON')
-                        if target_lon_field in target_gdf.columns:
-                            target_gdf[target_lon_field] = target_gdf[target_lon_field].apply(
-                                lambda v: v + 360 if v < 0 else v
-                            )
+        if source_lon_field in source_gdf.columns:
+            source_lon_max = float(source_gdf[source_lon_field].max())
+        else:
+            source_lon_max = float(source_gdf.total_bounds[2])
+        if source_lon_max <= 180:
+            return source_shp_wgs84, target_shp_wgs84, False
 
-                        shifted_path = temp_dir / f"{target_shp_wgs84.stem}_lon360.shp"
-                        target_gdf.to_file(shifted_path)
-                        target_shp_for_easymore = shifted_path
-                        disable_lon_correction = True
-                        self.logger.debug("Shifted target shapefile longitudes to 0-360.")
+        target_gdf = gpd.read_file(target_shp_wgs84)
+        minx, _, maxx, _ = target_gdf.total_bounds
 
-        except Exception as e:  # noqa: BLE001 — preprocessing resilience
-            self.logger.warning(f"Failed to align target longitudes: {e}", exc_info=True)
+        if maxx <= 0:
+            target_gdf = target_gdf.copy()
+            target_gdf["geometry"] = target_gdf["geometry"].apply(
+                lambda geom: translate(geom, xoff=360) if geom is not None else geom
+            )
+            target_lon_field = self._get_config_value(lambda: self.config.paths.catchment_lon, dict_key='CATCHMENT_SHP_LON')
+            if target_lon_field in target_gdf.columns:
+                target_gdf[target_lon_field] = target_gdf[target_lon_field].apply(
+                    lambda v: v + 360 if v < 0 else v
+                )
+            shifted_path = temp_dir / f"{target_shp_wgs84.stem}_lon360.shp"
+            target_gdf.to_file(shifted_path)
+            self.logger.debug("Shifted target shapefile longitudes to 0-360.")
+            return source_shp_wgs84, shifted_path, True
 
-        return target_shp_for_easymore, disable_lon_correction
+        if minx < 0:
+            # Target straddles the prime meridian: move the source instead.
+            source_gdf = source_gdf.copy()
+            centroid_x = source_gdf.geometry.bounds[["minx", "maxx"]].mean(axis=1)
+            east = centroid_x > 180
+            source_gdf.loc[east, "geometry"] = source_gdf.loc[east, "geometry"].apply(
+                lambda geom: translate(geom, xoff=-360) if geom is not None else geom
+            )
+            shifted_path = temp_dir / f"{Path(source_shp_wgs84).stem}_lon180.shp"
+            source_gdf.to_file(shifted_path)
+            self.logger.debug(
+                "Target straddles 0 deg; shifted %d source cells from 0-360 to -180..180 "
+                "(attribute longitudes unchanged).", int(east.sum()))
+            return shifted_path, target_shp_wgs84, True
+
+        return source_shp_wgs84, target_shp_wgs84, False
 
     def _configure_easymore(
         self,

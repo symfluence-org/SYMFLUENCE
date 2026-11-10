@@ -37,6 +37,7 @@ from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 
+from symfluence.core.exceptions import DataAcquisitionError
 from symfluence.core.registries import R
 
 from ..base import BaseObservationHandler
@@ -314,9 +315,8 @@ class _BaseCAMELSStreamflowHandler(BaseObservationHandler):
         df = df.dropna(subset=['discharge_cms'])
 
         # Resample to target timestep
-        resample_freq = self._get_resample_freq()
-        resampled = df['discharge_cms'].resample(resample_freq).mean()
-        resampled = resampled.interpolate(method='time', limit_direction='both', limit=30)
+        # CAMELS archives are daily means, never interpolated.
+        resampled = self._daily_streamflow_to_target(df['discharge_cms'])
 
         # Filter to experiment period
         resampled = resampled.loc[self.start_date:self.end_date]
@@ -568,15 +568,17 @@ class CAMELSAUSStreamflowHandler(_BaseCAMELSStreamflowHandler):
     def _parse_streamflow_file(self, path: Path) -> Optional[pd.DataFrame]:
         df = pd.read_csv(path)
 
-        date_col = self._find_col(list(df.columns), ['date', 'year'])
-        if date_col is None:
-            # CAMELS-AUS sometimes has year/month/day columns
-            if all(c in df.columns for c in ['year', 'month', 'day']):
-                df['datetime'] = pd.to_datetime(df[['year', 'month', 'day']])
-            else:
-                df['datetime'] = pd.to_datetime(df.iloc[:, 0], errors='coerce')
+        # CAMELS-AUS sometimes has year/month/day columns; assemble those
+        # before looking for a single date column (a bare 'year' column must
+        # never be parsed as a timestamp on its own).
+        if all(c in df.columns for c in ['year', 'month', 'day']):
+            df['datetime'] = pd.to_datetime(df[['year', 'month', 'day']])
         else:
-            df['datetime'] = pd.to_datetime(df[date_col], errors='coerce')
+            date_col = self._find_col(list(df.columns), ['date'])
+            if date_col is None:
+                df['datetime'] = pd.to_datetime(df.iloc[:, 0], errors='coerce')
+            else:
+                df['datetime'] = pd.to_datetime(df[date_col], errors='coerce')
 
         df.set_index('datetime', inplace=True)
         df.sort_index(inplace=True)
@@ -639,12 +641,18 @@ class CAMELSGBStreamflowHandler(_BaseCAMELSStreamflowHandler):
         df.sort_index(inplace=True)
 
         # CAMELS-GB: discharge_vol (m3/s) or discharge_spec (mm/day)
-        q_col = self._find_col(list(df.columns), ['discharge_vol', 'discharge_spec', 'discharge'])
+        q_col = self._find_col(list(df.columns), ['discharge_vol', 'discharge'])
         if q_col is None:
             numeric_cols = df.select_dtypes(include=[np.number]).columns
             q_col = numeric_cols[-1] if len(numeric_cols) > 0 else None
         if q_col is None:
             return None
+        if 'spec' in str(q_col).lower():
+            # discharge_spec is mm/day (area-normalised), not m3/s.
+            raise DataAcquisitionError(
+                f"CAMELS-GB file {path.name} has no discharge_vol (m3/s) column; "
+                f"refusing to store specific discharge '{q_col}' (mm/day) as m3/s"
+            )
 
         df['discharge_cms'] = pd.to_numeric(df[q_col], errors='coerce')
         df.loc[df['discharge_cms'] < 0, 'discharge_cms'] = np.nan

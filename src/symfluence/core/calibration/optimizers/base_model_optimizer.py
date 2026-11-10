@@ -156,7 +156,7 @@ class BaseModelOptimizer(
         # Algorithm parameters (using typed config with dict_key fallback)
         self.max_iterations = self._get_config_value(
             lambda: self.config.optimization.iterations, default=self.DEFAULT_ITERATIONS,
-            dict_key='OPTIMIZATION_MAX_ITERATIONS'
+            dict_key='NUMBER_OF_ITERATIONS'
         )
         self.population_size = self._get_config_value(
             lambda: self.config.optimization.population_size, default=self.DEFAULT_POPULATION_SIZE,
@@ -872,18 +872,26 @@ class BaseModelOptimizer(
         param_names = self.param_manager.all_param_names
         bounds = self.param_manager.get_parameter_bounds()
 
-        # Compute scale factors for gradient chain rule
-        # d(loss)/d(x_norm) = d(loss)/d(x_phys) * d(x_phys)/d(x_norm)
-        # where d(x_phys)/d(x_norm) = (upper - lower) for linear scaling.
+        # Scale factors for the gradient chain rule
+        # d(loss)/d(x_norm) = d(loss)/d(x_phys) * d(x_phys)/d(x_norm), where
+        # d(x_phys)/d(x_norm) is (upper - lower) for linear bounds and
+        # x_phys * (ln upper - ln lower) for 'transform: log' bounds (so it
+        # depends on the point; see denormalize_derivative).
         # A parameter present in all_param_names but absent from bounds (no
         # calibration range, e.g. SAC-SMA's PXADJ) is held fixed: denormalize()
         # already skips it, so its scale factor is 0.0 — the chain rule then
         # zeroes its normalized gradient and the optimiser never moves it,
         # matching the gradient-free path that logs "No bounds, skipping".
-        scale_factors = np.array([
-            (bounds[name]['max'] - bounds[name]['min']) if name in bounds else 0.0
-            for name in param_names
-        ])
+        from symfluence.core.calibration.parameters.base_parameter_manager import (
+            denormalize_derivative,
+        )
+
+        def scale_factors_at(x_normalized: np.ndarray) -> np.ndarray:
+            return np.array([
+                denormalize_derivative(bounds[name], float(x_normalized[i]))
+                if name in bounds else 0.0
+                for i, name in enumerate(param_names)
+            ])
 
         def gradient_callback(x_normalized: np.ndarray) -> Tuple[float, np.ndarray]:
             """
@@ -917,7 +925,7 @@ class BaseModelOptimizer(
             grad_physical = np.array([grad_dict.get(name, 0.0) for name in param_names])
 
             # Transform gradient from physical to normalized space via chain rule
-            grad_normalized = grad_physical * scale_factors
+            grad_normalized = grad_physical * scale_factors_at(x_normalized)
 
             return loss, grad_normalized
 

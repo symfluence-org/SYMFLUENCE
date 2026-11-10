@@ -106,7 +106,7 @@ class PSOAlgorithm(OptimizationAlgorithm):
 
         # Initialize swarm
         self.logger.debug(f"Evaluating initial population ({n_particles} particles)...")
-        positions = np.random.uniform(0, 1, (n_particles, n_params))
+        positions = self._seed_population(np.random.uniform(0, 1, (n_particles, n_params)), kwargs)
         velocities = np.random.uniform(-v_max, v_max, (n_particles, n_params))
 
         # Evaluate initial population

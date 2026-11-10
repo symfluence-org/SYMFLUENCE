@@ -194,9 +194,9 @@ class GRPostProcessor(BaseModelPostProcessor):
         self.logger.info(f"Reading routed streamflow from: {mizuroute_file}")
 
         with xr.open_dataset(mizuroute_file) as ds:
-            # NOTE: outlet is taken as the last segment, as before. Picking the
-            # outlet by position is a separate question from units and is left
-            # unchanged here.
+            # Outlet: the shared reach rule (SIM_REACH_ID, else the topology
+            # outlet, else highest mean flow) -- the same reach calibration
+            # and the evaluator score.
             streamflow_var = next(
                 (v for v in ('IRFroutedRunoff', 'dlayRunoff', 'KWTroutedRunoff')
                  if v in ds.variables),
@@ -211,7 +211,16 @@ class GRPostProcessor(BaseModelPostProcessor):
 
             # to_pandas() is typed as DataArray | Series | DataFrame; a 1-D
             # selection is always a Series.
-            series = cast(pd.Series, ds[streamflow_var].isel(seg=-1).to_pandas())
+            from symfluence.core.modeling.utilities.reach_selection import (
+                select_outlet_series,
+                sim_reach_id_from_config,
+                topology_candidates_from_config,
+            )
+            series = select_outlet_series(
+                ds, ds[streamflow_var], sim_reach_id_from_config(self.config),
+                topology_candidates_from_config(self.config, near=mizuroute_file),
+                self.logger,
+            )
 
         series.index = pd.to_datetime(series.index)
         return series

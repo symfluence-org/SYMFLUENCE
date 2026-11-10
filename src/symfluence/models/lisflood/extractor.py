@@ -9,7 +9,52 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
+from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.modeling.base import ModelResultExtractor
+
+#: LISFLOOD model step (DtSec) the preprocessor writes when
+#: LISFLOOD_FORCING_TIMESTEP is unset (seconds).
+DEFAULT_LISFLOOD_TIMESTEP_SECONDS = 86400
+
+
+def resolve_lisflood_timestep_seconds(config) -> int:
+    """Model step (s) -- the value the preprocessor writes as DtSec."""
+    from symfluence.core.mixins.config import resolve_config_value
+    return int(resolve_config_value(
+        config, lambda: config.model.lisflood.forcing_timestep,
+        DEFAULT_LISFLOOD_TIMESTEP_SECONDS, 'LISFLOOD_FORCING_TIMESTEP',
+    ))
+
+
+def read_tss_series(tss_path: Path, start, timestep_seconds: int) -> pd.Series:
+    """Dated discharge series from a LISFLOOD/PCRaster ``.tss`` file.
+
+    Shared by the calibration worker and the postprocessor. Data rows are
+    lines whose fields are all numeric (``step value [value ...]``); header
+    lines (title, column count, column names) are skipped. Step ``k`` is
+    dated ``start + (k - 1) * timestep`` where ``start`` is the simulation
+    start (midnight-aligned for daily or longer steps, as the preprocessor
+    writes CalendarDayStart/StepStart) and ``timestep`` is the model DtSec.
+    The last column is the (single-gauge) discharge.
+    """
+    steps, values = [], []
+    for line in Path(tss_path).read_text().strip().split("\n"):
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        try:
+            nums = [float(p) for p in parts]
+        except ValueError:
+            continue
+        steps.append(int(nums[0]))
+        values.append(nums[-1])
+    if not values:
+        raise ModelExecutionError(f"No data rows in TSS file {tss_path}")
+    start_ts = pd.Timestamp(start)
+    if timestep_seconds >= 86400:
+        start_ts = start_ts.normalize()
+    offsets = pd.to_timedelta([(k - 1) * timestep_seconds for k in steps], unit="s")
+    return pd.Series(values, index=pd.DatetimeIndex(start_ts + offsets), name="discharge_cms")
 
 
 class LisfloodResultExtractor(ModelResultExtractor):

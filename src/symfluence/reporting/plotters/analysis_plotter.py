@@ -656,7 +656,7 @@ class AnalysisPlotter(BasePlotter):
         # Find SWE column
         swe_col = None
         for col in df.columns:
-            if col.lower() in ('swe', 'snw', 'snow_water_equivalent'):
+            if col.lower() in ('swe', 'swe_mm', 'swe_in', 'snw', 'snow_water_equivalent'):
                 swe_col = col
                 break
         if swe_col is None:
@@ -670,9 +670,9 @@ class AnalysisPlotter(BasePlotter):
 
         obs_series = df[swe_col].astype(float)
 
-        return UnitConverter.swe_inches_to_mm(
+        return UnitConverter.swe_series_to_mm(
             obs_series,
-            auto_detect=True,
+            swe_col,
             logger=self.logger,
         )
 

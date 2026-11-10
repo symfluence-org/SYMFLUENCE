@@ -29,6 +29,8 @@ from typing import Any, Callable, Dict, Optional
 
 import numpy as np
 
+from symfluence.core.metrics.penalty import is_penalty
+
 from .base_algorithm import NativeGradientCallback, OptimizationAlgorithm
 from .config_schema import AdamDefaults
 
@@ -70,6 +72,9 @@ class AdamAlgorithm(OptimizationAlgorithm):
         - steps: Maximum iterations (default: uses max_iterations)
         - gradient_mode: 'auto', 'native', or 'finite_difference'
     """
+
+    # Consecutive failed evaluations after which Adam stops early.
+    MAX_CONSECUTIVE_FAILURES = 5
 
     @property
     def name(self) -> str:
@@ -219,20 +224,38 @@ class AdamAlgorithm(OptimizationAlgorithm):
         best_x = x.copy()
         best_fitness = float('-inf')
         n_improvements = 0
+        consecutive_failures = 0
 
         for step in range(steps):
             # Compute gradients using unified gradient function
             fitness, gradient = gradient_func(x)
 
-            # Check for NaN fitness — skip step entirely
-            if np.isnan(fitness):
-                self.logger.warning(f"ADAM step {step}: NaN fitness detected, skipping update")
+            # Failed evaluation (NaN / inf / penalty): the gradient is
+            # meaningless, and re-evaluating the same x would fail forever.
+            # Move to a perturbed copy of the best point; give up after a run
+            # of consecutive failures.
+            if is_penalty(fitness, self.penalty_score):
+                consecutive_failures += 1
+                if consecutive_failures >= self.MAX_CONSECUTIVE_FAILURES:
+                    self.logger.warning(
+                        f"ADAM step {step}: {consecutive_failures} consecutive failed "
+                        f"evaluations, stopping early"
+                    )
+                    break
+                self.logger.warning(
+                    f"ADAM step {step}: failed evaluation (fitness={fitness}), "
+                    f"perturbing from best point"
+                )
+                x = np.clip(
+                    best_x + self._rng.normal(0.0, max(float(lr or 0.0), 1e-3), n_params), 0.0, 1.0
+                )
                 log_progress(
                     self.name, step + 1, best_fitness,
                     n_improved=n_improvements, pop_size=step + 1,
                     unit='epochs', total=steps
                 )
                 continue
+            consecutive_failures = 0
 
             # Clip gradient (handles NaN elements internally)
             gradient = self._clip_gradient(gradient, gradient_clip)
@@ -273,6 +296,9 @@ class AdamAlgorithm(OptimizationAlgorithm):
                 n_improved=n_improvements, pop_size=step + 1,
                 unit='epochs', total=steps
             )
+
+        if not np.isfinite(best_fitness):
+            best_fitness = self.penalty_score
 
         return {
             'best_solution': best_x,

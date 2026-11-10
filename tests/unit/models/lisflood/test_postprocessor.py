@@ -98,9 +98,11 @@ station 1
         result = pp_mock._read_tss_file(tss_path)
 
         assert isinstance(result, pd.Series)
-        # "2" line is numeric so parsed as data (6 records total)
-        assert len(result) == 6
+        # Header lines ("2", "station 1") are not data rows
+        assert len(result) == 5
         assert result.iloc[-1] == pytest.approx(4.5)
+        assert result.index[0] == pd.Timestamp("2005-01-01")
+        assert result.index[-1] == pd.Timestamp("2005-01-05")
 
     def test_read_tss_file_handles_header_lines(self, tmp_path):
         """Test TSS parsing with various header formats."""

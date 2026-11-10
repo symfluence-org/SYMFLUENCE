@@ -17,8 +17,6 @@ import pandas as pd
 from symfluence.core.base_manager import BaseManager
 from symfluence.core.constants import SupportedModels
 from symfluence.core.exceptions import OptimizationError
-from symfluence.core.mixins.config import resolve_config_value
-from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.registries import R
 from symfluence.optimization.core import TransformationManager
 from symfluence.optimization.optimization_results_manager import OptimizationResultsManager
@@ -264,10 +262,9 @@ class OptimizationManager(BaseManager):
                 LBFGS_LR (optimization.lbfgs.lr): L-BFGS initial step size (default: 0.1)
 
         Returns:
-            Optional[Path]: Path to last completed calibration results file
-            - None if calibration is disabled (no 'iteration' method) or
-              handled internally by the model (FUSE built-in SCE)
-            - Path if calibration completed
+            Optional[Path]: Path to the last completed calibration results
+            file, or None if calibration is disabled (no 'iteration' method)
+            or handled internally by the model (FUSE built-in SCE).
 
         Raises:
             OptimizationError: no optimizer registered, unsupported algorithm,
@@ -475,96 +472,15 @@ class OptimizationManager(BaseManager):
             Path to the saved final-evaluation JSON, or None if the run output
             or observations are unavailable.
         """
-        from symfluence.core.calibration.optimizers.final_evaluation.results_saver import FinalResultsSaver
-        from symfluence.core.metrics.metrics_core import calculate_all_metrics
-        from symfluence.core.metrics.streamflow_metrics import StreamflowMetrics
+        from symfluence.core.calibration.optimizers.final_evaluation.self_training import (
+            evaluate_self_training_model,
+        )
 
         try:
-            import xarray as xr
-
-            sim_file = (
-                self.project_dir / 'simulations' / self.experiment_id / model_name /
-                f"{self.experiment_id}_{model_name}_output.nc"
+            return evaluate_self_training_model(
+                self.config, self.config_dict, self.project_dir, self.experiment_id,
+                self.domain_name, model_name, algorithm, self.logger,
             )
-            if not sim_file.exists():
-                self.logger.warning(
-                    f"{model_name} evaluation skipped: run output not found at {sim_file} "
-                    f"(run the model step first)"
-                )
-                return None
-
-            with xr.open_dataset(sim_file) as ds:
-                if 'predicted_streamflow' not in ds:
-                    self.logger.warning(
-                        f"{model_name} evaluation skipped: no predicted_streamflow in {sim_file}"
-                    )
-                    return None
-                sim_series = ds['predicted_streamflow'].to_series()
-            sim_series = sim_series.resample('D').mean()
-
-            sm = StreamflowMetrics()
-            obs_values, obs_index = sm.load_observations(
-                self.config_dict, self.project_dir, self.domain_name, resample_freq='D'
-            )
-            if obs_values is None:
-                self.logger.warning(f"{model_name} evaluation skipped: no observations found")
-                return None
-            obs_series = pd.Series(obs_values, index=obs_index)
-
-            periods = {
-                'calibration_metrics': resolve_config_value(self.config, lambda: self.config.domain.calibration_period, '', 'CALIBRATION_PERIOD'),
-                'evaluation_metrics': resolve_config_value(self.config, lambda: self.config.domain.evaluation_period, '', 'EVALUATION_PERIOD'),
-            }
-            final_result: Dict[str, Any] = {'best_params': {}}
-            for key, period_str in periods.items():
-                final_result[key] = {}
-                period = split_period(period_str, allow_extra=True)
-                if period is None:
-                    continue
-                try:
-                    obs_aligned, sim_aligned = sm.align_timeseries(
-                        sim_series, obs_series, calibration_period=period
-                    )
-                except ValueError as e:
-                    self.logger.warning(f"{model_name} {key} not computable: {e}")
-                    continue
-                final_result[key] = calculate_all_metrics(
-                    pd.Series(obs_aligned), pd.Series(sim_aligned)
-                )
-
-            if not final_result['calibration_metrics'] and not final_result['evaluation_metrics']:
-                self.logger.warning(f"{model_name} evaluation produced no metrics")
-                return None
-
-            results_dir = (
-                self.project_dir / 'optimization' / model_name /
-                f"{algorithm.lower()}_{self.experiment_id}"
-            )
-            results_dir.mkdir(parents=True, exist_ok=True)
-            saver = FinalResultsSaver(results_dir, self.experiment_id, self.domain_name, self.logger)
-            saver.log_results(final_result['calibration_metrics'], final_result['evaluation_metrics'])
-            saved = saver.save_results(final_result, algorithm)
-
-            # Repro tooling (repro_status/collect_metrics.py) discovers runs via
-            # <eid>_<algo>_best_params.json gated on a final_evaluation/ dir —
-            # emit both so self-training members are collected like everyone else.
-            import json
-            calib_kge = final_result['calibration_metrics'].get('KGE')
-            best_params_file = (
-                results_dir / f"{self.experiment_id}_{algorithm.lower().replace('/', '_')}_best_params.json"
-            )
-            best_params_file.write_text(json.dumps({
-                'experiment_id': self.experiment_id,
-                'model': model_name,
-                'metric': 'KGE',
-                'best_score': calib_kge,
-                'best_iteration': '',
-                'best_params': {},
-                'note': 'self-training model: score is the trained simulation, no parameter search',
-            }, indent=2))
-            (results_dir / 'final_evaluation').mkdir(exist_ok=True)
-            return saved
-
         except Exception as e:  # noqa: BLE001 — calibration resilience
             self.logger.error(
                 f"Error evaluating self-training model {model_name}: {e}", exc_info=True
@@ -659,7 +575,11 @@ class OptimizationManager(BaseManager):
                                      'kge', 'KGE', 'fitness', 'score', 'timestamp',
                                      'crash_count', 'crash_rate', 'Calib_RMSE',
                                      'Calib_KGE', 'Calib_KGEp', 'Calib_KGEnp',
-                                     'Calib_NSE', 'Calib_MAE'}
+                                     'Calib_NSE', 'Calib_MAE',
+                                     # per-iteration algorithm diagnostics
+                                     'mean_score', 'std_score', 'n_improved',
+                                     'grad_norm', 'lr', 'current_params',
+                                     'archive_size'}
                         param_cols = [c for c in results_df.columns if c not in non_param]
                         best_params = {}
                         if not results_df.empty and param_cols:
@@ -676,16 +596,8 @@ class OptimizationManager(BaseManager):
 
                             # Fallback: find best row by score column
                             if not best_params:
-                                score_cols = [c for c in results_df.columns if c.lower() in ['score', 'objective', 'kge', 'fitness', 'nse']]
-                                if score_cols:
-                                    score_col = score_cols[0]
-                                    # Determine if we should minimize or maximize
-                                    metric = self._get_config_value(lambda: self.config.optimization.metric, 'KGE').upper()
-                                    minimize_metrics = {'RMSE', 'MAE', 'BIAS', 'MSE', 'MARE', 'PBIAS', 'NRMSE'}
-                                    if metric in minimize_metrics:
-                                        best_idx = results_df[score_col].idxmin()
-                                    else:
-                                        best_idx = results_df[score_col].idxmax()
+                                best_idx = self._best_row_index(results_df)
+                                if best_idx is not None:
                                     best_row = results_df.loc[cast(Any, best_idx)]
                                 else:
                                     # No score column found, fall back to last row (most recent)
@@ -858,6 +770,27 @@ class OptimizationManager(BaseManager):
         # 3. Calculate scalar objective
         return objective_handler.calculate(eval_results)
 
+    @staticmethod
+    def _best_row_index(results_df: pd.DataFrame) -> Optional[Any]:
+        """Index of the best iteration row, or None without a score column.
+
+        The ``score`` column is written in maximization convention (minimise
+        metrics such as RMSE are stored negated), so the best row is always
+        ``idxmax`` -- whatever OPTIMIZATION_METRIC is. The other candidate
+        columns (objective / kge / fitness / nse) are maximise-style too.
+        """
+        if results_df.empty:
+            return None
+        by_lower = {c.lower(): c for c in results_df.columns}
+        for name in ('score', 'objective', 'fitness', 'kge', 'nse'):
+            col = by_lower.get(name)
+            if col is None:
+                continue
+            values = pd.to_numeric(results_df[col], errors='coerce')
+            if values.notna().any():
+                return values.idxmax()
+        return None
+
     def load_optimization_results(self, filename: str = None) -> Optional[Dict]:
         """
         Load optimization results from file.
@@ -876,16 +809,8 @@ class OptimizationManager(BaseManager):
                 return None
 
             # Find best iteration by score instead of assuming row 0
-            score_cols = [c for c in results_df.columns if c.lower() in ['score', 'objective', 'kge', 'fitness', 'nse']]
-            if score_cols and not results_df.empty:
-                score_col = score_cols[0]
-                # Determine if we should minimize or maximize
-                metric = self._get_config_value(lambda: self.config.optimization.metric, 'KGE').upper()
-                minimize_metrics = {'RMSE', 'MAE', 'BIAS', 'MSE', 'MARE', 'PBIAS', 'NRMSE'}
-                if metric in minimize_metrics:
-                    best_idx = results_df[score_col].idxmin()
-                else:
-                    best_idx = results_df[score_col].idxmax()
+            best_idx = self._best_row_index(results_df)
+            if best_idx is not None:
                 best_iteration = results_df.loc[cast(Any, best_idx)].to_dict()
             else:
                 # Fall back to last row if no score column found

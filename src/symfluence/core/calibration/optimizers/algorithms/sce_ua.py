@@ -565,7 +565,8 @@ class SCEUAAlgorithm(OptimizationAlgorithm):
 
         # ---- Phase 1: Initialise and evaluate the full population ----
         self.logger.info(f"Evaluating initial population ({pop_size} individuals)...")
-        population = np.random.uniform(0.0, 1.0, (pop_size, n_params))
+        population = self._seed_population(
+            np.random.uniform(0.0, 1.0, (pop_size, n_params)), kwargs)
         fitness = evaluate_population(population, 0)
 
         # Rank population: index 0 is the best individual (descending fitness)

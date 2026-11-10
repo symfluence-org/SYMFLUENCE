@@ -16,6 +16,8 @@ import numpy as np
 
 from symfluence.core.constants import ModelDefaults
 from symfluence.core.logging_utils import log_once
+from symfluence.core.metrics.metric_transformer import MetricTransformer
+from symfluence.core.metrics.penalty import is_failure_sentinel, is_penalty, sanitize_score
 
 from .task_builder import TaskBuilder
 
@@ -184,10 +186,9 @@ class PopulationEvaluator:
             if error:
                 self._log_task_error(idx, error, result)
 
-            if score is not None and not np.isnan(score):
-                fitness[idx] = score
-                if score != self.DEFAULT_PENALTY_SCORE:
-                    valid_count += 1
+            fitness[idx] = self._sanitize(score)
+            if not is_penalty(fitness[idx], self.DEFAULT_PENALTY_SCORE):
+                valid_count += 1
             else:
                 self.logger.debug(f"Task {idx} returned score={score}")
 
@@ -274,22 +275,22 @@ class PopulationEvaluator:
                 self._log_task_error(idx, error, result)
 
             if obj and len(obj) == n_objectives:
-                # Explicit objectives list (SUMMA workers)
-                objectives[idx] = np.array(obj, dtype=float)
+                # Explicit objectives list (SUMMA workers) -- already in
+                # maximization convention.
+                objectives[idx] = self._sanitize(np.array(obj, dtype=float))
             elif objective_names:
-                # Fall back to metrics dict (JAX/in-memory workers)
-                metrics = result.get('metrics', {})
-                extracted = []
-                for name in objective_names:
-                    # Try exact match, then case-insensitive in metrics and top-level
-                    val = metrics.get(name, metrics.get(name.lower(),
-                           result.get(name.lower(), self.DEFAULT_PENALTY_SCORE)))
-                    extracted.append(float(val) if val is not None else self.DEFAULT_PENALTY_SCORE)
-                objectives[idx] = np.array(extracted, dtype=float)
+                # Fall back to the raw metrics dict (JAX/in-memory/other
+                # workers): look each objective up and transform it to the
+                # maximization convention, as SUMMA's worker does.
+                metrics = result.get('metrics') or {}
+                objectives[idx] = [
+                    self._objective_from_metrics(name, metrics, result)
+                    for name in objective_names
+                ]
             else:
                 self.logger.debug(f"Task {idx} returned objectives={obj}")
 
-            if not np.any(np.isnan(objectives[idx])) and objectives[idx][0] != self.DEFAULT_PENALTY_SCORE:
+            if not is_penalty(objectives[idx][0], self.DEFAULT_PENALTY_SCORE):
                 valid_count += 1
 
         self.logger.debug(
@@ -302,6 +303,42 @@ class PopulationEvaluator:
         # is the penalty score is one whose model run failed.
         self._track_batch(objectives[:, 0])
         return objectives
+
+    def _sanitize(self, score):
+        """None / NaN / +-inf (scalar or array) -> penalty score.
+
+        The single choke point for both the parallel and the sequential
+        evaluation paths: a NaN fitness otherwise freezes DDS (``f_new >
+        f_best`` is never true) and makes DE's ``argmax`` return the NaN slot.
+        """
+        return sanitize_score(score, self.DEFAULT_PENALTY_SCORE)
+
+    def _objective_from_metrics(
+        self,
+        name: str,
+        metrics: Dict[str, Any],
+        result: Dict[str, Any],
+    ) -> float:
+        """Raw metric ``name`` from a result, transformed for maximization."""
+        raw = None
+        wanted = name.lower()
+        for source in (metrics, result):
+            if not isinstance(source, dict):
+                continue
+            for key in (name, f"Calib_{name}"):
+                if key in source:
+                    raw = source[key]
+                    break
+            else:
+                for key, value in source.items():
+                    if key.lower() in (wanted, f"calib_{wanted}"):
+                        raw = value
+                        break
+            if raw is not None:
+                break
+        if is_failure_sentinel(raw):
+            return self.DEFAULT_PENALTY_SCORE
+        return self._sanitize(MetricTransformer.transform_for_maximization(name, float(raw)))
 
     def evaluate_solution(
         self,
@@ -336,7 +373,7 @@ class PopulationEvaluator:
         from symfluence.core.calibration.eval_watchdog import get_watchdog
         get_watchdog().beat()
         result = self.worker.evaluate(task)
-        return result.score if result.score is not None else self.DEFAULT_PENALTY_SCORE
+        return self._sanitize(result.score)
 
     def evaluate_population(
         self,
@@ -456,10 +493,9 @@ class PopulationEvaluator:
                 if error:
                     self._log_task_error(idx, error, result)
 
-                if score is not None and not np.isnan(score):
-                    if idx in trial_indices:
-                        trial_idx = trial_indices.index(idx)
-                        trial_fitness[trial_idx] = score
+                if idx in trial_indices:
+                    trial_idx = trial_indices.index(idx)
+                    trial_fitness[trial_idx] = self._sanitize(score)
         else:
             # Sequential evaluation
             for i, trial in enumerate(trials):

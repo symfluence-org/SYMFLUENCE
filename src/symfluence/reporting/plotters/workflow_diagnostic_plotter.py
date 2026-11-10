@@ -101,9 +101,10 @@ class WorkflowDiagnosticPlotter(BasePlotter):
         if basin_gdf.crs and basin_gdf.crs.is_projected:
             area_km2 = basin_gdf.geometry.area.sum() / 1e6
         else:
-            # Approximate area for geographic CRS
-            basin_projected = basin_gdf.to_crs(epsg=3857)
-            area_km2 = basin_projected.geometry.area.sum() / 1e6
+            # Geographic CRS: local equal-area projection (Web Mercator
+            # inflated areas by 1/cos^2(lat)).
+            from symfluence.core.geometry_utils import feature_areas_m2
+            area_km2 = feature_areas_m2(basin_gdf).sum() / 1e6
 
         ax1.text(
             0.02, 0.98,
@@ -228,8 +229,8 @@ class WorkflowDiagnosticPlotter(BasePlotter):
         if hru_gdf.crs and hru_gdf.crs.is_projected:
             areas_km2 = hru_gdf.geometry.area / 1e6
         else:
-            hru_projected = hru_gdf.to_crs(epsg=3857)
-            areas_km2 = hru_projected.geometry.area / 1e6
+            from symfluence.core.geometry_utils import feature_areas_m2
+            areas_km2 = feature_areas_m2(hru_gdf) / 1e6
 
         # Panel 1: HRU spatial distribution
         ax1 = axes[0]

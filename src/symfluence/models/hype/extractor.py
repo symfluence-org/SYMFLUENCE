@@ -11,7 +11,7 @@ use mizuRoute for routing.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, List, cast
+from typing import Dict, List
 
 import pandas as pd
 
@@ -70,7 +70,6 @@ class HYPEResultExtractor(ModelResultExtractor):
             return self._extract_from_text(output_file)
         elif output_file.suffix == '.nc':
             # mizuRoute NetCDF output
-            import numpy as np
             import xarray as xr
 
             with xr.open_dataset(output_file, engine='h5netcdf') as ds:
@@ -78,12 +77,17 @@ class HYPEResultExtractor(ModelResultExtractor):
                 for var_name in ['IRFroutedRunoff', 'KWTroutedRunoff', 'averageRoutedRunoff']:
                     if var_name in ds.variables:
                         var = ds[var_name]
-                        if 'seg' in var.dims:
-                            outlet_idx = np.argmax(var.mean(dim='time').values)
-                            return cast(pd.Series, var.isel(seg=outlet_idx).to_pandas())
-                        elif 'reachID' in var.dims:
-                            outlet_idx = np.argmax(var.mean(dim='time').values)
-                            return cast(pd.Series, var.isel(reachID=outlet_idx).to_pandas())
+                        if 'seg' in var.dims or 'reachID' in var.dims:
+                            # Shared reach rule (SIM_REACH_ID, topology
+                            # outlet, else highest mean flow)
+                            from symfluence.core.modeling.utilities.reach_selection import (
+                                select_outlet_series,
+                                topology_candidates,
+                            )
+                            return select_outlet_series(
+                                ds, var, kwargs.get('sim_reach_id'),
+                                topology_candidates(near=output_file),
+                            )
 
         raise ValueError(f"Could not extract {variable_type} from {output_file}")
 

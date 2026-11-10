@@ -34,8 +34,8 @@ class CASRHandler(BaseDatasetHandler):
         CASR variable name mapping to standard names.
 
         Combines v3.1 and v3.2 rename maps so this handler can process
-        either version. Unit differences are handled by heuristic checks
-        in process_dataset().
+        either version. Unit differences are resolved from the units
+        attribute in process_dataset().
 
         Returns:
             Dictionary mapping CASR variable names to standard names
@@ -52,8 +52,11 @@ class CASRHandler(BaseDatasetHandler):
         Unit conversions applied:
         - airpres: mb -> Pa (multiply by 100)
         - airtemp: °C -> K (add 273.15)
-        - pptrate: m/hr -> m/s (multiply by 1000, divide by 3600)
+        - pptrate: m/hr -> mm/s (multiply by 1000, divide by 3600)
         - windspd: knots -> m/s (multiply by 0.514444)
+
+        Source units are read from each variable's ``units`` attribute; value
+        magnitude is only used (with a warning) when that attribute is missing.
 
         Args:
             ds: Input CASR dataset
@@ -71,72 +74,99 @@ class CASRHandler(BaseDatasetHandler):
                 targets_seen.add(new)
         ds = ds.rename(rename_dict)
 
-        # Apply unit conversions with clean attributes
-        # Use heuristic checks to handle both CaSR v3.1 (non-SI) and v3.2 (SI units)
+        # Apply unit conversions with clean attributes. CaSR v3.1 (ECCC raw:
+        # mb, deg_c, m per hour, knots) and v3.2 (SI) are told apart by each
+        # variable's ``units`` attribute, as rdrs_utils does. Value magnitude
+        # is only a last-resort fallback for files without units metadata:
+        # precipitation in m/h and wind in knots are routinely below any
+        # sensible magnitude threshold, so magnitude alone silently leaves
+        # them unconverted.
+        def source_units(var: str) -> str:
+            return str(ds[var].attrs.get('units', '')).strip().lower().replace(' ', '')
+
+        def fallback(var: str, assumed: str) -> None:
+            self.logger.warning(
+                f"CaSR variable '{var}' has no recognised units attribute "
+                f"({ds[var].attrs.get('units')!r}); guessing '{assumed}' from value magnitude"
+            )
+
         if 'surface_air_pressure' in ds:
-            # v3.1 uses mb (typically 800-1100), v3.2 uses Pa (typically 80000-110000)
-            if ds['surface_air_pressure'].max() < 2000:  # Probably mb
+            units = source_units('surface_air_pressure')
+            if units in ('mb', 'mbar', 'millibar', 'hpa'):
                 ds['surface_air_pressure'] = ds['surface_air_pressure'] * 100
-            ds['surface_air_pressure'].attrs = {}
-            ds['surface_air_pressure'].attrs.update({
+            elif units in ('pa', 'pascal'):
+                pass
+            elif ds['surface_air_pressure'].max() < 2000:
+                fallback('surface_air_pressure', 'mb')
+                ds['surface_air_pressure'] = ds['surface_air_pressure'] * 100
+            else:
+                fallback('surface_air_pressure', 'Pa')
+            ds['surface_air_pressure'].attrs = {
                 'units': 'Pa',
                 'long_name': 'air pressure',
                 'standard_name': 'air_pressure'
-            })
+            }
 
         if 'air_temperature' in ds:
-            # v3.1 uses °C (typically -40 to +50), v3.2 uses K (typically 220-330)
-            if ds['air_temperature'].max() < 100:  # Probably Celsius
+            units = source_units('air_temperature')
+            if units in ('deg_c', 'degc', 'c', 'celsius', 'degrees_celsius', '°c'):
                 ds['air_temperature'] = ds['air_temperature'] + PhysicalConstants.KELVIN_OFFSET
-            ds['air_temperature'].attrs = {}
-            ds['air_temperature'].attrs.update({
+            elif units in ('k', 'kelvin'):
+                pass
+            elif ds['air_temperature'].max() < 100:
+                fallback('air_temperature', 'deg_C')
+                ds['air_temperature'] = ds['air_temperature'] + PhysicalConstants.KELVIN_OFFSET
+            else:
+                fallback('air_temperature', 'K')
+            ds['air_temperature'].attrs = {
                 'units': 'K',
                 'long_name': 'air temperature',
                 'standard_name': 'air_temperature'
-            })
+            }
 
         if 'precipitation_flux' in ds:
-            # v3.1 uses m/hr, v3.2 uses kg/m2/s (which is mm/s)
-            if ds['precipitation_flux'].max() > 0.1:  # Probably m/hr or mm/hr, not mm/s
+            units = source_units('precipitation_flux')
+            if units in ('m', 'meter', 'metre', 'm/hr', 'm/h', 'mhr-1', 'mh-1', 'm/hour'):
+                # metres of water over the hour -> kg m-2 s-1 (mm/s)
                 ds['precipitation_flux'] = ds['precipitation_flux'] * 1000 / UnitConversion.SECONDS_PER_HOUR
-            ds['precipitation_flux'].attrs = {}
-            ds['precipitation_flux'].attrs.update({
+            elif units in ('mm', 'mm/hr', 'mm/h', 'mmhr-1', 'mmh-1'):
+                ds['precipitation_flux'] = ds['precipitation_flux'] / UnitConversion.SECONDS_PER_HOUR
+            elif units in ('kgm-2s-1', 'kgm**-2s**-1', 'kg/m2/s', 'kg/m^2/s', 'mm/s', 'mms-1'):
+                pass
+            elif ds['precipitation_flux'].max() > 0.1:
+                fallback('precipitation_flux', 'mm/h')
+                ds['precipitation_flux'] = ds['precipitation_flux'] / UnitConversion.SECONDS_PER_HOUR
+            else:
+                fallback('precipitation_flux', 'kg m-2 s-1')
+            ds['precipitation_flux'].attrs = {
                 'units': 'mm s-1',
                 'long_name': 'precipitation rate',
                 'standard_name': 'precipitation_rate'
-            })
+            }
 
-        if 'wind_speed' in ds:
-            # v3.1 uses knots (typically 0-60), v3.2 uses m/s (typically 0-30)
-            # Knots to m/s: * 0.514444, so knots values are ~2x larger
-            if ds['wind_speed'].max() > 50:  # Probably knots
-                ds['wind_speed'] = ds['wind_speed'] * 0.514444
-            ds['wind_speed'].attrs = {}
-            ds['wind_speed'].attrs.update({
+        wind_names = {
+            'wind_speed': 'wind speed',
+            'eastward_wind': 'eastward wind',
+            'northward_wind': 'northward wind',
+        }
+        for var, long_name in wind_names.items():
+            if var not in ds:
+                continue
+            units = source_units(var)
+            if units in ('kts', 'kt', 'knots', 'knot', 'knts'):
+                ds[var] = ds[var] * 0.514444
+            elif units in ('m/s', 'ms-1', 'ms**-1', 'm/sec'):
+                pass
+            elif float(abs(ds[var]).max()) > 50:
+                fallback(var, 'knots')
+                ds[var] = ds[var] * 0.514444
+            else:
+                fallback(var, 'm s-1')
+            ds[var].attrs = {
                 'units': 'm s-1',
-                'long_name': 'wind speed',
-                'standard_name': 'wind_speed'
-            })
-
-        if 'eastward_wind' in ds:
-            if ds['eastward_wind'].max() > 50:  # Probably knots
-                ds['eastward_wind'] = ds['eastward_wind'] * 0.514444
-            ds['eastward_wind'].attrs = {}
-            ds['eastward_wind'].attrs.update({
-                'units': 'm s-1',
-                'long_name': 'eastward wind',
-                'standard_name': 'eastward_wind'
-            })
-
-        if 'northward_wind' in ds:
-            if ds['northward_wind'].max() > 50:  # Probably knots
-                ds['northward_wind'] = ds['northward_wind'] * 0.514444
-            ds['northward_wind'].attrs = {}
-            ds['northward_wind'].attrs.update({
-                'units': 'm s-1',
-                'long_name': 'northward wind',
-                'standard_name': 'northward_wind'
-            })
+                'long_name': long_name,
+                'standard_name': var
+            }
 
         # Radiation variables are already in W m**-2, just update attributes
         if 'surface_downwelling_longwave_flux' in ds:

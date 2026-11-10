@@ -22,7 +22,7 @@ class TestNoahMPPostProcessor:
 
     def test_streamflow_unit(self):
         from symfluence.models.noahmp.postprocessor import NoahMPPostProcessor
-        assert NoahMPPostProcessor.streamflow_unit == "mm"
+        assert NoahMPPostProcessor.streamflow_unit == "cms"
 
     def test_streamflow_variable(self):
         from symfluence.models.noahmp.postprocessor import NoahMPPostProcessor

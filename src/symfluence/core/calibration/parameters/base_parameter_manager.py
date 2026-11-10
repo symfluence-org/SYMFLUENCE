@@ -45,6 +45,33 @@ if TYPE_CHECKING:
     from symfluence.core.config.models import SymfluenceConfig
 
 
+def _uses_log_transform(bounds: Dict[str, Any]) -> bool:
+    """True when ``bounds`` request log-space (de)normalization."""
+    return (bounds.get('transform', 'linear') == 'log'
+            and bounds['min'] > 0 and bounds['max'] > 0)
+
+
+def denormalize_value(bounds: Dict[str, Any], normalized: float) -> float:
+    """Physical value for one normalized coordinate (before clipping)."""
+    if _uses_log_transform(bounds):
+        log_min = np.log(bounds['min'])
+        log_max = np.log(bounds['max'])
+        return np.exp(log_min + normalized * (log_max - log_min))
+    return bounds['min'] + normalized * (bounds['max'] - bounds['min'])
+
+
+def denormalize_derivative(bounds: Dict[str, Any], normalized: float) -> float:
+    """d(physical)/d(normalized) of :func:`denormalize_value` at ``normalized``.
+
+    ``max - min`` for linear bounds; ``x * (ln max - ln min)`` for log bounds.
+    Used for the native-gradient chain rule.
+    """
+    if _uses_log_transform(bounds):
+        return float(denormalize_value(bounds, normalized)
+                     * (np.log(bounds['max']) - np.log(bounds['min'])))
+    return float(bounds['max'] - bounds['min'])
+
+
 class BaseParameterManager(ConfigMixin, ABC):
     """
     Abstract base class for model parameter managers.
@@ -293,16 +320,8 @@ class BaseParameterManager(ConfigMixin, ABC):
                 continue
 
             bounds = self.param_bounds[param_name]
-            transform = bounds.get('transform', 'linear')
-
-            if transform == 'log' and bounds['min'] > 0 and bounds['max'] > 0:
-                # Log-space denormalization: exp(log_min + norm * (log_max - log_min))
-                log_min = np.log(bounds['min'])
-                log_max = np.log(bounds['max'])
-                denorm_value = np.exp(log_min + normalized_array[i] * (log_max - log_min))
-            else:
-                # Linear denormalization: min + normalized * (max - min)
-                denorm_value = bounds['min'] + normalized_array[i] * (bounds['max'] - bounds['min'])
+            # Linear: min + n * (max - min); log: exp(log_min + n * (log_max - log_min))
+            denorm_value = denormalize_value(bounds, normalized_array[i])
 
             # Clip to bounds for safety and log if clipping occurs
             if denorm_value < bounds['min'] or denorm_value > bounds['max']:
