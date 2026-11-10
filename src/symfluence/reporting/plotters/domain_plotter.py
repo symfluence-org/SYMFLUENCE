@@ -468,7 +468,8 @@ class DomainPlotter(BasePlotter):
 
     def _add_domain_info_box(self, ax: Any, catchment_gdf: Any) -> None:
         """Add information box with domain statistics."""
-        area_km2 = catchment_gdf.geometry.area.sum() / 1e6
+        from symfluence.core.geometry_utils import feature_areas_m2
+        area_km2 = feature_areas_m2(catchment_gdf).sum() / 1e6
 
         info_text = "Domain Statistics:\n"
         info_text += f"Area: {area_km2:.1f} km²"
@@ -489,7 +490,8 @@ class DomainPlotter(BasePlotter):
     def _add_discretization_info_box(self, ax: Any, hru_gdf: Any) -> None:
         """Add information box with discretization statistics."""
         n_hrus = len(hru_gdf)
-        total_area = hru_gdf.geometry.area.sum() / 1e6
+        from symfluence.core.geometry_utils import feature_areas_m2
+        total_area = feature_areas_m2(hru_gdf).sum() / 1e6
         mean_area = total_area / n_hrus
 
         info_text = "Discretization Statistics:\n"

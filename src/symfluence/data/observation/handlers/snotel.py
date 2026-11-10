@@ -138,19 +138,22 @@ class SNOTELHandler(BaseObservationHandler):
 
         # Resample to the requested period if needed, but here we just save the full series
         # The E2E test will handle period alignment
-        df['swe'] = df[swe_col] # Keep in inches as per project convention for raw processed
+        # Keep the source unit but make it explicit in the column name so the
+        # evaluator never has to guess it from magnitude (NRCS WTEQ is inches).
+        out_col = 'swe_mm' if '(mm)' in str(swe_col).lower() else 'swe_in'
+        df[out_col] = df[swe_col]
 
         # Save to preprocessed
         output_dir = self.project_observations_dir / "snow" / "swe" / "preprocessed"
         output_dir.mkdir(parents=True, exist_ok=True)
         output_file = output_dir / f"{self.domain_name}_swe_processed.csv"
 
-        df[['swe']].to_csv(output_file)
+        df[[out_col]].to_csv(output_file)
 
         # Also save as generic SNOW for easier evaluator lookup
         snow_dir = self.project_observations_dir / "snow" / "preprocessed"
         snow_dir.mkdir(parents=True, exist_ok=True)
-        df[['swe']].to_csv(snow_dir / f"{self.domain_name}_snow_processed.csv")
+        df[[out_col]].to_csv(snow_dir / f"{self.domain_name}_snow_processed.csv")
 
         self.logger.info(f"SNOTEL processing complete: {output_file}")
         return output_file

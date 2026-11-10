@@ -252,9 +252,8 @@ class WSCStreamflowHandler(BaseObservationHandler):
         df['discharge_cms'] = df[discharge_col]  # WSC is already in cms (m3/s)
 
         # Resample to target timestep
-        resample_freq = self._get_resample_freq()
-        resampled = df['discharge_cms'].resample(resample_freq).mean()
-        resampled = resampled.interpolate(method='time', limit_direction='both', limit=30)
+        # GeoMet hydrometric-daily-mean: daily means, never interpolated.
+        resampled = self._daily_streamflow_to_target(df['discharge_cms'])
 
         # Save processed data
         output_dir = self.project_observations_dir / "streamflow" / "preprocessed"
@@ -311,8 +310,8 @@ class WSCStreamflowHandler(BaseObservationHandler):
         output_dir.mkdir(parents=True, exist_ok=True)
         output_file = output_dir / f"{self.domain_name}_streamflow_processed.csv"
 
-        resample_freq = self._get_resample_freq()
-        resampled = df['discharge_cms'].resample(resample_freq).mean()
+        # HYDAT DLY_FLOWS are daily means.
+        resampled = self._daily_streamflow_to_target(df['discharge_cms'])
         resampled.to_csv(output_file, header=True, index_label='datetime')
 
         return output_file

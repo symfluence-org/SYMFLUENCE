@@ -16,6 +16,8 @@ from typing import Any, Dict, Optional, Tuple
 
 import geopandas as gpd
 
+from symfluence.core.geometry_utils import feature_areas_m2, feature_lengths_m
+
 from ..base.base_delineator import BaseGeofabricDelineator
 from ..processors.graph_processor import RiverGraphProcessor
 from ..utils.crs_utils import CRSUtils
@@ -434,9 +436,8 @@ class GeofabricSubsetter(BaseGeofabricDelineator):
         if hydrofabric_type == 'NWS':
             basins['GRU_ID'] = basins['divide_id']
             basins['gru_to_seg'] = basins['divide_id']
-            # Calculate area in metric
-            basins_metric = basins.to_crs('epsg:3763')
-            basins['GRU_area'] = basins_metric.geometry.area
+            # Area in a local equal-area CRS (was EPSG:3763, Portugal-only)
+            basins['GRU_area'] = feature_areas_m2(basins)
             # Rivers — flowpaths layer uses 'id' and 'toid'
             rivers['LINKNO'] = rivers['id']
             rivers['DSLINKNO'] = rivers['toid']
@@ -446,30 +447,26 @@ class GeofabricSubsetter(BaseGeofabricDelineator):
             # is both the GRU identifier and the segment it drains to.
             basins['GRU_ID'] = basins['linkno']
             basins['gru_to_seg'] = basins['linkno']
-            # Calculate area in metric
-            basins_metric = basins.to_crs('epsg:3763')
-            basins['GRU_area'] = basins_metric.geometry.area
+            # Area in a local equal-area CRS (was EPSG:3763, Portugal-only)
+            basins['GRU_area'] = feature_areas_m2(basins)
             # Rivers already carry canonical LINKNO/DSLINKNO from GEOGLOWS V2.
 
         elif hydrofabric_type in ['Merit', 'MERIT']:
             basins['GRU_ID'] = basins['COMID']
             basins['gru_to_seg'] = basins['COMID']
-            # Calculate area in metric
-            basins_metric = basins.to_crs('epsg:3763')
-            basins['GRU_area'] = basins_metric.geometry.area
+            # Area in a local equal-area CRS (was EPSG:3763, Portugal-only)
+            basins['GRU_area'] = feature_areas_m2(basins)
             # Rivers
             rivers['LINKNO'] = rivers['COMID']
             rivers['DSLINKNO'] = rivers['NextDownID']
-            rivers_metric = rivers.to_crs('epsg:3763')
-            rivers['Length'] = rivers_metric.geometry.length
+            rivers['Length'] = feature_lengths_m(rivers)
             rivers.rename(columns={'slope': 'Slope'}, inplace=True)
 
         elif hydrofabric_type == 'HYDROSHEDS':
             basins['GRU_ID'] = basins['HYBAS_ID']
             basins['gru_to_seg'] = basins['HYBAS_ID']
             # HydroBASINS provides SUB_AREA in km², but also compute from geometry
-            basins_metric = basins.to_crs('epsg:3763')
-            basins['GRU_area'] = basins_metric.geometry.area
+            basins['GRU_area'] = feature_areas_m2(basins)
             # Rivers (same data as basins for HydroSHEDS)
             rivers['LINKNO'] = rivers['HYBAS_ID']
             rivers['DSLINKNO'] = rivers['NEXT_DOWN']
@@ -504,9 +501,8 @@ class GeofabricSubsetter(BaseGeofabricDelineator):
         dissolved['GRU_ID'] = 1
         dissolved['gru_to_seg'] = 1
 
-        # Calculate area in metric CRS
-        dissolved_metric = dissolved.to_crs('EPSG:3763')
-        dissolved['GRU_area'] = dissolved_metric.geometry.area.values[0]
+        # Calculate area in a local equal-area CRS
+        dissolved['GRU_area'] = feature_areas_m2(dissolved).values[0]
 
         self.logger.info(f"Aggregated {len(basins)} basins to single lumped polygon")
         return dissolved
