@@ -304,6 +304,13 @@ class LSTMRunner(BaseModelRunner, SpatialOrchestrator, MizuRouteConfigMixin, Spa
                 if routed_output:
                     self.logger.info(f"Routing completed. Routed results: {routed_output}")
 
+            # Self-training: no calibrate step is needed to score the run, so
+            # write the standard final_evaluation.json/best_params.json now.
+            from symfluence.core.calibration.optimizers.final_evaluation.self_training import (
+                persist_run_evaluation,
+            )
+            persist_run_evaluation(self, self.MODEL_NAME)
+
             self.logger.info("LSTM model run completed successfully")
 
     def _create_model_instance(self, input_size: int, output_size: int, hidden_size: int, num_layers: int):

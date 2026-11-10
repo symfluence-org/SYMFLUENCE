@@ -461,6 +461,25 @@ def calculate_annual_radiation(dem_raster: Path, radiation_raster: Path, logger:
         logger.error(f"Error calculating annual radiation: {str(e)}", exc_info=True)
         return None
 
+def valid_pixel_mask(data, nodata=None):
+    """Boolean mask of usable raster pixels.
+
+    Excludes masked-array cells (e.g. outside a ``rasterio.mask`` geometry),
+    the ``nodata`` value (NaN-aware), and non-finite values for ANY float
+    dtype -- float32 DEMs included, not just float64.
+    """
+    arr = np.ma.getdata(data)
+    valid = ~np.ma.getmaskarray(data)
+    if nodata is not None:
+        if isinstance(nodata, float) and np.isnan(nodata):
+            pass  # covered by the finite check below
+        else:
+            valid &= arr != nodata
+    if np.issubdtype(arr.dtype, np.floating):
+        valid &= np.isfinite(arr)
+    return np.asarray(valid, dtype=bool)
+
+
 def analyze_raster_values(
     raster_path: Path,
     band_size: Optional[float] = None,
@@ -500,15 +519,9 @@ def analyze_raster_values(
                 )
                 chunk = src.read(1, window=window)
 
-                # Filter out nodata values
-                if nodata is not None:
-                    valid_chunk = chunk[chunk != nodata]
-                else:
-                    valid_chunk = (
-                        chunk[~np.isnan(chunk)]
-                        if chunk.dtype == np.float64
-                        else chunk
-                    )
+                # Filter out nodata values (and NaN for any float dtype,
+                # including float32 DEMs)
+                valid_chunk = chunk[valid_pixel_mask(chunk, nodata)]
 
                 if len(valid_chunk) > 0:
                     valid_data.extend(valid_chunk.flatten())

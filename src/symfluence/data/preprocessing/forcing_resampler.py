@@ -598,6 +598,7 @@ class ForcingResampler(PathResolverMixin):
             grid_signature,
             manifest_path,
             output_matches,
+            remap_config_signature,
             target_signature,
         )
 
@@ -606,9 +607,13 @@ class ForcingResampler(PathResolverMixin):
         for file in forcing_files:
             groups.setdefault(grid_signature(file, coordinates), []).append(file)
         target = self._get_catchment_file_path(self.catchment_name)
-        # Configuration affects field selection and source geometry construction.
+        # Only remap-relevant configuration enters the cache signature (field
+        # names, source-geometry construction, target identity); see
+        # remap_config_signature. Hashing the whole config made an unrelated
+        # change (EXPERIMENT_ID, model, NUM_PROCESSES, ...) re-remap everything.
         config_dict = self.config.to_dict(flatten=True) if hasattr(self.config, 'to_dict') else dict(self.config)
-        config_hash = hashlib.sha256(json.dumps(config_dict, sort_keys=True, default=str).encode()).hexdigest()
+        config_hash = remap_config_signature(
+            config_dict, self._get_config_value(lambda: self.config.forcing.dataset))
         target_hash = target_signature(target)
         self.logger.info(f"Remapping {len(forcing_files)} files on {len(groups)} distinct coordinate grids")
         requested_cpus = int(self._get_config_value(lambda: self.config.system.num_processes, default=1))

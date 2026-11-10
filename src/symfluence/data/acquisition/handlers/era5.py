@@ -29,7 +29,11 @@ from symfluence.geospatial.coordinate_utils import BoundingBox, get_bbox_extent
 
 from ..base import BaseAcquisitionHandler
 from .era5_cds import ERA5CDSAcquirer
-from .era5_processing import era5_to_summa_schema
+from .era5_processing import (
+    ACCUMULATION_HOURS_ATTR,
+    ARCO_ACCUMULATED_VARIABLES,
+    era5_to_summa_schema,
+)
 
 # Number of concurrent Zarr chunk reads used when materialising an ARCO
 # time-chunk.  The ARCO-ERA5 store is chunked (1 hour, 721 lat, 1440 lon), so a
@@ -740,7 +744,13 @@ def _materialize_era5_chunk(
     if "time" not in ds_t.dims or ds_t.sizes["time"] < 2:
         return None
     if step > 1:
+        # Accumulated fields are per-hour totals: sum the ``step`` hours ending
+        # at each kept timestamp instead of keeping one hour in ``step``.
+        for name in ARCO_ACCUMULATED_VARIABLES:
+            if name in ds_t.data_vars:
+                ds_t[name] = ds_t[name].rolling(time=step, min_periods=step).sum()
         ds_t = ds_t.isel(time=slice(0, None, step))
+    ds_t.attrs[ACCUMULATION_HOURS_ATTR] = step
     if ds_t.sizes["time"] < 2:
         return None
 

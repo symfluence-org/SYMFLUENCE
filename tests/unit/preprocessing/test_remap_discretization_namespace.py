@@ -3,12 +3,11 @@
 
 """Tests for discretization-namespaced remapped-forcing filenames (issue #339).
 
-The two ``determine_output_filename`` builders — FileProcessor (serial/parallel
-resampling path) and RemappingWeightApplier (weight-application path) — must
-embed the run's spatial discretization token so a lumped (hru=1) remap and a
-12-band elevation (hru=12) remap of the SAME domain get distinct, self-describing
-names instead of colliding under a shared ``{domain}_{forcing}_remapped_*``
-namespace. Both builders must agree on the name for a given input + discretization.
+``FileProcessor.determine_output_filename`` (the only output-name builder since
+the dead ``remapping_weights`` duplicate was removed) must embed the run's
+spatial discretization token so a lumped (hru=1) remap and a 12-band elevation
+(hru=12) remap of the SAME domain get distinct, self-describing names instead
+of colliding under a shared ``{domain}_{forcing}_remapped_*`` namespace.
 """
 from __future__ import annotations
 
@@ -34,25 +33,6 @@ def _fp(discretization, out):
     )
 
 
-def _applier(discretization, out):
-    # RemappingWeightApplier lives in a module that imports easymore at import
-    # time; skip the applier-side assertions where easymore is unavailable.
-    pytest.importorskip("easymore")
-    from symfluence.data.preprocessing.remapping_weights import RemappingWeightApplier
-
-    return RemappingWeightApplier(
-        config={
-            "DOMAIN_NAME": "Bow",
-            "FORCING_DATASET": "ERA5",
-            "SUB_GRID_DISCRETIZATION": discretization,
-        },
-        logger=_LOG,
-        project_dir=out.parent,
-        output_dir=out,
-        dataset_handler=None,
-    )
-
-
 def test_file_processor_names_carry_discretization_token(tmp_path):
     src = Path("domain_Bow_ERA5_20020101.nc")
     lumped = _fp("lumped", tmp_path).determine_output_filename(src).name
@@ -63,29 +43,6 @@ def test_file_processor_names_carry_discretization_token(tmp_path):
     # The two discretizations of the SAME input produce DIFFERENT names, so they
     # no longer collide in one domain's store.
     assert lumped != elevation
-
-
-def test_weight_applier_names_carry_discretization_token(tmp_path):
-    src = Path("domain_Bow_ERA5_20020101.nc")
-    lumped = _applier("lumped", tmp_path).determine_output_filename(src).name
-    elevation = _applier("elevation", tmp_path).determine_output_filename(src).name
-
-    assert "_remapped_lumped_" in lumped
-    assert "_remapped_elevation_" in elevation
-    assert lumped != elevation
-
-
-def test_both_builders_agree_on_the_name(tmp_path):
-    """Generation must be self-consistent: the two builders name a file the same.
-
-    The parallel resampling path names outputs via FileProcessor while the
-    weight-application path names them via RemappingWeightApplier; a divergence
-    would resurrect the duplicate-file problem the reader now dedupes.
-    """
-    src = Path("domain_Bow_ERA5_20020101.nc")
-    fp_name = _fp("lumped", tmp_path).determine_output_filename(src).name
-    applier_name = _applier("lumped", tmp_path).determine_output_filename(src).name
-    assert fp_name == applier_name
 
 
 def test_names_are_selectable_by_the_reader(tmp_path):

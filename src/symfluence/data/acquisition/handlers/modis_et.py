@@ -686,10 +686,14 @@ class MOD16ETAcquirer(BaseEarthaccessAcquirer):
         for product, data_dict in datasets.items():
             da = data_dict['data'].copy()
 
-            if da.dtype in [np.int16, np.int32]:
-                da = da.astype(float) * self.SCALE_FACTOR
-
-            da = da.where(da != self.FILL_VALUE * self.SCALE_FACTOR)
+            # Mask fill AND special values (32761-32767: cloud, not processed,
+            # water, missing, barren, ice/snow) -- not just the 32767 fill.
+            # Raw integers are masked before scaling; already-scaled floats
+            # (xarray mask_and_scale) are masked above the scaled valid max.
+            if np.issubdtype(da.dtype, np.integer):
+                da = da.where(da < self.SPECIAL_VALUE_MIN).astype(float) * self.SCALE_FACTOR
+            else:
+                da = da.where(da < self.SPECIAL_VALUE_MIN * self.SCALE_FACTOR - 0.05)
 
             if qc_filter and 'qc' in data_dict:
                 qc = data_dict['qc']

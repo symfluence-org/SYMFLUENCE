@@ -49,17 +49,14 @@ def _make_arco_era5_dataset(n_time=25, lats=None, lons=None):
     u_wind = rng.uniform(-10, 10, shape).astype('float32')        # m/s
     v_wind = rng.uniform(-10, 10, shape).astype('float32')        # m/s
 
-    # Accumulated variables — cumulative within each day, reset daily
-    # Precipitation: accumulated in meters (small values)
-    precip_hourly = rng.uniform(0, 0.001, shape).astype('float32')
-    precip = np.cumsum(precip_hourly, axis=0).astype('float32')
+    # Accumulated variables — ARCO stores per-hour totals (the accumulation
+    # over the hour ending at the timestamp), not cumulative forecasts.
+    # Precipitation: metres per hour
+    precip = rng.uniform(0, 0.001, shape).astype('float32')
 
-    # Radiation: accumulated in J/m² (positive, increasing)
-    sw_hourly = rng.uniform(0, 500 * 3600, shape).astype('float32')
-    sw_rad = np.cumsum(sw_hourly, axis=0).astype('float32')
-
-    lw_hourly = rng.uniform(200 * 3600, 400 * 3600, shape).astype('float32')
-    lw_rad = np.cumsum(lw_hourly, axis=0).astype('float32')
+    # Radiation: J/m² per hour
+    sw_rad = rng.uniform(0, 500 * 3600, shape).astype('float32')
+    lw_rad = rng.uniform(200 * 3600, 400 * 3600, shape).astype('float32')
 
     ds = xr.Dataset(
         {
@@ -260,3 +257,50 @@ class TestFullARCOPipeline:
         assert set(ds_final.data_vars) == EXPECTED_VARS
         for var in ds_final.data_vars:
             assert not np.any(np.isnan(ds_final[var].values)), f"NaN found in {var}"
+
+
+class TestArcoAccumulatedTotals:
+    """ARCO accumulations are per-hour totals; never difference them.
+
+    Regression: the old code guessed "cumulative vs per-step" from the share of
+    negative diffs per chunk, so steady rain was differenced (43.8 vs 62.6 mm),
+    and ERA5_TIME_STEP_HOURS > 1 kept one hour in N but divided by N hours.
+    """
+
+    @staticmethod
+    def _steady_rain_dataset(n_time=25, mm_per_hour=2.0):
+        ds = _make_arco_era5_dataset(n_time=n_time)
+        tp = ARCO_VARIABLE_NAMES['precipitation']
+        # Steady rain that slowly increases: the old heuristic saw no negative
+        # diffs, called it "cumulative" and differenced it to ~0.
+        ramp = np.linspace(1.0, 1.2, n_time, dtype='float32')[:, None, None]
+        ds[tp] = ds[tp] * 0 + (mm_per_hour / 1000.0) * ramp
+        return ds, ramp
+
+    def test_steady_rain_is_not_differenced(self):
+        ds, ramp = self._steady_rain_dataset()
+        out = era5_to_summa_schema(ds, source='arco')
+        expected = 2.0 * ramp[1:, 0, 0] / 3600.0  # mm/s
+        np.testing.assert_allclose(
+            out['precipitation_flux'].isel(latitude=0, longitude=0).values, expected, rtol=1e-5,
+        )
+
+    def test_radiation_rate_is_hourly_total_over_3600(self):
+        ds = _make_arco_era5_dataset()
+        sw = ARCO_VARIABLE_NAMES['sw_radiation']
+        out = era5_to_summa_schema(ds, source='arco')
+        expected = ds[sw].isel(time=slice(1, None)).values / 3600.0
+        np.testing.assert_allclose(out['surface_downwelling_shortwave_flux'].values, expected, rtol=1e-5)
+
+    def test_coarser_step_sums_all_hours(self):
+        from symfluence.data.acquisition.handlers.era5 import _materialize_era5_chunk
+
+        ds, ramp = self._steady_rain_dataset(n_time=25)
+        step = 3
+        sub = _materialize_era5_chunk(ds, ds.time.values[0], ds.time.values[-1], step)
+        out = era5_to_summa_schema(sub, source='arco')
+        rate = out['precipitation_flux'].isel(latitude=0, longitude=0).values
+        # Mean of the 3 hourly rates ending at each kept timestamp.
+        hourly = 2.0 * ramp[:, 0, 0] / 3600.0
+        expected = np.array([hourly[i - step + 1:i + 1].mean() for i in range(step, len(hourly), step)])
+        np.testing.assert_allclose(rate, expected, rtol=1e-5)
