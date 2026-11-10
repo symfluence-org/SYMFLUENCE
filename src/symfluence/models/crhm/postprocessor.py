@@ -124,20 +124,10 @@ class CRHMPostProcessor(StandardModelPostProcessor):
                 return None
 
             self.logger.info(f"Using flow column: {flow_col}")
-            streamflow = df[flow_col].astype(float)
-
-            # Convert m^3/interval to m^3/s
-            # Infer interval from first two timestamps
-            if len(df.index) >= 2:
-                dt_seconds = (df.index[1] - df.index[0]).total_seconds()
-            else:
-                dt_seconds = 3600.0  # default hourly
-
-            if dt_seconds > 0:
-                streamflow = streamflow / dt_seconds
-                self.logger.info(
-                    f"Converted basinflow from m^3/{int(dt_seconds)}s to m^3/s"
-                )
+            # m^3/interval (end-labelled) -> m^3/s (start-labelled); the
+            # same conversion the calibration worker applies.
+            from .extractor import basinflow_to_cms
+            streamflow = basinflow_to_cms(df[flow_col])
 
             # Apply resampling if configured
             if self.resample_frequency:
