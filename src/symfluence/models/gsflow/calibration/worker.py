@@ -329,7 +329,7 @@ class GSFLOWWorker(BaseWorker):
                 sim_series, obs_series, calibration_period=period_tuple
             )
             results = self._streamflow_metrics.calculate_metrics(
-                obs_aligned, sim_aligned, metrics=['kge', 'nse']
+                obs_aligned, sim_aligned, metrics=self._requested_metrics(config)
             )
             if resolve_config_value(config, lambda: config.model.gsflow.cryosphere_constraints, False, 'GSFLOW_CRYOSPHERE_CONSTRAINTS'):
                 # Same snow-cover / glacier mass-balance scores as PRMS (GSFLOW

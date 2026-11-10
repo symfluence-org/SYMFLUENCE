@@ -14,7 +14,7 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from symfluence.core.constants import ModelDefaults
 from symfluence.core.exceptions import RetryExhaustedError
@@ -595,6 +595,60 @@ class BaseWorker(ABC):
             iteration=task.iteration
         )
 
+    @staticmethod
+    def _configured_metric(config: Any) -> Tuple[str, Optional[Dict[str, float]]]:
+        """``(OPTIMIZATION_METRIC, COMPOSITE_METRIC)`` from a task config.
+
+        ``config`` is the task's flat config dict or a typed SymfluenceConfig.
+        """
+        if isinstance(config, dict):
+            metric_name = config.get(
+                'OPTIMIZATION_METRIC',
+                config.get('CALIBRATION_METRIC', 'KGE')
+            )
+            composite_config = config.get('COMPOSITE_METRIC')
+        else:
+            # Pydantic SymfluenceConfig
+            try:
+                metric_name = config.optimization.metric
+            except AttributeError:
+                metric_name = 'KGE'
+            try:
+                composite_config = config.optimization.composite_metric
+            except AttributeError:
+                composite_config = None
+        return str(metric_name or 'KGE'), composite_config
+
+    # Always requested alongside the objective (reporting + legacy consumers).
+    BASE_REQUESTED_METRICS = ('kge', 'nse')
+
+    def _requested_metrics(self, config: Any = None) -> List[str]:
+        """Metric names a worker should ask ``StreamflowMetrics`` for.
+
+        The configured objective (or every COMPOSITE_METRIC component) plus
+        KGE and NSE, lower-cased to the names ``calculate_metrics``
+        understands and de-duplicated in order. Workers that hard-coded
+        ``['kge', 'nse']`` never produced RMSE/MAE/PBIAS, so a minimise-metric
+        calibration scored every trial as a failure.
+        """
+        metric_name, composite_config = self._configured_metric(
+            self.config if config is None else config)
+        wanted: List[str] = []
+        if isinstance(composite_config, dict) and (
+                composite_config or metric_name.upper() == 'COMPOSITE'):
+            wanted.extend(str(k) for k in composite_config)
+        if metric_name.upper() != 'COMPOSITE':
+            wanted.append(metric_name)
+        wanted.extend(self.BASE_REQUESTED_METRICS)
+        out: List[str] = []
+        for name in wanted:
+            key = name.strip().lower()
+            # Components StreamflowMetrics cannot compute (e.g. SNOW_SCORE from
+            # a cryosphere module) are added by the worker itself.
+            if key and key not in out and StreamflowMetrics.supports(key):
+                out.append(key)
+        return out
+
     def _extract_primary_score(
         self,
         metrics: Dict[str, float],
@@ -618,23 +672,7 @@ class BaseWorker(ABC):
         Returns:
             Primary score for optimization (transformed for maximization)
         """
-        # Get configured metric name (config is a task config dict, not self.config)
-        if isinstance(config, dict):
-            metric_name = config.get(
-                'OPTIMIZATION_METRIC',
-                config.get('CALIBRATION_METRIC', 'KGE')
-            )
-            composite_config = config.get('COMPOSITE_METRIC')
-        else:
-            # Pydantic SymfluenceConfig
-            try:
-                metric_name = config.optimization.metric
-            except AttributeError:
-                metric_name = 'KGE'
-            try:
-                composite_config = config.optimization.composite_metric
-            except AttributeError:
-                composite_config = None
+        metric_name, composite_config = self._configured_metric(config)
 
         # Check for composite objective function
         if (metric_name.upper() == 'COMPOSITE' or composite_config) and isinstance(composite_config, dict):

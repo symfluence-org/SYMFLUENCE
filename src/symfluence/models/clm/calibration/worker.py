@@ -740,7 +740,7 @@ class CLMWorker(BaseWorker):
             )
 
             results = self._streamflow_metrics.calculate_metrics(
-                obs_aligned, sim_aligned, metrics=['kge', 'nse']
+                obs_aligned, sim_aligned, metrics=self._requested_metrics(config)
             )
             return results
 

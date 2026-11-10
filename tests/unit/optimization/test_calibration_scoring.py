@@ -347,3 +347,45 @@ def test_native_gradient_callback_uses_log_chain_rule():
     opt.worker.evaluate_with_gradient.return_value = (0.1, {"k": 1.0})
     _, g = opt._create_gradient_callback()(np.array([0.4]))
     assert g[0] == pytest.approx(denormalize_derivative(bounds["k"], 0.4))
+
+
+# ---------------------------------------------------------------------------
+# Follow-up to 1: workers request the configured metric, not just KGE/NSE
+# ---------------------------------------------------------------------------
+
+class _StreamflowWorker(_Worker):
+    """Mirrors the PRMS/VIC/CLM/... calculate_metrics call pattern."""
+
+    def calculate_metrics(self, output_dir, config, **kwargs):
+        obs, sim = kwargs["obs"], kwargs["sim"]
+        return StreamflowMetrics().calculate_metrics(
+            obs, sim, metrics=self._requested_metrics(config))
+
+
+@pytest.mark.parametrize("metric,expected", [
+    ("RMSE", lambda o, s: -np.sqrt(np.mean((o - s) ** 2))),
+    ("MAE", lambda o, s: -np.mean(np.abs(o - s))),
+    ("PBIAS", lambda o, s: -abs(100 * np.sum(s - o) / np.sum(o))),
+    ("KGE", None),
+])
+def test_worker_scores_configured_minimise_metric(metric, expected):
+    obs = np.linspace(1.0, 20.0, 50)
+    good, bad = obs * 1.05, obs * 1.5
+    cfg = {"OPTIMIZATION_METRIC": metric}
+    w = _StreamflowWorker(cfg)
+    s_good = w._extract_primary_score(w.calculate_metrics(None, cfg, obs=obs, sim=good), cfg)
+    s_bad = w._extract_primary_score(w.calculate_metrics(None, cfg, obs=obs, sim=bad), cfg)
+    assert np.isfinite(s_good) and s_good != PENALTY
+    assert s_good > s_bad  # correctly oriented: the better sim scores higher
+    if expected is not None:
+        assert s_good == pytest.approx(expected(obs, good), rel=1e-6)
+
+
+def test_requested_metrics_helper():
+    w = _Worker({})
+    assert w._requested_metrics({"OPTIMIZATION_METRIC": "RMSE"}) == ["rmse", "kge", "nse"]
+    assert w._requested_metrics({"OPTIMIZATION_METRIC": "KGE"}) == ["kge", "nse"]
+    comp = {"OPTIMIZATION_METRIC": "COMPOSITE",
+            "COMPOSITE_METRIC": {"KGE_LOG": 0.5, "PBIAS": 0.3, "SNOW_SCORE": 0.2}}
+    # SNOW_SCORE is not a streamflow metric: the worker adds it itself.
+    assert w._requested_metrics(comp) == ["kge_log", "pbias", "kge", "nse"]

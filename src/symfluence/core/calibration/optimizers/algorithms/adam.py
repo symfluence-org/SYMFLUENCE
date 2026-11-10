@@ -247,7 +247,7 @@ class AdamAlgorithm(OptimizationAlgorithm):
                     f"perturbing from best point"
                 )
                 x = np.clip(
-                    best_x + self._rng.normal(0.0, max(lr, 1e-3), n_params), 0.0, 1.0
+                    best_x + self._rng.normal(0.0, max(float(lr or 0.0), 1e-3), n_params), 0.0, 1.0
                 )
                 log_progress(
                     self.name, step + 1, best_fitness,

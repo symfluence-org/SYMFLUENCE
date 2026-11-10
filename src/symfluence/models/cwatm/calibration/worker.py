@@ -90,7 +90,8 @@ class CWatMWorker(BaseWorker):
                 return {'KGE': -999.0, 'NSE': -999.0}
 
             return self._streamflow_metrics.calculate_metrics(
-                combined['obs'].values, combined['sim'].values
+                combined['obs'].values, combined['sim'].values,
+                metrics=self._requested_metrics(config),
             )
         except (OSError, ValueError, KeyError, TypeError) as e:
             self.logger.error(f"Metric calculation failed: {e}")

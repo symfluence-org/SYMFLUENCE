@@ -173,7 +173,8 @@ class PCRGLOBWBWorker(BaseWorker):
                 return {'KGE': -999.0, 'NSE': -999.0}
 
             metrics = self._streamflow_metrics.calculate_metrics(
-                combined['obs'].values, combined['sim'].values
+                combined['obs'].values, combined['sim'].values,
+                metrics=self._requested_metrics(config),
             )
             return metrics
         except Exception as e:  # noqa: BLE001

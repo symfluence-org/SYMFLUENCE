@@ -9,6 +9,7 @@ Consolidates duplicate implementations from GR, FUSE, SUMMA, MESH, HYPE, and NGE
 """
 from __future__ import annotations
 
+import inspect
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union, cast
@@ -19,6 +20,7 @@ import pandas as pd
 from symfluence.core.constants import ModelDefaults, UnitConversion
 from symfluence.core.metrics import kge, kge_prime, mae, nse, rmse
 from symfluence.core.metrics.metric_transformer import MetricTransformer
+from symfluence.core.metrics.metrics_registry import get_metric_function
 from symfluence.core.metrics.penalty import raw_failure_value
 from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.mixins.project import resolve_data_subdir
@@ -618,6 +620,13 @@ class StreamflowMetrics:
         'RMSE_LOG': ('rmse', 'log'),
     }
 
+    @classmethod
+    def supports(cls, metric: str) -> bool:
+        """True when :meth:`calculate_metrics` can compute ``metric``."""
+        return (metric in cls.TRANSFORMED_METRICS
+                or metric in ('kge', 'nse', 'rmse', 'mae', 'kge_prime')
+                or get_metric_function(metric) is not None)
+
     def calculate_metrics(
         self,
         obs: np.ndarray,
@@ -688,6 +697,12 @@ class StreamflowMetrics:
                         val = mae(obs, sim, transfo=1)
                     elif metric == 'kge_prime':
                         val = kge_prime(obs, sim, transfo=1)
+                    elif (func := get_metric_function(metric)) is not None:
+                        # Any other registry metric (pbias, nrmse, mare, ...)
+                        if 'transfo' in inspect.signature(func).parameters:
+                            val = func(obs, sim, transfo=1)
+                        else:
+                            val = func(obs, sim)
                     else:
                         logger.warning(f"Unknown metric: {metric}")
                         val = failed(metric)
