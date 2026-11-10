@@ -38,6 +38,10 @@ KNOWN_ANALYSES = frozenset({'benchmarking', 'decision', 'sensitivity', 'attribut
 # not registered as runner keys.
 ROUTING_NONE_VALUES = frozenset({'', 'NONE', 'DEFAULT', 'N/A', 'NULL', 'FALSE'})
 ROUTING_SPELLINGS = frozenset({'MIZU_ROUTE', 'MIZU', 'T-ROUTE', 'T_ROUTE'})
+# First-party routing plugins that are valid ROUTING_MODEL values even when the
+# plugin is not installed in this environment (the run itself then fails with
+# an install hint); keeps configs portable to stripped/CI environments.
+ROUTING_PLUGIN_MODELS = frozenset({'DROUTE'})
 
 # Spellings that are not models; point the user at the real configuration.
 MODEL_NAME_HINTS = {

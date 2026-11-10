@@ -159,14 +159,15 @@ class ModelConfig(BaseModel):
         """ROUTING_MODEL must be 'none' or a registered (routing) runner."""
         if v is None:
             return v
-        from .choices import ROUTING_NONE_VALUES, ROUTING_SPELLINGS, did_you_mean
+        from .choices import ROUTING_NONE_VALUES, ROUTING_PLUGIN_MODELS, ROUTING_SPELLINGS, did_you_mean
 
         known = R.runners.keys()
         if not known:
             return v
         for item in str(v).split(','):
             name = item.strip().upper()
-            if name in ROUTING_NONE_VALUES or name in ROUTING_SPELLINGS or name in R.runners:
+            if (name in ROUTING_NONE_VALUES or name in ROUTING_SPELLINGS
+                    or name in ROUTING_PLUGIN_MODELS or name in R.runners):
                 continue
             raise ValueError(
                 f"ROUTING_MODEL: unknown routing model '{item.strip()}'"
