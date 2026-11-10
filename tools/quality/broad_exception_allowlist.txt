@@ -50,6 +50,7 @@ src/symfluence/core/calibration/optimizers/base_model_optimizer.py:BaseModelOpti
 src/symfluence/core/calibration/optimizers/base_model_optimizer.py:BaseModelOptimizer._recompute_final_eval_windows:except Exception as e:  # noqa: BLE001 — resilience in final eval
 src/symfluence/core/calibration/optimizers/base_model_optimizer.py:BaseModelOptimizer.run_optimization:except Exception as exc:  # noqa: BLE001 — cleanup must not mask the run
 src/symfluence/core/calibration/optimizers/final_evaluation/runner.py:FinalEvaluationRunner._worker_period_metrics:except Exception as e:  # noqa: BLE001 — resilience in final eval
+src/symfluence/core/calibration/optimizers/final_evaluation/self_training.py:persist_run_evaluation:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/core/calibration/workers/base_worker.py:run_worker_task:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/core/config/legacy_aliases.py:iter_legacy_flat_to_nested_aliases:except Exception:  # noqa: BLE001 — registry unavailable in stripped contexts
 src/symfluence/core/config/models/root.py:SymfluenceConfig.validate_model_requirements:except Exception as e:  # noqa: BLE001 — configuration resilience

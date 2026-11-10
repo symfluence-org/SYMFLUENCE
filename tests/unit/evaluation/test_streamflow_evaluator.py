@@ -289,14 +289,20 @@ class TestExtractFuseStreamflow:
         # 1 mm/hour over 86.4 km² -> 24 m³/s
         assert result.iloc[0] == pytest.approx(24.0)
 
-    def test_mm_per_hour_raises_instead_of_daily_conversion(
+    def test_mm_per_hour_converts_as_hourly_not_daily(
         self, streamflow_evaluator, tmp_path
     ):
-        """'mm' alone used to route into the mm/day branch; mm/h must not."""
-        from symfluence.core.exceptions import EvaluationError
+        """'mm' alone used to route into the mm/day branch; mm/h is hourly."""
+        streamflow_evaluator.config_dict = {'FIXED_CATCHMENT_AREA': 8.64e7}
         path = self._write_fuse(tmp_path, [1.0], units='mm/h')
-        with pytest.raises(EvaluationError, match="Unrecognized streamflow units"):
-            streamflow_evaluator._extract_fuse_streamflow(path)
+        result = streamflow_evaluator._extract_fuse_streamflow(path)
+        # 1 mm/h over 86.4 km² -> 24 m³/s (not the 1 m³/s a daily reading gives)
+        assert result.iloc[0] == pytest.approx(24.0)
+
+    def test_cf_volumetric_units_pass_through(self, streamflow_evaluator, tmp_path):
+        path = self._write_fuse(tmp_path, [5.0, 6.0], units='m3 s-1')
+        result = streamflow_evaluator._extract_fuse_streamflow(path)
+        assert result.tolist() == [5.0, 6.0]
 
     def test_missing_units_on_native_variable_warns_and_converts(
         self, streamflow_evaluator, tmp_path, caplog

@@ -274,6 +274,13 @@ class GNNRunner(BaseModelRunner, SpatialOrchestrator):  # type: ignore[misc]
             )
             self.logger.info(f"Results saved to {output_file}")
 
+            # Self-training: score the run and write the standard
+            # final_evaluation.json/best_params.json without a calibrate step.
+            from symfluence.core.calibration.optimizers.final_evaluation.self_training import (
+                persist_run_evaluation,
+            )
+            persist_run_evaluation(self, 'GNN')
+
     def _create_model_instance(self, input_size, hidden_size, gnn_output_size, adjacency_matrix):
         """Create the GNN model instance."""
         self.logger.info(f"Creating GNN model: In={input_size}, Hidden={hidden_size}, GNN_Out={gnn_output_size}")
