@@ -146,7 +146,7 @@ class NelderMeadAlgorithm(OptimizationAlgorithm):
 
         # Initialize simplex
         # Start from center or random point
-        x0 = np.full(n_params, 0.5)  # Center of normalized space
+        x0 = self._start_point(n_params, kwargs, np.full(n_params, 0.5))  # default: centre
 
         simplex = np.zeros((n_params + 1, n_params))
         simplex[0] = x0.copy()
@@ -154,7 +154,10 @@ class NelderMeadAlgorithm(OptimizationAlgorithm):
         # Create initial simplex vertices
         for i in range(n_params):
             simplex[i + 1] = x0.copy()
-            simplex[i + 1, i] += simplex_size
+            # Step inward when the start point sits on the upper bound, so a
+            # clipped vertex does not collapse onto x0.
+            step = simplex_size if x0[i] + simplex_size <= 1.0 else -simplex_size
+            simplex[i + 1, i] += step
             # Ensure bounds
             simplex[i + 1] = np.clip(simplex[i + 1], 0, 1)
 

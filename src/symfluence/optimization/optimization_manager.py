@@ -618,7 +618,11 @@ class OptimizationManager(BaseManager):
                                      'kge', 'KGE', 'fitness', 'score', 'timestamp',
                                      'crash_count', 'crash_rate', 'Calib_RMSE',
                                      'Calib_KGE', 'Calib_KGEp', 'Calib_KGEnp',
-                                     'Calib_NSE', 'Calib_MAE'}
+                                     'Calib_NSE', 'Calib_MAE',
+                                     # per-iteration algorithm diagnostics
+                                     'mean_score', 'std_score', 'n_improved',
+                                     'grad_norm', 'lr', 'current_params',
+                                     'archive_size'}
                         param_cols = [c for c in results_df.columns if c not in non_param]
                         best_params = {}
                         if not results_df.empty and param_cols:
@@ -635,16 +639,8 @@ class OptimizationManager(BaseManager):
 
                             # Fallback: find best row by score column
                             if not best_params:
-                                score_cols = [c for c in results_df.columns if c.lower() in ['score', 'objective', 'kge', 'fitness', 'nse']]
-                                if score_cols:
-                                    score_col = score_cols[0]
-                                    # Determine if we should minimize or maximize
-                                    metric = self._get_config_value(lambda: self.config.optimization.metric, 'KGE').upper()
-                                    minimize_metrics = {'RMSE', 'MAE', 'BIAS', 'MSE', 'MARE', 'PBIAS', 'NRMSE'}
-                                    if metric in minimize_metrics:
-                                        best_idx = results_df[score_col].idxmin()
-                                    else:
-                                        best_idx = results_df[score_col].idxmax()
+                                best_idx = self._best_row_index(results_df)
+                                if best_idx is not None:
                                     best_row = results_df.loc[cast(Any, best_idx)]
                                 else:
                                     # No score column found, fall back to last row (most recent)
@@ -820,6 +816,27 @@ class OptimizationManager(BaseManager):
         # 3. Calculate scalar objective
         return objective_handler.calculate(eval_results)
 
+    @staticmethod
+    def _best_row_index(results_df: pd.DataFrame) -> Optional[Any]:
+        """Index of the best iteration row, or None without a score column.
+
+        The ``score`` column is written in maximization convention (minimise
+        metrics such as RMSE are stored negated), so the best row is always
+        ``idxmax`` -- whatever OPTIMIZATION_METRIC is. The other candidate
+        columns (objective / kge / fitness / nse) are maximise-style too.
+        """
+        if results_df.empty:
+            return None
+        by_lower = {c.lower(): c for c in results_df.columns}
+        for name in ('score', 'objective', 'fitness', 'kge', 'nse'):
+            col = by_lower.get(name)
+            if col is None:
+                continue
+            values = pd.to_numeric(results_df[col], errors='coerce')
+            if values.notna().any():
+                return values.idxmax()
+        return None
+
     def load_optimization_results(self, filename: str = None) -> Optional[Dict]:
         """
         Load optimization results from file.
@@ -838,16 +855,8 @@ class OptimizationManager(BaseManager):
                 return None
 
             # Find best iteration by score instead of assuming row 0
-            score_cols = [c for c in results_df.columns if c.lower() in ['score', 'objective', 'kge', 'fitness', 'nse']]
-            if score_cols and not results_df.empty:
-                score_col = score_cols[0]
-                # Determine if we should minimize or maximize
-                metric = self._get_config_value(lambda: self.config.optimization.metric, 'KGE').upper()
-                minimize_metrics = {'RMSE', 'MAE', 'BIAS', 'MSE', 'MARE', 'PBIAS', 'NRMSE'}
-                if metric in minimize_metrics:
-                    best_idx = results_df[score_col].idxmin()
-                else:
-                    best_idx = results_df[score_col].idxmax()
+            best_idx = self._best_row_index(results_df)
+            if best_idx is not None:
                 best_iteration = results_df.loc[cast(Any, best_idx)].to_dict()
             else:
                 # Fall back to last row if no score column found

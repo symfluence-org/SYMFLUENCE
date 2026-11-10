@@ -21,6 +21,7 @@ import logging
 from typing import Any, Callable, Dict, Optional
 
 from symfluence.core.constants import ModelDefaults
+from symfluence.core.metrics.penalty import is_penalty
 
 
 class EvaluationMetricsTracker:
@@ -75,7 +76,7 @@ class EvaluationMetricsTracker:
             score: Fitness score from evaluation
         """
         self._total_evaluations += 1
-        if score <= self.PENALTY_SCORE:
+        if is_penalty(score, self.PENALTY_SCORE):
             self._crash_count += 1
 
         # Warn every 50 evaluations when crash rate exceeds 10%

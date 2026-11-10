@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional, Union
 import numpy as np
 import pandas as pd
 
+from symfluence.core.metrics.penalty import is_penalty
 from symfluence.core.mixins import ConfigMixin
 
 logger = logging.getLogger(__name__)
@@ -160,7 +161,9 @@ class ResultsTrackingMixin(ConfigMixin):
             True if the best was updated, False otherwise
         """
         # Handle invalid scores
-        if score is None or np.isnan(score) or score <= -900:
+        # Failure = None / non-finite / exactly the penalty score. No magnitude
+        # threshold: -RMSE of a large river is legitimately below -900.
+        if is_penalty(score):
             return False
 
         # Check if better (for maximization problems like KGE)

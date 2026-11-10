@@ -22,6 +22,8 @@ from typing import Any, Callable, Dict, Optional
 
 import numpy as np
 
+from symfluence.core.metrics.penalty import is_penalty
+
 from .base_algorithm import OptimizationAlgorithm
 
 
@@ -152,7 +154,7 @@ class DDSAlgorithm(OptimizationAlgorithm):
             # model failure (e.g. CLASS energy balance crash), not search
             # exhaustion.  Counting them triggers perturbation doubling which
             # generates more extreme parameter combos, causing more crashes.
-            is_crash = (f_new <= self.penalty_score)
+            is_crash = is_penalty(f_new, self.penalty_score)
             if f_new > f_best:
                 x_best = x_new
                 f_best = f_new

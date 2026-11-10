@@ -18,8 +18,11 @@ import pytest
 
 from symfluence.core.calibration.optimizers.algorithms.moead import MOEADAlgorithm
 from symfluence.core.calibration.optimizers.algorithms.nsga2 import NSGA2Algorithm
+from symfluence.core.constants import ModelDefaults
 
-PENALTY = -1.0e6
+# Failure is signalled by exactly the penalty score (the population evaluator
+# maps every failed/NaN objective to it); magnitude thresholds are gone.
+PENALTY = ModelDefaults.PENALTY_SCORE
 GOOD = 0.75
 
 

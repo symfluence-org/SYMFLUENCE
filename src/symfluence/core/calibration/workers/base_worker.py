@@ -16,11 +16,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-import numpy as np
-
 from symfluence.core.constants import ModelDefaults
 from symfluence.core.exceptions import RetryExhaustedError
 from symfluence.core.metrics.metric_transformer import MetricTransformer
+from symfluence.core.metrics.penalty import is_failure_sentinel, is_penalty, sanitize_score
 from symfluence.core.metrics.streamflow_metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.mixins.logging import _class_logger_name
@@ -173,13 +172,7 @@ class WorkerResult:
     @property
     def valid_score(self) -> bool:
         """Check if the score is valid (not NaN, not penalty value)."""
-        if self.score is None:
-            return False
-        if np.isnan(self.score):
-            return False
-        if self.score <= -900:  # Common penalty value
-            return False
-        return True
+        return not is_penalty(self.score)
 
     @classmethod
     def failure(
@@ -653,7 +646,10 @@ class BaseWorker(ABC):
             f"CALIBRATION_METRIC={config.get('CALIBRATION_METRIC')}, using metric_name={metric_name}"
         )
 
-        raw_value = self._find_metric_value(metrics, metric_name, use_alternatives=True)
+        source_metric = metric_name
+        raw_value = self._find_metric_value(metrics, metric_name)
+        if raw_value is None:
+            source_metric, raw_value = self._find_fallback_metric(metrics, metric_name)
 
         # Return penalty if no metric found
         if raw_value is None:
@@ -663,18 +659,24 @@ class BaseWorker(ABC):
             )
             return self.penalty_score
 
-        # Transform to maximization convention
+        # Worker failure sentinels (-999 / -9999 / NaN) are failures, whatever
+        # the metric's direction -- never let them be negated into a win.
+        if is_failure_sentinel(raw_value):
+            return self.penalty_score
+
+        # Transform to maximization convention under the direction of the
+        # metric the value actually came from.
         transformed_score = MetricTransformer.transform_for_maximization(
-            metric_name, raw_value
+            source_metric, raw_value
         )
 
         self.logger.debug(
-            f"Score extraction: metric={metric_name}, raw={raw_value:.4f}, "
-            f"direction={MetricTransformer.get_direction(metric_name)}, "
-            f"transformed={transformed_score:.4f}"
+            f"Score extraction: metric={source_metric}, raw={raw_value:.4f}, "
+            f"direction={MetricTransformer.get_direction(source_metric)}, "
+            f"transformed={transformed_score}"
         )
 
-        return transformed_score if transformed_score is not None else self.penalty_score
+        return sanitize_score(transformed_score, self.penalty_score)
 
     def _extract_composite_score(
         self,
@@ -717,9 +719,9 @@ class BaseWorker(ABC):
 
             raw_value = self._find_metric_value(metrics, metric_name)
 
-            if raw_value is None:
+            if is_failure_sentinel(raw_value):
                 self.logger.warning(
-                    f"Composite component '{metric_name}' not found in metrics. "
+                    f"Composite component '{metric_name}' missing or failed in metrics. "
                     f"Available: {list(metrics.keys())}"
                 )
                 # Use penalty for missing component
@@ -730,8 +732,7 @@ class BaseWorker(ABC):
             transformed = MetricTransformer.transform_for_maximization(
                 metric_name, raw_value
             )
-            if transformed is None:
-                transformed = raw_value  # Assume maximize if unknown
+            transformed = sanitize_score(transformed, self.penalty_score)
 
             composite_score += normalized_weight * transformed
             components_found += 1
@@ -756,7 +757,6 @@ class BaseWorker(ABC):
         self,
         metrics: Dict[str, float],
         metric_name: str,
-        use_alternatives: bool = False
     ) -> Optional[float]:
         """
         Find a metric value in the metrics dict with case-insensitive fallback.
@@ -764,8 +764,6 @@ class BaseWorker(ABC):
         Args:
             metrics: Dictionary of calculated metrics
             metric_name: Name of the metric to find
-            use_alternatives: If True, try common alternative metric names as
-                fallback. Only used for primary (non-composite) metric lookup.
 
         Returns:
             The metric value, or None if not found
@@ -784,17 +782,42 @@ class BaseWorker(ABC):
             if k.lower() == metric_lower or k.lower() == f"calib_{metric_lower}":
                 return v
 
-        # Try common alternatives only for primary metric lookups
-        if use_alternatives:
-            alternatives = ['kge', 'nse', 'score', 'fitness', 'objective']
-            for alt in alternatives:
-                if alt in metrics:
-                    return metrics[alt]
-                for k, v in metrics.items():
-                    if k.lower() == alt:
-                        return v
-
         return None
+
+    # Generic stand-ins tried when the configured primary metric is missing.
+    FALLBACK_METRICS = ('kge', 'nse', 'score', 'fitness', 'objective')
+
+    def _find_fallback_metric(
+        self,
+        metrics: Dict[str, float],
+        metric_name: str,
+    ) -> Tuple[str, Optional[float]]:
+        """Find a stand-in for a missing primary metric.
+
+        Only a stand-in with the same optimization direction as the configured
+        metric is accepted: substituting KGE for a missing RMSE would mix
+        score scales (and, before this check, negated KGE so a crashed
+        ``{'kge': -999}`` run scored +999). A direction mismatch is refused
+        with a warning and the caller falls back to the penalty.
+
+        Returns:
+            ``(source_metric_name, value)`` or ``(metric_name, None)``.
+        """
+        wanted = MetricTransformer.get_direction(metric_name)
+        for alt in self.FALLBACK_METRICS:
+            for k, v in metrics.items():
+                if k.lower() != alt:
+                    continue
+                if MetricTransformer.get_direction(k) != wanted:
+                    self.logger.warning(
+                        f"Configured metric '{metric_name}' ({wanted}) missing; "
+                        f"refusing fallback to '{k}' "
+                        f"({MetricTransformer.get_direction(k)}) -- "
+                        f"scoring this run as a failure."
+                    )
+                    return metric_name, None
+                return k, v
+        return metric_name, None
 
     def _is_transient_error(self, error: Exception) -> bool:
         """

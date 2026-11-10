@@ -222,7 +222,7 @@ class LBFGSAlgorithm(OptimizationAlgorithm):
             self.logger.debug(f"Using finite differences ({2*n_params + 1} evals/step)")
 
         # Initialize at midpoint of normalized space
-        x = np.full(n_params, 0.5)
+        x = self._start_point(n_params, kwargs, np.full(n_params, 0.5))
 
         # L-BFGS theory is stated for MINIMIZATION, but the framework maximizes
         # fitness. We therefore minimize g = -fitness internally: the secant
