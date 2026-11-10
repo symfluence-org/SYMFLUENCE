@@ -22,6 +22,8 @@ import re
 from pathlib import Path
 from typing import List, Optional, Union
 
+from symfluence.core.exceptions import FileOperationError
+
 logger = logging.getLogger(__name__)
 
 # A namespaced remapped forcing name is
@@ -82,11 +84,14 @@ def select_forcing_files(
     carries that token. Falls back to the full list unchanged when:
 
     - *discretization* is falsy (caller did not scope the read), or
-    - NO file carries the token — a store written before namespacing, or a
-      single-discretization store whose names predate this fix.
+    - NO file carries ANY discretization token — a legacy store written before
+      namespacing, whose names predate this fix.
 
-    The fallback is what keeps single-discretization domains from regressing and
-    lets stores predating the fix keep working without regeneration.
+    The fallback is what lets stores predating the fix keep working without
+    regeneration. If the store IS namespaced but holds only OTHER
+    discretizations, there is no safe fallback: returning those files would
+    feed the model forcing remapped onto a different set of HRUs. That case
+    raises :class:`~symfluence.core.exceptions.FileOperationError`.
     """
     files = [forcing_files] if isinstance(forcing_files, (str, Path)) else list(forcing_files)
     files = [Path(f) for f in files]
@@ -95,7 +100,15 @@ def select_forcing_files(
     token = discretization_token(discretization)
     matched = [f for f in files if forcing_name_matches_discretization(f.name, token)]
     if not matched:
-        return files
+        tokens = sorted({k for k in (discretization_key_from_name(f.name) for f in files) if k})
+        if not tokens:
+            return files  # legacy untokened store
+        raise FileOperationError(
+            f"No remapped forcing file matches discretization '{discretization}' "
+            f"(token '{token}'); the forcing store only holds "
+            f"{', '.join(repr(t) for t in tokens)}. Re-run forcing remapping for "
+            f"this discretization instead of reading another discretization's forcing."
+        )
     if len(matched) != len(files):
         logger.debug(
             "Selected %d/%d forcing file(s) for discretization '%s' (token '%s')",

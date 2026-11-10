@@ -45,16 +45,13 @@ except ImportError as _e:
     _logger.warning("Failed to import elevation_calculator: %s", _e)
 
 try:
-    from .remapping_weights import (
-        BatchProcessor,
-        RemappingWeightApplier,
-        RemappingWeightGenerator,
-    )
+    # Canonical home of the EASYMORE weight classes (the old duplicate
+    # ``remapping_weights`` module was dead code and has been removed).
+    from .resampling import RemappingWeightApplier, RemappingWeightGenerator
 except ImportError as _e:
     RemappingWeightGenerator: Any = None  # type: ignore[no-redef]
     RemappingWeightApplier: Any = None  # type: ignore[no-redef]
-    BatchProcessor: Any = None  # type: ignore[no-redef]
-    _logger.warning("Failed to import remapping_weights: %s", _e)
+    _logger.warning("Failed to import resampling weight classes: %s", _e)
 
 try:
     from .elevation_correction import ElevationCorrectionProcessor
@@ -70,6 +67,5 @@ __all__ = [
     'create_elevation_calculator',
     'RemappingWeightGenerator',
     'RemappingWeightApplier',
-    'BatchProcessor',
     'ElevationCorrectionProcessor',
 ]

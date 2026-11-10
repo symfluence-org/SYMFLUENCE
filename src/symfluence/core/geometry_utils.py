@@ -220,6 +220,42 @@ def calculate_catchment_area_km2(
     return area_km2
 
 
+def local_equal_area_crs(gdf: 'gpd.GeoDataFrame') -> str:
+    """Return a Lambert Azimuthal Equal-Area CRS centred on *gdf*'s extent.
+
+    Equal-area by construction everywhere, so feature areas are exact for any
+    domain size or location (unlike a fixed national projection such as
+    EPSG:3763, which inflates areas far from Portugal, or a single UTM zone,
+    which drifts for domains spanning several zones).
+    """
+    geo = gdf if (gdf.crs is not None and gdf.crs.is_geographic) else gdf.to_crs(epsg=4326)
+    minx, miny, maxx, maxy = geo.total_bounds
+    lon0 = (minx + maxx) / 2.0
+    lat0 = (miny + maxy) / 2.0
+    return (f"+proj=laea +lat_0={lat0:.6f} +lon_0={lon0:.6f} "
+            "+x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs")
+
+
+def feature_areas_m2(gdf: 'gpd.GeoDataFrame') -> 'gpd.GeoSeries':
+    """Per-feature area in m² computed in a local equal-area projection.
+
+    A GeoDataFrame without CRS is assumed to be EPSG:4326 (the convention used
+    across the geofabric code).
+    """
+    if gdf.crs is None:
+        gdf = gdf.set_crs(epsg=4326)
+    return gdf.to_crs(local_equal_area_crs(gdf)).geometry.area
+
+
+def feature_lengths_m(gdf: 'gpd.GeoDataFrame') -> 'gpd.GeoSeries':
+    """Per-feature length in metres (local UTM zone for geographic input)."""
+    if gdf.crs is None:
+        gdf = gdf.set_crs(epsg=4326)
+    if gdf.crs.is_projected:
+        return gdf.geometry.length
+    return gdf.to_crs(gdf.estimate_utm_crs()).geometry.length
+
+
 def calculate_feature_centroids(
     gdf: 'gpd.GeoDataFrame',
     temp_epsg: int = 3857,

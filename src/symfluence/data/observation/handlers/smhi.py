@@ -127,9 +127,8 @@ class SMHIStreamflowHandler(BaseObservationHandler):
         df['discharge_cms'] = df[discharge_col]
 
         # Resample to target timestep
-        resample_freq = self._get_resample_freq()
-        resampled = df['discharge_cms'].resample(resample_freq).mean()
-        resampled = resampled.interpolate(method='time', limit_direction='both', limit=30)
+        # SMHI archive values are daily means, never interpolated.
+        resampled = self._daily_streamflow_to_target(df['discharge_cms'])
 
         # Save processed data
         output_dir = self.project_observations_dir / "streamflow" / "preprocessed"

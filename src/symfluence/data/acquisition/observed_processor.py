@@ -683,7 +683,9 @@ class ObservedDataProcessor(ConfigMixin):
             # Create a new DataFrame with just Date and SWE
             processed_df = pd.DataFrame()
             processed_df['Date'] = df['Date']
-            processed_df['SWE'] = df[swe_column]
+            # Unit-explicit column (NRCS reports inches) so readers never guess.
+            swe_out = 'SWE_mm' if '(mm)' in swe_column.lower() else 'SWE_in'
+            processed_df[swe_out] = df[swe_column]
 
             # Try to parse dates with different formats
             try:
@@ -705,10 +707,10 @@ class ObservedDataProcessor(ConfigMixin):
             processed_df['Date'] = processed_df['Date'].dt.strftime('%Y-%m-%d')
 
             # Convert SWE to numeric, coercing errors to NaN
-            processed_df['SWE'] = pd.to_numeric(processed_df['SWE'], errors='coerce')
+            processed_df[swe_out] = pd.to_numeric(processed_df[swe_out], errors='coerce')
 
             # Drop rows with invalid dates or SWE values
-            processed_df = processed_df.dropna(subset=['Date', 'SWE'])
+            processed_df = processed_df.dropna(subset=['Date', swe_out])
 
             # Save the processed data
             processed_df.to_csv(output_file, index=False)
