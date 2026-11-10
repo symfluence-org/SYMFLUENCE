@@ -34,137 +34,87 @@ if TYPE_CHECKING:
     from symfluence.core.config.models import SymfluenceConfig
 
 
-def cli_exception_handler(func: Callable[..., int]) -> Callable[..., int]:
+def _print_traceback_if_debug(args: Namespace) -> None:
+    if getattr(args, 'debug', False):
+        import traceback
+        traceback.print_exc()
+
+
+def _exit_code_for_exception(e: BaseException, args: Namespace) -> Optional[int]:
+    """Report *e* on the console and map it to an exit code.
+
+    Returns None for exceptions the CLI does not handle (they propagate).
+    Order matters: the first matching type wins.
     """
-    Decorator for consistent exception handling across CLI commands.
+    console = BaseCommand._console
+    if isinstance(e, OptionalDependencyError):
+        from ..optional_dependencies import handle_optional_dependency
+        return handle_optional_dependency(e, console)
+    if isinstance(e, ConfigurationError):
+        console.error(f"Configuration error: {e}")
+        _print_traceback_if_debug(args)
+        return ExitCode.CONFIG_ERROR
+    if isinstance(e, ModelExecutionError):
+        console.error(f"Execution failed: {e}")
+        _print_traceback_if_debug(args)
+        return ExitCode.WORKFLOW_ERROR
+    if isinstance(e, FileNotFoundError):
+        console.error(f"File not found: {e}")
+        return ExitCode.FILE_NOT_FOUND
+    if isinstance(e, PermissionError):
+        console.error(f"Permission denied: {e}")
+        return ExitCode.PERMISSION_ERROR
+    if isinstance(e, ImportError):
+        console.error(f"Failed to import required module: {e}")
+        return ExitCode.DEPENDENCY_ERROR
+    if isinstance(e, ValueError):
+        console.error(f"Invalid value: {e}")
+        return ExitCode.VALIDATION_ERROR
+    if isinstance(e, OSError):
+        console.error(f"I/O error: {e}")
+        _print_traceback_if_debug(args)
+        return ExitCode.GENERAL_ERROR
+    if isinstance(e, SYMFLUENCEError):
+        console.error(f"Operation failed: {e}")
+        _print_traceback_if_debug(args)
+        return ExitCode.GENERAL_ERROR
+    return None
 
-    Wraps command functions to provide standardized error handling,
-    reducing code duplication across all command modules.
 
-    Args:
-        func: The command function to wrap
+def _make_cli_exception_handler(
+    *, profiling: bool
+) -> Callable[[Callable[..., int]], Callable[..., int]]:
+    """Build the CLI exception-handling decorator.
 
-    Returns:
-        Wrapped function with exception handling
+    ``profiling=True`` additionally sets up profiling when ``--profile`` is
+    given and always finalizes it, even when the command raised.
     """
-    @functools.wraps(func)
-    def wrapper(args: Namespace) -> int:
-        try:
-            return func(args)
-        except OptionalDependencyError as e:
-            from ..optional_dependencies import handle_optional_dependency
-            return handle_optional_dependency(e, BaseCommand._console)
-        except ConfigurationError as e:
-            BaseCommand._console.error(f"Configuration error: {e}")
-            if getattr(args, 'debug', False):
-                import traceback
-                traceback.print_exc()
-            return ExitCode.CONFIG_ERROR
-        except ModelExecutionError as e:
-            BaseCommand._console.error(f"Execution failed: {e}")
-            if getattr(args, 'debug', False):
-                import traceback
-                traceback.print_exc()
-            return ExitCode.WORKFLOW_ERROR
-        except FileNotFoundError as e:
-            BaseCommand._console.error(f"File not found: {e}")
-            return ExitCode.FILE_NOT_FOUND
-        except PermissionError as e:
-            BaseCommand._console.error(f"Permission denied: {e}")
-            return ExitCode.PERMISSION_ERROR
-        except ImportError as e:
-            BaseCommand._console.error(f"Failed to import required module: {e}")
-            return ExitCode.DEPENDENCY_ERROR
-        except ValueError as e:
-            BaseCommand._console.error(f"Invalid value: {e}")
-            return ExitCode.VALIDATION_ERROR
-        except (OSError, IOError) as e:
-            BaseCommand._console.error(f"I/O error: {e}")
-            if getattr(args, 'debug', False):
-                import traceback
-                traceback.print_exc()
-            return ExitCode.GENERAL_ERROR
-        except SYMFLUENCEError as e:
-            BaseCommand._console.error(f"Operation failed: {e}")
-            if getattr(args, 'debug', False):
-                import traceback
-                traceback.print_exc()
-            return ExitCode.GENERAL_ERROR
-    return wrapper
+    def decorator(func: Callable[..., int]) -> Callable[..., int]:
+        @functools.wraps(func)
+        def wrapper(args: Namespace) -> int:
+            profilers = None
+            try:
+                if profiling and getattr(args, 'profile', False):
+                    profilers = _setup_profiling(args)
+                return func(args)
+            except (SYMFLUENCEError, ImportError, OSError, ValueError) as e:
+                code = _exit_code_for_exception(e, args)
+                if code is None:  # pragma: no cover - table covers every caught type
+                    raise
+                return code
+            finally:
+                if profilers is not None:
+                    _finalize_profiling(args, profilers)
+        return wrapper
+    return decorator
 
 
-def cli_exception_handler_with_profiling(func: Callable[..., int]) -> Callable[..., int]:
-    """
-    Decorator for exception handling with profiling support.
+#: Consistent exception handling for CLI commands (exception -> ExitCode).
+cli_exception_handler = _make_cli_exception_handler(profiling=False)
 
-    Similar to cli_exception_handler but ensures profiling is finalized
-    even when exceptions occur. Use for workflow commands that support profiling.
-
-    Args:
-        func: The command function to wrap
-
-    Returns:
-        Wrapped function with exception handling and profiling cleanup
-    """
-    @functools.wraps(func)
-    def wrapper(args: Namespace) -> int:
-        profilers = None
-        exit_code = ExitCode.SUCCESS
-        try:
-            # Setup profiling if enabled
-            if getattr(args, 'profile', False):
-                profilers = _setup_profiling(args)
-
-            exit_code = func(args)
-            return exit_code
-
-        except OptionalDependencyError as e:
-            from ..optional_dependencies import handle_optional_dependency
-            exit_code = handle_optional_dependency(e, BaseCommand._console)
-
-        except ConfigurationError as e:
-            BaseCommand._console.error(f"Configuration error: {e}")
-            if getattr(args, 'debug', False):
-                import traceback
-                traceback.print_exc()
-            exit_code = ExitCode.CONFIG_ERROR
-        except ModelExecutionError as e:
-            BaseCommand._console.error(f"Execution failed: {e}")
-            if getattr(args, 'debug', False):
-                import traceback
-                traceback.print_exc()
-            exit_code = ExitCode.WORKFLOW_ERROR
-        except FileNotFoundError as e:
-            BaseCommand._console.error(f"File not found: {e}")
-            exit_code = ExitCode.FILE_NOT_FOUND
-        except PermissionError as e:
-            BaseCommand._console.error(f"Permission denied: {e}")
-            exit_code = ExitCode.PERMISSION_ERROR
-        except ImportError as e:
-            BaseCommand._console.error(f"Failed to import required module: {e}")
-            exit_code = ExitCode.DEPENDENCY_ERROR
-        except ValueError as e:
-            BaseCommand._console.error(f"Invalid value: {e}")
-            exit_code = ExitCode.VALIDATION_ERROR
-        except (OSError, IOError) as e:
-            BaseCommand._console.error(f"I/O error: {e}")
-            if getattr(args, 'debug', False):
-                import traceback
-                traceback.print_exc()
-            exit_code = ExitCode.GENERAL_ERROR
-        except SYMFLUENCEError as e:
-            BaseCommand._console.error(f"Operation failed: {e}")
-            if getattr(args, 'debug', False):
-                import traceback
-                traceback.print_exc()
-            exit_code = ExitCode.GENERAL_ERROR
-        finally:
-            # Finalize profiling if it was enabled
-            if profilers is not None:
-                _finalize_profiling(args, profilers)
-
-        return exit_code
-    return wrapper
+#: Same as ``cli_exception_handler``, plus ``--profile`` setup/finalization
+#: (finalized even when the command raised). Use for workflow commands.
+cli_exception_handler_with_profiling = _make_cli_exception_handler(profiling=True)
 
 
 def _setup_profiling(args: Namespace):

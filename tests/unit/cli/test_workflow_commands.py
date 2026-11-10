@@ -399,3 +399,72 @@ class TestWorkflowClean:
         result = WorkflowCommands.clean(args)
 
         assert result == ExitCode.PERMISSION_ERROR
+
+
+class TestWorkflowFailureExitCodes:
+    """--continue-on-error / STOP_ON_ERROR=false runs that had failures exit non-zero."""
+
+    @patch('symfluence.SYMFLUENCE')
+    def test_run_with_failed_steps_exits_workflow_error(self, mock_symfluence_class, temp_config_dir):
+        config_file = temp_config_dir / "config_files" / "config_template.yaml"
+        mock_instance = MagicMock()
+        mock_instance.get_failed_steps.return_value = ["run_model", "calibrate_model"]
+        mock_symfluence_class.return_value = mock_instance
+
+        args = Namespace(config=str(config_file), debug=False, visualise=False,
+                         profile=False, continue_on_error=True)
+        result = WorkflowCommands.run(args)
+
+        assert result == ExitCode.WORKFLOW_ERROR
+        overrides = mock_symfluence_class.call_args.kwargs['config_overrides']
+        assert overrides['STOP_ON_ERROR'] is False
+
+    @patch('symfluence.SYMFLUENCE')
+    def test_steps_with_failed_step_exits_workflow_error(self, mock_symfluence_class, temp_config_dir):
+        config_file = temp_config_dir / "config_files" / "config_template.yaml"
+        mock_instance = MagicMock()
+        mock_instance.get_failed_steps.return_value = ["define_domain"]
+        mock_symfluence_class.return_value = mock_instance
+
+        args = Namespace(config=str(config_file), debug=False, visualise=False,
+                         profile=False, step_names=["define_domain"])
+        assert WorkflowCommands.run_steps(args) == ExitCode.WORKFLOW_ERROR
+
+
+class TestForceRerunPlumbing:
+    @patch('symfluence.SYMFLUENCE')
+    def test_run_force_rerun_sets_config_override(self, mock_symfluence_class, temp_config_dir):
+        config_file = temp_config_dir / "config_files" / "config_template.yaml"
+        mock_instance = MagicMock()
+        mock_instance.get_failed_steps.return_value = []
+        mock_symfluence_class.return_value = mock_instance
+
+        args = Namespace(config=str(config_file), debug=False, visualise=False,
+                         profile=False, force_rerun=True)
+        assert WorkflowCommands.run(args) == ExitCode.SUCCESS
+        assert mock_symfluence_class.call_args.kwargs['config_overrides'] == {'FORCE_RUN_ALL_STEPS': True}
+        mock_instance.run_workflow.assert_called_once_with(force_run=True)
+
+    @patch('symfluence.SYMFLUENCE')
+    def test_run_without_flag_defers_to_config(self, mock_symfluence_class, temp_config_dir):
+        """No --force-rerun -> force_run=None so FORCE_RUN_ALL_STEPS in the config applies."""
+        config_file = temp_config_dir / "config_files" / "config_template.yaml"
+        mock_instance = MagicMock()
+        mock_instance.get_failed_steps.return_value = []
+        mock_symfluence_class.return_value = mock_instance
+
+        args = Namespace(config=str(config_file), debug=False, visualise=False, profile=False)
+        WorkflowCommands.run(args)
+        mock_instance.run_workflow.assert_called_once_with(force_run=None)
+
+    @patch('symfluence.SYMFLUENCE')
+    def test_resume_force_rerun_sets_config_override(self, mock_symfluence_class, temp_config_dir):
+        config_file = temp_config_dir / "config_files" / "config_template.yaml"
+        mock_instance = MagicMock()
+        mock_instance.get_failed_steps.return_value = []
+        mock_symfluence_class.return_value = mock_instance
+
+        args = Namespace(config=str(config_file), debug=False, visualise=False,
+                         step_name='calibrate_model', force_rerun=True)
+        assert WorkflowCommands.resume(args) == ExitCode.SUCCESS
+        assert mock_symfluence_class.call_args.kwargs['config_overrides'] == {'FORCE_RUN_ALL_STEPS': True}

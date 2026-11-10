@@ -16,6 +16,7 @@ import pandas as pd
 
 from symfluence.core.base_manager import BaseManager
 from symfluence.core.constants import SupportedModels
+from symfluence.core.exceptions import OptimizationError
 from symfluence.core.registries import R
 from symfluence.optimization.core import TransformationManager
 from symfluence.optimization.optimization_results_manager import OptimizationResultsManager
@@ -29,6 +30,40 @@ if TYPE_CHECKING:
 # optimizer/worker and are skipped by the registry calibration path. Canonical
 # definition lives in SupportedModels so the sensitivity-analysis path shares it.
 _SELF_TRAINING_MODELS = SupportedModels.SELF_TRAINING
+
+
+def find_calibration_results(
+    project_dir: Path,
+    experiment_id: str,
+    algorithm: str,
+) -> Optional[Path]:
+    """Locate the results of a finished calibration, or None.
+
+    ``BaseModelOptimizer`` writes to
+    ``optimization/{MODEL}/{algorithm}_{experiment_id}/`` (MODEL may also be
+    COUPLED / COUPLED_GW); self-training models write their final evaluation
+    there too. Older releases used ``optimization/{algorithm}_{experiment_id}/``
+    and the flat ``optimization/{experiment_id}_parallel_iteration_results.csv``.
+    """
+    opt_dir = Path(project_dir) / "optimization"
+    if not opt_dir.is_dir():
+        return None
+    run_dir_name = f"{str(algorithm).lower()}_{experiment_id}"
+    candidates = [opt_dir / run_dir_name] + sorted(opt_dir.glob(f"*/{run_dir_name}"))
+    patterns = (
+        f"{experiment_id}_parallel_iteration_results.csv",
+        f"{experiment_id}_*_best_params.json",
+        f"{experiment_id}_*_final_evaluation.json",
+    )
+    for run_dir in candidates:
+        if not run_dir.is_dir():
+            continue
+        for pattern in patterns:
+            found = sorted(run_dir.glob(pattern))
+            if found:
+                return found[0]
+    legacy = opt_dir / f"{experiment_id}_parallel_iteration_results.csv"
+    return legacy if legacy.exists() else None
 
 
 class OptimizationManager(BaseManager):
@@ -227,16 +262,15 @@ class OptimizationManager(BaseManager):
                 LBFGS_LR (optimization.lbfgs.lr): L-BFGS initial step size (default: 0.1)
 
         Returns:
-            Optional[Path]: Path to last completed calibration results file
-            - None if: disabled, no models configured, or all failed
-            - Path if: at least one model calibration completed successfully
-            - Typically: project_dir/optimization/{model}_{algorithm}_results.csv
+            Optional[Path]: Path to the last completed calibration results
+            file, or None if calibration is disabled (no 'iteration' method)
+            or handled internally by the model (FUSE built-in SCE).
 
         Raises:
-            (Caught internally, returns None instead):
-            - Registry lookup failures
-            - Optimizer instantiation errors
-            - Algorithm execution failures
+            OptimizationError: no optimizer registered, unsupported algorithm,
+                optimizer failure, or no results file produced. Failures are
+                no longer swallowed, so the workflow records the step as
+                failed and writes no stage marker.
 
         Side Effects:
             - Creates project_dir/optimization/ directory
@@ -262,8 +296,7 @@ class OptimizationManager(BaseManager):
 
         Notes:
             - Disabled silently returns None (no error)
-            - Registry lookup errors logged and skipped
-            - Execution errors caught and logged (non-fatal)
+            - Registry lookup and execution errors raise OptimizationError
             - Multiple models: Last result returned (not aggregated)
 
         See Also:
@@ -381,7 +414,9 @@ class OptimizationManager(BaseManager):
                     results.append(result)
 
             if not results:
-                return None
+                raise OptimizationError(
+                    f"Calibration produced no results for {', '.join(hydrological_models)}"
+                )
 
             if len(results) > 1:
                 self.logger.info(f"Completed calibration for {len(results)} model(s)")
@@ -395,11 +430,14 @@ class OptimizationManager(BaseManager):
 
             return results[-1]
 
+        except OptimizationError:
+            raise
         except (ValueError, KeyError, TypeError, AttributeError, RuntimeError) as e:
+            # Propagate: returning None here made a failed calibration look
+            # like a successful (disabled) one, so the workflow wrote a stage
+            # marker and exited 0.
             self.logger.error(f"Error during model calibration: {str(e)}")
-            import traceback
-            self.logger.error(traceback.format_exc())
-            return None
+            raise OptimizationError(f"Model calibration failed: {e}") from e
 
     def _coupled_routing_requested(self) -> bool:
         """True when a calibratable dCoupler routing model is coupled to the land model.
@@ -474,9 +512,10 @@ class OptimizationManager(BaseManager):
         optimizer_cls = R.optimizers.get(model_name)
 
         if optimizer_cls is None:
-            self.logger.error(f"No optimizer registered for model: {model_name}")
-            self.logger.info(f"Registered models: {R.optimizers.keys()}")
-            return None
+            raise OptimizationError(
+                f"No optimizer registered for model: {model_name}. "
+                f"Registered models: {sorted(R.optimizers.keys())}"
+            )
 
         # Create optimization directory
         opt_dir = self.project_dir / "optimization"
@@ -498,10 +537,11 @@ class OptimizationManager(BaseManager):
             )
             try:
                 canonical = resolve_algorithm_name(algorithm)
-            except ValueError:
-                self.logger.error(f"Algorithm {algorithm} not supported for registry-based optimization")
-                self.logger.info(f"Supported algorithms: {list_algorithms()}")
-                return None
+            except ValueError as e:
+                raise OptimizationError(
+                    f"Algorithm {algorithm} not supported for registry-based optimization. "
+                    f"Supported algorithms: {list_algorithms()}"
+                ) from e
 
             # Run optimization
             results_file = optimizer.run_optimization(canonical)
@@ -582,14 +622,16 @@ class OptimizationManager(BaseManager):
 
                 return results_file
             else:
-                self.logger.warning(f"{model_name} calibration completed but results file not found")
-                return None
+                raise OptimizationError(
+                    f"{model_name} calibration finished but its results file was not found "
+                    f"({results_file!r})"
+                )
 
         except (KeyError, TypeError, ValueError, RuntimeError) as e:
             self.logger.error(f"Error during {model_name} {algorithm} optimization: {str(e)}")
-            import traceback
-            self.logger.error(traceback.format_exc())
-            return None
+            raise OptimizationError(
+                f"{model_name} {algorithm} optimization failed: {e}"
+            ) from e
 
 
     def get_optimization_status(self) -> Dict[str, Any]:
@@ -619,16 +661,11 @@ class OptimizationManager(BaseManager):
             'results_exist': False,
         }
 
-        # Check for optimization results - include algorithm subdirectory
-        # BaseModelOptimizer saves to: {project_dir}/optimization/{algorithm}_{experiment_id}/...
-        results_dir = self.project_dir / "optimization" / f"{algorithm}_{self.experiment_id}"
-        results_file = results_dir / f"{self.experiment_id}_parallel_iteration_results.csv"
-        status['results_exist'] = results_file.exists()
-
-        # Also check legacy path for backward compatibility
-        if not status['results_exist']:
-            legacy_file = self.project_dir / "optimization" / f"{self.experiment_id}_parallel_iteration_results.csv"
-            status['results_exist'] = legacy_file.exists()
+        # BaseModelOptimizer saves to
+        # {project_dir}/optimization/{MODEL}/{algorithm}_{experiment_id}/...
+        status['results_exist'] = find_calibration_results(
+            self.project_dir, self.experiment_id, algorithm
+        ) is not None
 
         return status
 
