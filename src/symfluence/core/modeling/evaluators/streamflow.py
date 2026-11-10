@@ -13,20 +13,23 @@ distributed models, and observed data matching.
 """
 from __future__ import annotations
 
+import fnmatch
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional, cast
+from typing import TYPE_CHECKING, Any, List, Optional, cast
 
 import numpy as np
 import pandas as pd
 import xarray as xr
 
 from symfluence.core.constants import UnitConverter
+from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.modeling.observation_paths import first_existing_path, streamflow_observation_candidates
 from symfluence.core.modeling.output_file_locator import OutputFileLocator
 from symfluence.core.path_resolver import find_basin_shapefile
 from symfluence.core.registries import R
 
 from .base import ModelEvaluator
+from .streamflow_units import classify_streamflow_units
 
 if TYPE_CHECKING:
     pass
@@ -100,12 +103,26 @@ class StreamflowEvaluator(ModelEvaluator):
         - calibration_period: (start_date, end_date) tuple for evaluation
     """
 
+    def __init__(self, config, project_dir: Optional[Path] = None, logger=None, *,
+                 model_name: Optional[str] = None):
+        """Initialise the evaluator.
+
+        Args:
+            model_name: Model whose registered ``ModelResultExtractor`` and
+                ``results/<exp>_results.csv`` column to use. Defaults to
+                ``HYDROLOGICAL_MODEL`` when that names a single model.
+        """
+        super().__init__(config, project_dir, logger)
+        self._model_name_override = model_name.upper() if model_name else None
+
     def get_simulation_files(self, sim_dir: Path) -> List[Path]:
         """Locate streamflow output files from simulation directory.
 
-        Searches for SUMMA timestep files or mizuRoute routed output files
-        using OutputFileLocator utility. Priority: mizuRoute if available
-        (routed values are preferred), otherwise SUMMA direct outputs.
+        Order: the generic OutputFileLocator search (mizuRoute/t-route first,
+        then SUMMA-style NetCDF), then the patterns declared by the model's
+        registered ``ModelResultExtractor``, then the experiment's
+        ``results/<exp>_results.csv`` (only for the experiment's own
+        simulation directory — see :meth:`_results_csv_for`).
 
         Args:
             sim_dir: Directory containing simulation outputs
@@ -119,7 +136,169 @@ class StreamflowEvaluator(ModelEvaluator):
             output = sim_dir / 'output.csv'
             return [output] if output.is_file() else []
         locator = OutputFileLocator(self.logger)
-        return locator.find_streamflow_files(sim_dir)
+        files = locator.find_streamflow_files(sim_dir)
+        if files:
+            return files
+        files = self._extractor_streamflow_files(Path(sim_dir))
+        if files:
+            self.logger.debug(f"Streamflow files found via {self._result_model_name()} result extractor patterns")
+            return files
+        results_csv = self._results_csv_for(Path(sim_dir))
+        return [results_csv] if results_csv is not None else []
+
+    # ------------------------------------------------------------------
+    # Model result extractor (R.result_extractors) support
+    # ------------------------------------------------------------------
+
+    def _result_model_name(self) -> Optional[str]:
+        """Model whose result extractor / results column applies, if unambiguous."""
+        if self._model_name_override:
+            return self._model_name_override
+        models = self._get_config_value(
+            lambda: self.config.model.hydrological_model,
+            default='', dict_key='HYDROLOGICAL_MODEL')
+        if isinstance(models, (list, tuple)):
+            names = [str(m).strip().upper() for m in models if str(m).strip()]
+        else:
+            names = [m.strip().upper() for m in str(models or '').split(',') if m.strip()]
+        return names[0] if len(names) == 1 else None
+
+    def _get_result_extractor(self) -> Optional[Any]:
+        """Instantiate the registered result extractor for the model, if any."""
+        model = self._result_model_name()
+        if not model:
+            return None
+        try:
+            extractor_cls = R.result_extractors.get(model)
+        except (ImportError, AttributeError, KeyError) as e:
+            self.logger.debug(f"Result extractor for {model} unavailable: {e}")
+            return None
+        if extractor_cls is None:
+            return None
+        try:
+            extractor = extractor_cls(model)
+        except TypeError:
+            extractor = extractor_cls()
+        try:
+            patterns = extractor.get_output_file_patterns().get('streamflow')
+        except (AttributeError, TypeError):
+            return None
+        return extractor if patterns else None
+
+    def _extractor_streamflow_files(self, sim_dir: Path) -> List[Path]:
+        """NetCDF files in ``sim_dir`` matching the extractor's streamflow patterns."""
+        extractor = self._get_result_extractor()
+        if extractor is None or not sim_dir.is_dir():
+            return []
+        found: List[Path] = []
+        for pattern in extractor.get_output_file_patterns()['streamflow']:
+            for path in sorted(sim_dir.glob(pattern)):
+                if path.suffix == '.nc' and path.is_file() and path not in found:
+                    found.append(path)
+        return found
+
+    def _extract_with_result_extractor(self, sim_files: List[Path]) -> Optional[pd.Series]:
+        """Extract discharge through the model's registered result extractor.
+
+        Used only where the result is verifiably discharge: a NetCDF variable
+        from the extractor's streamflow names whose ``units`` attribute is
+        volumetric, holding a single series (no unreduced spatial dimension —
+        extractors reduce those by taking an arbitrary first element). Routed
+        mizuRoute/t-route files are left to the routed-output branches, which
+        own outlet/reach selection. Anything else returns None so the
+        format-sniffing path runs as before.
+        """
+        extractor = self._get_result_extractor()
+        if extractor is None:
+            return None
+        model = self._result_model_name()
+        patterns = extractor.get_output_file_patterns()['streamflow']
+        candidates = [f for f in sim_files if any(fnmatch.fnmatch(f.name, p.split('/')[-1]) for p in patterns)]
+        for f in self._extractor_streamflow_files(sim_files[0].parent):
+            if f not in candidates:
+                candidates.append(f)
+        var_names = extractor.get_variable_names('streamflow')
+        for path in candidates:
+            if path.suffix != '.nc' or self._is_mizuroute_output(path) or self._is_troute_output(path):
+                continue
+            try:
+                with xr.open_dataset(path) as ds:
+                    var_name = next((v for v in var_names if v in ds.variables), None)
+                    if var_name is None:
+                        continue
+                    var = ds[var_name]
+                    units = classify_streamflow_units(var.attrs.get('units'))
+                    spatial = [d for d in var.dims if d != 'time' and var.sizes[d] > 1]
+                if not units.is_volumetric:
+                    self.logger.debug(
+                        f"{model} extractor variable {var_name} has units "
+                        f"{units.raw!r} (not volumetric); using format sniffing")
+                    continue
+                if spatial:
+                    self.logger.debug(
+                        f"{model} extractor variable {var_name} is distributed over "
+                        f"{spatial}; using format sniffing")
+                    continue
+                series = extractor.extract_variable(path, 'streamflow')
+            except (ValueError, KeyError, IndexError, OSError, ModelExecutionError) as e:
+                self.logger.debug(f"{model} result extractor failed on {path.name}: {e}")
+                continue
+            if isinstance(series, pd.Series) and not series.empty:
+                self.logger.info(
+                    f"Streamflow extracted via {model} result extractor "
+                    f"({path.name}:{var_name}, units {units.raw!r})")
+                return series.astype(float) * units.factor
+        return None
+
+    # ------------------------------------------------------------------
+    # results/<exp>_results.csv fallback
+    # ------------------------------------------------------------------
+
+    def _results_csv_path(self) -> Path:
+        return self.project_dir / 'results' / f"{self.experiment_id}_results.csv"
+
+    def _results_csv_for(self, sim_path: Path) -> Optional[Path]:
+        """The results CSV, if it may stand in for output under ``sim_path``.
+
+        The CSV holds the experiment's *own* run, so it is only offered for
+        paths inside ``simulations/<experiment_id>``. A calibration worker's
+        trial directory must never be scored against it — every trial would
+        get the same stale metrics.
+        """
+        csv_path = self._results_csv_path()
+        if not csv_path.is_file():
+            return None
+        if sim_path.resolve() == csv_path.resolve():
+            return csv_path
+        own_dir = (self.project_dir / 'simulations' / self.experiment_id).resolve()
+        try:
+            sim_path.resolve().relative_to(own_dir)
+        except ValueError:
+            return None
+        return csv_path
+
+    def _extract_results_csv_streamflow(self, sim_path: Path) -> Optional[pd.Series]:
+        """Read ``<MODEL>_discharge_cms`` from ``results/<exp>_results.csv``."""
+        model = self._result_model_name()
+        csv_path = self._results_csv_for(sim_path)
+        if model is None or csv_path is None:
+            return None
+        try:
+            df = pd.read_csv(csv_path, index_col=0, parse_dates=True)
+        except (OSError, ValueError, pd.errors.ParserError) as e:
+            self.logger.debug(f"Could not read {csv_path}: {e}")
+            return None
+        for column in (f"{model}_discharge_cms", f"{model}_aggregated_discharge_cms"):
+            if column in df.columns:
+                series = pd.to_numeric(df[column], errors='coerce').dropna()
+                if series.empty:
+                    continue
+                series.index = pd.DatetimeIndex(series.index)
+                self.logger.warning(
+                    f"Streamflow taken from {csv_path.name} column {column} "
+                    "(no model output file could be read directly)")
+                return series
+        return None
 
     def _uses_native_wflow_discharge(self) -> bool:
         model = self._get_config_value(
@@ -161,19 +340,63 @@ class StreamflowEvaluator(ModelEvaluator):
                 # (WflowResultExtractor); no area conversion or extra routing.
                 df = pd.read_csv(sim_file, parse_dates=['time'])
                 return pd.Series(df['Q'].values, index=pd.DatetimeIndex(df['time']) - pd.Timedelta(days=1))
-            if self._is_mizuroute_output(sim_file):
-                return self._extract_mizuroute_streamflow(sim_file)
-            elif self._is_troute_output(sim_file):
-                return self._extract_troute_streamflow(sim_file)
-            elif self._is_fuse_output(sim_file):
-                return self._extract_fuse_streamflow(sim_file)
-            elif self._is_vic_output(sim_file):
-                return self._extract_vic_streamflow(sim_file)
-            else:
-                return self._extract_summa_streamflow(sim_file)
+            if sim_file.suffix == '.csv' and sim_file.resolve() == self._results_csv_path().resolve():
+                csv_series = self._extract_results_csv_streamflow(sim_file)
+                if csv_series is None:
+                    raise ValueError(
+                        f"No {self._result_model_name()}_discharge_cms column in {sim_file.name}")
+                return csv_series
+            # 1. The model's own registered result extractor, when it yields
+            #    verifiably volumetric discharge.
+            extracted = self._extract_with_result_extractor(sim_files)
+            if extracted is not None:
+                return extracted
+            # 2. Format sniffing (mizuRoute, t-route, FUSE, VIC, SUMMA-style).
+            try:
+                return self._extract_by_format(sim_file)
+            except (ValueError, KeyError, OSError) as sniff_error:
+                # 3. The experiment's results CSV (<MODEL>_discharge_cms).
+                csv_series = self._extract_results_csv_streamflow(sim_file)
+                if csv_series is not None:
+                    self.logger.info(f"Format sniffing failed ({sniff_error}); used results CSV fallback")
+                    return csv_series
+                raise
         except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
             self.logger.error(f"Error extracting streamflow data from {sim_file}: {str(e)}")
             raise
+
+    def _extract_by_format(self, sim_file: Path) -> pd.Series:
+        """Dispatch on the detected output format (the pre-extractor path)."""
+        if self._is_mizuroute_output(sim_file):
+            return self._extract_mizuroute_streamflow(sim_file)
+        if self._is_troute_output(sim_file):
+            return self._extract_troute_streamflow(sim_file)
+        if self._is_fuse_output(sim_file):
+            return self._extract_fuse_streamflow(sim_file)
+        if self._is_vic_output(sim_file):
+            return self._extract_vic_streamflow(sim_file)
+        self.logger.debug(f"No routed/FUSE/VIC signature in {sim_file.name}; using SUMMA-style extraction")
+        return self._extract_summa_streamflow(sim_file)
+
+    @staticmethod
+    def _sum_volumetric_units(var: xr.DataArray, var_name: str) -> pd.Series:
+        """Reduce an already-volumetric variable to one series.
+
+        Singleton dimensions are squeezed; per-HRU/GRU discharge contributions
+        (e.g. distributed LSTM ``averageRoutedRunoff`` in m3 s-1) are summed —
+        never multiplied by an area.
+        """
+        for dim in [d for d in var.dims if d != 'time' and var.sizes[d] == 1]:
+            var = var.squeeze(dim)
+        unit_dims = [d for d in var.dims if d in ('hru', 'gru')]
+        if unit_dims:
+            var = var.sum(dim=unit_dims)
+        other = [d for d in var.dims if d != 'time']
+        if other:
+            raise ValueError(
+                f"Volumetric variable '{var_name}' has unreduced dimensions {other}; "
+                "cannot pick a single discharge series")
+        return cast(pd.Series, var.to_pandas())
 
     def _is_mizuroute_output(self, sim_file: Path) -> bool:
         """Detect if file contains mizuRoute routed output vs SUMMA direct output.
@@ -308,15 +531,16 @@ class StreamflowEvaluator(ModelEvaluator):
                 result = cast(pd.Series, var.to_pandas())
 
                 units = ds[var_name].attrs.get('units', '').strip()
-                if 'm3/s' in units or 'm³/s' in units or 'm^3/s' in units:
-                    self.logger.debug("FUSE output already in m³/s")
-                    return result
-                if 'mm' in units and ('day' in units or units.rstrip(')').endswith(('/d', 'd-1'))):
-                    # mm/day → m³/s: multiply by area_m² / (1000 * 86400)
+                parsed = classify_streamflow_units(units)
+                if parsed.is_volumetric:
+                    self.logger.debug(f"FUSE output already volumetric ({units!r})")
+                    return result * parsed.factor
+                if parsed.is_depth_rate:
+                    # depth rate (e.g. mm/day) → m/s → × area → m³/s
                     catchment_area = self._get_catchment_area()
-                    result = result * catchment_area / 1000.0 / 86400.0
+                    result = result * parsed.factor * catchment_area
                     self.logger.debug(
-                        f"FUSE output converted from mm/day to m³/s "
+                        f"FUSE output converted from {units!r} to m³/s "
                         f"(area={catchment_area/1e6:.1f} km²)"
                     )
                     return result
@@ -559,9 +783,10 @@ class StreamflowEvaluator(ModelEvaluator):
                 var = ds['streamflow']
                 units = var.attrs.get('units', 'unknown')
                 self.logger.debug(f"Found pre-computed streamflow variable with units: '{units}'")
-                # If already in m³/s, return directly (no unit conversion needed)
-                if 'm3/s' in units or 'm³/s' in units or 'm^3/s' in units:
-                    return cast(pd.Series, var.to_pandas())
+                # Already volumetric (any CF spelling): no area conversion.
+                parsed = classify_streamflow_units(units)
+                if parsed.is_volumetric:
+                    return self._sum_volumetric_units(var, 'streamflow') * parsed.factor
                 # Otherwise fall through to standard processing
 
             streamflow_vars = ['averageRoutedRunoff', 'basin__TotalRunoff', 'scalarTotalRunoff']
@@ -571,6 +796,20 @@ class StreamflowEvaluator(ModelEvaluator):
 
                     units = var.attrs.get('units', 'unknown')
                     self.logger.debug(f"Found streamflow variable {var_name} with units: '{units}'")
+
+                    # Honour a volumetric units attribute (e.g. distributed LSTM
+                    # writes per-GRU averageRoutedRunoff in m3 s-1): sum the
+                    # contributions; the mass-flux heuristic and the area
+                    # multiplication below apply to depth rates only.
+                    parsed_units = classify_streamflow_units(units)
+                    if parsed_units.is_volumetric:
+                        self.logger.debug(f"{var_name} is volumetric ({units!r}); no area conversion")
+                        return self._sum_volumetric_units(var, var_name) * parsed_units.factor
+                    if parsed_units.is_depth_rate and 'kg' not in str(units) and parsed_units.factor != 1.0:
+                        # e.g. mm/day or mm/h → m/s before the area conversion
+                        self.logger.debug(f"Converting {var_name} from {units!r} to m/s")
+                        var = var * parsed_units.factor
+                        var.attrs['units'] = 'm s-1'
 
                     # Unit conversion: Mass flux (kg m-2 s-1) to Volume flux (m s-1)
                     # Uses centralized threshold from UnitConverter for consistency.
