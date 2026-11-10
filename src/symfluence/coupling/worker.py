@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, cast
 
 import numpy as np
 import torch
@@ -351,7 +351,7 @@ class DCouplerWorker(BaseWorker):
         if len(sim_np) < 10:
             return {"KGE": -999.0}
 
-        comps = core_metrics.kge(obs_np, sim_np, return_components=True)
+        comps = cast("dict[str, float]", core_metrics.kge(obs_np, sim_np, return_components=True))
         kge_value = comps["KGE"]
         if not np.isfinite(kge_value):
             return {"KGE": -999.0}
