@@ -238,7 +238,7 @@ class WorkflowThread:
         try:
             sf = self.state.initialize_symfluence()
             self._attach_logger()
-            sf.run_workflow(force_run=force_rerun)
+            sf.run_workflow(force_run=True if force_rerun else None)
             run_on_ui_thread(lambda: self.state.append_log("Full workflow completed successfully.\n"))
         except Exception as exc:  # noqa: BLE001 — UI resilience
             run_on_ui_thread(lambda e=exc: self.state.append_log(f"ERROR: {e}\n"))

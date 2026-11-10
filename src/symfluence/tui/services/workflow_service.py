@@ -96,7 +96,8 @@ class WorkflowService:
         """Run the full workflow (blocking). Call from a worker thread."""
         if not self._sf:
             raise RuntimeError("No config loaded")
-        self._sf.run_workflow(force_run=force_rerun)
+        # None (not False) lets the config FORCE_RUN_ALL_STEPS decide.
+        self._sf.run_workflow(force_run=True if force_rerun else None)
 
     def run_steps(self, step_names: List[str]) -> None:
         """Run specific workflow steps (blocking). Call from a worker thread."""

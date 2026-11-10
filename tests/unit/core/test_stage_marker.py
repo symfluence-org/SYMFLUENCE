@@ -285,3 +285,111 @@ class TestDomainSharedStageHashes:
     def test_unknown_stage_hashes_to_empty(self):
         cfg = _shared_domain_config(experiment_id="exp", model="HBV")
         assert compute_stage_hash(cfg, "not_a_stage") == ""
+
+
+# ---------------------------------------------------------------------------
+# Stage-level key scope + per-experiment markers (audit regression)
+# ---------------------------------------------------------------------------
+
+
+def _real_config(tmp_path, **extra):
+    from symfluence.core.config.models import SymfluenceConfig
+
+    base = dict(
+        domain_name="scope",
+        model="SUMMA",
+        time_start="2010-01-01 00:00",
+        time_end="2012-12-31 23:00",
+        SYMFLUENCE_DATA_DIR=tmp_path,
+        EXPERIMENT_ID="exp_a",
+    )
+    base.update(extra)
+    return SymfluenceConfig.from_minimal(**base)
+
+
+def _stale(a, b):
+    return {s for s in STAGE_CONFIG_SECTIONS if compute_stage_hash(a, s) != compute_stage_hash(b, s)}
+
+
+class TestStageKeyScope:
+    def test_calibration_period_only_invalidates_experiment_stages(self, tmp_path):
+        a = _real_config(tmp_path, CALIBRATION_PERIOD="2010-01-01, 2010-12-31")
+        b = _real_config(tmp_path, CALIBRATION_PERIOD="2011-01-01, 2011-12-31")
+        stale = _stale(a, b)
+        assert not (stale & DOMAIN_SHARED_STAGES), stale
+        assert {"run_models", "calibrate_model"} <= stale
+
+    def test_spinup_period_does_not_invalidate_domain_stages(self, tmp_path):
+        a = _real_config(tmp_path)
+        b = _real_config(tmp_path, SPINUP_PERIOD="2010-01-01, 2010-06-30")
+        assert not (_stale(a, b) & DOMAIN_SHARED_STAGES)
+
+    def test_dem_source_spares_setup_and_pour_point(self, tmp_path):
+        a = _real_config(tmp_path)
+        b = _real_config(tmp_path, DEM_SOURCE="merit")
+        stale = _stale(a, b)
+        assert "setup_project" not in stale
+        assert "create_pour_point" not in stale
+        # conservative: everything built from the DEM still invalidates
+        assert {"acquire_attributes", "define_domain", "discretize_domain"} <= stale
+
+    def test_time_window_still_invalidates_forcing(self, tmp_path):
+        a = _real_config(tmp_path)
+        b = _real_config(tmp_path, EXPERIMENT_TIME_END="2013-12-31 23:00")
+        stale = _stale(a, b)
+        assert "acquire_forcings" in stale
+        assert "define_domain" not in stale
+
+    def test_analyses_change_does_not_invalidate_calibration(self, tmp_path):
+        a = _real_config(tmp_path, ANALYSES=["benchmarking"])
+        b = _real_config(tmp_path, ANALYSES=["benchmarking", "decision"])
+        stale = _stale(a, b)
+        assert "calibrate_model" not in stale
+        assert "process_observed_data" not in stale
+
+
+class TestPerExperimentMarkers:
+    def test_experiments_do_not_overwrite_each_other(self, tmp_path):
+        from symfluence.core.stage_marker import mark_stage_complete, stage_is_current
+
+        a = _real_config(tmp_path, EXPERIMENT_ID="exp_a")
+        b = _real_config(tmp_path, EXPERIMENT_ID="exp_b")
+        proj = tmp_path / "proj"
+        mark_stage_complete(a, proj, "run_models")
+        mark_stage_complete(b, proj, "run_models")
+        assert stage_is_current(a, proj, "run_models")
+        assert stage_is_current(b, proj, "run_models")
+        # domain-shared stages stay one marker for the whole domain
+        mark_stage_complete(a, proj, "define_domain")
+        assert stage_is_current(b, proj, "define_domain")
+
+    def test_legacy_marker_still_honoured(self, tmp_path):
+        """A marker written before hash_version existed keeps its stage current."""
+        from symfluence.core.stage_marker import compute_legacy_stage_hash, stage_is_current
+
+        cfg = _real_config(tmp_path, CALIBRATION_PERIOD="2010-01-01, 2010-12-31")
+        proj = tmp_path / "proj"
+        for stage in ("define_domain", "run_models"):
+            path = proj / ".symfluence" / "stage_markers" / f"{stage}.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({
+                "stage": stage, "completed_utc": "x", "symfluence_version": "0",
+                "config_hash": compute_legacy_stage_hash(cfg, stage),
+            }))
+            assert stage_is_current(cfg, proj, stage), stage
+
+    def test_selective_clear_keeps_other_experiments(self, tmp_path):
+        from symfluence.core.stage_marker import (
+            clear_stage_markers,
+            mark_stage_complete,
+            stage_is_current,
+        )
+
+        a = _real_config(tmp_path, EXPERIMENT_ID="exp_a")
+        b = _real_config(tmp_path, EXPERIMENT_ID="exp_b")
+        proj = tmp_path / "proj"
+        for cfg in (a, b):
+            mark_stage_complete(cfg, proj, "run_models")
+        clear_stage_markers(a, proj, ["run_models"])
+        assert not stage_is_current(a, proj, "run_models")
+        assert stage_is_current(b, proj, "run_models")

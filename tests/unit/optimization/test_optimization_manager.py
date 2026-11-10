@@ -16,6 +16,7 @@ import pandas as pd
 import pytest
 
 from symfluence.core.config.models import SymfluenceConfig
+from symfluence.core.exceptions import OptimizationError
 from symfluence.optimization.optimization_manager import OptimizationManager
 
 
@@ -257,10 +258,11 @@ class TestErrorHandling:
 
         with patch.object(manager, 'project_dir', temp_project_dir):
             with patch.object(manager, '_calibrate_with_registry') as mock_calibrate:
-                # Simulate error by returning None
+                # No model produced results -> the step must fail, not
+                # silently "succeed" with None.
                 mock_calibrate.return_value = None
-                result = manager.calibrate_model()
-                assert result is None
+                with pytest.raises(OptimizationError, match="no results"):
+                    manager.calibrate_model()
 
     def test_invalid_parameter_bounds(self, base_optimization_config, test_logger):
         """Test handling of invalid parameter bounds."""
@@ -271,11 +273,11 @@ class TestErrorHandling:
 
         manager = OptimizationManager(config, test_logger)
 
-        # Should handle gracefully or return None
+        # Failures propagate as OptimizationError (no stage marker is written)
         with patch.object(manager, '_calibrate_with_registry') as mock_calibrate:
             mock_calibrate.side_effect = ValueError("Invalid parameter")
-            result = manager.calibrate_model()
-            assert result is None
+            with pytest.raises(OptimizationError, match="Invalid parameter"):
+                manager.calibrate_model()
 
     def test_optimization_failure_recovery(self, dds_config, test_logger, temp_project_dir):
         """Test recovery from optimization failures."""
@@ -286,10 +288,8 @@ class TestErrorHandling:
                 # Simulate optimization failure
                 mock_calibrate.side_effect = RuntimeError("Optimization failed")
 
-                result = manager.calibrate_model()
-
-                # Should handle failure gracefully
-                assert result is None
+                with pytest.raises(OptimizationError, match="Optimization failed"):
+                    manager.calibrate_model()
 
 
 # ============================================================================

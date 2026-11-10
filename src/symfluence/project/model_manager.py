@@ -15,7 +15,11 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from symfluence.core.base_manager import BaseManager
-from symfluence.core.exceptions import ModelExecutionError, symfluence_error_handler
+from symfluence.core.exceptions import (
+    ModelExecutionError,
+    SYMFLUENCEError,
+    symfluence_error_handler,
+)
 from symfluence.core.modeling.utilities.routing_decider import RoutingDecider
 from symfluence.core.registries import R
 
@@ -507,8 +511,10 @@ class ModelManager(BaseManager):
                         raise OptionalDependencyError(
                             f"The {model.upper()} model", "ml", dependency="torch"
                         )
-                    self.logger.error(f"Unknown hydrological model or no runner registered: {model}")
-                    continue
+                    raise ModelExecutionError(
+                        f"Unknown hydrological model or no runner registered: {model}. "
+                        f"Registered runners: {', '.join(sorted(R.runners.keys()))}"
+                    )
 
                 runner = runner_class(self.config, self.logger, reporting_manager=self.reporting_manager)
                 # Collect resolved executables for provenance
@@ -522,8 +528,9 @@ class ModelManager(BaseManager):
                 if callable(runner_method):
                     runner_method()
                 else:
-                    self.logger.error(f"Runner method '{method_name}' not found for model: {model}")
-                    continue
+                    raise ModelExecutionError(
+                        f"Runner method '{method_name}' not found for model: {model}"
+                    )
 
             # Generate model output diagnostics
             if self.reporting_manager:
@@ -561,40 +568,20 @@ class ModelManager(BaseManager):
 
         workflow = self._resolve_model_workflow()
 
+        # Post-process every model even when one fails, then fail the step:
+        # a swallowed failure used to let the workflow write the stage marker
+        # and exit 0 with no results.
+        failures: List[str] = []
         for model in workflow:
-            with symfluence_error_handler(
-                f"post-processing model {model}",
-                self.logger,
-                reraise=False,
-                error_type=ModelExecutionError
-            ):
-                # Get postprocessor class from registry
-                postprocessor_class = R.postprocessors.get(model)
+            try:
+                self._postprocess_model(model)
+            except SYMFLUENCEError as e:
+                failures.append(f"{model}: {e}")
 
-                if postprocessor_class is None:
-                    continue
-
-                self.logger.info(f"Post-processing {model}")
-                # Create postprocessor instance
-                postprocessor = postprocessor_class(self.config, self.logger, reporting_manager=self.reporting_manager)
-
-                # Run postprocessing. Probe for the method directly rather than
-                # isinstance(ModelPostProcessor): the runtime_checkable Protocol also
-                # requires a `model_name` attribute, so a postprocessor that skips
-                # super().__init__ would be wrongly treated as having no entry point.
-                extract_streamflow = getattr(postprocessor, 'extract_streamflow', None)
-                if callable(extract_streamflow):
-                    extract_streamflow()
-                elif hasattr(postprocessor, 'extract_results'):
-                    # Legacy fallback — will be removed in a future release
-                    self.logger.warning(
-                        f"{model} postprocessor uses deprecated extract_results(); "
-                        "migrate to extract_streamflow() (ModelPostProcessor Protocol)"
-                    )
-                    postprocessor.extract_results()
-                else:
-                    self.logger.warning(f"No extraction method found for {model} postprocessor")
-                    continue
+        if failures:
+            raise ModelExecutionError(
+                "Post-processing failed for " + "; ".join(failures)
+            )
 
         # Note: visualize_timeseries_results is now triggered automatically by extract_streamflow/save_streamflow_to_results
 
@@ -607,6 +594,39 @@ class ModelManager(BaseManager):
                 experiment_id=self.experiment_id,
                 context='run_model'
             )
+
+    def _postprocess_model(self, model: str) -> None:
+        """Run one model's registered postprocessor (errors raise ModelExecutionError)."""
+        with symfluence_error_handler(
+            f"post-processing model {model}",
+            self.logger,
+            error_type=ModelExecutionError
+        ):
+            # Get postprocessor class from registry
+            postprocessor_class = R.postprocessors.get(model)
+
+            if postprocessor_class is None:
+                return
+
+            self.logger.info(f"Post-processing {model}")
+            postprocessor = postprocessor_class(self.config, self.logger, reporting_manager=self.reporting_manager)
+
+            # Probe for the method directly rather than isinstance(ModelPostProcessor):
+            # the runtime_checkable Protocol also requires a `model_name` attribute,
+            # so a postprocessor that skips super().__init__ would be wrongly
+            # treated as having no entry point.
+            extract_streamflow = getattr(postprocessor, 'extract_streamflow', None)
+            if callable(extract_streamflow):
+                extract_streamflow()
+            elif hasattr(postprocessor, 'extract_results'):
+                # Legacy fallback — will be removed in a future release
+                self.logger.warning(
+                    f"{model} postprocessor uses deprecated extract_results(); "
+                    "migrate to extract_streamflow() (ModelPostProcessor Protocol)"
+                )
+                postprocessor.extract_results()
+            else:
+                self.logger.warning(f"No extraction method found for {model} postprocessor")
 
     def log_baseline_performance(self):
         """Log baseline model performance metrics before calibration.
