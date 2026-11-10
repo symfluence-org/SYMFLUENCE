@@ -123,19 +123,9 @@ class MESHPostProcessor(StandardModelPostProcessor):
                 extractor = MESHResultExtractor('MESH')
 
                 # Parse start date from run options
-                run_opts = output_dir / 'MESH_input_run_options.ini'
-                start_date = None
-                if run_opts.exists():
-                    import re
-                    from datetime import datetime, timedelta
-                    with open(run_opts, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                    match = re.search(r'(\d{4})\s+(\d{1,3})\s+\d+\s+\d+\s*$', content, re.MULTILINE)
-                    if match:
-                        start_date = datetime(int(match.group(1)), 1, 1) + timedelta(days=int(match.group(2)) - 1)
-                if start_date is None:
-                    from datetime import datetime
-                    start_date = datetime(2001, 1, 1)
+                # Shared strict parser: raises instead of assuming a start date
+                from .runner import parse_run_options_dates
+                start_date, _ = parse_run_options_dates(output_dir / 'MESH_input_run_options.ini')
 
                 streamflow = extractor.extract_variable(
                     mesh_output_file, 'runoff',

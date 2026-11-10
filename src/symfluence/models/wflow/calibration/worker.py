@@ -261,8 +261,9 @@ class WflowWorker(BaseWorker):
         # (net_runoff_volume_flux is instantaneous — needs smoothing)
         if self._is_runoff_flux_output(output_dir, config) and routing_params:
             q = self._apply_routing(q, routing_params)
-        if q is not None and config and resolve_config_value(config, lambda: config.model.wflow.spatial_mode, None, 'WFLOW_SPATIAL_MODE') == 'distributed':
-            q.index = q.index - pd.Timedelta(days=1)
+        from symfluence.models.wflow.extractor import is_distributed_wflow, to_period_start_labels
+        if q is not None and is_distributed_wflow(config):
+            q = to_period_start_labels(q)
         return q
 
     def _is_runoff_flux_output(self, output_dir: Path, config: dict = None):

@@ -9,12 +9,102 @@ VIC outputs are in NetCDF format with standard variable names.
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import pandas as pd
 
+from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.modeling.base import ModelResultExtractor
+
+logger = logging.getLogger(__name__)
+
+
+RUNOFF_VARS = ('OUT_RUNOFF', 'RUNOFF')
+BASEFLOW_VARS = ('OUT_BASEFLOW', 'BASEFLOW')
+
+
+def load_vic_cell_area(domain_file: Optional[Path]):
+    """Grid-cell areas (m2) from a VIC domain file, or None if unavailable.
+
+    ``area * frac`` when a land fraction is present, so partial cells weigh
+    by their land area.
+    """
+    if domain_file is None or not Path(domain_file).exists():
+        return None
+    import xarray as xr
+    try:
+        with xr.open_dataset(domain_file) as dom:
+            if 'area' not in dom.data_vars:
+                return None
+            area = dom['area'].load()
+            if 'frac' in dom.data_vars:
+                area = area * dom['frac'].load()
+            return area
+    except (OSError, ValueError, KeyError) as e:
+        logger.debug(f"Could not read VIC cell areas from {domain_file}: {e}")
+        return None
+
+
+def basin_mean_vic_runoff(ds, cell_area=None, include_baseflow: bool = True):
+    """Basin-average VIC runoff (+ baseflow) depth per output step.
+
+    The single aggregation rule shared by the calibration worker, the
+    postprocessor and the extractor. VIC writes runoff and baseflow as a
+    depth (mm per output step) for each grid cell, so the basin value is the
+    area-weighted *mean* over active (non-NaN) cells -- summing depths over
+    cells inflates discharge by the number of cells.
+
+    Args:
+        ds: VIC output dataset.
+        cell_area: Optional per-cell areas (DataArray or array with the
+            output's spatial shape). Falls back to an ``area`` variable in
+            ``ds``; equal weights when neither is available.
+        include_baseflow: Add OUT_BASEFLOW when present.
+
+    Returns:
+        xarray.DataArray over ``time`` (mm per step).
+    """
+    import numpy as np
+    import xarray as xr
+
+    runoff = next((ds[v] for v in RUNOFF_VARS if v in ds.data_vars), None)
+    if runoff is None:
+        raise ModelExecutionError(
+            f"No VIC runoff variable ({', '.join(RUNOFF_VARS)}) in output; "
+            f"available: {list(ds.data_vars)}"
+        )
+    total = runoff
+    if include_baseflow:
+        baseflow = next((ds[v] for v in BASEFLOW_VARS if v in ds.data_vars), None)
+        if baseflow is not None:
+            total = total + baseflow
+
+    spatial_dims = [d for d in total.dims if d != 'time']
+    if not spatial_dims:
+        return total
+
+    if cell_area is None and 'area' in ds.data_vars:
+        cell_area = ds['area']
+    spatial_shape = tuple(total.sizes[d] for d in spatial_dims)
+    if cell_area is not None:
+        values = np.asarray(getattr(cell_area, 'values', cell_area), dtype=float)
+        if values.shape != spatial_shape:
+            logger.warning(
+                f"VIC cell-area shape {values.shape} does not match output grid "
+                f"{spatial_shape}; using equal cell weights"
+            )
+            values = np.ones(spatial_shape)
+    else:
+        values = np.ones(spatial_shape)
+    values = np.where(np.isfinite(values) & (values > 0), values, 0.0)
+    weights = xr.DataArray(values, dims=spatial_dims)
+
+    valid = total.notnull()
+    weight_sum = weights.where(valid, 0.0).sum(dim=spatial_dims)
+    weighted = (total.fillna(0.0) * weights).sum(dim=spatial_dims)
+    return weighted / weight_sum.where(weight_sum > 0)
 
 
 class VICResultExtractor(ModelResultExtractor):
@@ -146,20 +236,17 @@ class VICResultExtractor(ModelResultExtractor):
             if aggregate and len(data.dims) > 1:
                 # Sum over spatial dimensions (typical for runoff/baseflow)
                 spatial_dims = [d for d in data.dims if d not in ['time']]
-                if variable_type in ['streamflow', 'runoff', 'baseflow']:
-                    # For streamflow, we want to sum runoff + baseflow
-                    if variable_type == 'streamflow':
-                        runoff = data.sum(dim=spatial_dims)
-                        # Also try to add baseflow
-                        baseflow_vars = self.get_variable_names('baseflow')
-                        for bvar in baseflow_vars:
-                            if bvar in ds.data_vars and bvar != found_var:
-                                baseflow = ds[bvar].sum(dim=spatial_dims)
-                                runoff = runoff + baseflow
-                                break
-                        data = runoff
-                    else:
-                        data = data.sum(dim=spatial_dims)
+                if variable_type == 'streamflow':
+                    data = basin_mean_vic_runoff(ds, kwargs.get('cell_area'))
+                elif variable_type in ['runoff', 'baseflow']:
+                    # Depths: area-weighted basin mean, never a sum over cells
+                    cell_area = kwargs.get('cell_area')
+                    if cell_area is None and 'area' in ds.data_vars:
+                        cell_area = ds['area']
+                    data = basin_mean_vic_runoff(
+                        xr.Dataset({'OUT_RUNOFF': data}), cell_area,
+                        include_baseflow=False,
+                    )
                 else:
                     # For other variables, take mean
                     data = data.mean(dim=spatial_dims)
@@ -219,45 +306,15 @@ class VICResultExtractor(ModelResultExtractor):
                 f"No VIC output file found in {output_dir} matching {patterns}"
             )
 
-        ds = xr.open_dataset(output_file)
-
-        # Get runoff and baseflow
-        runoff = None
-        baseflow = None
-
-        for var in self.get_variable_names('runoff'):
-            if var in ds.data_vars:
-                runoff = ds[var]
-                break
-
-        for var in self.get_variable_names('baseflow'):
-            if var in ds.data_vars:
-                baseflow = ds[var]
-                break
-
-        if runoff is None:
-            ds.close()
-            raise ValueError("Could not find runoff variable in VIC output")
-
-        # Aggregate spatially
-        spatial_dims = [d for d in runoff.dims if d not in ['time']]
-        total_runoff = runoff.sum(dim=spatial_dims)
-
-        if baseflow is not None:
-            total_baseflow = baseflow.sum(dim=spatial_dims)
-            total_flow = total_runoff + total_baseflow
-        else:
-            total_flow = total_runoff
-
-        # Convert to series
-        series = total_flow.to_series()
+        with xr.open_dataset(output_file) as ds:
+            total_flow = basin_mean_vic_runoff(ds, kwargs.get('cell_area'))
+            series = total_flow.to_series()
 
         # Unit conversion
         if catchment_area:
             # mm -> m³/s
             series = series * catchment_area / 1000 / 86400
 
-        ds.close()
         return series
 
     def requires_unit_conversion(self, variable_type: str) -> bool:
@@ -267,7 +324,7 @@ class VICResultExtractor(ModelResultExtractor):
     def get_spatial_aggregation_method(self, variable_type: str) -> Optional[str]:
         """Get spatial aggregation method for variable type."""
         if variable_type in ['streamflow', 'runoff', 'baseflow', 'et', 'precipitation']:
-            return 'sum'  # Sum over area
+            return 'mean'  # Area-weighted mean of per-cell depths
         else:
             return 'mean'  # Average for states like SWE, soil moisture
 

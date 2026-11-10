@@ -21,6 +21,7 @@ from symfluence.core.calibration.workers.base_worker import (
     BaseWorker,
     run_worker_task,
 )
+from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.modeling.utilities.periods import split_period
@@ -459,45 +460,16 @@ class PRMSWorker(BaseWorker):
             return {'kge': self.penalty_score, 'error': str(e)}
 
     def _extract_streamflow_from_statvar(self, statvar_file: Path) -> Optional[pd.Series]:
+        """Basin streamflow (m3/s) from the PRMS statvar file.
+
+        Uses the shared reader (:mod:`symfluence.models.prms.statvar`) so
+        calibration and the postprocessor's results CSV read the same
+        variable (basin_cfs, else seg_outflow) from the same column.
         """
-        Extract streamflow from PRMS statvar text file.
-
-        The statvar file has lines like:
-        ``2 year month day hour min sec nstep seg_outflow_1 hru_actet_1 ...``
-
-        Args:
-            statvar_file: Path to statvar.dat
-
-        Returns:
-            Time series of streamflow in m3/s, or None on failure
-        """
+        from symfluence.models.prms.statvar import read_statvar_streamflow
         try:
-            lines = statvar_file.read_text(encoding='utf-8').strip().split('\n')
-
-            dates = []
-            values = []
-            for line in lines:
-                parts = line.strip().split()
-                if len(parts) >= 9:
-                    try:
-                        year = int(parts[1])
-                        month = int(parts[2])
-                        day = int(parts[3])
-                        # seg_outflow is typically the first output variable (index 7)
-                        streamflow = float(parts[7])
-                        date = pd.Timestamp(year=year, month=month, day=day)
-                        dates.append(date)
-                        # PRMS seg_outflow is in cfs, convert to cms
-                        values.append(streamflow * 0.0283168)
-                    except (ValueError, IndexError):
-                        continue
-
-            if dates:
-                return pd.Series(values, index=dates, name='PRMS_discharge_cms')
-
-            return None
-
-        except Exception as e:  # noqa: BLE001 — calibration resilience
+            return read_statvar_streamflow(statvar_file).rename('PRMS_discharge_cms')
+        except (OSError, ModelExecutionError) as e:
             self.logger.error(f"Error extracting PRMS streamflow: {e}", exc_info=True)
             return None
 

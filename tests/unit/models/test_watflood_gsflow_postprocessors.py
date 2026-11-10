@@ -63,32 +63,33 @@ class TestWATFLOODTb0Parsing:
 
 
 class TestGSFLOWStatvarParsing:
-    def test_parses_statvar_with_cfs_conversion(self, tmp_path, fake_self):
+    """The postprocessor shares the calibration worker's extraction rule."""
+
+    def test_statvar_fallback_uses_header_and_cfs_conversion(self, tmp_path, fake_self):
         from symfluence.models.gsflow.postprocessor import GSFLOWPostProcessor
 
         statvar = tmp_path / "statvar.dat"
-        # statvar data rows: idx year month day hour min sec val1 val2 ...
-        # the parser reads the date from parts[1:4] and flow (cfs) from parts[7]
         statvar.write_text(
-            "1 2020 1 1 0 0 0 100.0 5.0\n"
-            "2 2020 1 2 0 0 0 200.0 6.0\n"
+            "2\nbasin_actet 1\nbasin_cfs 1\n"
+            "1 2020 1 1 0 0 0 5.0 100.0\n"
+            "2 2020 1 2 0 0 0 6.0 200.0\n"
         )
-        series = GSFLOWPostProcessor._extract_from_file(fake_self, statvar)
+        series = GSFLOWPostProcessor.extract_streamflow_from_dir(fake_self, tmp_path, {})
         assert series is not None
         assert len(series) == 2
-        # 100 cfs * 0.0283168 = 2.83168 cms
-        assert series.iloc[0] == pytest.approx(2.83168)
+        # basin_cfs (second column) 100 cfs -> 2.8317 cms
+        assert series.iloc[0] == pytest.approx(2.8316847, rel=1e-6)
 
-    def test_csv_seg_outflow_passthrough(self, tmp_path, fake_self):
+    def test_coupled_csv_uses_streamout_q(self, tmp_path, fake_self):
         import pandas as pd
 
         from symfluence.models.gsflow.postprocessor import GSFLOWPostProcessor
 
-        csv = tmp_path / "gsflow_out.csv"
         pd.DataFrame(
-            {"date": ["2020-01-01", "2020-01-02"], "seg_outflow": [1.0, 2.0]}
-        ).to_csv(csv, index=False)
-        series = GSFLOWPostProcessor._extract_from_file(fake_self, csv)
-        assert series is not None
-        # seg_outflow is already cms — no conversion
-        assert list(series) == [1.0, 2.0]
+            {"Date": ["2020-01-01", "2020-01-02"], "StreamOut_Q": [86400.0, 172800.0],
+             "basin_cfs": [0.0, 0.0]}
+        ).to_csv(tmp_path / "gsflow.csv", index=False)
+        # A statvar whose basin_cfs is ~0 (coupled mode) must be ignored
+        (tmp_path / "statvar.dat").write_text("1\nbasin_cfs 1\n1 2020 1 1 0 0 0 0.0\n")
+        series = GSFLOWPostProcessor.extract_streamflow_from_dir(fake_self, tmp_path, {})
+        assert list(series) == pytest.approx([1.0, 2.0])

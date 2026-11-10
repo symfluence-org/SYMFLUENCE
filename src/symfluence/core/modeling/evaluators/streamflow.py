@@ -662,37 +662,30 @@ class StreamflowEvaluator(ModelEvaluator):
         """
         with xr.open_dataset(sim_file) as ds:
             streamflow_vars = ['IRFroutedRunoff', 'KWTroutedRunoff', 'averageRoutedRunoff', 'dlayRunoff']
-            # An explicit SIM_REACH_ID selects that reach; without it the
-            # highest-mean segment is taken as the outlet.
+            # One reach rule everywhere (core.modeling.utilities.reach_selection):
+            # SIM_REACH_ID, else the topology outlet, else highest mean flow.
+            from symfluence.core.modeling.utilities.reach_selection import (
+                select_outlet_series,
+                topology_candidates,
+            )
             requested_reach = self._get_config_value(
                 lambda: self.config.evaluation.sim_reach_id,
                 default=None, dict_key='SIM_REACH_ID',
             )
-            if not isinstance(requested_reach, (int, np.integer)) or isinstance(requested_reach, bool):
-                requested_reach = None
+            topology_name = self._get_config_value(
+                lambda: self.config.model.mizuroute.topology,
+                default='topology.nc', dict_key='SETTINGS_MIZU_TOPOLOGY',
+            )
             for var_name in streamflow_vars:
                 if var_name in ds.variables:
                     var = ds[var_name]
-                    if requested_reach is not None:
-                        from symfluence.core.exceptions import EvaluationError
-                        for id_name in ('reachID', 'segId'):
-                            if id_name in ds and ds[id_name].ndim == 1 and ds[id_name].dims[0] in var.dims:
-                                matches = np.flatnonzero(ds[id_name].values == requested_reach)
-                                if len(matches) != 1:
-                                    raise EvaluationError(f'Requested routing reach {requested_reach} is missing or duplicated')
-                                return cast(pd.Series, var.isel({ds[id_name].dims[0]: int(matches[0])}).to_pandas())
-                        raise EvaluationError('Explicit routing reach requires a reachID or segId coordinate')
-                    if 'seg' in var.dims:
-                        segment_means = var.mean(dim='time').values
-                        outlet_seg_idx = np.argmax(segment_means)
-                        result = cast(pd.Series, var.isel(seg=outlet_seg_idx).to_pandas())
-                    elif 'reachID' in var.dims:
-                        reach_means = var.mean(dim='time').values
-                        outlet_reach_idx = np.argmax(reach_means)
-                        result = cast(pd.Series, var.isel(reachID=outlet_reach_idx).to_pandas())
-                    else:
+                    if not any(d in var.dims for d in ('seg', 'reachID')):
                         continue
-                    return result
+                    return select_outlet_series(
+                        ds, var, requested_reach,
+                        topology_candidates(self.project_dir, topology_name, near=sim_file),
+                        self.logger,
+                    )
             raise ValueError("No suitable streamflow variable found in mizuRoute output")
 
     def _extract_troute_streamflow(self, sim_file: Path) -> pd.Series:
@@ -846,35 +839,15 @@ class StreamflowEvaluator(ModelEvaluator):
                             attrs_file = self.project_dir / 'settings' / 'SUMMA' / 'attributes.nc'
                             if attrs_file.exists():
                                 with xr.open_dataset(attrs_file) as attrs:
-                                    # Handle HRU dimension
-                                    if 'hru' in var.dims and 'HRUarea' in attrs:
-                                        areas = attrs['HRUarea']
-                                        if areas.sizes['hru'] == var.sizes['hru']:
-                                            total_area = float(areas.values.sum())
-                                            self.logger.debug(f"Performing area-weighted aggregation for {var_name} (HRU). Total area: {total_area:.1f} m²")
-                                            # Calculate total discharge in m³/s: sum(runoff_i * area_i)
-                                            weighted_runoff = (var * areas).sum(dim='hru')
-                                            return cast(pd.Series, weighted_runoff.to_pandas())
-
-                                    # Handle GRU dimension
-                                    elif 'gru' in var.dims and 'GRUarea' in attrs:
-                                        areas = attrs['GRUarea']
-                                        if areas.sizes['gru'] == var.sizes['gru']:
-                                            total_area = float(areas.values.sum())
-                                            self.logger.debug(f"Performing area-weighted aggregation for {var_name} (GRU). Total area: {total_area:.1f} m²")
-                                            weighted_runoff = (var * areas).sum(dim='gru')
-                                            return cast(pd.Series, weighted_runoff.to_pandas())
-
-                                    # Fallback if specific area variable missing but HRUarea available for GRU dim (common in lumped)
-                                    elif 'gru' in var.dims and 'HRUarea' in attrs:
-                                         # If 1:1 mapping or if we can infer
-                                         if attrs.sizes['hru'] == var.sizes['gru']:
-                                             areas = attrs['HRUarea'] # Assuming 1:1 mapping for lumped
-                                             total_area = float(areas.values.sum())
-                                             self.logger.debug(f"Performing area-weighted aggregation for {var_name} (GRU using HRUarea). Total area: {total_area:.1f} m²")
-                                             # Use values to avoid dimension mismatch and ensure reduction over 'gru'
-                                             weighted_runoff = (var * areas.values).sum(dim='gru')
-                                             return cast(pd.Series, weighted_runoff.to_pandas())
+                                    # HRU areas, or GRU areas (HRUarea summed by
+                                    # hru2gruId when nHRU != nGRU) -- shared rule.
+                                    from symfluence.core.modeling.utilities.area_weighting import (
+                                        area_weighted_discharge,
+                                    )
+                                    weighted_runoff = area_weighted_discharge(var, attrs)
+                                    if weighted_runoff is not None:
+                                        self.logger.debug(f"Performing area-weighted aggregation for {var_name}")
+                                        return cast(pd.Series, weighted_runoff.to_pandas())
 
                         except Exception as e:  # noqa: BLE001 — must-not-raise contract
                             self.logger.warning(f"Failed to perform area-weighted aggregation: {e}")

@@ -15,7 +15,8 @@ pytestmark = [pytest.mark.unit, pytest.mark.quick]
 
 
 def test_missing_forcing_cannot_produce_synthetic_run(tmp_path):
-    pre = PIHMPreProcessor({'PROJECT_DIR': str(tmp_path)}, logging.getLogger('test'))
+    pre = PIHMPreProcessor({'PROJECT_DIR': str(tmp_path), 'PIHM_CATCHMENT_AREA': 100.0},
+                           logging.getLogger('test'))
     with pytest.raises(ValidationError, match='synthetic fallback is disabled'):
         pre.run_preprocessing()
     assert not list(tmp_path.rglob('*.meteo'))
@@ -80,7 +81,8 @@ def test_snow17_parameters_cannot_be_silently_ignored(tmp_path):
 def test_aquifer_depth_does_not_change_surface_infiltration_layer(tmp_path):
     from symfluence.models.pihm.calibration.parameter_manager import PIHMParameterManager
 
-    pre = PIHMPreProcessor({'PROJECT_DIR': str(tmp_path)}, logging.getLogger('test'))
+    pre = PIHMPreProcessor({'PROJECT_DIR': str(tmp_path), 'PIHM_CATCHMENT_AREA': 100.0},
+                           logging.getLogger('test'))
     pre._write_soil(tmp_path, 'basin', 1e-5, .45, 1., 2., 1e-4, .5, 4.)
     manager = PIHMParameterManager({}, logging.getLogger('test'), tmp_path)
     manager._update_soil_file({'SOIL_DEPTH': 8., 'K_SAT': 2e-5})

@@ -698,7 +698,8 @@ class CLMParFlowPreProcessor(BaseModelPreProcessor):
         solver = str(self._get_pf_cfg('SOLVER', 'Richards'))
 
         n_steps, timestep_hours, n_hours = self._get_time_info()
-        dump_interval = float(self._get_pf_cfg('DUMP_INTERVAL_HOURS', 24.0))
+        from symfluence.models.parflow.extractor import resolve_dump_interval_hours
+        dump_interval = resolve_dump_interval_hours(self.config, 'clmparflow')
 
         if initial_pressure is None:
             initial_pressure = -1.0

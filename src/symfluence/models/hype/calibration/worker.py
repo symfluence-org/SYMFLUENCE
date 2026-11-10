@@ -293,6 +293,29 @@ class HYPEWorker(BaseWorker):
             self.logger.error(traceback.format_exc())
             return False
 
+    #: HYPE result files (written to info.txt ``resultdir``).
+    _OUTPUT_PATTERNS = ('time*.txt', 'map*.txt', 'subass*.txt', 'simass.txt')
+
+    def _clear_stale_outputs(self, output_dir: Path, settings_dir: Path) -> None:
+        """Delete the previous trial's HYPE result files before a run.
+
+        Without this a run that fails to (re)write timeCOUT.txt -- or exits 0
+        after an early abort -- is scored on the previous trial's output.
+        Skipped when the result dir is the settings dir, where these globs
+        could match inputs.
+        """
+        try:
+            if output_dir.resolve() == settings_dir.resolve():
+                return
+        except OSError:
+            return
+        for pattern in self._OUTPUT_PATTERNS:
+            for stale in output_dir.glob(pattern):
+                try:
+                    stale.unlink()
+                except OSError as e:
+                    self.logger.debug(f"Could not remove stale HYPE output {stale}: {e}")
+
     def run_model(
         self,
         config: Dict[str, Any],
@@ -317,6 +340,7 @@ class HYPEWorker(BaseWorker):
             settings_dir = Path(settings_dir) if not isinstance(settings_dir, Path) else settings_dir
             output_dir = Path(output_dir) if not isinstance(output_dir, Path) else output_dir
             output_dir.mkdir(parents=True, exist_ok=True)
+            self._clear_stale_outputs(output_dir, settings_dir)
 
             hype_exe = self._hype_exe
 

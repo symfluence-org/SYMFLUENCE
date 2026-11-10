@@ -107,8 +107,10 @@ class CLMParFlowPostProcessor(StandardModelPostProcessor):
                 dict_key='CLMPARFLOW_DZ',
             )
 
+            from symfluence.models.parflow.extractor import resolve_dump_interval_hours
             common_kwargs = dict(
                 timestep_hours=float(timestep_hours),
+                dump_interval_hours=resolve_dump_interval_hours(self.config, 'clmparflow'),
                 start_date=str(start_date),
                 k_sat=float(k_sat),
                 dx=float(dx),

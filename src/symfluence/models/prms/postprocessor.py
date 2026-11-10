@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
+from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.modeling.base import StandardModelPostProcessor
 from symfluence.core.registries import R
 
@@ -21,9 +22,9 @@ class PRMSPostProcessor(StandardModelPostProcessor):
     """
     Postprocessor for the PRMS model.
 
-    PRMS outputs streamflow as seg_outflow in the statvar output file.
-    Units are cubic meters per second (cms). The seg_outflow variable
-    represents segment outflow at the basin outlet.
+    PRMS outputs streamflow as basin_cfs / seg_outflow (cfs) in the statvar
+    output file; both are converted to m3/s by the shared reader in
+    :mod:`symfluence.models.prms.statvar`.
 
     Attributes:
         model_name: "PRMS"
@@ -57,7 +58,7 @@ class PRMSPostProcessor(StandardModelPostProcessor):
         """
         Extract streamflow from PRMS statvar output.
 
-        PRMS statvar files contain seg_outflow in cms (m3/s).
+        basin_cfs / seg_outflow (cfs) are converted to m3/s.
         Supports both CSV and space-delimited formats.
 
         Returns:
@@ -86,16 +87,16 @@ class PRMSPostProcessor(StandardModelPostProcessor):
         try:
 
             if output_file.suffix == '.nc':
-                return self._extract_from_netcdf(output_file)
-
-            # Parse statvar text file
-            streamflow = self._parse_statvar_file(output_file)
+                streamflow = self._extract_from_netcdf(output_file)
+            else:
+                # Parse statvar text file
+                streamflow = self._parse_statvar_file(output_file)
 
             if streamflow is None or streamflow.empty:
                 self.logger.error("No streamflow data found in PRMS statvar output")
                 return None
 
-            # Streamflow is already in cms, no conversion needed
+            # Already converted to m3/s by the shared statvar reader
 
             # Apply resampling if configured
             if self.resample_frequency:
@@ -113,94 +114,24 @@ class PRMSPostProcessor(StandardModelPostProcessor):
             return None
 
     def _parse_statvar_file(self, statvar_path: Path):
-        """Parse PRMS statvar.dat file and extract streamflow.
+        """Basin streamflow (m3/s) from a PRMS statvar file.
 
-        PRMS statvar format:
-            Line 1: number of output variables (integer)
-            Lines 2..N+1: variable_name count (e.g. ``basin_cfs 1``)
-            Lines N+2..: step year month day hour min sec val1 val2 ...
+        Delegates to :func:`symfluence.models.prms.statvar.read_statvar_streamflow`,
+        the same parser the calibration worker uses (header element counts,
+        cfs -> m3/s for basin_cfs and seg_outflow).
         """
-        import pandas as pd
-
+        from .statvar import read_statvar_streamflow
         try:
-            lines = statvar_path.read_text().strip().split('\n')
-            if not lines:
-                return None
-
-            # Parse header: first line is variable count
-            try:
-                num_vars = int(lines[0].strip())
-            except ValueError:
-                num_vars = 0
-
-            # Read variable names from header
-            var_names = []
-            if num_vars > 0:
-                for i in range(1, min(num_vars + 1, len(lines))):
-                    parts = lines[i].strip().split()
-                    if parts:
-                        var_names.append(parts[0])
-                data_start = num_vars + 1
-            else:
-                data_start = 0
-
-            # Find the streamflow variable column index
-            flow_var = None
-            flow_col_offset = 0
-            for var in ['basin_cfs', 'seg_outflow', 'streamflow']:
-                if var in var_names:
-                    flow_var = var
-                    flow_col_offset = var_names.index(var)
-                    break
-            if flow_var is None and var_names:
-                flow_var = var_names[0]
-                flow_col_offset = 0
-
-            # Data columns: step year month day hour min sec var1 var2 ...
-            # So first variable is at index 7
-            flow_col = 7 + flow_col_offset
-
-            dates = []
-            values = []
-            for line in lines[data_start:]:
-                parts = line.strip().split()
-                if len(parts) > flow_col:
-                    try:
-                        year = int(parts[1])
-                        month = int(parts[2])
-                        day = int(parts[3])
-                        val = float(parts[flow_col])
-                        dates.append(pd.Timestamp(year=year, month=month, day=day))
-                        # basin_cfs is in cubic feet per second; convert to cms
-                        if flow_var == 'basin_cfs':
-                            val *= 0.0283168
-                        values.append(val)
-                    except (ValueError, IndexError):
-                        continue
-
-            if dates:
-                return pd.Series(values, index=dates, name='PRMS_discharge_cms')
-
-            return None
-
-        except Exception as e:  # noqa: BLE001 — model execution resilience
+            return read_statvar_streamflow(statvar_path).rename('PRMS_discharge_cms')
+        except (OSError, ModelExecutionError) as e:
             self.logger.warning(f"Error parsing statvar file: {e}", exc_info=True)
             return None
 
     def _extract_from_netcdf(self, nc_path: Path):
-        """Extract streamflow from NetCDF statvar output."""
-        import xarray as xr
-
-        ds = xr.open_dataset(nc_path)
-
-        for var in ['seg_outflow', 'streamflow', 'basin_cfs']:
-            if var in ds.data_vars:
-                flow = ds[var]
-                if 'nsegment' in flow.dims:
-                    flow = flow.isel(nsegment=-1)
-                series = flow.to_series()
-                ds.close()
-                return series
-
-        ds.close()
-        return None
+        """Extract streamflow (m3/s) from NetCDF statvar output."""
+        from .statvar import read_netcdf_streamflow
+        try:
+            return read_netcdf_streamflow(nc_path).rename('PRMS_discharge_cms')
+        except ModelExecutionError as e:
+            self.logger.warning(f"{e}")
+            return None

@@ -92,7 +92,7 @@ class GRResultExtractor(ModelResultExtractor):
             return self._extract_from_csv(output_file)
         elif output_file.suffix == '.nc':
             # Distributed mode NetCDF or mizuRoute output
-            return self._extract_from_netcdf(output_file)
+            return self._extract_from_netcdf(output_file, kwargs.get('sim_reach_id'))
 
         raise ValueError(f"Unsupported file format: {output_file.suffix}")
 
@@ -118,7 +118,7 @@ class GRResultExtractor(ModelResultExtractor):
         except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
             raise ValueError(f"Failed to parse GR CSV output {output_file}: {e}") from e
 
-    def _extract_from_netcdf(self, output_file: Path) -> pd.Series:
+    def _extract_from_netcdf(self, output_file: Path, sim_reach_id=None) -> pd.Series:
         """Extract streamflow from GR NetCDF output.
 
         Args:
@@ -132,7 +132,6 @@ class GRResultExtractor(ModelResultExtractor):
                 GR's per-GRU distributed runoff, which this interface cannot
                 convert to discharge (see :meth:`_reject_per_gru_runoff`).
         """
-        import numpy as np
         import xarray as xr
 
         with xr.open_dataset(output_file) as ds:
@@ -140,12 +139,17 @@ class GRResultExtractor(ModelResultExtractor):
             for var_name in ['IRFroutedRunoff', 'KWTroutedRunoff', 'averageRoutedRunoff']:
                 if var_name in ds.variables:
                     var = ds[var_name]
-                    if 'seg' in var.dims:
-                        outlet_idx = np.argmax(var.mean(dim='time').values)
-                        return cast(pd.Series, var.isel(seg=outlet_idx).to_pandas())
-                    elif 'reachID' in var.dims:
-                        outlet_idx = np.argmax(var.mean(dim='time').values)
-                        return cast(pd.Series, var.isel(reachID=outlet_idx).to_pandas())
+                    if 'seg' in var.dims or 'reachID' in var.dims:
+                        # Shared reach rule (SIM_REACH_ID, topology outlet,
+                        # else highest mean flow)
+                        from symfluence.core.modeling.utilities.reach_selection import (
+                            select_outlet_series,
+                            topology_candidates,
+                        )
+                        return select_outlet_series(
+                            ds, var, sim_reach_id,
+                            topology_candidates(near=output_file),
+                        )
 
             # Routed output is handled above; anything still holding per-GRU
             # runoff cannot be turned into discharge here.

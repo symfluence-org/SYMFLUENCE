@@ -20,6 +20,46 @@ from symfluence.core.modeling.base import RoutedModelPostProcessor
 from symfluence.core.registries import R
 
 
+def _native_runoff_to_discharge(var, ds, attrs_file: Path, logger) -> Optional[pd.Series]:
+    """Per-HRU/GRU runoff (m/s) -> basin discharge (m3/s).
+
+    Area-weighted sum over HRUs or GRUs with the rule shared with the
+    evaluator and the calibration worker (GRU areas = HRUarea summed by
+    hru2gruId). Areas come from the output file when it carries them,
+    else ``attrs_file`` (settings/SUMMA/attributes.nc).
+    """
+    from symfluence.core.modeling.utilities.area_weighting import area_weighted_discharge
+
+    spatial_dims = [d for d in var.dims if d != 'time']
+
+    if spatial_dims:
+        discharge = None
+        if 'HRUarea' in ds or 'GRUarea' in ds:
+            discharge = area_weighted_discharge(var, ds)
+        if discharge is None and attrs_file.exists():
+            with xr.open_dataset(attrs_file) as attrs:
+                discharge = area_weighted_discharge(var, attrs.load())
+        if discharge is not None:
+            return discharge.to_pandas()
+        if any(var.sizes[d] > 1 for d in spatial_dims):
+            logger.error(
+                f"Cannot aggregate SUMMA runoff over {dict(var.sizes)} without "
+                f"matching HRU/GRU areas (output file or {attrs_file})"
+            )
+            return None
+
+    series_m_per_s = var.squeeze().to_pandas()
+    if 'HRUarea' in ds:
+        return series_m_per_s * float(ds['HRUarea'].sum())
+    if attrs_file.exists():
+        with xr.open_dataset(attrs_file) as attrs:
+            return series_m_per_s * float(attrs['HRUarea'].sum())
+    logger.warning(
+        "HRUarea not available — streamflow units will be m/s depth, not m³/s"
+    )
+    return series_m_per_s
+
+
 @R.postprocessors.add('SUMMA')
 class SUMMAPostProcessor(RoutedModelPostProcessor):
     """
@@ -50,10 +90,16 @@ class SUMMAPostProcessor(RoutedModelPostProcessor):
         candidates = sorted(summa_dir.glob(f"{self.experiment_id}*.nc"))
         # Restart files contain state snapshots, not runoff time series, and
         # sort before the timestep output in ordinary experiment directories.
+        # Match the output-type suffix after the experiment id, not a
+        # substring of the whole stem: an experiment id containing "day"
+        # (e.g. "run_daymet") must not drop every file.
+        def _tail(p: Path) -> str:
+            return p.stem[len(self.experiment_id):].lower()
+
         candidates = [
             p for p in candidates
-            if 'day' not in p.stem
-            and not p.stem[len(self.experiment_id):].lower().startswith('_restart')
+            if not _tail(p).endswith('_day')
+            and not _tail(p).startswith('_restart')
         ]
 
         if not candidates:
@@ -74,36 +120,13 @@ class SUMMAPostProcessor(RoutedModelPostProcessor):
                     return None
 
                 var = ds[var_name]
-
-                # Collapse HRU dimension (area-weighted if possible)
-                if 'hru' in var.dims and var.sizes['hru'] > 1:
-                    if 'HRUarea' in ds:
-                        weights = ds['HRUarea'] / ds['HRUarea'].sum()
-                        series_m_per_s = (var * weights).sum(dim='hru').to_pandas()
-                    else:
-                        series_m_per_s = var.mean(dim='hru').to_pandas()
-                else:
-                    series_m_per_s = var.squeeze().to_pandas()
-
-                # Convert m/s depth to m³/s discharge
-                if 'HRUarea' in ds:
-                    basin_area_m2 = float(ds['HRUarea'].sum())
-                    streamflow = series_m_per_s * basin_area_m2
-                else:
-                    attrs_file = (
-                        self.project_dir / 'settings' / 'SUMMA'
-                        / 'attributes.nc'
-                    )
-                    if attrs_file.exists():
-                        with xr.open_dataset(attrs_file) as attrs:
-                            basin_area_m2 = float(attrs['HRUarea'].sum())
-                        streamflow = series_m_per_s * basin_area_m2
-                    else:
-                        self.logger.warning(
-                            "HRUarea not available — streamflow units "
-                            "will be m/s depth, not m³/s"
-                        )
-                        streamflow = series_m_per_s
+                streamflow = _native_runoff_to_discharge(
+                    var, ds,
+                    self.project_dir / 'settings' / 'SUMMA' / 'attributes.nc',
+                    self.logger,
+                )
+                if streamflow is None:
+                    return None
 
             streamflow.index = pd.to_datetime(streamflow.index).round(freq='h')
 

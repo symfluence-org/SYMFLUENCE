@@ -80,6 +80,13 @@ class WflowPostProcessor(StandardModelPostProcessor):
             return series * area / (dt * 1000.0)
         return series
 
+    def _align_time_labels(self, streamflow):
+        """Shift distributed end-of-day labels back one day (same as the worker)."""
+        from .extractor import is_distributed_wflow, to_period_start_labels
+        if is_distributed_wflow(self.config):
+            return to_period_start_labels(streamflow)
+        return streamflow
+
     def extract_streamflow(self) -> Optional[Path]:
         import pandas as pd
 
@@ -111,6 +118,7 @@ class WflowPostProcessor(StandardModelPostProcessor):
                 streamflow = df[q_col]
                 if needs_conversion:
                     streamflow = self._convert_mm_dt_to_cms(streamflow)
+                streamflow = self._align_time_labels(streamflow)
                 streamflow.index.name = 'datetime'
                 if self.resample_frequency:
                     streamflow = streamflow.resample(self.resample_frequency).mean()
@@ -149,6 +157,7 @@ class WflowPostProcessor(StandardModelPostProcessor):
             ds.close()
             if needs_conversion:
                 streamflow = self._convert_mm_dt_to_cms(streamflow)
+            streamflow = self._align_time_labels(streamflow)
             if self.resample_frequency:
                 streamflow = streamflow.resample(self.resample_frequency).mean()
             return self.save_streamflow_to_results(streamflow, model_column_name='WFLOW_discharge_cms')

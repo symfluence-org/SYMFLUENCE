@@ -190,28 +190,24 @@ def read_routed_streamflow(
         return None
 
     with ds:
-        sim_reach_id = resolve_config_value(config, lambda: config.evaluation.sim_reach_id, None, 'SIM_REACH_ID')
-        seg_idx = 0
-
-        if sim_reach_id is not None and sim_reach_id != 'default':
-            if 'reachID' in ds.variables:
-                reach_ids = ds['reachID'].values
-                matches = np.where(reach_ids == int(sim_reach_id))[0]
-                if len(matches) > 0:
-                    seg_idx = int(matches[0])
-                    log.debug(f"Using segment index {seg_idx} for reach ID {sim_reach_id}")
-                else:
-                    log.warning(f"Reach ID {sim_reach_id} not found, using segment 0")
-            else:
-                log.warning("No reachID variable in mizuRoute output, using segment 0")
-
-        if 'IRFroutedRunoff' in ds.variables:
-            simulated = ds['IRFroutedRunoff'].isel(seg=seg_idx)
-        elif 'dlayRunoff' in ds.variables:
-            simulated = ds['dlayRunoff'].isel(seg=seg_idx)
-        else:
+        from symfluence.core.modeling.utilities.reach_selection import (
+            select_outlet_index,
+            sim_reach_id_from_config,
+            topology_candidates_from_config,
+        )
+        var_name = next((v for v in ('IRFroutedRunoff', 'dlayRunoff', 'KWTroutedRunoff')
+                         if v in ds.variables), None)
+        if var_name is None:
             log.error(f"No routed runoff variable. Variables: {list(ds.variables.keys())}")
             return None
+        var = ds[var_name]
+        # Shared reach rule (SIM_REACH_ID, else topology outlet, else highest mean)
+        idx = select_outlet_index(
+            ds, var, sim_reach_id_from_config(config),
+            topology_candidates_from_config(config, near=sim_file_path), log,
+        )
+        reach_dim = next((d for d in ('seg', 'reachID') if d in var.dims), None)
+        simulated = var if idx is None else var.isel({reach_dim: idx})
 
         simulated_streamflow = simulated.to_series()
 

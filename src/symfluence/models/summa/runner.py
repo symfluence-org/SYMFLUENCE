@@ -538,6 +538,13 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
         Run SUMMA in point simulation mode.
 
         Executes SUMMA for multiple point simulations based on file manager lists.
+
+        Returns the output directory only when every site's IC and main runs
+        succeed. If any site fails the method logs the failed sites and
+        returns None (which ``run_summa`` turns into a ModelExecutionError):
+        a partial set of site outputs is indistinguishable downstream from a
+        complete one, so it must not be reported as success. The remaining
+        sites are still run so one invocation reports every failure.
         """
         self.logger.info("Starting SUMMA point simulations")
 
@@ -559,6 +566,15 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
         # Create output directory
         output_path = self.get_simulation_dir('SUMMA')
         output_path.mkdir(parents=True, exist_ok=True)
+
+        if not fm_list or len(fm_ic_list) != len(fm_list):
+            self.logger.error(
+                f"SUMMA point mode needs matching, non-empty file manager lists "
+                f"({len(fm_ic_list)} IC vs {len(fm_list)} main)"
+            )
+            return None
+
+        failed_sites: List[str] = []
 
         # Process each site
         for i, (ic_fm, main_fm) in enumerate(zip(fm_ic_list, fm_list)):
@@ -593,6 +609,7 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
                 self.logger.error(f"IC simulation failed for {site_name}. See {ic_log_file}")
                 if ic_result.error_message:
                     self.logger.error(f"Error: {ic_result.error_message}")
+                failed_sites.append(site_name)
                 continue
 
             # Copy restart file
@@ -619,6 +636,14 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
                 self.logger.error(f"Main simulation failed for {site_name}. See {main_log_file}")
                 if main_result.error_message:
                     self.logger.error(f"Error: {main_result.error_message}")
+                failed_sites.append(site_name)
+
+        if failed_sites:
+            self.logger.error(
+                f"SUMMA point mode: {len(failed_sites)}/{len(fm_list)} site(s) failed: "
+                f"{', '.join(failed_sites)}"
+            )
+            return None
 
         self.logger.info(f"Completed {len(fm_list)} point simulations")
         return output_path

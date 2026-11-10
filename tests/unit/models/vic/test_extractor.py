@@ -46,5 +46,5 @@ class TestVICResultExtractor:
     def test_spatial_aggregation_method(self):
         from symfluence.models.vic.extractor import VICResultExtractor
         extractor = VICResultExtractor('VIC')
-        assert extractor.get_spatial_aggregation_method('streamflow') == 'sum'
+        assert extractor.get_spatial_aggregation_method('streamflow') == 'mean'
         assert extractor.get_spatial_aggregation_method('soil_moisture') == 'mean'

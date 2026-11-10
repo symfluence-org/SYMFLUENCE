@@ -138,10 +138,8 @@ class ParFlowStreamflowTarget(StreamflowEvaluator):
                 lambda: self.config.model.parflow.timestep_hours if self.config.model and self.config.model.parflow else None,
                 default=1.0
             ))
-            dump_interval_hours = float(self._get_config_value(
-                lambda: self.config.model.parflow.dump_interval_hours if self.config.model and self.config.model.parflow else None,
-                default=24.0
-            ))
+            from symfluence.models.parflow.extractor import resolve_dump_interval_hours
+            dump_interval_hours = resolve_dump_interval_hours(self.config, 'parflow')
             start_date = str(self._get_config_value(
                 lambda: self.config.domain.time_start,
                 default='2000-01-01'

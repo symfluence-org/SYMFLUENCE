@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import xarray as xr
@@ -543,29 +543,18 @@ class RoutedModelPostProcessor(StandardModelPostProcessor):
         try:
             ds = xr.open_dataset(file_path, engine='netcdf4')
 
-            # Get reach selection
-            sim_reach_id = self._get_config_value(lambda: self.config.evaluation.sim_reach_id)
-
-            if sim_reach_id is not None:
-                sim_reach_id = int(sim_reach_id)
-                if 'reachID' in ds:
-                    segment_mask = ds['reachID'].values == sim_reach_id
-                    if segment_mask.any():
-                        idx = int(segment_mask.argmax())
-                        ds_selected = ds.isel(seg=idx)
-                    else:
-                        self.logger.warning(
-                            f"SIM_REACH_ID={sim_reach_id} not found in reachID; "
-                            f"falling back to outlet (last segment)"
-                        )
-                        ds_selected = ds.isel(seg=-1)
-                else:
-                    ds_selected = ds.isel(seg=-1)
-            else:
-                ds_selected = ds.isel(seg=-1)
-
-            # Extract routing variable
-            streamflow = cast(pd.Series, ds_selected[self.routing_variable].to_pandas())
+            # Same reach rule as calibration and the evaluator:
+            # SIM_REACH_ID, else the topology outlet, else highest mean flow.
+            from symfluence.core.modeling.utilities.reach_selection import (
+                select_outlet_series,
+                sim_reach_id_from_config,
+                topology_candidates_from_config,
+            )
+            streamflow = select_outlet_series(
+                ds, ds[self.routing_variable], sim_reach_id_from_config(self.config),
+                topology_candidates_from_config(self.config, near=file_path),
+                self.logger,
+            )
 
             # Round index to hour for proper resampling
             if hasattr(streamflow.index, 'round'):
