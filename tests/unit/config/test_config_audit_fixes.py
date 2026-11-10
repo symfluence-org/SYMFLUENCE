@@ -233,4 +233,5 @@ def test_resolve_path_expands_user_and_vars(tmp_path, monkeypatch):
     monkeypatch.setenv('MY_ROOT', str(tmp_path))
     assert resolve_path({'X': '$MY_ROOT/a'}, 'X', tmp_path, 'd') == tmp_path / 'a'
     monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setenv('USERPROFILE', str(tmp_path))  # Windows expanduser
     assert resolve_path({'X': '~/b'}, 'X', tmp_path, 'd') == tmp_path / 'b'
