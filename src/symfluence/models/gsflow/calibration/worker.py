@@ -18,7 +18,6 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-import numpy as np
 import pandas as pd
 
 from symfluence.core.calibration.workers.base_worker import (
@@ -26,6 +25,7 @@ from symfluence.core.calibration.workers.base_worker import (
     BaseWorker,
     run_worker_task,
 )
+from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.modeling.utilities.periods import split_period
@@ -289,22 +289,13 @@ class GSFLOWWorker(BaseWorker):
             # In COUPLED GSFLOW the basin outlet flow is routed through MODFLOW
             # SFR and reported as StreamOut_Q in gsflow.csv (m3/day); the PRMS
             # statvar 'basin_cfs' is NOT the routed streamflow (near-zero in
-            # coupled mode), so the CSV is the authoritative source.
-            sim_series = None
-            csv_files = (list(sim_dir.glob('gsflow.csv'))
-                         or list(sim_dir.glob('gsflow_*.csv'))
-                         or list(sim_dir.glob('*.csv')))
-            if csv_files:
-                sim_series = self._extract_streamflow_from_csv(csv_files[0])
-                if sim_series is None or len(sim_series) == 0:
-                    return {'kge': self.penalty_score, 'error': 'Invalid coupled streamflow/budget CSV'}
-
-            if sim_series is None or len(sim_series) == 0:
-                output_files = list(sim_dir.glob('statvar*'))
-                if not output_files and settings_dir:
-                    output_files = list(Path(settings_dir).glob('statvar*'))
-                if output_files:
-                    sim_series = self._extract_streamflow_from_statvar(output_files[0])
+            # coupled mode), so the CSV is the authoritative source. Shared
+            # with the postprocessor (models.gsflow.extractor).
+            from symfluence.models.gsflow.extractor import extract_gsflow_streamflow
+            try:
+                sim_series = extract_gsflow_streamflow(sim_dir, settings_dir)
+            except ModelExecutionError:
+                return {'kge': self.penalty_score, 'error': 'Invalid coupled streamflow/budget CSV'}
 
             if sim_series is None or len(sim_series) == 0:
                 return {'kge': self.penalty_score, 'error': 'No streamflow data'}
@@ -349,54 +340,20 @@ class GSFLOWWorker(BaseWorker):
             return {'kge': self.penalty_score, 'error': str(e)}
 
     def _extract_streamflow_from_csv(self, csv_file: Path) -> Optional[pd.Series]:
-        """Extract basin outlet streamflow from the GSFLOW CSV budget file.
-
-        Uses StreamOut_Q (basin streamflow leaving the SFR network, m3/day)
-        and converts to m3/s. This is the routed streamflow in COUPLED mode.
-        """
+        """Basin outlet streamflow (m3/s) from the GSFLOW budget CSV."""
+        from symfluence.models.gsflow.extractor import read_gsflow_csv_streamflow
         try:
-            df = pd.read_csv(csv_file)
-            df.columns = [c.strip() for c in df.columns]
-            date_col = df.columns[0]
-            flow_col = next((c for c in df.columns
-                             if c.lower() in ('streamout_q', 'streamflow_out',
-                                              'basinstreamflow_q')), None)
-            if flow_col is None:
-                return None
-            for column in [c for c in df if c == flow_col or c.endswith(('_S', '_Q'))]:
-                if column in df and not np.isfinite(pd.to_numeric(df[column], errors='coerce')).all():
-                    self.logger.error(f"Non-finite GSFLOW budget variable {column} in {csv_file}")
-                    return None
-            idx = pd.to_datetime(df[date_col])
-            series = pd.Series(pd.to_numeric(df[flow_col], errors='coerce').values,
-                               index=idx, name='GSFLOW_discharge_cms') / 86400.0
-            return series.dropna()
-        except Exception as e:  # noqa: BLE001 — calibration resilience
-            self.logger.error(f"Error reading GSFLOW CSV {csv_file}: {e}",
-                              exc_info=True)
+            return read_gsflow_csv_streamflow(csv_file)
+        except (OSError, ValueError, KeyError) as e:
+            self.logger.error(f"Error reading GSFLOW CSV {csv_file}: {e}", exc_info=True)
             return None
 
     def _extract_streamflow_from_statvar(self, statvar_file: Path) -> Optional[pd.Series]:
-        """Extract streamflow from GSFLOW statvar file."""
+        """Streamflow (m3/s) from a GSFLOW/PRMS statvar file (shared parser)."""
+        from symfluence.models.prms.statvar import read_statvar_streamflow
         try:
-            lines = statvar_file.read_text(encoding='utf-8').strip().split('\n')
-            dates, values = [], []
-            for line in lines:
-                parts = line.strip().split()
-                if len(parts) >= 8:
-                    try:
-                        year, month, day = int(parts[1]), int(parts[2]), int(parts[3])
-                        # basin_cfs is the first statvar (index 7 after
-                        # id year month day hour min sec)
-                        streamflow_cfs = float(parts[7])
-                        dates.append(pd.Timestamp(year=year, month=month, day=day))
-                        values.append(streamflow_cfs * 0.0283168)  # cfs → cms
-                    except (ValueError, IndexError):
-                        continue
-            if dates:
-                return pd.Series(values, index=dates, name='GSFLOW_discharge_cms')
-            return None
-        except Exception as e:  # noqa: BLE001 — calibration resilience
+            return read_statvar_streamflow(statvar_file).rename('GSFLOW_discharge_cms')
+        except (OSError, ModelExecutionError) as e:
             self.logger.error(f"Error extracting GSFLOW streamflow: {e}", exc_info=True)
             return None
 
