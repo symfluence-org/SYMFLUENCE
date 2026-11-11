@@ -65,6 +65,8 @@ class DEAlgorithm(OptimizationAlgorithm):
         Returns:
             Optimization results dictionary
         """
+        # Per-run RNG (OptimizationAlgorithm._new_rng): never the process-global stream.
+        self._rng = self._new_rng()
         self.logger.info(f"Starting DE optimization with {n_params} parameters")
 
         # DE requires at least 4 individuals to sample 3 distinct ones
@@ -93,7 +95,7 @@ class DEAlgorithm(OptimizationAlgorithm):
 
         # Initialize population
         self.logger.info(f"Evaluating initial population ({pop_size} individuals)...")
-        population = self._seed_population(np.random.uniform(0, 1, (pop_size, n_params)), kwargs)
+        population = self._seed_population(self._rng.uniform(0, 1, (pop_size, n_params)), kwargs)
         fitness = evaluate_population(population, 0)
 
         # Record initial best with enhanced tracking
@@ -119,16 +121,16 @@ class DEAlgorithm(OptimizationAlgorithm):
             for i in range(pop_size):
                 # Select three random individuals (not i)
                 candidates = [j for j in range(pop_size) if j != i]
-                r1, r2, r3 = np.random.choice(candidates, 3, replace=False)
+                r1, r2, r3 = self._rng.choice(candidates, 3, replace=False)
 
                 # Mutation: DE/rand/1
                 mutant = population[r1] + F * (population[r2] - population[r3])
                 mutant = np.clip(mutant, 0, 1)
 
                 # Crossover
-                cross_points = np.random.random(n_params) < CR
+                cross_points = self._rng.random(n_params) < CR
                 if not cross_points.any():
-                    cross_points[np.random.randint(n_params)] = True
+                    cross_points[self._rng.integers(n_params)] = True
 
                 trial = np.where(cross_points, mutant, population[i])
                 trials.append(trial)

@@ -77,6 +77,8 @@ class PSOAlgorithm(OptimizationAlgorithm):
         Returns:
             Optimization results dictionary
         """
+        # Per-run RNG (OptimizationAlgorithm._new_rng): never the process-global stream.
+        self._rng = self._new_rng()
         self.logger.info(f"Starting PSO optimization with {n_params} parameters")
 
         n_particles = self.population_size
@@ -106,8 +108,8 @@ class PSOAlgorithm(OptimizationAlgorithm):
 
         # Initialize swarm
         self.logger.debug(f"Evaluating initial population ({n_particles} particles)...")
-        positions = self._seed_population(np.random.uniform(0, 1, (n_particles, n_params)), kwargs)
-        velocities = np.random.uniform(-v_max, v_max, (n_particles, n_params))
+        positions = self._seed_population(self._rng.uniform(0, 1, (n_particles, n_params)), kwargs)
+        velocities = self._rng.uniform(-v_max, v_max, (n_particles, n_params))
 
         # Evaluate initial population
         fitness = evaluate_population(positions, 0)
@@ -146,8 +148,8 @@ class PSOAlgorithm(OptimizationAlgorithm):
             try:
                 # Update velocities using standard PSO equation
                 # v_i(t+1) = w * v_i(t) + c1 * r1 * (p_best - x) + c2 * r2 * (g_best - x)
-                r1 = np.random.random((n_particles, n_params))
-                r2 = np.random.random((n_particles, n_params))
+                r1 = self._rng.random((n_particles, n_params))
+                r2 = self._rng.random((n_particles, n_params))
 
                 # Cognitive component: attraction to personal best
                 cognitive = c1 * r1 * (personal_best_pos - positions)

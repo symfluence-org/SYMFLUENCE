@@ -31,6 +31,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
+from symfluence.core.metrics.penalty import is_penalty
+
 from .base_algorithm import OptimizationAlgorithm
 from .config_schema import BODefaults
 
@@ -81,6 +83,8 @@ class BayesianOptimizationAlgorithm(OptimizationAlgorithm):
         Returns:
             Optimization results dictionary
         """
+        # Per-run RNG (OptimizationAlgorithm._new_rng): never the process-global stream.
+        self._rng = self._new_rng()
         self.logger.info(f"Starting Bayesian Optimization with {n_params} parameters")
 
         # BO parameters from config
@@ -149,17 +153,25 @@ class BayesianOptimizationAlgorithm(OptimizationAlgorithm):
         # Main BO loop
         n_improvements = 0
         for iteration in range(1, self.max_iterations + 1):
-            # Convert to arrays
-            X = np.array(X_observed)
-            y = np.array(y_observed)
-
-            # Fit GP surrogate
-            gp_mean, gp_std, gp_params = self._fit_gp(X, y)
-
-            # Optimize acquisition function to find next point
-            next_point = self._optimize_acquisition(
-                gp_mean, gp_std, y, n_params, acquisition, xi, kappa, n_restarts
+            # Convert to arrays; failed runs are re-valued for the surrogate
+            # (see _surrogate_observations).
+            X, y = self._surrogate_observations(
+                np.array(X_observed), np.array(y_observed, dtype=float)
             )
+
+            gp_params: Dict[str, Any] = {}
+            if len(y) == 0:
+                # Nothing but failed runs so far: there is no response surface
+                # to model, so keep sampling at random until a run succeeds.
+                next_point = self._rng.uniform(0, 1, n_params)
+            else:
+                # Fit GP surrogate
+                gp_mean, gp_std, gp_params = self._fit_gp(X, y)
+
+                # Optimize acquisition function to find next point
+                next_point = self._optimize_acquisition(
+                    gp_mean, gp_std, y, n_params, acquisition, xi, kappa, n_restarts
+                )
 
             # Evaluate new point
             next_fitness = evaluate_solution(next_point, iteration)
@@ -201,16 +213,42 @@ class BayesianOptimizationAlgorithm(OptimizationAlgorithm):
             'n_evaluations': len(y_observed),
         }
 
+    def _surrogate_observations(
+        self, X: np.ndarray, y: np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Observations to fit the GP on, with failed runs re-valued.
+
+        A failed run scores exactly the penalty constant (-9999). Fed to the GP
+        as it is, it dominates the y normalisation (every valid score collapses
+        to the same normalised value) and the surrogate can no longer tell good
+        from mediocre. Failed points are kept -- the surrogate should still
+        learn to avoid that region -- but valued just below the worst valid
+        observation: worst minus the spread of the valid scores. With no valid
+        observation yet they are dropped (empty arrays are returned).
+        """
+        failed = np.asarray(is_penalty(y, self.penalty_score), dtype=bool)
+        if not failed.any():
+            return X, y
+        valid = y[~failed]
+        if valid.size == 0:
+            return X[:0], y[:0]
+        worst = float(valid.min())
+        spread = float(valid.max()) - worst
+        margin = spread if spread > 0 else 0.1 * max(abs(worst), 1.0)
+        y_fit = y.copy()
+        y_fit[failed] = worst - margin
+        return X, y_fit
+
     def _latin_hypercube_sample(self, n_samples: int, n_params: int) -> np.ndarray:
         """Generate Latin Hypercube samples."""
         samples = np.zeros((n_samples, n_params))
         for j in range(n_params):
             intervals = np.arange(n_samples)
-            np.random.shuffle(intervals)
+            self._rng.shuffle(intervals)
             for i in range(n_samples):
                 low = intervals[i] / n_samples
                 high = (intervals[i] + 1) / n_samples
-                samples[i, j] = np.random.uniform(low, high)
+                samples[i, j] = self._rng.uniform(low, high)
         return samples
 
     def _fit_gp(
@@ -342,11 +380,11 @@ class BayesianOptimizationAlgorithm(OptimizationAlgorithm):
 
         # Multi-start optimization of acquisition function
         best_acq = float('-inf')
-        best_x = np.random.uniform(0, 1, n_params)
+        best_x = self._rng.uniform(0, 1, n_params)
 
         for _ in range(n_restarts):
             # Random starting point
-            x0 = np.random.uniform(0, 1, n_params)
+            x0 = self._rng.uniform(0, 1, n_params)
 
             # Simple gradient-free optimization (coordinate descent)
             x = x0.copy()

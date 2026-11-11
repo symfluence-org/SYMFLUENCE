@@ -111,8 +111,10 @@ class LBFGSAlgorithm(OptimizationAlgorithm):
     ) -> Dict[str, Any]:
         """Run L-BFGS optimization with native or finite-difference gradients.
 
-        Implements full L-BFGS algorithm with Wolfe line search and gradient
-        convergence detection.
+        Implements L-BFGS with a backtracking line search (Armijo sufficient
+        decrease, weak-Wolfe curvature where backtracking can reach it) and
+        gradient convergence detection. A step that does not improve on the
+        current point is never taken.
 
         Args:
             n_params: Number of parameters to optimize
@@ -133,7 +135,10 @@ class LBFGSAlgorithm(OptimizationAlgorithm):
                           - 'finite_difference': Always use FD (for comparison)
             **kwargs: Optional hyperparameters:
                      - steps: Maximum iterations (default: max_iterations from config)
-                     - lr: Initial step size for line search (default: 0.1)
+                     - lr: Initial trial step for the first (steepest-descent)
+                       step and for the steepest-descent fallback (default: 0.1).
+                       Once curvature history exists the quasi-Newton direction is
+                       already scaled, so the trial step is 1.0.
                      - history_size: # of (s,y) pairs retained (default: 10)
                      - c1: Armijo parameter (default: 1e-4)
                      - c2: Wolfe curvature parameter (default: 0.9)
@@ -264,20 +269,42 @@ class LBFGSAlgorithm(OptimizationAlgorithm):
             # inverse Hessian of g. The descent direction for g is -r.
             direction = -self._lbfgs_direction(grad, s_history, y_history)
 
-            # Line search in minimization space (Armijo + weak-Wolfe curvature)
+            # Line search in minimization space. The two-loop recursion scales
+            # the direction by the secant estimate of the inverse Hessian, so
+            # the natural trial step is 1.0 once history exists; the first
+            # step is plain steepest descent and starts from lr.
+            trial_step = 1.0 if s_history else lr
             step_size, g_new, grad_new = self._line_search_with_gradient_func(
                 x, direction, g, grad, eval_min,
-                lr, c1, c2
+                trial_step, c1, c2
             )
 
+            if step_size is None and s_history:
+                # The quasi-Newton direction gave no acceptable step: drop the
+                # history and try a backtracked steepest-descent step instead.
+                self.logger.debug(
+                    f"L-BFGS line search failed at step {step}; resetting history "
+                    "and trying steepest descent"
+                )
+                s_history.clear()
+                y_history.clear()
+                direction = -grad
+                step_size, g_new, grad_new = self._line_search_with_gradient_func(
+                    x, direction, g, grad, eval_min,
+                    lr, c1, c2
+                )
+
             if step_size is None:
-                # Line search failed: fall back to a steepest-descent step on g.
-                self.logger.warning(f"L-BFGS line search failed at step {step}, using steepest descent")
-                step_size = lr / (step + 1)
-                x_new = np.clip(x - step_size * grad, 0, 1)  # descent along -grad_g
-                g_new, grad_new = eval_min(x_new)
-            else:
-                x_new = np.clip(x + step_size * direction, 0, 1)
+                # No step along the negative gradient decreases g either. Taking
+                # one anyway would move to a worse point, so stop here.
+                self.logger.info(
+                    f"L-BFGS stopped at step {step}: no improving step found along the "
+                    "descent direction (converged to line-search precision, or the "
+                    "gradient is unreliable here)"
+                )
+                break
+
+            x_new = np.clip(x + step_size * direction, 0, 1)
 
             grad_new = self._clip_gradient(grad_new, gradient_clip)
 
@@ -312,16 +339,23 @@ class LBFGSAlgorithm(OptimizationAlgorithm):
                 self.logger.info(f"L-BFGS converged at step {step}")
                 break
 
-        # Final point may be the best one found (loop updates best at the top).
+        # The loop records the iterate at the top of each step, so the point
+        # reached by the last step has not been recorded yet. Record it, or
+        # best_params.json / the iteration CSV lag the returned result.
         fitness = -g
         if fitness > best_fitness:
             best_fitness = fitness
             best_x = x.copy()
+            n_improvements += 1
+        final_iteration = step + 1 if steps > 0 else 0
+        params_dict = denormalize_params(best_x)
+        record_iteration(final_iteration, best_fitness, params_dict)
+        update_best(best_fitness, params_dict, final_iteration)
 
         return {
             'best_solution': best_x,
             'best_score': best_fitness,
-            'best_params': denormalize_params(best_x),
+            'best_params': params_dict,
             'gradient_method': gradient_method
         }
 
@@ -395,14 +429,21 @@ class LBFGSAlgorithm(OptimizationAlgorithm):
         """
         Backtracking line search on the minimization objective g = -fitness.
 
-        Accepts a step satisfying the (weak) Wolfe conditions for minimization:
+        The (weak) Wolfe conditions for minimization are:
           1. Armijo sufficient decrease:  g(x + α d) ≤ g(x) + c1·α·⟨∇g, d⟩
           2. Weak-Wolfe curvature:        ⟨∇g(x + α d), d⟩ ≥ c2·⟨∇g, d⟩
 
-        Because backtracking only ever shrinks the step, the curvature condition
-        may occasionally be unmet; pairs that would violate the L-BFGS curvature
-        requirement are additionally screened by the y·s > 0 guard at the call
-        site, so the secant history stays well-conditioned either way.
+        The step is halved until Armijo holds. The curvature condition rejects
+        steps that are too *short*, and backtracking only ever shrinks the
+        step, so once the largest Armijo step fails it no smaller step can
+        satisfy it: that Armijo step is accepted as it is (requiring curvature
+        as well made the search fail on almost every step and burn a gradient
+        evaluation per halving). Pairs that would violate the L-BFGS curvature
+        requirement are screened by the y·s > 0 guard at the call site, so the
+        secant history stays well-conditioned either way.
+
+        A returned step always satisfies g_new < g_x: the caller never moves
+        to a point that is not better than the current one.
 
         Args:
             x: Current parameter values (normalized [0,1])
@@ -412,7 +453,8 @@ class LBFGSAlgorithm(OptimizationAlgorithm):
             eval_min: Minimization evaluator: (x) -> (g, grad_g)
             initial_step: Initial step size for line search
             c1: Armijo condition parameter (sufficient decrease)
-            c2: Wolfe curvature condition parameter
+            c2: Wolfe curvature condition parameter (diagnostic only: logged
+                at debug level when the accepted Armijo step does not meet it)
             max_iter: Maximum line search iterations
 
         Returns:
@@ -429,12 +471,20 @@ class LBFGSAlgorithm(OptimizationAlgorithm):
             x_new = np.clip(x + step_size * direction, 0, 1)
             g_new, grad_new = eval_min(x_new)
 
-            # Armijo condition (sufficient decrease for minimization)
-            if g_new <= g_x + c1 * step_size * directional_deriv:
-                # Weak-Wolfe curvature condition
-                new_directional_deriv = np.dot(grad_new, direction)
-                if new_directional_deriv >= c2 * directional_deriv:
-                    return step_size, g_new, grad_new
+            # Armijo condition (sufficient decrease for minimization); the
+            # strict g_new < g_x guards against accepting a non-improving step
+            # when the Armijo slack is lost to rounding.
+            if (
+                np.isfinite(g_new)
+                and g_new < g_x
+                and g_new <= g_x + c1 * step_size * directional_deriv
+            ):
+                if np.dot(grad_new, direction) < c2 * directional_deriv:
+                    self.logger.debug(
+                        f"L-BFGS line search: accepting Armijo step {step_size:.3g} "
+                        "(curvature condition not met)"
+                    )
+                return step_size, g_new, grad_new
 
             step_size *= 0.5
 

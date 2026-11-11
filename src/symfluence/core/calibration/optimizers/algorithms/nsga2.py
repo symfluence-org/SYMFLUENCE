@@ -81,7 +81,12 @@ class NSGA2Algorithm(OptimizationAlgorithm):
             log_progress: Callback to log progress
             evaluate_population_objectives: Callback for multi-objective evaluation
             objective_names: List of objective metric names
-            multiobjective: Whether to use multi-objective evaluation
+            multiobjective: Whether to evaluate ``objective_names`` through
+                ``evaluate_population_objectives``. When False (or no such
+                callback is given) only one objective -- the score from
+                ``evaluate_population`` -- is available: the run is then
+                single-objective, and says so, rather than duplicating that
+                score into a second objective column.
             **kwargs: Additional parameters
 
         Returns:
@@ -90,7 +95,22 @@ class NSGA2Algorithm(OptimizationAlgorithm):
         self.logger.debug(f"Starting NSGA-II optimization with {n_params} parameters")
 
         pop_size = self.population_size
-        objective_names = objective_names or ['KGE', 'NSE']
+        objective_names = list(objective_names or ['KGE', 'NSE'])
+        use_objectives = bool(multiobjective and evaluate_population_objectives)
+        if not use_objectives:
+            # Only the single score from evaluate_population is available.
+            # Filling a second column with the same score and labelling it
+            # obj2_<metric> produced a "Pareto front" of one metric against
+            # itself.
+            objective_names = objective_names[:1]
+            self.logger.warning(
+                "NSGA-II is running SINGLE-objective (%s): only one objective is "
+                "available, so there is no trade-off to explore and no obj2 column "
+                "or Pareto front will be written. Configure two different metrics "
+                "(NSGA2_PRIMARY_METRIC / NSGA2_SECONDARY_METRIC) or two targets "
+                "(NSGA2_MULTI_TARGET) for a multi-objective run.",
+                objective_names[0],
+            )
         num_objectives = len(objective_names)
 
         # NSGA-II parameters from config
@@ -125,29 +145,31 @@ class NSGA2Algorithm(OptimizationAlgorithm):
         objectives = np.full((pop_size, num_objectives), np.nan)
 
         # Evaluate initial population
-        if multiobjective and evaluate_population_objectives:
+        if use_objectives:
+            assert evaluate_population_objectives is not None
             objectives = evaluate_population_objectives(population, objective_names, 0)
         else:
-            fitness = evaluate_population(population, 0)
-            objectives[:, 0] = fitness
-            if num_objectives > 1:
-                objectives[:, 1] = fitness
+            objectives[:, 0] = evaluate_population(population, 0)
 
         # Check for all-penalty objectives (indicates the worker could not evaluate
         # the multi-objective set). Rather than aborting the whole run, degrade to
-        # single-objective evaluation on the primary metric and duplicate it across
-        # objective columns -- this yields a valid calibration result and matches the
-        # behaviour of workers that only expose single-objective evaluation, so the
-        # algorithm x model matrix stays consistent instead of leaving holes.
+        # single-objective evaluation for the rest of the run -- this yields a
+        # valid calibration result and matches the behaviour of workers that only
+        # expose single-objective evaluation, so the algorithm x model matrix
+        # stays consistent instead of leaving holes. The run is then honestly
+        # single-objective: one objective column, no obj2, no Pareto front.
         objectives = self._clean_objectives(objectives, "Initial population")
-        if np.all(is_penalty(objectives, self.penalty_score)) and multiobjective and evaluate_population is not None:
+        if np.all(is_penalty(objectives, self.penalty_score)) and use_objectives and evaluate_population is not None:
             self.logger.warning(
                 "Multi-objective evaluation returned all-penalty objectives; falling back "
-                "to single-objective (%s) evaluation for NSGA-II.", objective_names[0]
+                "to SINGLE-objective evaluation (the optimizer's target metric) for "
+                "NSGA-II. No obj2 column or Pareto front will be written."
             )
-            fitness = np.asarray(evaluate_population(population, 0)).reshape(-1)
-            objectives = np.repeat(fitness.reshape(-1, 1), num_objectives, axis=1)
-            objectives = self._clean_objectives(objectives, "Initial population")
+            use_objectives = False
+            objective_names = objective_names[:1]
+            num_objectives = 1
+            fitness = np.asarray(evaluate_population(population, 0), dtype=float).reshape(-1, 1)
+            objectives = self._clean_objectives(fitness, "Initial population")
 
         if np.all(is_penalty(objectives, self.penalty_score)):
             raise ValueError(
@@ -208,16 +230,14 @@ class NSGA2Algorithm(OptimizationAlgorithm):
                         offspring[i + 1] = self._polynomial_mutation(c2, eta_m, mutation_rate)
 
                 # Evaluate offspring
-                if multiobjective and evaluate_population_objectives:
+                if use_objectives:
+                    assert evaluate_population_objectives is not None
                     offspring_objectives = evaluate_population_objectives(
                         offspring, objective_names, generation
                     )
                 else:
-                    offspring_fitness = evaluate_population(offspring, generation)
                     offspring_objectives = np.full((pop_size, num_objectives), np.nan)
-                    offspring_objectives[:, 0] = offspring_fitness
-                    if num_objectives > 1:
-                        offspring_objectives[:, 1] = offspring_fitness
+                    offspring_objectives[:, 0] = evaluate_population(offspring, generation)
 
                 # Handle NaN/Inf objective values
                 offspring_objectives = self._clean_objectives(
@@ -279,8 +299,11 @@ class NSGA2Algorithm(OptimizationAlgorithm):
             'best_solution': best_solution,
             'best_score': best_fitness,
             'best_params': denormalize_params(best_solution),
-            'pareto_front': population[ranks == 0] if ranks is not None else None,
-            'pareto_objectives': objectives[ranks == 0] if ranks is not None else None
+            # A Pareto front needs at least two objectives; a single-objective
+            # run reports none (and the optimizer then writes no Pareto file).
+            'pareto_front': population[ranks == 0] if num_objectives > 1 else None,
+            'pareto_objectives': objectives[ranks == 0] if num_objectives > 1 else None,
+            'objective_names': list(objective_names),
         }
 
     def _fast_non_dominated_sort(self, objectives: np.ndarray) -> np.ndarray:

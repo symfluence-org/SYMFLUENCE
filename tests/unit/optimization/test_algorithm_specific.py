@@ -502,14 +502,31 @@ class TestDREAMAlgorithm:
 
         algo = DREAMAlgorithm(_make_full_config(tmp_path, NUMBER_OF_ITERATIONS=1, POPULATION_SIZE=10), test_logger)
 
-        # Create converged chains (similar values)
-        chains = np.random.randn(5, 3) * 0.01 + 0.5
-        fitness = np.array([1.0, 1.1, 0.9, 1.0, 1.05])
+        rng = np.random.default_rng(0)
 
-        r_hat = algo._compute_gelman_rubin(chains, fitness)
-
+        # Well-mixed chains: every chain samples the same distribution.
+        # History shape is (n_iterations, n_chains, n_params).
+        mixed = rng.normal(0.5, 0.05, size=(400, 5, 3))
+        r_hat = algo._compute_gelman_rubin(mixed)
         assert np.isfinite(r_hat)
-        assert r_hat >= 1.0  # R-hat is always >= 1
+        assert r_hat < 1.1
+
+        # Chains stuck around different values in ONE parameter only: the
+        # statistic is the max over parameters, so it must flag it. (The old
+        # "simplified" version pooled parameters of the current positions and
+        # could not see this.)
+        stuck = mixed.copy()
+        stuck[:, :, 1] += np.arange(5) * 0.5
+        assert algo._compute_gelman_rubin(stuck) > 2.0
+
+        # Only the second half of the history counts (first half is warm-up).
+        warmup_only = mixed.copy()
+        warmup_only[:200, :, 1] += np.arange(5) * 0.5
+        assert algo._compute_gelman_rubin(warmup_only) < 1.1
+
+        # Not computable from a single chain or a single draw
+        assert algo._compute_gelman_rubin(mixed[:, :1, :]) == float('inf')
+        assert algo._compute_gelman_rubin(mixed[:2]) == float('inf')
 
     def test_dream_error_handling_in_proposal_generation(
         self, mock_config, test_logger, mock_callbacks

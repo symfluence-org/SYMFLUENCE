@@ -66,9 +66,12 @@ class CMAESDefaults:
     SIGMA_MAX: float = 1.0
 
     # Convergence threshold
-    # When σ < 1e-12, the algorithm has effectively converged and further
-    # iterations provide negligible improvement. (Hansen 2006, Section 4.4)
-    CONVERGENCE_THRESHOLD: float = 1e-12
+    # The run stops when σ <= CONVERGENCE_THRESHOLD. It must not be below
+    # SIGMA_MIN: σ is clamped to SIGMA_MIN every generation, so a smaller
+    # threshold (it used to be 1e-12) can never be reached and the stop was
+    # dead code. At σ = 1e-10 in the normalized [0,1] space the algorithm has
+    # effectively converged. (Hansen 2006, Section 4.4)
+    CONVERGENCE_THRESHOLD: float = SIGMA_MIN
 
     # Eigenvalue floor for numerical stability
     # Prevents negative eigenvalues from numerical errors in covariance matrix

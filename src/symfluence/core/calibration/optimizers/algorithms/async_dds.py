@@ -13,10 +13,11 @@ for parallel execution than synchronous DDS.
 """
 from __future__ import annotations
 
-import random
 from typing import Any, Callable, Dict, Optional
 
 import numpy as np
+
+from symfluence.core.metrics.penalty import is_penalty
 
 from .base_algorithm import OptimizationAlgorithm
 
@@ -47,6 +48,16 @@ class AsyncDDSAlgorithm(OptimizationAlgorithm):
         """
         Run Asynchronous DDS optimization.
 
+        Budget: ``NUMBER_OF_ITERATIONS`` is the number of *batches*; the total
+        evaluation budget is ``NUMBER_OF_ITERATIONS * ASYNC_DDS_BATCH_SIZE``
+        model runs, and the initial pool is drawn from that budget. Every
+        attempted run counts against it, including runs that crash (return the
+        penalty score) -- a crashed run still cost a model evaluation. The run
+        also stops after ``MAX_STAGNATION_BATCHES`` consecutive batches without
+        an improvement; a batch in which every trial crashed says nothing about
+        search exhaustion and leaves the stagnation counter unchanged (as in
+        DDS).
+
         Args:
             n_params: Number of parameters
             evaluate_solution: Callback to evaluate a single solution
@@ -61,6 +72,8 @@ class AsyncDDSAlgorithm(OptimizationAlgorithm):
         Returns:
             Optimization results dictionary
         """
+        # Per-run RNG (OptimizationAlgorithm._new_rng): never the process-global stream.
+        self._rng = self._new_rng()
         self.logger.debug(f"Starting Async DDS optimization with {n_params} parameters")
 
         # Async DDS parameters
@@ -92,11 +105,16 @@ class AsyncDDSAlgorithm(OptimizationAlgorithm):
         self.logger.info(f"  Pool size: {pool_size}")
         self.logger.info(f"  Batch size: {batch_size}")
         self.logger.info(f"  Target batches: {target_batches}")
+        self.logger.info(
+            f"  Total evaluation budget: {total_target_evaluations} "
+            f"(NUMBER_OF_ITERATIONS x batch size; includes the initial pool of {pool_size} "
+            "and any crashed runs)"
+        )
         self.logger.info(f"  MPI processes: {num_processes}")
 
         # Initialize solution pool
         self.logger.info(f"Evaluating initial pool ({pool_size} solutions)...")
-        initial_population = np.random.uniform(0, 1, (pool_size, n_params))
+        initial_population = self._rng.uniform(0, 1, (pool_size, n_params))
 
         # Inject initial guess if provided
         initial_guess = kwargs.get('initial_guess')
@@ -110,7 +128,7 @@ class AsyncDDSAlgorithm(OptimizationAlgorithm):
         initial_fitness = evaluate_population(initial_population, 0)
 
         # Log initial pool scores for debugging
-        valid_initial = [s for s in initial_fitness if s is not None and s != self.penalty_score]
+        valid_initial = [s for s in initial_fitness if not is_penalty(s, self.penalty_score)]
         if valid_initial:
             self.logger.info(
                 f"Initial pool scores: min={min(valid_initial):.4f}, max={max(valid_initial):.4f}"
@@ -118,11 +136,12 @@ class AsyncDDSAlgorithm(OptimizationAlgorithm):
         else:
             self.logger.warning("Initial pool: No valid scores!")
 
-        for i, (solution, score) in enumerate(zip(initial_population, initial_fitness)):
-            if score is not None and score != self.penalty_score:
+        # Every attempted run counts against the budget, crashed or not.
+        total_evaluations += len(initial_population)
+        for solution, score in zip(initial_population, initial_fitness):
+            if not is_penalty(score, self.penalty_score):
                 solution_pool.append((solution.copy(), score, 0))
                 pool_scores.append(score)
-                total_evaluations += 1
 
                 if score > best_score:
                     best_score = score
@@ -164,7 +183,7 @@ class AsyncDDSAlgorithm(OptimizationAlgorithm):
             for i in range(batch_size):
                 # Tournament selection from pool
                 tournament_size = min(3, len(solution_pool))
-                candidates = random.sample(range(len(solution_pool)), tournament_size)
+                candidates = [int(c) for c in self._rng.choice(len(solution_pool), tournament_size, replace=False)]
                 parent_idx = min(candidates, key=lambda idx: -pool_scores[idx])  # Best wins
                 parent = solution_pool[parent_idx][0].copy()
 
@@ -175,13 +194,13 @@ class AsyncDDSAlgorithm(OptimizationAlgorithm):
                 )
 
                 trial = parent.copy()
-                perturb_mask = np.random.random(n_params) < prob_select
+                perturb_mask = self._rng.random(n_params) < prob_select
                 if not perturb_mask.any():
-                    perturb_mask[np.random.randint(n_params)] = True
+                    perturb_mask[self._rng.integers(n_params)] = True
 
                 for j in range(n_params):
                     if perturb_mask[j]:
-                        perturbation = np.random.normal(0, dds_r)
+                        perturbation = self._rng.normal(0, dds_r)
                         trial[j] = parent[j] + perturbation
 
                         # Reflect at bounds
@@ -199,11 +218,12 @@ class AsyncDDSAlgorithm(OptimizationAlgorithm):
 
             # Update pool with batch results
             improvements = 0
+            n_valid = 0
+            total_evaluations += len(trials)
             for trial, score in zip(trials, trial_fitness):
-                if score is None or score == self.penalty_score:
+                if is_penalty(score, self.penalty_score):
                     continue
-
-                total_evaluations += 1
+                n_valid += 1
 
                 # Check for improvement
                 is_improvement = False
@@ -231,10 +251,16 @@ class AsyncDDSAlgorithm(OptimizationAlgorithm):
                 solution_pool = [item[0] for item in combined[:pool_size]]
                 pool_scores = [item[1] for item in combined[:pool_size]]
 
-            if improvements == 0:
+            if improvements > 0:
+                stagnation_counter = 0
+            elif n_valid > 0:
                 stagnation_counter += 1
             else:
-                stagnation_counter = 0
+                # Every trial crashed: model failure, not search exhaustion.
+                self.logger.debug(
+                    f"AsyncDDS batch {batch_num}: all {len(trials)} trials failed; "
+                    "not counted toward stagnation"
+                )
 
             # Record results
             params_dict = denormalize_params(best_solution)

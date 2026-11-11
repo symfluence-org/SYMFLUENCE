@@ -132,6 +132,8 @@ class AdamAlgorithm(OptimizationAlgorithm):
             - best_params: Denormalized best parameters (dictionary)
             - gradient_method: 'native' or 'finite_difference' (which was used)
         """
+        # Per-run RNG (OptimizationAlgorithm._new_rng): never the process-global stream.
+        self._rng = self._new_rng()
         # Adam hyperparameters from config. Step-count precedence:
         # explicit kwarg > ADAM_STEPS (per-algorithm) > NUMBER_OF_ITERATIONS.
         steps = kwargs.get('steps')
