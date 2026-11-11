@@ -298,7 +298,7 @@ class CWatMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
         def _sub(key: str, val: str) -> None:
             nonlocal content
-            content = re.sub(rf'(?m)^{re.escape(key)}\s*=.*$', f'{key} = {val}', content)
+            content = re.sub(rf'(?m)^{re.escape(key)}\s*=.*$', lambda _m, _line=f'{key} = {val}': _line, content)
 
         _sub('PathRoot', str(cwatm_input))
         _sub('PathOut', str(sim_output_dir))
