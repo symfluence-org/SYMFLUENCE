@@ -274,7 +274,8 @@ class HYPEPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             output_path=self.forcing_data_dir,
             cache_path=self.cache_path,
             timeshift=self.timeshift,
-            forcing_units=self.forcing_units
+            forcing_units=self.forcing_units,
+            forcing_selector=self._select_run_forcing,
         )
 
         # Configuration manager

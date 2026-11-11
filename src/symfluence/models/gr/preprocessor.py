@@ -173,7 +173,8 @@ class GRPreProcessor(BaseModelPreProcessor, PETCalculatorMixin, GeospatialUtilsM
         try:
             # Use shared ForcingDataProcessor for loading
             fdp = ForcingDataProcessor(self.config, self.logger)
-            ds = fdp.load_forcing_data(self.forcing_basin_path)
+            ds = fdp.load_forcing_data(
+                self.forcing_basin_path, catchment_path=self._get_catchment_file_path())
 
             # Subset to simulation window using base class method
             ds = self.subset_to_simulation_time(ds, "Forcing")

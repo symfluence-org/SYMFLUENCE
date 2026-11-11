@@ -131,7 +131,7 @@ class CLMParFlowPreProcessor(LumpedForcingMixin, BaseModelPreProcessor):  # type
             return self._location_cache
         except FileNotFoundError as e:
             shp_error = e
-        location = location_from_forcing(self._get_forcing_dir())
+        location = location_from_forcing(self._get_forcing_dir(), self._select_run_forcing)
         if location is not None:
             self._location_cache = location
             return self._location_cache

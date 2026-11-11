@@ -265,7 +265,8 @@ class PRMSPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             logger.warning(f"Forcing path does not exist: {forcing_path}")
             return None
 
-        forcing_files = sorted(forcing_path.glob("*.nc"))
+        # Only the forcing remapped onto this run's HRUs (issue #339).
+        forcing_files = self._select_run_forcing(sorted(forcing_path.glob("*.nc")))
         if not forcing_files:
             logger.warning(f"No NetCDF files found in {forcing_path}")
             return None
@@ -279,7 +280,7 @@ class PRMSPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             forcing_timestep_seconds,
             open_canonical_forcing,
         )
-        ds = open_canonical_forcing(forcing_files, discretization=self.forcing_discretization)
+        ds = open_canonical_forcing(forcing_files)
         ds = ds.sel(time=slice(*daily_forcing_window(start_date, end_date)))
 
         airtemp = ds['air_temperature'].values.squeeze()      # K

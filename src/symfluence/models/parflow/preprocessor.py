@@ -113,7 +113,7 @@ class ParFlowPreProcessor(LumpedForcingMixin, BaseModelPreProcessor):  # type: i
             return float(self.get_catchment_location()['lat'])
         except (FileNotFoundError, ValueError, AttributeError, TypeError) as e:
             shp_error = e
-        location = location_from_forcing(self._get_forcing_dir())
+        location = location_from_forcing(self._get_forcing_dir(), self._select_run_forcing)
         if location is not None:
             return location[0]
         raise ShapefileError(

@@ -177,3 +177,47 @@ def test_preprocessor_resolves_bands_from_project_dem(tmp_path):
             patch.object(pp, 'get_catchment_location', return_value={'elev': None}):
         bands = pp._get_snow_bands()
     assert bands.reference_elev == pytest.approx(inside.mean())
+
+
+def test_lumped_readers_select_this_runs_forcing(tmp_path):
+    """Issue #339: only the forcing remapped onto this run's HRUs is read."""
+    from symfluence.models.parflow.lumped_forcing import location_from_forcing, prepare_daily_rainfall
+
+    def write(name, lat, temp):
+        times = pd.date_range("2005-01-01", periods=48, freq='h')
+        xr.Dataset(
+            {"precipitation_flux": (("time", "hru"), np.full((48, 1), 1e-4)),
+             "air_temperature": (("time", "hru"), np.full((48, 1), temp)),
+             "latitude": (("hru",), [lat]), "longitude": (("hru",), [-19.0])},
+            coords={"time": times, "hru": [0]},
+        ).to_netcdf(tmp_path / name)
+
+    write('a_ERA5_remapped_elevation.nc', 10.0, 250.0)   # another HRU set, sorts first
+    write('b_ERA5_remapped_lumped.nc', 64.0, 283.15)
+    selected = []
+
+    def selector(files):
+        selected.append(list(files))
+        return [f for f in files if 'lumped' in f.name]
+
+    assert location_from_forcing(tmp_path, selector) == (64.0, -19.0)
+    assert location_from_forcing(tmp_path)[0] == 10.0
+    out = tmp_path / 'out'
+    out.mkdir()
+    days = prepare_daily_rainfall(
+        forcing_dir=tmp_path, output_dir=out, start='2005-01-01', end='2005-01-03',
+        latitude=lambda: 64.0, snow_bands=lambda: SnowBands.single(500.0, 'test'),
+        logger=LOG, model_label='ParFlow', forcing_selector=selector)
+    assert days is not None and len(days) == 2
+    cache = np.load(out / 'hourly_forcing_cache.npz')
+    assert cache['temp_c'] == pytest.approx(10.0)
+    assert len(selected) == 2 and all(len(files) == 2 for files in selected)
+
+
+def test_preprocessors_pass_their_run_forcing_selector(tmp_path):
+    for cls, model in ((ParFlowPreProcessor, 'PARFLOW'), (CLMParFlowPreProcessor, 'CLMPARFLOW')):
+        pp = cls(_config(tmp_path, model), Mock())
+        with patch.object(lumped_forcing, 'prepare_daily_rainfall', return_value=None) as prep, \
+                patch.object(pp, '_get_forcing_dir', return_value=tmp_path):
+            pp._prepare_daily_rainfall(tmp_path)
+        assert prep.call_args.kwargs['forcing_selector'] == pp._select_run_forcing

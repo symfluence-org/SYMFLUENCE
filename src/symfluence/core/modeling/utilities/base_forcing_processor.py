@@ -116,6 +116,15 @@ class BaseForcingProcessor(ABC, ConfigurableMixin):
         self.logger.debug(f"Found {len(files)} forcing files in {search_path}")
         return files
 
+    def _select_run_files(self, files: List[Path]) -> List[Path]:
+        """Narrow *files* to the forcing remapped onto this run's HRUs (issue #339).
+
+        Uses the ``forcing_selector`` the owning preprocessor passed in (its
+        ``_select_run_forcing``); without one, *files* are returned unchanged.
+        """
+        selector = getattr(self, 'forcing_selector', None)
+        return list(selector(list(files))) if selector is not None else list(files)
+
     def _cleanup_stale_files(
         self,
         pattern: str,

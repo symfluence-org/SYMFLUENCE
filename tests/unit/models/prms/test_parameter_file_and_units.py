@@ -198,7 +198,7 @@ def test_last_day_of_data_file_is_a_full_day(tmp_path, monkeypatch):
     monkeypatch.setattr(reader, 'open_canonical_forcing', lambda files, **kw: xr.open_mfdataset(files))
     p = preprocessor(tmp_path)
     p.forcing_basin_path = tmp_path / 'basin'
-    p.config.domain = NS(discretization=None)
+    p._select_run_forcing = lambda files: files
     daily = p._load_forcing_data(datetime(2010, 1, 1), datetime(2010, 1, 3))
     assert list(daily.index.strftime('%Y-%m-%d')) == ['2010-01-01', '2010-01-02', '2010-01-03']
     assert daily['precip'].tolist() == pytest.approx([24 * 0.36] * 3)

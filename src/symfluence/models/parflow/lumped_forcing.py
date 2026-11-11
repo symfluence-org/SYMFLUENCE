@@ -103,12 +103,24 @@ def oudin_pet_mm_hr(temp_k: np.ndarray, dates: Any, latitude_deg: float) -> np.n
 # Catchment geometry
 # ---------------------------------------------------------------------------
 
-def location_from_forcing(forcing_dir: Optional[Path]) -> Optional[Tuple[float, float]]:
-    """(lat, lon) of the first cell of the basin-averaged forcing, if it has them."""
+ForcingSelector = Callable[[List[Path]], List[Path]]
+
+
+def location_from_forcing(
+    forcing_dir: Optional[Path],
+    forcing_selector: Optional[ForcingSelector] = None,
+) -> Optional[Tuple[float, float]]:
+    """(lat, lon) of the first cell of the basin-averaged forcing, if it has them.
+
+    ``forcing_selector`` narrows the files to this run's HRU set (the owning
+    preprocessor's ``_select_run_forcing``, issue #339).
+    """
     if not forcing_dir:
         return None
     import xarray as xr
     nc_files = sorted(Path(forcing_dir).glob('*.nc'))
+    if forcing_selector is not None:
+        nc_files = forcing_selector(nc_files)
     if not nc_files:
         return None
     with xr.open_dataset(nc_files[0]) as ds:
@@ -372,6 +384,7 @@ def prepare_daily_rainfall(
     logger: logging.Logger,
     model_label: str,
     on_hourly_forcing: Optional[Callable[[np.ndarray, np.ndarray, np.ndarray], None]] = None,
+    forcing_selector: Optional[ForcingSelector] = None,
 ) -> Optional[Sequence[Tuple[str, int, float]]]:
     """Daily effective rainfall (rain + Snow-17 melt - Oudin PET) from basin-mean forcing.
 
@@ -382,6 +395,8 @@ def prepare_daily_rainfall(
         latitude, snow_bands: resolved lazily, only once forcing has been read.
         on_hourly_forcing: called with (pptrate kg m-2 s-1, airtemp K, times)
             of the clipped hourly forcing (CLM-ParFlow writes its met file).
+        forcing_selector: narrows the forcing files to this run's HRU set (the
+            owning preprocessor's ``_select_run_forcing``, issue #339).
 
     Returns:
         List of (day_label, hours_in_day, net_rainfall_m_hr) tuples, or None
@@ -391,12 +406,17 @@ def prepare_daily_rainfall(
         logger.warning(f"No forcing data found. {model_label} will run without rainfall.")
         return None
 
+    # Only the forcing remapped onto this run's HRUs (issue #339).
+    run_files = sorted(Path(forcing_dir).glob('*.nc'))
+    if forcing_selector is not None:
+        run_files = forcing_selector(run_files)
+
     try:
         from symfluence.core.modeling.model_ready.forcing_reader import (
             open_canonical_forcing,
             resample_canonical_forcing,
         )
-        nc_files = sorted(Path(forcing_dir).glob('*.nc'))
+        nc_files = run_files
         era5 = [f for f in nc_files if 'ERA5' in f.name or 'remapped' in f.name]
         if era5:
             nc_files = era5
@@ -573,4 +593,5 @@ class LumpedForcingMixin:
             model_label=self.LUMPED_MODEL_LABEL,
             on_hourly_forcing=lambda pptrate, airtemp, times: self._on_hourly_forcing(
                 settings_dir, pptrate, airtemp, times),
+            forcing_selector=self._select_run_forcing,  # type: ignore[attr-defined]
         )

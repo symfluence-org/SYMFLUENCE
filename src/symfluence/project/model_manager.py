@@ -36,8 +36,18 @@ class ModelManager(BaseManager):
     # Shared routing decision logic (class-level for efficiency)
     _routing_decider = RoutingDecider()
 
-    def _resolve_model_workflow(self) -> List[str]:
-        """Resolve execution order and add implicit routing dependencies."""
+    # Models whose runners call the router themselves (spatial orchestrator).
+    # The router must still be PREPROCESSED for them (network topology,
+    # parameter namelist), but must not run again as its own step.
+    INTERNALLY_ROUTED_MODELS = frozenset({'FUSE', 'GR', 'LSTM'})
+
+    def _resolve_model_workflow(self, for_preprocessing: bool = False) -> List[str]:
+        """Resolve execution order and add implicit routing dependencies.
+
+        With *for_preprocessing*, a router needed by an internally routed model
+        (``INTERNALLY_ROUTED_MODELS``) is included too, so its inputs exist
+        when that model's runner calls it.
+        """
 
         models_str = self.config.model.hydrological_model or ''
         configured_models = [m.strip() for m in str(models_str).split(',') if m.strip()]
@@ -50,6 +60,8 @@ class ModelManager(BaseManager):
         routable_models = {'SUMMA'}
         if 'NGEN' in configured_models and self._ngen_needs_external_routing():
             routable_models.add('NGEN')
+        if for_preprocessing:
+            routable_models |= self.INTERNALLY_ROUTED_MODELS
 
         # Determine which routing model to use
         routing_model = self._get_config_value(
@@ -314,7 +326,7 @@ class ModelManager(BaseManager):
         """
         self.logger.debug("Starting model-specific preprocessing")
 
-        workflow = self._resolve_model_workflow()
+        workflow = self._resolve_model_workflow(for_preprocessing=True)
         self.logger.debug(f"Preprocessing workflow order: {workflow}")
 
         for model in workflow:
