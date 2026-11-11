@@ -17,8 +17,23 @@ class TestDiagnosticsCollector:
         diag.error("error msg")
         diag.fatal("fatal msg")
         assert len(diag.messages) == 5
-        assert diag.messages[0].level == "0"
-        assert diag.messages[4].level == "4"
+        # Delft-FEWS (pi_diag.xsd): 0=fatal, 1=error, 2=warn, 3=info, >3=debug
+        assert [m.level for m in diag.messages] == ["4", "3", "2", "1", "0"]
+
+    def test_fatal_is_written_as_level_zero_attribute(self, tmp_path):
+        """A fatal error must reach FEWS as <line level="0" description=".."/>;
+        it used to be written as level 4 (debug for FEWS) in child elements."""
+        diag = DiagnosticsCollector(tmp_path / "diag.xml")
+        diag.info("started")
+        diag.fatal("model crashed")
+        diag.write()
+        root = ET.parse(str(tmp_path / "diag.xml")).getroot()
+        ns = {"pi": "http://www.wldelft.nl/fews/PI"}
+        lines = root.findall("pi:line", ns)
+        assert [(ln.get("level"), ln.get("description")) for ln in lines] == [
+            ("3", "started"), ("0", "model crashed"),
+        ]
+        assert all(len(ln) == 0 for ln in lines)  # no child elements
 
     def test_has_fatal(self, tmp_path):
         diag = DiagnosticsCollector(tmp_path / "diag.xml")
@@ -77,6 +92,6 @@ class TestDiagnosticsCollector:
         tree = ET.parse(str(tmp_path / "diag.xml"))
         root = tree.getroot()
         ns = {"pi": "http://www.wldelft.nl/fews/PI"}
-        desc = root.find("pi:line/pi:description", ns)
-        assert desc is not None
-        assert "<>&" in desc.text
+        line = root.find("pi:line", ns)
+        assert line is not None
+        assert line.get("description") == "Special chars: <>&\"'"

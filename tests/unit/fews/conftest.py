@@ -152,3 +152,74 @@ def sample_state_files(tmp_work_dir):
         ds = xr.Dataset({"value": ("x", [1.0, 2.0, 3.0])})
         ds.to_netcdf(states_dir / name)
     return states_dir
+
+
+@pytest.fixture
+def real_run_info_xml(tmp_work_dir):
+    """A run file as Delft-FEWS writes it (pi_run.xsd): PI namespace, date/time
+    attributes, a timeZone, individually listed files, typed properties."""
+    xml_content = textwrap.dedent("""\
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Run xmlns="http://www.wldelft.nl/fews/PI"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="1.5">
+            <timeZone>1.0</timeZone>
+            <startDateTime date="2023-01-01" time="00:00:00"/>
+            <endDateTime date="2023-01-03" time="00:00:00"/>
+            <time0 date="2023-01-02" time="00:00:00"/>
+            <workDir>{work_dir}</workDir>
+            <inputTimeSeriesFile>{work_dir}/toModel/in.xml</inputTimeSeriesFile>
+            <inputNetcdfFile>{work_dir}/toModel/met.nc</inputNetcdfFile>
+            <outputDiagnosticFile>{work_dir}/diagnostics/diag.xml</outputDiagnosticFile>
+            <outputTimeSeriesFile>{work_dir}/fromModel/q.xml</outputTimeSeriesFile>
+            <outputNetcdfFile>{work_dir}/fromModel/q.nc</outputNetcdfFile>
+            <properties>
+                <string key="DOMAIN_NAME" value="test_basin"/>
+                <int key="N_MEMBERS" value="5"/>
+                <dateTime key="ISSUE" date="2023-01-02" time="06:00:00"/>
+            </properties>
+        </Run>
+    """).format(work_dir=tmp_work_dir)
+    path = tmp_work_dir / "run_info.xml"
+    path.write_text(xml_content)
+    return path
+
+
+@pytest.fixture
+def model_project(tmp_path):
+    """A SYMFLUENCE project with standardized results, and its (stub) config.
+
+    Returns ``(config, results_csv)``. The results cover 2023-01-01..04 hourly,
+    i.e. the run period of ``sample_run_info_xml`` (2023-01-01..10) only partly.
+    """
+    from types import SimpleNamespace
+
+    import pandas as pd
+
+    data_dir = tmp_path / "symfluence_data"
+    results_dir = data_dir / "domain_test_basin" / "results"
+    results_dir.mkdir(parents=True)
+    times = pd.date_range("2023-01-01", "2023-01-04", freq="h")
+    frame = pd.DataFrame(
+        {"GR_discharge_cms": np.linspace(10.0, 20.0, len(times))}, index=times
+    )
+    frame.index.name = "datetime"
+    results_csv = results_dir / "fews_run_1_results.csv"
+    frame.to_csv(results_csv)
+    config = SimpleNamespace(
+        system=SimpleNamespace(data_dir=str(data_dir)),
+        domain=SimpleNamespace(name="test_basin", experiment_id="fews_run_1"),
+    )
+    return config, results_csv
+
+
+@pytest.fixture
+def export_fews_config(tmp_work_dir):
+    """FEWSConfig with the explicit export entry the post-adapter requires."""
+    return FEWSConfig(
+        work_dir=str(tmp_work_dir),
+        data_format="netcdf-cf",
+        id_map=[
+            IDMapEntry(fews_id="Q.sim", symfluence_id="discharge",
+                       fews_unit="m3/s", symfluence_unit="m3/s", direction="export"),
+        ],
+    )

@@ -195,34 +195,26 @@ echo "TauDEM executables staged"
 OPENFEWS_BUILD_COMMAND = r'''
 set -e
 
-# Download and install the Delft-FEWS standalone (open-source) distribution.
-# The open-source variant is distributed as a zip archive from Deltares.
-FEWS_VER="${OPENFEWS_VERSION:-2024.01}"
-FEWS_URL="https://oss.deltares.nl/web/delft-fews/downloads"
+# Delft-FEWS itself is NOT downloaded or installed here: it is distributed by
+# Deltares (https://oss.deltares.nl/web/delft-fews) under its own licence.
+# This step only generates the SYMFLUENCE General Adapter configuration
+# template and a small launcher that starts FEWS once its jars are in lib/.
 
-echo "Installing openFEWS ${FEWS_VER} ..."
+echo "Generating the SYMFLUENCE General Adapter configuration for Delft-FEWS ..."
+echo "NOTE: Delft-FEWS is not installed by this command. Obtain it from Deltares:"
+echo "      https://oss.deltares.nl/web/delft-fews"
 
-# Detect architecture and platform
-OS_NAME="$(uname -s 2>/dev/null || echo Windows)"
-ARCH="$(uname -m 2>/dev/null || echo x86_64)"
-
-case "$OS_NAME" in
-    Linux*)  PLATFORM="linux" ;;
-    Darwin*) PLATFORM="macos" ;;
-    MSYS*|MINGW*|CYGWIN*|Windows*) PLATFORM="windows" ;;
-    *)       PLATFORM="linux" ;;
-esac
-
-# Check for Java (FEWS requires JRE >= 11)
+# Check for Java (FEWS requires a JRE)
 if ! command -v java >/dev/null 2>&1; then
-    echo "WARNING: Java not found. openFEWS requires Java 11+."
-    echo "Install Java first: https://adoptium.net/temurin/releases/"
+    echo "WARNING: Java not found. Delft-FEWS requires Java."
 fi
 
-# Create directory structure expected by FEWS
+# Directory layout: put the Delft-FEWS distribution's jars under lib/
 mkdir -p bin lib config Modules
 
-# Create SYMFLUENCE General Adapter module configuration
+# SYMFLUENCE General Adapter module configuration (a starting point: edit the
+# --config path, the exported/imported time series sets and the ID mapping to
+# match the FEWS configuration it is used in).
 cat > Modules/symfluence_adapter.xml << 'ADAPTER_EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <generalAdapterRun xmlns="http://www.wldelft.nl/fews" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
@@ -253,7 +245,11 @@ cat > Modules/symfluence_adapter.xml << 'ADAPTER_EOF'
                 <description>Run SYMFLUENCE adapter</description>
                 <command>
                     <executable>symfluence</executable>
-                    <arguments>fews run --run-info %ROOT_DIR%/run_info.xml --format netcdf-cf</arguments>
+                    <!-- EDIT: the config argument must point at the SYMFLUENCE
+                         configuration of this model; "fews run" fails without it.
+                         Exporting results also needs an ID map with explicit
+                         export entries (id-map argument, e.g. discharge to Q.sim). -->
+                    <arguments>fews run --run-info %ROOT_DIR%/run_info.xml --config %ROOT_DIR%/symfluence_config.yaml --format netcdf-cf</arguments>
                 </command>
                 <timeOut>7200000</timeOut>
             </executeActivity>
@@ -268,10 +264,10 @@ cat > Modules/symfluence_adapter.xml << 'ADAPTER_EOF'
 </generalAdapterRun>
 ADAPTER_EOF
 
-# Create launcher script
+# Launcher: starts Delft-FEWS only when its jars are present.
 cat > bin/fews.sh << 'LAUNCHER_EOF'
 #!/usr/bin/env bash
-# openFEWS launcher with SYMFLUENCE support
+# Delft-FEWS launcher with SYMFLUENCE support
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FEWS_HOME="$(dirname "$SCRIPT_DIR")"
 
@@ -283,34 +279,28 @@ fi
 
 # Check for Java
 if ! command -v java >/dev/null 2>&1; then
-    echo "ERROR: Java is required to run openFEWS"
+    echo "ERROR: Java is required to run Delft-FEWS" >&2
     exit 1
 fi
 
 # Look for FEWS jar
-FEWS_JAR="$(find "$FEWS_HOME/lib" -name "fews*.jar" -type f 2>/dev/null | head -1)"
-if [ -n "$FEWS_JAR" ]; then
-    echo "Starting openFEWS from $FEWS_JAR"
-    exec java -jar "$FEWS_JAR" "$@"
-else
-    echo "openFEWS standalone installation."
-    echo ""
-    echo "To use FEWS with SYMFLUENCE, configure a General Adapter module"
-    echo "using the template at: $FEWS_HOME/Modules/symfluence_adapter.xml"
-    echo ""
-    echo "SYMFLUENCE FEWS commands:"
-    echo "  symfluence fews pre   --run-info run_info.xml  # Pre-process FEWS data"
-    echo "  symfluence fews post  --run-info run_info.xml  # Post-process model output"
-    echo "  symfluence fews run   --run-info run_info.xml  # Full adapter cycle"
-    echo ""
-    echo "Download the full openFEWS distribution from:"
-    echo "  https://oss.deltares.nl/web/delft-fews/downloads"
+FEWS_JAR="$(find "$FEWS_HOME/lib" -iname "*fews*.jar" -type f 2>/dev/null | head -1)"
+if [ -z "$FEWS_JAR" ]; then
+    echo "ERROR: Delft-FEWS is not installed in $FEWS_HOME/lib." >&2
+    echo "Delft-FEWS must be obtained from Deltares:" >&2
+    echo "  https://oss.deltares.nl/web/delft-fews" >&2
+    echo "Only the SYMFLUENCE General Adapter template was generated:" >&2
+    echo "  $FEWS_HOME/Modules/symfluence_adapter.xml" >&2
+    exit 1
 fi
+echo "Starting Delft-FEWS from $FEWS_JAR"
+exec java -jar "$FEWS_JAR" "$@"
 LAUNCHER_EOF
 chmod +x bin/fews.sh
 
-echo "openFEWS adapter installed at: $(pwd)"
-echo "SYMFLUENCE General Adapter template: Modules/symfluence_adapter.xml"
+echo "SYMFLUENCE General Adapter template: $(pwd)/Modules/symfluence_adapter.xml"
+echo "Delft-FEWS itself was NOT installed; obtain it from Deltares and place its"
+echo "distribution under $(pwd) (jars in lib/), or set FEWS_HOME."
 '''.strip()
 
 ENZYME_BUILD_COMMAND = r'''

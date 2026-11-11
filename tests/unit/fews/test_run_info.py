@@ -70,3 +70,75 @@ class TestParseRunInfo:
         ri = parse_run_info(sample_run_info_xml)
         with pytest.raises(AttributeError):
             ri.start_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
+
+
+class TestRealPIRunFile:
+    """Run files as Delft-FEWS writes them (pi_run.xsd), which the parser used
+    to reject outright: namespaced elements and date/time attributes."""
+
+    def test_parses_namespaced_attribute_form(self, real_run_info_xml, tmp_work_dir):
+        from datetime import datetime, timezone
+
+        from symfluence.fews.run_info import parse_run_info
+
+        info = parse_run_info(real_run_info_xml)
+        assert info.time_zone_hours == 1.0
+        # 00:00 at GMT+1 is 23:00 UTC the day before
+        assert info.start_time == datetime(2022, 12, 31, 23, 0, tzinfo=timezone.utc)
+        assert info.end_time == datetime(2023, 1, 2, 23, 0, tzinfo=timezone.utc)
+        assert info.time_zero == datetime(2023, 1, 1, 23, 0, tzinfo=timezone.utc)
+        assert info.work_dir == tmp_work_dir
+        # no inputDir/outputDir in the real schema: defaults under workDir
+        assert info.input_dir == tmp_work_dir / "toModel"
+        assert info.output_dir == tmp_work_dir / "toFews"
+
+    def test_file_lists_and_diagnostic_file(self, real_run_info_xml, tmp_work_dir):
+        from symfluence.fews.run_info import parse_run_info
+
+        info = parse_run_info(real_run_info_xml)
+        assert info.input_timeseries_files == (tmp_work_dir / "toModel" / "in.xml",)
+        assert info.input_netcdf_files == (tmp_work_dir / "toModel" / "met.nc",)
+        assert info.output_timeseries_files == (tmp_work_dir / "fromModel" / "q.xml",)
+        assert info.output_netcdf_files == (tmp_work_dir / "fromModel" / "q.nc",)
+        assert info.output_diagnostic_file == tmp_work_dir / "diagnostics" / "diag.xml"
+
+    def test_typed_properties(self, real_run_info_xml):
+        from symfluence.fews.run_info import parse_run_info
+
+        info = parse_run_info(real_run_info_xml)
+        assert info.properties == {
+            "DOMAIN_NAME": "test_basin", "N_MEMBERS": "5", "ISSUE": "2023-01-02T06:00:00",
+        }
+        assert info.to_config_overrides()["DOMAIN_NAME"] == "test_basin"
+        assert info.to_config_overrides()["EXPERIMENT_TIME_START"] == "2022-12-31 23:00"
+
+    def test_text_form_with_time_zone(self, tmp_path):
+        from datetime import datetime, timezone
+
+        from symfluence.fews.run_info import parse_run_info
+
+        path = tmp_path / "run_info.xml"
+        path.write_text(
+            "<Run><timeZone>-2.0</timeZone><workDir>.</workDir>"
+            "<startDateTime>2023-01-01 00:00:00</startDateTime>"
+            "<endDateTime>2023-01-02T00:00:00Z</endDateTime></Run>"
+        )
+        info = parse_run_info(path)
+        assert info.start_time == datetime(2023, 1, 1, 2, 0, tzinfo=timezone.utc)
+        # an explicit Z is UTC whatever the file's zone
+        assert info.end_time == datetime(2023, 1, 2, 0, 0, tzinfo=timezone.utc)
+
+    def test_daylight_saving_zone_is_refused(self, tmp_path):
+        from symfluence.fews.exceptions import RunInfoParseError
+        from symfluence.fews.run_info import parse_run_info
+
+        path = tmp_path / "run_info.xml"
+        path.write_text(
+            '<Run xmlns="http://www.wldelft.nl/fews/PI">'
+            "<daylightSavingObservingTimeZone>CET</daylightSavingObservingTimeZone>"
+            '<startDateTime date="2023-01-01" time="00:00:00"/>'
+            '<endDateTime date="2023-01-02" time="00:00:00"/><workDir>.</workDir></Run>'
+        )
+        with pytest.raises(RunInfoParseError, match="daylightSavingObservingTimeZone"):
+            parse_run_info(path)
+

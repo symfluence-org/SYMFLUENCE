@@ -22,7 +22,15 @@ from typing import List, Literal
 logger = logging.getLogger(__name__)
 
 DiagLevel = Literal["0", "1", "2", "3", "4"]
-# Levels: 0=Debug, 1=Info, 2=Warning, 3=Error, 4=Fatal
+
+# Delft-FEWS levels (pi_diag.xsd): 0 = fatal, 1 = error, 2 = warn, 3 = info;
+# "all levels higher than 3 are regarded as non-essential (debug)". Low is
+# severe: writing 4 for a fatal error would have FEWS file it as debug chatter.
+LEVEL_FATAL: DiagLevel = "0"
+LEVEL_ERROR: DiagLevel = "1"
+LEVEL_WARN: DiagLevel = "2"
+LEVEL_INFO: DiagLevel = "3"
+LEVEL_DEBUG: DiagLevel = "4"
 
 
 @dataclass
@@ -55,29 +63,29 @@ class DiagnosticsCollector:
     # ---- convenience methods ----
 
     def debug(self, text: str) -> None:
-        self._messages.append(DiagMessage(level="0", text=text))
+        self._messages.append(DiagMessage(level=LEVEL_DEBUG, text=text))
 
     def info(self, text: str) -> None:
-        self._messages.append(DiagMessage(level="1", text=text))
+        self._messages.append(DiagMessage(level=LEVEL_INFO, text=text))
 
     def warning(self, text: str) -> None:
-        self._messages.append(DiagMessage(level="2", text=text))
+        self._messages.append(DiagMessage(level=LEVEL_WARN, text=text))
 
     def error(self, text: str) -> None:
-        self._messages.append(DiagMessage(level="3", text=text))
+        self._messages.append(DiagMessage(level=LEVEL_ERROR, text=text))
 
     def fatal(self, text: str) -> None:
-        self._messages.append(DiagMessage(level="4", text=text))
+        self._messages.append(DiagMessage(level=LEVEL_FATAL, text=text))
 
     # ---- query ----
 
     @property
     def has_fatal(self) -> bool:
-        return any(m.level == "4" for m in self._messages)
+        return any(m.level == LEVEL_FATAL for m in self._messages)
 
     @property
     def has_errors(self) -> bool:
-        return any(m.level in ("3", "4") for m in self._messages)
+        return any(m.level in (LEVEL_FATAL, LEVEL_ERROR) for m in self._messages)
 
     @property
     def messages(self) -> List[DiagMessage]:
@@ -93,11 +101,11 @@ class DiagnosticsCollector:
             root.set("xmlns:xsi", "http://www.w3.org/2001/XMLSchema-instance")
 
             for msg in self._messages:
+                # pi_diag.xsd LineComplexType: level and description are
+                # required *attributes* of <line>, not child elements.
                 line = ET.SubElement(root, "line")
-                level_elem = ET.SubElement(line, "level")
-                level_elem.text = msg.level
-                desc = ET.SubElement(line, "description")
-                desc.text = msg.text
+                line.set("level", msg.level)
+                line.set("description", msg.text)
 
             self._output_path.parent.mkdir(parents=True, exist_ok=True)
 
