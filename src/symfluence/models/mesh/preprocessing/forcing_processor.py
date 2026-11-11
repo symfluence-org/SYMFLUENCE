@@ -12,7 +12,7 @@ import glob
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -36,7 +36,8 @@ class MESHForcingProcessor:
         self,
         forcing_dir: Path,
         config: Dict[str, Any],
-        logger: logging.Logger = None
+        logger: logging.Logger = None,
+        forcing_selector: Optional[Callable[[List[Path]], List[Path]]] = None,
     ):
         """
         Initialize forcing processor.
@@ -45,8 +46,11 @@ class MESHForcingProcessor:
             forcing_dir: Directory for MESH files
             config: Configuration dictionary (meshflow config)
             logger: Optional logger instance
+            forcing_selector: Narrows forcing files to this run's HRU set (the
+                preprocessor's ``_select_run_forcing``, issue #339)
         """
         self.forcing_dir = forcing_dir
+        self.forcing_selector = forcing_selector
         self.config = config
         self.logger = logger or logging.getLogger(__name__)
 
@@ -66,10 +70,13 @@ class MESHForcingProcessor:
         # (lumped hru=1 beside elevation hru=12) does not collide on the
         # by_coords merge below (issue #339). A no-op when the discretization is
         # unknown or unnamespaced (legacy stores), so nothing regresses.
-        from symfluence.core.modeling.forcing_naming import select_forcing_files
-        discretization = self.config.get(
-            'SUB_GRID_DISCRETIZATION', self.config.get('DOMAIN_DISCRETIZATION'))
-        forcing_files = [str(f) for f in select_forcing_files(forcing_files, discretization)]
+        if self.forcing_selector is not None:
+            forcing_files = [str(f) for f in self.forcing_selector([Path(f) for f in forcing_files])]
+        else:
+            from symfluence.core.modeling.forcing_naming import select_forcing_files
+            discretization = self.config.get(
+                'SUB_GRID_DISCRETIZATION', self.config.get('DOMAIN_DISCRETIZATION'))
+            forcing_files = [str(f) for f in select_forcing_files(forcing_files, discretization)]
 
         self.logger.info(f"Loading {len(forcing_files)} forcing files")
 

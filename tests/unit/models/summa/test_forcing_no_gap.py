@@ -31,6 +31,7 @@ class _Proc:
     _remove_stale_forcing_files = _SFP._remove_stale_forcing_files
     _stale_forcing_prefix = _SFP._stale_forcing_prefix
     _forcing_outputs_are_current = _SFP._forcing_outputs_are_current
+    _select_run_files = _SFP._select_run_files
 
     def __init__(self, tmp_path: Path, logger):
         self.domain_name = "Dom"

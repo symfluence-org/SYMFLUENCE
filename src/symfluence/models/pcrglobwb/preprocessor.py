@@ -381,6 +381,8 @@ class PCRGLOBWBPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         forcing_files = sorted(forcing_path.glob('*.nc'))
         if not forcing_files:
             forcing_files = sorted(forcing_path.glob('**/*.nc'))
+        # Only the forcing remapped onto this run's HRUs (issue #339).
+        forcing_files = self._select_run_forcing(forcing_files)
         if not forcing_files:
             raise FileNotFoundError(f"No forcing files found in {forcing_path}")
 

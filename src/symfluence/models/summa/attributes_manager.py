@@ -118,7 +118,13 @@ class SummaAttributesManager(ConfigurableMixin):
         shp = gpd.read_file(self.catchment_path / self.catchment_name)
 
         # Get HRU order from a forcing file
-        forcing_files = list(self.forcing_summa_path.glob('*.nc'))
+        # SUMMA_input is shared by every experiment on the domain (#339).
+        from symfluence.core.modeling.forcing_naming import resolve_forcing_files
+        forcing_files = resolve_forcing_files(
+            sorted(self.forcing_summa_path.glob('*.nc')),
+            self._get_config_value(lambda: self.config.domain.discretization,
+                                   dict_key='SUB_GRID_DISCRETIZATION'),
+            self.catchment_path / self.catchment_name, self.hruId)
         if not forcing_files:
             self.logger.error("No forcing files found in the SUMMA input directory")
             return

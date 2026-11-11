@@ -153,6 +153,7 @@ class CLMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             output_dir=self.forcing_dir,
             lat=lat, lon=lon,
             start_date=str(start_date), end_date=str(end_date),
+            forcing_selector=self._select_run_forcing,
         )
 
     def _generate_topo_forcing(self) -> None:
