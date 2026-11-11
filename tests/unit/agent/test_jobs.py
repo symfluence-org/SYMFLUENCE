@@ -68,3 +68,27 @@ def test_list_jobs_newest_first():
     second = jobs.start_job([sys.executable, '-c', 'pass'])
     listed = [j['job_id'] for j in jobs.list_jobs()]
     assert listed.index(second['job_id']) < listed.index(first['job_id'])
+
+
+def test_cancel_after_finish_signals_nothing_and_keeps_the_outcome(monkeypatch):
+    """A finished job's pid may have been reused: cancel must not signal it,
+    and must not relabel a SUCCEEDED/FAILED job as CANCELLED."""
+    record = jobs.start_job([sys.executable, '-c', 'raise SystemExit(3)'])
+    job_id = record['job_id']
+    assert _wait_for(lambda: jobs.job_state(job_id)['state'] == jobs.FAILED)
+
+    def _no_signals(*_args, **_kwargs):
+        raise AssertionError("a finished job must not be signalled")
+
+    # even if some process now answers to the recorded pid
+    monkeypatch.setattr(jobs, '_pid_alive', lambda pid: True)
+    if sys.platform != 'win32':
+        monkeypatch.setattr(jobs.os, 'killpg', _no_signals)
+    monkeypatch.setattr(jobs.subprocess, 'run', _no_signals)
+
+    state = jobs.cancel_job(job_id)
+
+    assert state['state'] == jobs.FAILED
+    assert state['exit_code'] == 3
+    assert jobs.job_state(job_id)['state'] == jobs.FAILED
+

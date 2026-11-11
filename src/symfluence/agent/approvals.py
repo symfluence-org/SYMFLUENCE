@@ -18,6 +18,9 @@ silence. Stdlib-only, like everything else in this package.
 from __future__ import annotations
 
 import json
+import os
+import stat
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -28,9 +31,29 @@ _POLL_INTERVAL_S = 0.2
 
 
 def approvals_root() -> Path:
-    """Directory where approval requests and replies are exchanged."""
+    """Directory where approval requests and replies are exchanged.
+
+    ``agent_cache_root()`` guarantees (or refuses with ``PermissionError``) a
+    directory owned by the current user with mode 0700, so no other local
+    user can read a request or plant an ``approved: true`` reply.
+    """
     from symfluence.resources import agent_cache_root
     return agent_cache_root() / 'approvals'
+
+
+def _written_by_current_user(path: Path) -> bool:
+    """True when ``path`` is a regular file owned by the current user.
+
+    Defence in depth behind the private directory: a verdict is only honoured
+    if this user wrote it. (Windows has no POSIX owner to compare.)
+    """
+    if sys.platform == 'win32':
+        return path.is_file()
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return False
+    return stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid()
 
 
 def _request_path(request_id: str) -> Path:
@@ -67,6 +90,8 @@ def request_approval(
     try:
         while time.time() < deadline:
             if reply_path.is_file():
+                if not _written_by_current_user(reply_path):
+                    break  # not ours: never grant on someone else's say-so
                 try:
                     reply = json.loads(reply_path.read_text(encoding='utf-8'))
                 except (OSError, json.JSONDecodeError):

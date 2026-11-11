@@ -66,3 +66,14 @@ def mock_config():
 def mock_logger():
     """Create a mock logger for unit tests."""
     return MagicMock()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_agent_cache(monkeypatch, tmp_path):
+    """Keep agent approvals, jobs and skills out of the real user cache.
+
+    ``agent_cache_root()`` resolves to a per-user directory under the user's
+    cache dir; ``SYMFLUENCE_AGENT_CACHE_DIR`` redirects it so no test reads or
+    writes the developer's actual agent state.
+    """
+    monkeypatch.setenv("SYMFLUENCE_AGENT_CACHE_DIR", str(tmp_path / "agent-cache"))

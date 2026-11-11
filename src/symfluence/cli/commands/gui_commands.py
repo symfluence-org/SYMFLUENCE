@@ -44,13 +44,26 @@ class GUICommands(BaseCommand):
         demo = BaseCommand.get_arg(args, 'demo', None)
         address = BaseCommand.get_arg(args, 'address', '127.0.0.1')
 
+        allow_origin = BaseCommand.get_arg(args, 'allow_origin', None) or []
+
         from symfluence.gui import is_loopback_address
 
-        BaseCommand._console.info(f"Launching SYMFLUENCE GUI on {address}:{port}...")
         if not is_loopback_address(address):
-            BaseCommand._console.indent(
-                f"Warning: binding to {address} exposes the GUI on the network."
+            if not allow_origin:
+                BaseCommand._console.error(
+                    f"Binding the GUI to {address} requires --allow-origin HOST:PORT "
+                    "(repeatable): the address browsers will use to reach it, e.g. "
+                    f"--allow-origin myserver.example.org:{port}. The bind address "
+                    "itself is not a valid browser origin."
+                )
+                return ExitCode.USAGE_ERROR
+            BaseCommand._console.warning(
+                f"Binding to {address} exposes the GUI on the network, and the GUI "
+                "has NO AUTHENTICATION: anyone who can reach it can edit "
+                "configurations and start runs as this user."
             )
+
+        BaseCommand._console.info(f"Launching SYMFLUENCE GUI on {address}:{port}...")
         if demo:
             BaseCommand._console.indent(f"Demo mode: {demo}")
         if config_path:
@@ -62,6 +75,7 @@ class GUICommands(BaseCommand):
             show=not no_browser,
             demo=demo,
             address=address,
+            allow_origin=allow_origin,
         )
 
         return ExitCode.SUCCESS
