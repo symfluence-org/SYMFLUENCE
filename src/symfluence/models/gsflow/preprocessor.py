@@ -26,6 +26,7 @@ import pandas as pd
 
 from symfluence.core.exceptions import ConfigurationError, FileOperationError, SYMFLUENCEError, ValidationError
 from symfluence.core.modeling.base.base_preprocessor import BaseModelPreProcessor
+from symfluence.models.prms.forcing_window import daily_forcing_window
 
 logger = logging.getLogger(__name__)
 
@@ -211,8 +212,7 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             if not cfg.hru_forcing_path:
                 raise ConfigurationError('GSFLOW climate_hru forcing requires GSFLOW_HRU_FORCING_PATH')
             ids = hru_source_ids(h.elev, cfg.hru_band_size_m, cfg.hru_forcing_band_ids or {})
-            cbh = write_cbh(self.forcing_dir, load_hru_forcing(Path(cfg.hru_forcing_path), ids, start_date,
-                                                               end_date + pd.Timedelta(hours=23)))
+            cbh = write_cbh(self.forcing_dir, load_hru_forcing(Path(cfg.hru_forcing_path), ids, start_date, end_date))
         write_parameters(self.setup_dir / 'params.dat', geo, cfg, cfg.parameter_overrides)
         relief = None
         if cfg.aquifer_thickness_m is None:
@@ -354,7 +354,7 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             open_canonical_forcing,
         )
         ds = open_canonical_forcing(forcing_files)
-        ds = ds.sel(time=slice(str(start_date), str(end_date)))
+        ds = ds.sel(time=slice(*daily_forcing_window(start_date, end_date)))
 
         airtemp = ds['air_temperature'].values.squeeze()      # K
         pptrate = ds['precipitation_flux'].values.squeeze()   # mm s-1 (== kg m-2 s-1)

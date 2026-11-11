@@ -18,38 +18,18 @@ from pathlib import Path
 from typing import Dict
 
 from symfluence.core.exceptions import ConfigurationError, ValidationError
+from symfluence.models.prms.parameter_file import replace_block_values, update_parameter_file
+
+__all__ = ['apply_gsflow_parameters', 'replace_block_values', 'update_prms_parameters',
+           'update_sfr_streambed', 'update_upw']
 
 MODFLOW_PARAMS = ('K', 'SY')
 SFR_PARAMS = ('strhc1',)
 
 
-def replace_block_values(block: str, name: str, value: float) -> str:
-    """Set every value of PRMS block ``name`` (``name, ndim, dims..., n, type, values``)."""
-    lines = block.strip().split('\n')
-    try:
-        i = next(k for k, line in enumerate(lines) if line.strip() == name)
-    except StopIteration:
-        return block
-    ndim = int(lines[i + 1])
-    count = int(lines[i + 2 + ndim])
-    start = i + 4 + ndim
-    out = lines[:start] + [f'{value:.6f}'] * count + lines[start + count:]
-    return '\n'.join(out) + ('\n' if block.endswith('\n') else '')
-
-
 def update_prms_parameters(param_file: Path, params: Dict[str, float]) -> None:
-    from symfluence.models.prms.derived_parameters import apply_derived_parameters
-    content, params = apply_derived_parameters(param_file.read_text(encoding='utf-8'), params)
-    blocks = content.split('####\n')
-    names = {b.strip().split('\n')[0].strip() for b in blocks if b.strip()}
-    missing = set(params) - names
-    if missing:
-        raise ConfigurationError(f'GSFLOW parameters not in {param_file.name}: {sorted(missing)}')
-    for k, b in enumerate(blocks):
-        head = b.strip().split('\n')[0].strip() if b.strip() else ''
-        if head in params:
-            blocks[k] = replace_block_values(b, head, params[head])
-    param_file.write_text('####\n'.join(blocks), encoding='utf-8')
+    """Write PRMS blocks (shared with the PRMS model); raises on a missing block."""
+    update_parameter_file(param_file, params, model='GSFLOW')
 
 
 def _constant_lines(lines):

@@ -23,6 +23,9 @@ from symfluence.core.exceptions import ConfigurationError, ValidationError
 from symfluence.core.modeling.base.base_preprocessor import BaseModelPreProcessor
 from symfluence.core.registries import R
 
+from .forcing_window import daily_forcing_window
+from .parameters import is_prms5_mode
+
 logger = logging.getLogger(__name__)
 
 
@@ -211,7 +214,8 @@ class PRMSPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         raw = {}
         for short, frames in parts.items():
             df = pd.concat(frames).sort_index()
-            df = df[~df.index.duplicated()].loc[str(start_date):str(end_date)]
+            first, last = daily_forcing_window(start_date, end_date)
+            df = df[~df.index.duplicated()].loc[first:last]
             absent = set(source_ids) - set(df.columns)
             if absent:
                 raise ConfigurationError(f'Per-HRU forcing lacks source hruIds {sorted(absent)}')
@@ -276,7 +280,7 @@ class PRMSPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             open_canonical_forcing,
         )
         ds = open_canonical_forcing(forcing_files, discretization=self.forcing_discretization)
-        ds = ds.sel(time=slice(str(start_date), str(end_date)))
+        ds = ds.sel(time=slice(*daily_forcing_window(start_date, end_date)))
 
         airtemp = ds['air_temperature'].values.squeeze()      # K
         pptrate = ds['precipitation_flux'].values.squeeze()   # mm s-1 (== kg m-2 s-1)
@@ -585,7 +589,16 @@ class PRMSPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             # --- HRU geometry & classification (from datastore) ---
             # PRMS requires hru_area in acres (1 km² = 247.105 acres) and
             # hru_slope as a decimal grade (rise/run = tan(slope)).
-            area_acres = props['area_km2'] * 247.105
+            # Without per-HRU geometry every HRU is an equal share of the
+            # basin (as in GSFLOW); writing the whole basin area to each HRU
+            # would make basin_cfs nhru times too large. Real per-HRU areas
+            # and elevations come from PRMS_PARAMETER_OVERRIDES.
+            area_acres = props['area_km2'] * 247.105 / nhru
+            if nhru > 1 and 'hru_area' not in prms.parameter_overrides:
+                logger.warning(
+                    f"PRMS_NHRU={nhru} without an hru_area override: each HRU gets 1/{nhru} of the "
+                    f"basin area ({props['area_km2'] / nhru:.1f} km2) and the basin-mean elevation; "
+                    "supply hru_area / hru_elev in PRMS_PARAMETER_OVERRIDES for real HRU geometry.")
             hru_slope_grade = float(np.tan(np.radians(props['slope'])))
             write_param("hru_area", 1, "nhru", nhru, 2, f"{area_acres:.1f}")
             write_param("hru_elev", 1, "nhru", nhru, 2, f"{elev:.1f}")
@@ -651,7 +664,7 @@ class PRMSPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
             # --- Soil zone ---
             write_param("soil_moist_max", 1, "nhru", nhru, 2, 6.0)
-            if self.config.model.prms.model_mode.upper() == 'PRMS5':
+            if is_prms5_mode(prms.model_mode):
                 # Preserve the default depths (2/6, 3/6 and 1/2) using
                 # the fractional parameters actually read by PRMS5.
                 write_param("soil_rechr_max_frac", 1, "nhru", nhru, 2, 1.0 / 3.0)
@@ -679,8 +692,16 @@ class PRMSPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             write_param("gwsink_coef", 1, "ngw", nhru, 2, 0.0)
 
             # --- Temperature/precipitation adjustments ---
-            write_param("tmax_allrain", 1, "nmonths", nmonths, 2,
-                         [3.3] * nmonths)
+            # temp_units = 1: thresholds in degC. PRMS5 (PRMS4_flag off) does
+            # not read tmax_allrain; its all-rain threshold is tmax_allsnow +
+            # tmax_allrain_offset (default 1.0 when absent), so write the
+            # offset that gives the same 3.3 degC threshold.
+            if is_prms5_mode(prms.model_mode):
+                write_param("tmax_allrain_offset", 1, "nmonths", nmonths, 2,
+                             [3.3] * nmonths)
+            else:
+                write_param("tmax_allrain", 1, "nmonths", nmonths, 2,
+                             [3.3] * nmonths)
             write_param("tmax_allsnow", 1, "nmonths", nmonths, 2,
                          [0.0] * nmonths)
             write_param("adjmix_rain", 1, "nmonths", nmonths, 2,
@@ -720,12 +741,17 @@ class PRMSPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # Explicit spatial/glacier parameters override generated defaults. PRMS
         # dimension order is Fortran order (HRU varies fastest for monthly data).
         overrides = self.config.model.prms.parameter_overrides
-        if self.config.model.prms.model_mode.upper() == 'PRMS5':
+        if is_prms5_mode(self.config.model.prms.model_mode):
             legacy = {'soil_rechr_max', 'soil_moist_init', 'soil_rechr_init'} & overrides.keys()
             if legacy:
                 raise ConfigurationError(
                     f"PRMS5 ignores depth parameters {sorted(legacy)}; use the corresponding "
                     "*_frac parameters (fractions of their respective capacities)."
+                )
+            if 'tmax_allrain' in overrides:
+                raise ConfigurationError(
+                    "PRMS5 ignores tmax_allrain; use tmax_allrain_offset "
+                    "(degrees above tmax_allsnow at which all precipitation is rain)."
                 )
         if overrides:
             content = out_path.read_text()

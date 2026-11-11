@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 
 from symfluence.core.exceptions import ConfigurationError, FileOperationError, ValidationError
+from symfluence.models.prms.forcing_window import daily_forcing_window
 
 from .basin_geometry import BasinGeometry
 
@@ -67,7 +68,8 @@ def load_hru_forcing(path: Path, source_ids: Sequence[int], start: datetime, end
     raw = {}
     for short, frames in parts.items():
         df = pd.concat(frames).sort_index()
-        df = df[~df.index.duplicated()].loc[str(start):str(end)]
+        first, last = daily_forcing_window(start, end)  # whole end day
+        df = df[~df.index.duplicated()].loc[first:last]
         absent = set(source_ids) - set(df.columns)
         if absent:
             raise ConfigurationError(f'Per-HRU forcing lacks source hruIds {sorted(absent)}')
