@@ -23,7 +23,7 @@ dependencies = [
   "numpy>=2.0.0,<3.0.0",
   "pandas>=2.0.0,<3.0.0",
   "scipy>=1.10.0,<2.0.0",
-  "xarray>=2023.0.0,<2026.0.0",
+  "xarray>=2023.0.0,<2027.0.0",
   "pint_xarray",
   # dask backs xarray's chunked/lazy reads (open_mfdataset, zarr) and is
   # imported directly for scheduler selection in data/acquisition. Only the
