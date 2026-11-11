@@ -24,18 +24,16 @@ def setup_writer(tmp_path):
 
 
 @pytest.mark.parametrize('units,scale', [('Pa', 1.), ('kPa', .001), ('hPa', .01)])
-@pytest.mark.parametrize('humidity', ['direct', 'specific', 'estimated'])
+@pytest.mark.parametrize('humidity', ['direct', 'specific'])
 def test_written_pressure_and_humidity(tmp_path, units, scale, humidity):
     pre, ds, domain = setup_writer(tmp_path)
     ds['PRESSURE'] = ('time', [90000.*scale]*2, {'units': units})
     if humidity == 'direct':
         ds['VP'] = ('time', [500.*scale]*2, {'units': units})
         expected_vp = .5
-    elif humidity == 'specific':
+    else:
         ds['specific_humidity'] = ('time', [.004]*2)
         expected_vp = .004*90./(.622+.378*.004)
-    else:
-        expected_vp = .6*.6108*np.exp(17.27*2./(2.+237.3))
     pre._write_forcing_files(ds, domain, ds.time.values[0], ds.time.values[-1])
     with xr.open_dataset(tmp_path/'test_forcing.2014.nc') as written:
         np.testing.assert_allclose(written.PRESSURE, 90.)
@@ -46,17 +44,13 @@ def test_written_pressure_and_humidity(tmp_path, units, scale, humidity):
         assert np.all((density > 1.) & (density < 1.3))
 
 
-def test_fallback_and_synthetic_pressure(tmp_path):
+def test_missing_pressure_and_humidity_are_not_estimated(tmp_path):
+    """No elevation-based pressure or 60 %-RH vapour pressure is invented."""
     pre, ds, domain = setup_writer(tmp_path)
-    pre._write_forcing_files(ds, domain, ds.time.values[0], ds.time.values[-1])
-    expected = 101.325*np.exp(-750./8500.)
-    with xr.open_dataset(tmp_path/'test_forcing.2014.nc') as written:
-        np.testing.assert_allclose(written.PRESSURE, expected)
-    pre._generate_synthetic_forcing(pd.Timestamp('2014-01-01'), pd.Timestamp('2014-01-01T01:00'))
-    with xr.open_dataset(tmp_path/'test_forcing.2014.nc') as written:
-        np.testing.assert_allclose(written.PRESSURE, expected)
-        assert written.VP.max() < 2.
-        assert written.VP.attrs['units'] == 'kPa'
+    with pytest.raises(ValidationError, match='PRESSURE.*VP'):
+        pre._write_forcing_files(ds, domain, ds.time.values[0], ds.time.values[-1])
+    assert not list(tmp_path.glob('*.nc'))
+    assert not hasattr(pre, '_generate_synthetic_forcing')
 
 
 def test_unknown_pressure_units_rejected(tmp_path):

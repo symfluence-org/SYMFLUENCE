@@ -227,7 +227,7 @@ class FUSEModelOptimizer(BaseModelOptimizer):
         Returns:
             Dictionary with N_BANDS, Z_FORCING, Z_MIDxx, AFxx parameters
         """
-        import xarray as xr
+        from ..elevation_band_manager import read_band_parameters
 
         params: Dict[str, float] = {}
 
@@ -245,41 +245,22 @@ class FUSEModelOptimizer(BaseModelOptimizer):
                 params['AF01'] = 1.0
                 return params
 
-            with xr.open_dataset(elev_bands_file) as ds:
-                # Get number of bands
-                if 'elevation_band' in ds.dims:
-                    n_bands = ds.sizes['elevation_band']
-                else:
-                    n_bands = 1
-                params['N_BANDS'] = float(n_bands)
+            bands = read_band_parameters(elev_bands_file)
+            params['N_BANDS'] = float(bands['n_bands'])
+            for i, (elev, af) in enumerate(zip(bands['mean_elev'], bands['area_frac'])):
+                params[f'Z_MID{i+1:02d}'] = float(elev)
+                params[f'AF{i+1:02d}'] = float(af)
 
-                # Get mean elevations and area fractions for each band
-                if 'mean_elev' in ds:
-                    mean_elevs = ds['mean_elev'].values.flatten()
-                    for i, elev in enumerate(mean_elevs[:n_bands]):
-                        params[f'Z_MID{i+1:02d}'] = float(elev)
-
-                if 'area_frac' in ds:
-                    area_fracs = ds['area_frac'].values.flatten()
-                    for i, af in enumerate(area_fracs[:n_bands]):
-                        params[f'AF{i+1:02d}'] = float(af)
-
-                # Z_FORCING: elevation of forcing data
-                # This can be set from config or default to catchment elevation
-                # (same as Z_MID01 = no lapse correction) or use ERA5 orography
-                z_forcing = self._get_config_value(
-                    lambda: self.config.model.fuse.forcing_elevation if self.config.model and self.config.model.fuse else None,
-                    default=None,
-                    dict_key='FUSE_FORCING_ELEVATION'
-                )
-                if z_forcing is not None:
-                    params['Z_FORCING'] = float(z_forcing)
-                elif 'Z_MID01' in params:
-                    # Default: same as catchment elevation (no lapse correction)
-                    # User should set FUSE_FORCING_ELEVATION for proper lapse rate
-                    params['Z_FORCING'] = params['Z_MID01']
-                else:
-                    params['Z_FORCING'] = 1000.0
+            # Z_FORCING: elevation the forcing represents. From config when set
+            # (e.g. reanalysis orography); otherwise the area-weighted mean
+            # elevation of the bands, as the runner uses -- basin-averaged
+            # forcing sits at the mean elevation, not at the lowest band.
+            z_forcing = self._get_config_value(
+                lambda: self.config.model.fuse.forcing_elevation if self.config.model and self.config.model.fuse else None,
+                default=None,
+                dict_key='FUSE_FORCING_ELEVATION'
+            )
+            params['Z_FORCING'] = float(z_forcing) if z_forcing is not None else bands['z_forcing']
 
             self.logger.info(f"Read elevation band params: N_BANDS={params.get('N_BANDS')}, "
                            f"Z_FORCING={params.get('Z_FORCING'):.0f}, Z_MID01={params.get('Z_MID01', 'N/A')}")

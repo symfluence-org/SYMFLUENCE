@@ -4,13 +4,33 @@
 """
 Elevation band management for FUSE model.
 
-This module contains the FuseElevationBandManager class which handles creation
-of elevation bands for both lumped and distributed spatial configurations.
+This module contains the FuseElevationBandManager class, which writes the FUSE
+elevation-band file from the real hypsometry of each spatial unit, and the
+helpers that read that file back for the runner and the calibration optimizer.
+
+Band definition
+---------------
+Each spatial unit (the whole catchment in lumped mode, one subcatchment per
+forcing cell in distributed mode) is cut into ``FUSE_N_ELEVATION_BANDS``
+equal-area bands of its own hypsometric curve. A band's elevation is the mean
+elevation of the area inside it, so ``sum(area_frac * mean_elev)`` is the
+unit's true mean elevation -- the elevation the unit's forcing represents and
+the value FUSE uses as the forcing elevation.
+
+The hypsometric curve comes from, in order:
+
+1. the DEM pixels inside the unit's polygons;
+2. the unit's HRU table (``elev_mean`` with HRU areas) when it has more than
+   one HRU, e.g. an elevation-band discretisation;
+3. otherwise only a mean elevation is known: a single band at that elevation
+   is used and this is logged. No elevation range is ever invented.
+
+A unit with no elevation information at all is an error.
 """
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import geopandas as gpd
 import numpy as np
@@ -19,18 +39,123 @@ import xarray as xr
 
 from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.mixins import ConfigMixin
+from symfluence.core.mixins.project import resolve_data_subdir
 from symfluence.core.modeling.spatial_modes import SpatialMode
+
+_BAND_VARS = ('area_frac', 'mean_elev', 'prec_frac')
+_AREA_COLUMNS = ('HRU_area', 'GRU_area', 'area', 'Area')
+
+
+def equal_area_bands(
+    elevations: Sequence[float],
+    weights: Optional[Sequence[float]],
+    n_bands: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Cut an elevation sample into ``n_bands`` equal-area bands, lowest first.
+
+    Args:
+        elevations: elevation of each sample (DEM pixel or HRU).
+        weights: area of each sample; None for equal areas (DEM pixels).
+        n_bands: number of bands.
+
+    Returns:
+        ``(mean_elev, area_frac)``: the area-weighted mean elevation of each
+        band and its area fraction (``1 / n_bands`` each). A sample straddling
+        a band boundary is split between the two bands in proportion, so the
+        fractions are exact and ``sum(area_frac * mean_elev)`` equals the
+        sample's area-weighted mean elevation.
+    """
+    z = np.asarray(elevations, dtype=float).ravel()
+    w = np.ones_like(z) if weights is None else np.asarray(weights, dtype=float).ravel()
+    keep = np.isfinite(z) & np.isfinite(w) & (w > 0)
+    z, w = z[keep], w[keep]
+    if z.size == 0:
+        raise ModelExecutionError("No valid elevation samples to build elevation bands from")
+    order = np.argsort(z, kind='stable')
+    z, w = z[order], w[order]
+
+    # Cumulative area (0..1) at the lower and upper edge of each sample.
+    upper = np.cumsum(w) / w.sum()
+    lower = np.concatenate([[0.0], upper[:-1]])
+    upper[-1] = 1.0
+    edges = np.linspace(0.0, 1.0, n_bands + 1)
+
+    mean_elev = np.empty(n_bands)
+    for i in range(n_bands):
+        # Share of each sample's area lying inside band i
+        overlap = np.clip(np.minimum(upper, edges[i + 1]) - np.maximum(lower, edges[i]), 0.0, None)
+        mean_elev[i] = float(np.sum(overlap * z) / np.sum(overlap))
+    return mean_elev, np.full(n_bands, 1.0 / n_bands)
+
+
+def read_band_parameters(path: Path) -> Dict[str, Any]:
+    """Elevation-band parameters FUSE takes as scalars, read from a bands file.
+
+    Returns a dict with ``n_bands`` (int), ``mean_elev`` and ``area_frac``
+    (1-D, one value per band) and ``z_forcing`` -- the area-weighted mean
+    elevation ``sum(area_frac * mean_elev)``, i.e. the elevation the unit's
+    forcing represents.
+
+    A file holding several spatial units carries one band set per unit, but
+    FUSE's parameter files hold one scalar per band; the first unit's bands
+    are returned for them.
+    """
+    with xr.open_dataset(path) as ds:
+        n_bands = int(ds.sizes.get('elevation_band', 1))
+
+        def first_unit(name: str) -> np.ndarray:
+            da = ds[name]
+            if 'elevation_band' in da.dims:
+                da = da.transpose('elevation_band', ...)
+            return np.asarray(da.values, dtype=float).reshape(n_bands, -1)[:, 0]
+
+        mean_elev = first_unit('mean_elev')
+        area_frac = first_unit('area_frac')
+    return {
+        'n_bands': n_bands,
+        'mean_elev': mean_elev,
+        'area_frac': area_frac,
+        'z_forcing': float(np.sum(mean_elev * area_frac)),
+    }
+
+
+def write_unit_bands(source: Path, target: Path, unit_dim: str, unit_id: float) -> Path:
+    """Write the elevation bands of one spatial unit of *source* to *target*.
+
+    The unit is the cell of ``unit_dim`` whose coordinate equals ``unit_id``
+    (the subcatchment id). The spatial dimension is kept with length 1, as in
+    the per-subcatchment forcing file.
+    """
+    with xr.open_dataset(source) as ds:
+        if unit_dim not in ds.dims:
+            raise ModelExecutionError(f"Elevation bands file {source} has no '{unit_dim}' dimension")
+        matches = np.flatnonzero(np.isclose(np.asarray(ds[unit_dim].values, dtype=float), float(unit_id)))
+        if matches.size != 1:
+            raise ModelExecutionError(
+                f"Subcatchment {unit_id} not found (or not unique) along '{unit_dim}' in {source}"
+            )
+        unit = ds.isel({unit_dim: slice(int(matches[0]), int(matches[0]) + 1)}).load()
+    unit.to_netcdf(target, encoding=_band_encoding(unit))
+    return target
+
+
+def _band_encoding(ds: xr.Dataset) -> Dict[str, Dict[str, Any]]:
+    """Strict encoding FUSE expects: float32 band variables, float64 coordinates."""
+    encoding: Dict[str, Dict[str, Any]] = {
+        name: {'dtype': 'float32', '_FillValue': -9999.0, 'zlib': False} for name in _BAND_VARS
+    }
+    for coord in ds.coords:
+        encoding[str(coord)] = {'dtype': 'float64', '_FillValue': None}
+    return encoding
 
 
 class FuseElevationBandManager(ConfigMixin):
     """
     Manager for FUSE elevation band creation in lumped and distributed modes.
 
-    This class handles:
-    - Lumped elevation band generation from catchment statistics
-    - Distributed elevation band generation for multiple HRUs
-    - NetCDF file creation with proper formatting
-    - Elevation and area fraction calculations
+    One builder serves both modes; they differ only in how the catchment
+    shapefile's features are grouped into spatial units. See the module
+    docstring for how the bands are defined.
 
     Attributes:
         config: Configuration dictionary
@@ -74,24 +199,95 @@ class FuseElevationBandManager(ConfigMixin):
 
     def create_elevation_bands(self) -> Path:
         """
-        Create elevation bands based on spatial mode.
+        Create the elevation bands file for the configured spatial mode.
 
         Returns:
             Path to created elevation bands file
 
         Raises:
-            ValueError: If unknown spatial mode specified
+            ModelExecutionError: unknown spatial mode, spatial units that cannot
+                be matched to the catchment shapefile, or a unit without any
+                elevation information.
         """
         spatial_mode = self._get_config_value(lambda: self.config.model.fuse.spatial_mode, default='lumped', dict_key='FUSE_SPATIAL_MODE')
-
-        self.logger.info(f"Creating elevation bands for {spatial_mode} mode")
-
         if spatial_mode == SpatialMode.LUMPED:
-            return self._create_lumped_elevation_bands()
+            mode = 'lumped'
         elif spatial_mode in (SpatialMode.SEMI_DISTRIBUTED, SpatialMode.DISTRIBUTED):
-            return self._create_distributed_elevation_bands()
+            mode = 'distributed'
         else:
             raise ModelExecutionError(f"Unknown FUSE spatial mode: {spatial_mode}")
+        self.logger.info(f"Creating elevation bands for {spatial_mode} mode")
+
+        try:
+            catchment = gpd.read_file(self.catchment_path)
+        except (FileNotFoundError, OSError, PermissionError) as e:
+            self.logger.error(f"Error creating {mode} elevation bands: {str(e)}")
+            raise
+
+        spatial_dims, spatial_coords = self._spatial_layout(catchment)
+        unit_shape = tuple(len(spatial_coords[dim]) for dim in spatial_dims)
+        units = self._unit_rows(catchment, spatial_dims, spatial_coords, mode)
+
+        n_bands = int(self._get_config_value(lambda: self.config.model.fuse.n_elevation_bands, default=5, dict_key='FUSE_N_ELEVATION_BANDS'))
+        samples = self._unit_hypsometry_samples(catchment, units)
+        if all(np.ptp(z) == 0 for z, _ in samples):
+            # Only a mean elevation per unit: several bands would all sit at it.
+            if n_bands > 1:
+                self.logger.warning(
+                    "No elevation distribution available (no DEM pixels and no multi-HRU "
+                    f"elevation table): using a single elevation band at the mean elevation "
+                    f"instead of the {n_bands} configured"
+                )
+            n_bands = 1
+
+        mean_elev = np.empty((n_bands, len(units)))
+        area_frac = np.empty((n_bands, len(units)))
+        for i, (z, w) in enumerate(samples):
+            mean_elev[:, i], area_frac[:, i] = equal_area_bands(z, w, n_bands)
+
+        # FUSE (Fortran) reads data with nf90_get_var using count=(/nSpat1,nSpat2,n_bands/)
+        # In Fortran, dimensions are reversed from C/NetCDF order, so the NetCDF
+        # dimension order must be (elevation_band, lat, lon) so that Fortran sees
+        # (lon, lat, elevation_band) matching (/nSpat1, nSpat2, n_bands/)
+        band_dims = ['elevation_band'] + spatial_dims
+        band_shape = (n_bands,) + unit_shape
+
+        coords = {dim: (dim, spatial_coords[dim]) for dim in spatial_dims}
+        coords['elevation_band'] = ('elevation_band', np.arange(1, n_bands + 1))
+        ds = xr.Dataset(coords=coords, attrs={
+            'title': f'FUSE elevation bands ({mode} mode)',
+            'source': 'Generated by SYMFLUENCE',
+            'history': f'Created {pd.Timestamp.now()}',
+            'spatial_mode': mode,
+            'n_bands': n_bands
+        })
+        for name, values, attrs in (
+            ('area_frac', area_frac, {
+                'long_name': 'Fraction of catchment area in each elevation band', 'units': '-'}),
+            ('mean_elev', mean_elev, {
+                'long_name': 'Mean elevation of each (equal-area) elevation band', 'units': 'm',
+                'standard_name': 'height_above_reference_ellipsoid'}),
+            # Precipitation is uniform per unit area, so each band receives its area share.
+            ('prec_frac', area_frac, {
+                'long_name': 'Fraction of catchment precipitation that falls on each elevation band',
+                'units': '-'}),
+        ):
+            ds[name] = xr.DataArray(
+                values.reshape(band_shape), dims=band_dims, attrs=attrs
+            ).astype('float32')
+
+        output_file = self.forcing_fuse_path / f"{self.domain_name}_elev_bands.nc"
+        try:
+            ds.to_netcdf(output_file, encoding=_band_encoding(ds))
+        except (OSError, PermissionError) as e:
+            self.logger.error(f"Error creating {mode} elevation bands: {str(e)}")
+            raise
+
+        self.logger.info(
+            f"Created {mode} elevation bands file with {n_bands} band(s) for "
+            f"{len(units)} spatial unit(s): {output_file}"
+        )
+        return output_file
 
     def _get_forcing_spatial_info(self) -> Optional[Tuple[list, Dict[str, np.ndarray]]]:
         forcing_file = self.forcing_fuse_path / f"{self.domain_name}_input.nc"
@@ -122,273 +318,142 @@ class FuseElevationBandManager(ConfigMixin):
             self.logger.warning(f"Unable to read spatial info from {forcing_file}: {e}")
             return None
 
-    def _create_lumped_elevation_bands(self) -> Path:
+    def _spatial_layout(self, catchment: gpd.GeoDataFrame) -> Tuple[List[str], Dict[str, np.ndarray]]:
+        """Spatial dimensions and coordinates of the bands file.
+
+        Taken from the FUSE forcing file so the two match; without a forcing
+        file, a single cell at the catchment centroid.
         """
-        Create elevation bands for lumped mode.
+        spatial_info = self._get_forcing_spatial_info()
+        if spatial_info:
+            return spatial_info
+        mean_lon, mean_lat = self.calculate_catchment_centroid(catchment)
+        return ['latitude', 'longitude'], {
+            'latitude': np.array([float(mean_lat)]),
+            'longitude': np.array([float(mean_lon)]),
+        }
 
-        Uses catchment statistics to generate representative elevation bands.
+    def _unit_rows(
+        self,
+        catchment: gpd.GeoDataFrame,
+        spatial_dims: List[str],
+        spatial_coords: Dict[str, np.ndarray],
+        mode: str,
+    ) -> List[np.ndarray]:
+        """Row positions of *catchment* making up each spatial unit, in file order.
 
-        Returns:
-            Path to created elevation bands file
+        A single-cell layout (always the case in lumped mode) is one unit made
+        of every feature. Otherwise the subcatchments lie along the one spatial
+        dimension longer than 1, whose coordinate holds the subcatchment ids
+        (``GRU_ID``); each unit is the features with that id.
         """
-        self.logger.info("Creating lumped elevation bands file")
+        sizes = {dim: len(spatial_coords[dim]) for dim in spatial_dims}
+        n_units = int(np.prod(list(sizes.values()))) if sizes else 1
+        all_rows = np.arange(len(catchment))
+        if n_units == 1:
+            return [all_rows]
+        if mode == 'lumped':
+            raise ModelExecutionError(
+                f"FUSE lumped mode expects a single forcing cell, but the forcing has {sizes}"
+            )
+        long_dims = [dim for dim, size in sizes.items() if size > 1]
+        if len(long_dims) != 1:
+            raise ModelExecutionError(
+                f"Cannot match FUSE spatial units to subcatchments: forcing dimensions {sizes}"
+            )
+        ids = spatial_coords[long_dims[0]]
+        if 'GRU_ID' in catchment.columns:
+            gru_ids = catchment['GRU_ID'].to_numpy(dtype=float)
+            units = [np.flatnonzero(np.isclose(gru_ids, float(unit_id))) for unit_id in ids]
+            missing = [float(unit_id) for unit_id, rows in zip(ids, units) if rows.size == 0]
+            if missing:
+                raise ModelExecutionError(
+                    f"FUSE subcatchment id(s) {missing[:10]} in the forcing file have no feature "
+                    f"with that GRU_ID in {self.catchment_path.name}"
+                )
+            return units
+        if len(catchment) != len(ids):
+            raise ModelExecutionError(
+                f"FUSE forcing has {len(ids)} subcatchments but {self.catchment_path.name} has "
+                f"{len(catchment)} features and no GRU_ID column to match them by"
+            )
+        return [np.array([i]) for i in all_rows]
 
-        try:
-            # Load catchment shapefile
-            catchment = gpd.read_file(self.catchment_path)
+    def _unit_hypsometry_samples(
+        self, catchment: gpd.GeoDataFrame, units: List[np.ndarray]
+    ) -> List[Tuple[np.ndarray, Optional[np.ndarray]]]:
+        """``(elevations, weights)`` describing each unit's hypsometry.
 
-            # Get elevation statistics from shapefile or use defaults
-            # Priority: elev_mean+elev_range > elev_mean alone > defaults
-            if 'elev_mean' in catchment.columns:
-                elev_mean = float(catchment['elev_mean'].iloc[0])
-                if 'elev_range' in catchment.columns:
-                    elev_range = float(catchment['elev_range'].iloc[0])
-                    elev_min = elev_mean - (elev_range / 2)
-                    elev_max = elev_mean + (elev_range / 2)
-                    self.logger.info(f"Using shapefile elevation stats: mean={elev_mean:.0f}m, range={elev_range:.0f}m")
-                else:
-                    # Have elev_mean but no elev_range - estimate range as 20% of mean elevation
-                    # or use a reasonable default range for mountain catchments
-                    elev_range = max(500.0, elev_mean * 0.3)  # At least 500m or 30% of mean
-                    elev_min = elev_mean - (elev_range / 2)
-                    elev_max = elev_mean + (elev_range / 2)
-                    self.logger.info(f"Using shapefile elev_mean={elev_mean:.0f}m with estimated range={elev_range:.0f}m (elev_range column missing)")
-            else:
-                # No elevation data - use generic defaults with warning
-                elev_mean = 1000.0
-                elev_range = 500.0
-                elev_min = 750.0
-                elev_max = 1250.0
-                self.logger.warning(f"Elevation data not found in shapefile (no elev_mean column), using defaults: mean={elev_mean}m")
-
-            # Prefer spatial info from forcing file to match FUSE expectations
-            spatial_info = self._get_forcing_spatial_info()
-            if spatial_info:
-                spatial_dims, spatial_coords = spatial_info
-            else:
-                # Get centroid for lat/lon fallback
-                mean_lon, mean_lat = self.calculate_catchment_centroid(catchment)
-                spatial_dims = ['latitude', 'longitude']
-                spatial_coords = {
-                    'latitude': np.array([float(mean_lat)]),
-                    'longitude': np.array([float(mean_lon)])
-                }
-
-            n_bands = self._get_config_value(lambda: self.config.model.fuse.n_elevation_bands, default=5, dict_key='FUSE_N_ELEVATION_BANDS')
-            elevations = np.linspace(elev_min, elev_max, n_bands)
-
-            # Equal area fractions for each band
-            area_fractions = np.ones(n_bands) / n_bands
-
-            # Create dataset matching FUSE expectations
-            coords = {dim: (dim, spatial_coords[dim]) for dim in spatial_dims}
-            coords['elevation_band'] = ('elevation_band', np.arange(1, n_bands + 1))
-            ds = xr.Dataset(coords=coords, attrs={
-                'title': 'FUSE elevation bands (lumped mode)',
-                'source': 'Generated by SYMFLUENCE',
-                'history': f'Created {pd.Timestamp.now()}',
-                'spatial_mode': 'lumped',
-                'n_bands': n_bands
-            })
-
-            # Use xarray broadcasting for cleaner and more efficient array creation
-            xr.DataArray(area_fractions, dims=['elevation_band'])
-            xr.DataArray(elevations, dims=['elevation_band'])
-
-            # FUSE (Fortran) reads data with nf90_get_var using count=(/nSpat1,nSpat2,n_bands/)
-            # In Fortran, dimensions are reversed from C/NetCDF order, so the NetCDF
-            # dimension order must be (elevation_band, lat, lon) so that Fortran sees
-            # (lon, lat, elevation_band) matching (/nSpat1, nSpat2, n_bands/)
-            band_shape = (n_bands,) + tuple(len(spatial_coords[dim]) for dim in spatial_dims)
-            band_dims = ['elevation_band'] + spatial_dims
-            broadcast_shape = (n_bands,) + (1,) * len(spatial_dims)
-
-            ds['area_frac'] = xr.DataArray(
-                np.broadcast_to(area_fractions.reshape(broadcast_shape), band_shape),
-                dims=band_dims,
-                attrs={
-                    'long_name': 'Fraction of catchment area in each elevation band',
-                    'units': '-'
-                }
-            ).astype('float32')
-
-            ds['mean_elev'] = xr.DataArray(
-                np.broadcast_to(elevations.reshape(broadcast_shape), band_shape),
-                dims=band_dims,
-                attrs={
-                    'long_name': 'Band mid-point elevation',
-                    'units': 'm',
-                    'standard_name': 'height_above_reference_ellipsoid'
-                }
-            ).astype('float32')
-
-            ds['prec_frac'] = xr.DataArray(
-                np.broadcast_to(area_fractions.reshape(broadcast_shape), band_shape),
-                dims=band_dims,
-                attrs={
-                    'long_name': 'Fraction of catchment precipitation that falls on each elevation band',
-                    'units': '-'
-                }
-            ).astype('float32')
-
-            # Save to file
-            output_file = self.forcing_fuse_path / f"{self.domain_name}_elev_bands.nc"
-
-            # Use strict encoding for FUSE compatibility
-            encoding = {
-                'area_frac': {'dtype': 'float32', '_FillValue': -9999.0, 'zlib': False},
-                'mean_elev': {'dtype': 'float32', '_FillValue': -9999.0, 'zlib': False},
-                'prec_frac': {'dtype': 'float32', '_FillValue': -9999.0, 'zlib': False},
-                'elevation_band': {'dtype': 'float64', '_FillValue': None}
-            }
-            for dim in spatial_dims:
-                encoding[dim] = {'dtype': 'float64', '_FillValue': None}
-
-            ds.to_netcdf(output_file, encoding=encoding)
-
-            self.logger.info(f"Created lumped elevation bands file with {n_bands} bands: {output_file}")
-            return output_file
-
-        except (FileNotFoundError, OSError, PermissionError) as e:
-            self.logger.error(f"Error creating lumped elevation bands: {str(e)}")
-            raise
-
-    def _create_distributed_elevation_bands(self) -> Path:
+        DEM pixels inside the unit when available (weights None), else the
+        unit's HRU table (``elev_mean`` weighted by HRU area). A unit with
+        neither raises.
         """
-        Create elevation bands for distributed/semi-distributed mode.
+        dem_samples = self._dem_samples(catchment, units)
+        area_col = next((c for c in _AREA_COLUMNS if c in catchment.columns), None)
+        samples: List[Tuple[np.ndarray, Optional[np.ndarray]]] = []
+        from_table = 0
+        for i, rows in enumerate(units):
+            if dem_samples is not None and dem_samples[i].size:
+                samples.append((dem_samples[i], None))
+                continue
+            z = (catchment['elev_mean'].to_numpy(dtype=float)[rows]
+                 if 'elev_mean' in catchment.columns else np.array([]))
+            if z.size == 0 or not np.isfinite(z).any():
+                raise ModelExecutionError(
+                    f"No elevation information for FUSE spatial unit {i + 1}: no valid DEM pixels "
+                    f"({self._dem_path()}) and no 'elev_mean' in {self.catchment_path.name}. "
+                    "FUSE elevation bands cannot be built without it."
+                )
+            samples.append((z, self._hru_areas(catchment, area_col)[rows] if rows.size > 1 else None))
+            from_table += 1
+        if from_table:
+            self.logger.warning(
+                f"FUSE elevation bands: {from_table} of {len(units)} spatial unit(s) have no DEM "
+                "pixels; using the 'elev_mean' of their HRUs instead"
+            )
+        return samples
 
-        Uses per-HRU elevation data from catchment shapefile.
+    @staticmethod
+    def _hru_areas(catchment: gpd.GeoDataFrame, area_col: Optional[str]) -> np.ndarray:
+        """Area of each feature: the area column if present, else its geometry."""
+        if area_col is not None:
+            return catchment[area_col].to_numpy(dtype=float)
+        geometries = catchment.geometry
+        if catchment.crs is not None and catchment.crs.is_geographic:
+            geometries = geometries.to_crs(catchment.estimate_utm_crs())
+        return geometries.area.to_numpy(dtype=float)
 
-        Returns:
-            Path to created elevation bands file
-        """
-        self.logger.info("Creating distributed elevation bands file")
+    def _dem_path(self) -> Path:
+        return (resolve_data_subdir(self.project_dir, 'attributes') / 'elevation' / 'dem'
+                / f"domain_{self.domain_name}_elv.tif")
 
-        try:
-            # Load catchment shapefile
-            catchment = gpd.read_file(self.catchment_path)
-            n_hrus = len(catchment)
+    def _dem_samples(
+        self, catchment: gpd.GeoDataFrame, units: List[np.ndarray]
+    ) -> Optional[List[np.ndarray]]:
+        """Valid DEM pixel elevations inside each unit, or None without a DEM."""
+        dem_path = self._dem_path()
+        if not dem_path.exists():
+            self.logger.info(f"No DEM at {dem_path}; FUSE elevation bands use the HRU elevation table")
+            return None
 
-            # Get elevation data per HRU
-            if 'elev_mean' in catchment.columns:
-                elevations = catchment['elev_mean'].values
-                self.logger.info("Using HRU-specific elevation data from shapefile")
-            else:
-                # Use uniform elevation if not available
-                elevations = np.full(n_hrus, 1000.0)
-                self.logger.warning("No HRU elevation data found, using default 1000m for all HRUs")
+        import rasterio
+        import rasterio.mask
 
-            # Calculate area fractions
-            if 'area' in catchment.columns or 'Area' in catchment.columns:
-                area_col = 'area' if 'area' in catchment.columns else 'Area'
-                areas = catchment[area_col].values
-                total_area = areas.sum()
-                area_fractions = areas / total_area
-            elif 'GRU_area' in catchment.columns:
-                areas = catchment['GRU_area'].values
-                total_area = areas.sum()
-                area_fractions = areas / total_area
-            else:
-                # Equal area fractions
-                area_fractions = np.ones(n_hrus) / n_hrus
-                self.logger.warning("No area data found, using equal area fractions")
-
-            # Get lat/lon for each HRU
-            if 'latitude' in catchment.columns and 'longitude' in catchment.columns:
-                latitudes = catchment['latitude'].values
-                longitudes = catchment['longitude'].values
-            else:
-                # Calculate centroids in a way that avoids the geographic CRS warning
-                if catchment.crs and catchment.crs.is_geographic:
-                    # Project to EPSG:3857 for centroid calculation, then back to WGS84
-                    # This avoids the UserWarning: Geometry is in a geographic CRS
-                    centroids_proj = catchment.to_crs(epsg=3857).geometry.centroid
-                    centroids = centroids_proj.to_crs(epsg=4326)
-                else:
-                    # Already projected, calculate centroid then convert to WGS84
-                    centroids = catchment.geometry.centroid.to_crs(epsg=4326)
-
-                latitudes = centroids.y.values
-                longitudes = centroids.x.values
-
-            spatial_info = self._get_forcing_spatial_info()
-            if spatial_info:
-                spatial_dims, spatial_coords = spatial_info
-            else:
-                spatial_dims = ['latitude', 'longitude']
-                spatial_coords = {
-                    'latitude': np.array([latitudes.mean()]),
-                    'longitude': np.array([longitudes.mean()])
-                }
-
-            n_bands = self._get_config_value(lambda: self.config.model.fuse.n_elevation_bands, default=5, dict_key='FUSE_N_ELEVATION_BANDS')
-            elevations = np.linspace(elevations.min(), elevations.max(), n_bands)
-            area_fractions = np.ones(n_bands) / n_bands
-
-            coords = {dim: (dim, spatial_coords[dim]) for dim in spatial_dims}
-            coords['elevation_band'] = ('elevation_band', np.arange(1, n_bands + 1))
-            ds = xr.Dataset(coords=coords, attrs={
-                'title': 'FUSE elevation bands (distributed mode)',
-                'source': 'Generated by SYMFLUENCE',
-                'history': f'Created {pd.Timestamp.now()}',
-                'spatial_mode': 'distributed',
-                'n_bands': n_bands
-            })
-
-            # FUSE (Fortran) reads data with nf90_get_var using count=(/nSpat1,nSpat2,n_bands/)
-            # In Fortran, dimensions are reversed from C/NetCDF order, so the NetCDF
-            # dimension order must be (elevation_band, lat, lon) so that Fortran sees
-            # (lon, lat, elevation_band) matching (/nSpat1, nSpat2, n_bands/)
-            band_shape = (n_bands,) + tuple(len(spatial_coords[dim]) for dim in spatial_dims)
-            band_dims = ['elevation_band'] + spatial_dims
-            broadcast_shape = (n_bands,) + (1,) * len(spatial_dims)
-
-            ds['area_frac'] = xr.DataArray(
-                np.broadcast_to(area_fractions.reshape(broadcast_shape), band_shape),
-                dims=band_dims,
-                attrs={
-                    'long_name': 'Fraction of catchment area in each elevation band',
-                    'units': '-'
-                }
-            ).astype('float32')
-
-            ds['mean_elev'] = xr.DataArray(
-                np.broadcast_to(elevations.reshape(broadcast_shape), band_shape),
-                dims=band_dims,
-                attrs={
-                    'long_name': 'Band mid-point elevation',
-                    'units': 'm',
-                    'standard_name': 'height_above_reference_ellipsoid'
-                }
-            ).astype('float32')
-
-            ds['prec_frac'] = xr.DataArray(
-                np.broadcast_to(area_fractions.reshape(broadcast_shape), band_shape),
-                dims=band_dims,
-                attrs={
-                    'long_name': 'Fraction of catchment precipitation that falls on each elevation band',
-                    'units': '-'
-                }
-            ).astype('float32')
-
-            # Save to file
-            output_file = self.forcing_fuse_path / f"{self.domain_name}_elev_bands.nc"
-
-            # Use strict encoding for FUSE compatibility
-            encoding = {
-                'area_frac': {'dtype': 'float32', '_FillValue': -9999.0, 'zlib': False},
-                'mean_elev': {'dtype': 'float32', '_FillValue': -9999.0, 'zlib': False},
-                'prec_frac': {'dtype': 'float32', '_FillValue': -9999.0, 'zlib': False},
-                'elevation_band': {'dtype': 'float64', '_FillValue': None}
-            }
-            for dim in spatial_dims:
-                encoding[dim] = {'dtype': 'float64', '_FillValue': None}
-
-            ds.to_netcdf(output_file, encoding=encoding)
-
-            self.logger.info(f"Created distributed elevation bands file with {n_hrus} HRUs: {output_file}")
-            return output_file
-
-        except (FileNotFoundError, OSError, PermissionError) as e:
-            self.logger.error(f"Error creating distributed elevation bands: {str(e)}")
-            raise
+        out: List[np.ndarray] = []
+        with rasterio.open(dem_path) as src:
+            geometries = catchment.geometry
+            if catchment.crs is not None and src.crs is not None and catchment.crs != src.crs:
+                geometries = geometries.to_crs(src.crs)
+            fill_value = src.nodata if src.nodata is not None else 0
+            for rows in units:
+                try:
+                    image, _ = rasterio.mask.mask(
+                        src, geometries.iloc[rows], crop=True, nodata=fill_value
+                    )
+                except ValueError:
+                    # rasterio: "Input shapes do not overlap raster."
+                    out.append(np.array([], dtype=float))
+                    continue
+                values = image[0][image[0] != fill_value].astype(float)
+                out.append(values[np.isfinite(values)])
+        return out

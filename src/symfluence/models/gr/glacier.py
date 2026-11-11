@@ -24,12 +24,40 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, Optional, Sequence
+from typing import Dict, Iterable, Optional, Sequence
 
 import numpy as np
 import pandas as pd
 
 from symfluence.core.exceptions import ConfigurationError
+
+from .hypsometry import hypsometry
+
+#: Parameters that only the lumped glacier path reads.
+GLACIER_PARAMETERS = ('ICE_DDF',)
+
+
+def require_lumped_for_glacier(is_lumped: bool, glacier_enabled: bool, param_names: Iterable[str]) -> None:
+    """Raise unless glacier mode / glacier parameters are used in lumped mode.
+
+    Only the lumped runner has the CemaNeige -> ice melt -> GR4J path. In
+    distributed mode ``GR_GLACIER_ENABLED`` would be ignored and a calibrated
+    ``ICE_DDF`` would have no effect on the simulation.
+    """
+    if is_lumped:
+        return
+    inert = [p for p in param_names if p in GLACIER_PARAMETERS]
+    if inert:
+        raise ConfigurationError(
+            f"GR glacier parameter(s) {inert} have no effect in distributed mode: glacier mode is "
+            "lumped-only. Remove them from GR_PARAMS_TO_CALIBRATE or run GR lumped "
+            "(GR_SPATIAL_MODE: lumped)."
+        )
+    if glacier_enabled:
+        raise ConfigurationError(
+            "GR_GLACIER_ENABLED is set but GR runs in distributed mode: glacier mode is "
+            "lumped-only. Set GR_SPATIAL_MODE: lumped or disable GR_GLACIER_ENABLED."
+        )
 
 
 @dataclass(frozen=True)
@@ -96,9 +124,10 @@ def load_glacier_geometry(dem_path: str, catchment_path: str, outline_path: str,
     on_glacier = (ice[0] != fill)[inside]
     if pixel_km2 is None:
         pixel_km2 = float(catchment.to_crs(catchment.estimate_utm_crs()).area.sum()) / 1e6 / elevation.size
+    hypso, z_mean = hypsometry(elevation)
     return GlacierGeometry(
-        hypso=np.percentile(elevation, np.arange(0, 101, 1)),
-        z_mean=float(elevation.mean()),
+        hypso=hypso,
+        z_mean=float(z_mean),
         layer_fraction=layer_glacier_fractions(elevation, on_glacier, n_layers),
         glacier_area_km2=float(on_glacier.sum() * pixel_km2),
     )

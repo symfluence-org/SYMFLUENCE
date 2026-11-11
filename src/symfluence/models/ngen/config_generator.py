@@ -21,6 +21,7 @@ from typing import Any, Dict, Optional
 import geopandas as gpd
 import pandas as pd
 
+from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.mixins import ConfigMixin
 
 
@@ -72,6 +73,7 @@ class NgenConfigGenerator(ConfigMixin):
         self._include_sacsma = False
         self._include_snow17 = False
         self._noah_et_fallback = 'EVAPOTRANS'  # Default when PET disabled but NOAH enabled
+        self._default_land_surface_warned: set = set()
 
     def set_module_availability(
         self,
@@ -142,6 +144,95 @@ class NgenConfigGenerator(ConfigMixin):
 
         self.logger.info(f"Generated configs for {len(catchment_gdf)} catchments")
 
+    def _warn_default_land_surface(self, module: str, what: str) -> None:
+        """Warn once per module that uniform land-surface defaults are in use."""
+        if module not in self._default_land_surface_warned:
+            self._default_land_surface_warned.add(module)
+            self.logger.warning(f"NGEN {module}: using default {what}.")
+
+    # Area columns by unit. SYMFLUENCE's delineators and discretiser write
+    # GRU_area / HRU_area as projected geometry area in m².
+    _AREA_COLS_KM2 = ('areasqkm', 'area_km2')
+    _AREA_COLS_M2 = ('HRU_area', 'GRU_area')
+    _AREA_COL_UNKNOWN_UNIT = 'AREA'
+
+    def _geometry_area_km2(self, catchment_row) -> Optional[float]:
+        """Area of the catchment geometry in km², or None without a geometry."""
+        geom = getattr(catchment_row, 'geometry', None)
+        if geom is None:
+            return None
+        if self.catchment_crs is not None and self.catchment_crs.is_geographic:
+            # Use UTM zone based on centroid for local accuracy
+            import pyproj
+            from shapely.ops import transform
+            centroid = geom.centroid
+            utm_zone = int((centroid.x + 180) / 6) + 1
+            hemisphere = 'north' if centroid.y >= 0 else 'south'
+            utm_crs = pyproj.CRS(f"+proj=utm +zone={utm_zone} +{hemisphere} +datum=WGS84")
+            transformer = pyproj.Transformer.from_crs(
+                self.catchment_crs, utm_crs, always_xy=True
+            )
+            return transform(transformer.transform, geom).area / 1e6
+        # Assume already in projected CRS with meters
+        return geom.area / 1e6
+
+    def _catchment_area_km2(self, catchment_id: str, catchment_row) -> Optional[float]:
+        """Catchment area in km² from the row's area columns, else its geometry.
+
+        Columns of known unit are converted unconditionally (``HRU_area`` and
+        ``GRU_area`` are m² whatever their magnitude — a 0.8 km² catchment is
+        800000 m², not 800000 km²). ``AREA`` has no fixed unit: it is read as
+        whichever of m² / km² agrees with the geometry area, or as m² when it
+        exceeds 1e6 and there is no geometry; anything else is ambiguous and
+        raises rather than guessing. Returns None when the row has neither a
+        usable area column nor a geometry.
+        """
+        def _positive(col):
+            if col not in catchment_row.index:
+                return None
+            value = catchment_row[col]
+            if value is None or pd.isna(value) or float(value) <= 0:
+                return None
+            return float(value)
+
+        for col in self._AREA_COLS_KM2:
+            value = _positive(col)
+            if value is not None:
+                self.logger.debug(f"Using area from {col}: {value:.4f} km²")
+                return value
+        for col in self._AREA_COLS_M2:
+            value = _positive(col)
+            if value is not None:
+                self.logger.debug(f"Converted {col} from m² to km²: {value / 1e6:.4f} km²")
+                return value / 1e6
+
+        geometry_km2 = self._geometry_area_km2(catchment_row)
+        value = _positive(self._AREA_COL_UNKNOWN_UNIT)
+        if value is None:
+            if geometry_km2 is not None:
+                self.logger.debug(f"Calculated area from geometry: {geometry_km2:.4f} km²")
+            return geometry_km2
+
+        if geometry_km2 is not None and geometry_km2 > 0:
+            # The two readings differ by 1e6, so a loose tolerance separates them.
+            for as_km2, unit in ((value / 1e6, 'm²'), (value, 'km²')):
+                if geometry_km2 / 3.0 <= as_km2 <= geometry_km2 * 3.0:
+                    self.logger.debug(f"Read AREA as {unit}: {as_km2:.4f} km²")
+                    return as_km2
+            raise ModelExecutionError(
+                f"Catchment cat-{catchment_id}: AREA={value} matches the geometry area "
+                f"({geometry_km2:.4f} km²) neither as m² nor as km². Provide the area in an "
+                "'areasqkm'/'area_km2' (km²) or 'HRU_area'/'GRU_area' (m²) column."
+            )
+        if value > 1e6:
+            # No catchment exceeds a million km², so this can only be m².
+            return value / 1e6
+        raise ModelExecutionError(
+            f"Catchment cat-{catchment_id}: AREA={value} has no unit and there is no geometry "
+            "to check it against (m² or km²?). Provide the area in an 'areasqkm'/'area_km2' "
+            "(km²) or 'HRU_area'/'GRU_area' (m²) column."
+        )
+
     def generate_cfe_config(
         self,
         catchment_id: str,
@@ -184,51 +275,12 @@ class NgenConfigGenerator(ConfigMixin):
         # Apply overrides
         params.update(overrides)
 
-        # Calculate catchment area in km² (required for CFE to convert depth to m³/s)
+        # Catchment area in km² (required for CFE to convert depth to m³/s)
         catchment_area_km2 = 1.0  # Default fallback
         if catchment_row is not None:
-            # Try to get area from pre-computed column first
-            # Columns explicitly in km²: areasqkm, area_km2
-            # Columns that may be in m²: HRU_area, GRU_area, AREA
-            km2_cols = ['areasqkm', 'area_km2']  # Known to be in km²
-            m2_cols = ['HRU_area', 'GRU_area', 'AREA']  # Often in m², need conversion check
-
-            for area_col in km2_cols + m2_cols:
-                if area_col in catchment_row.index:
-                    area_val = catchment_row[area_col]
-                    if area_val is not None and pd.notna(area_val) and float(area_val) > 0:
-                        area_val = float(area_val)
-                        # Check if value is likely in m² (no catchment is > 1 million km²)
-                        # If value > 1e6, assume it's in m² and convert to km²
-                        if area_col in m2_cols and area_val > 1e6:
-                            catchment_area_km2 = area_val / 1e6
-                            self.logger.debug(f"Converted {area_col} from m² to km²: {catchment_area_km2:.2f} km²")
-                        else:
-                            catchment_area_km2 = area_val
-                            self.logger.debug(f"Using area from {area_col}: {catchment_area_km2:.2f} km²")
-                        break
-            else:
-                # Calculate from geometry if no area column found
-                if hasattr(catchment_row, 'geometry') and catchment_row.geometry is not None:
-                    geom = catchment_row.geometry
-                    # Project to equal-area CRS for accurate area calculation
-                    if self.catchment_crs is not None and self.catchment_crs.is_geographic:
-                        # Use UTM zone based on centroid for local accuracy
-                        import pyproj
-                        centroid = geom.centroid
-                        utm_zone = int((centroid.x + 180) / 6) + 1
-                        hemisphere = 'north' if centroid.y >= 0 else 'south'
-                        utm_crs = pyproj.CRS(f"+proj=utm +zone={utm_zone} +{hemisphere} +datum=WGS84")
-                        transformer = pyproj.Transformer.from_crs(
-                            self.catchment_crs, utm_crs, always_xy=True
-                        )
-                        from shapely.ops import transform
-                        geom_projected = transform(transformer.transform, geom)
-                        catchment_area_km2 = geom_projected.area / 1e6
-                    else:
-                        # Assume already in projected CRS with meters
-                        catchment_area_km2 = geom.area / 1e6
-                    self.logger.debug(f"Calculated area from geometry: {catchment_area_km2:.2f} km²")
+            resolved = self._catchment_area_km2(catchment_id, catchment_row)
+            if resolved is not None:
+                catchment_area_km2 = resolved
 
         if catchment_area_km2 <= 0:
             self.logger.warning(
@@ -325,16 +377,18 @@ surface_water_partitioning_scheme=Schaake
         # Use config elevation if specified, otherwise catchment attribute, otherwise default
         elevation = pet_config.get('elevation_m', catchment_elevation if catchment_elevation else 100.0)
 
-        # Set vegetation parameters based on elevation (forest vs grass)
-        # Mountain watersheds (>1000m) typically have forest/mixed vegetation
-        if elevation > 1000:
-            default_veg_height = 15.0  # Forest
-            default_zero_plane = 10.0
-            default_momentum_roughness = 1.5
-        else:
-            default_veg_height = 0.12  # Grass
-            default_zero_plane = 0.0003
-            default_momentum_roughness = 0.0
+        # Vegetation defaults: the short reference-grass surface of the NOAA-OWP
+        # evapotranspiration module's example configuration, for every
+        # catchment. Land cover is not inferred from elevation; set
+        # vegetation_height_m / zero_plane_displacement_m /
+        # momentum_roughness_length_m in the NGEN PET config for other surfaces.
+        default_veg_height = 0.12
+        default_zero_plane = 0.0003
+        default_momentum_roughness = 0.0
+        if 'vegetation_height_m' not in pet_config:
+            self._warn_default_land_surface(
+                'PET', "reference-grass vegetation (height 0.12 m) for every catchment"
+            )
 
         # Default parameters with intelligent defaults
         # Use forcing timestep for PET instead of hardcoded hourly
@@ -470,6 +524,12 @@ shortwave_radiation_provided=1
             'smcmax': 0.5,    # Saturation moisture content (porosity)
             'smcwlt': 0.1,    # Wilting point moisture content
         }
+        if not {'soil_type', 'veg_type', 'azimuth'} & set(overrides):
+            self._warn_default_land_surface(
+                'NOAH-OWP',
+                "isltyp=3, vegtyp=10 and azimuth=0 for every catchment "
+                "(no per-catchment soil/vegetation class is available to the generator)"
+            )
         options.update(overrides)
 
         # Calculate initial soil moisture as a reasonable fraction of saturation

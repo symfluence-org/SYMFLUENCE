@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from symfluence.core.exceptions import FileOperationError
+from symfluence.core.exceptions import FileOperationError, ValidationError
 from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.mixins.project import resolve_data_subdir, resolve_forcing_basin_path
 from symfluence.core.modeling.variable_utils import VariableHandler
@@ -85,13 +85,9 @@ class RHESSysClimateGenerator:
         self.logger.info("Generating climate files...")
         self.climate_dir.mkdir(parents=True, exist_ok=True)
 
-        try:
-            ds = self._load_forcing_data(start_date, end_date)
-        except FileNotFoundError as e:
-            self.logger.warning(f"Could not load forcing data: {e}")
-            self.logger.info("Creating synthetic climate data for testing")
-            self._create_synthetic_climate(start_date, end_date)
-            return True
+        # No synthetic fallback: a missing forcing store raises (FileNotFoundError
+        # naming the searched directories) instead of writing invented climate.
+        ds = self._load_forcing_data(start_date, end_date)
 
         # Initialize variable handler
         VariableHandler(self.config, self.logger, self.forcing_dataset, 'RHESSys')
@@ -123,12 +119,9 @@ class RHESSysClimateGenerator:
         kdown = self._process_radiation(ds, swrad_var, dates, 'shortwave')
         ldown = self._process_radiation(ds, lwrad_var, dates, 'longwave')
 
-        # Compute rain duration from hourly precip data BEFORE daily aggregation
-        # daytime_rain_duration = hours per day with precipitation > 0
-        # RHESSys reads this in hours and converts to seconds internally
-        rain_duration_hourly = None
-        if precip is not None:
-            rain_duration_hourly = (precip > 0).astype(float)
+        # Compute rain duration from hourly precip data BEFORE daily aggregation.
+        # RHESSys reads this in hours and converts to seconds internally.
+        rain_duration_hourly = self._daytime_rain_flags(precip, kdown)
 
         # Aggregate to daily
         df = pd.DataFrame({
@@ -141,8 +134,7 @@ class RHESSysClimateGenerator:
             'kdown': kdown,
             'ldown': ldown,
         }, index=dates)
-        if rain_duration_hourly is not None:
-            df['rain_duration'] = rain_duration_hourly
+        df['rain_duration'] = rain_duration_hourly
 
         daily_df = self._aggregate_to_daily(df)
 
@@ -153,7 +145,8 @@ class RHESSysClimateGenerator:
         # RHESSys internally multiplies by 1000 to convert to mm
         # Daily aggregation produces mm/day, so divide by 1000 to get m/day
         precip_m_day = daily_df['precip'].values / 1000.0
-        self._write_climate_file(f"{base_name}.rain", daily_df.index, precip_m_day)
+        # m/day needs more than 4 decimals: '.4f' quantises rain to 0.1 mm/day.
+        self._write_climate_file(f"{base_name}.rain", daily_df.index, precip_m_day, decimals=8)
         self._write_climate_file(f"{base_name}.tmax", daily_df.index, daily_df['tmax'].values)
         self._write_climate_file(f"{base_name}.tmin", daily_df.index, daily_df['tmin'].values)
         self._write_climate_file(f"{base_name}.tavg", daily_df.index, daily_df['temp'].values)
@@ -176,7 +169,7 @@ class RHESSysClimateGenerator:
             ldown_kj = daily_df['ldown'].values * 86.4
             self._write_climate_file(f"{base_name}.Ldown", daily_df.index, ldown_kj)
 
-        # Write rain duration (hours/day with precipitation > 0)
+        # Write rain duration (daylight hours/day with more than trace precipitation)
         # RHESSys reads daytime_rain_duration in hours, converts to seconds internally
         # Without this, RHESSys defaults to 86400s (full day) on rainy days,
         # leaving zero time for transpiration
@@ -435,9 +428,10 @@ class RHESSysClimateGenerator:
                     precip = precip * 1000.0
 
             return precip
-        else:
-            self.logger.warning("No precipitation variable found, using zeros")
-            return np.zeros(len(dates))
+        raise ValidationError(
+            "RHESSys climate generation: no precipitation variable found in the forcing "
+            f"data (variables present: {sorted(str(v) for v in ds.data_vars)})."
+        )
 
     def _process_temperature(
         self,
@@ -455,8 +449,10 @@ class RHESSysClimateGenerator:
             if np.nanmean(temp) > 100:
                 temp = temp - 273.15
         else:
-            self.logger.warning("No temperature variable found")
-            temp = np.full(len(dates), 15.0)
+            raise ValidationError(
+                "RHESSys climate generation: no air temperature variable found in the "
+                f"forcing data (variables present: {sorted(str(v) for v in ds.data_vars)})."
+            )
 
         # Get tmax
         if tmax_var:
@@ -546,6 +542,36 @@ class RHESSysClimateGenerator:
                 rad = rad / (3600 * timestep_hours)
             return rad
         return None
+
+    # Hourly precipitation at or below this depth (mm/h) is trace: reanalysis
+    # drizzle is non-zero almost every hour and must not count as a rain hour.
+    RAIN_TRACE_MM_PER_HOUR = 0.1
+    # Incoming shortwave above this (W/m²) marks a daylight hour.
+    DAYLIGHT_SW_W_M2 = 1.0
+
+    def _daytime_rain_flags(
+        self,
+        precip_mm_per_hour: np.ndarray,
+        kdown: Optional[np.ndarray],
+    ) -> np.ndarray:
+        """Hourly 0/1 flags whose daily sum is ``daytime_rain_duration`` (hours).
+
+        An hour counts when precipitation exceeds the trace threshold and the
+        hour is in daylight. Daylight is taken from the forcing's own incoming
+        shortwave (> ``DAYLIGHT_SW_W_M2``), which needs no latitude, longitude
+        or time-zone assumption. Without shortwave only the trace threshold is
+        applied (night hours are then included) and that is logged.
+        """
+        wet = np.asarray(precip_mm_per_hour, dtype=float) > self.RAIN_TRACE_MM_PER_HOUR
+        if kdown is not None and not np.all(np.isnan(kdown)):
+            wet = wet & (np.asarray(kdown, dtype=float) > self.DAYLIGHT_SW_W_M2)
+        else:
+            self.logger.warning(
+                "No shortwave radiation in the forcing: daytime_rain_duration counts "
+                "all hours (day and night) with precipitation above "
+                f"{self.RAIN_TRACE_MM_PER_HOUR} mm/h."
+            )
+        return wet.astype(float)
 
     def _aggregate_to_daily(self, df: pd.DataFrame) -> pd.DataFrame:
         """Aggregate sub-daily data to daily values."""
@@ -657,14 +683,18 @@ none\thourly_climate_prefix
         self,
         filename: str,
         dates: pd.DatetimeIndex,
-        values: np.ndarray
+        values: np.ndarray,
+        decimals: int = 4,
     ) -> None:
         """
         Write a single RHESSys climate file.
 
         Format:
         - Line 1: start date (year month day hour)
-        - Lines 2+: one value per line
+        - Lines 2+: one value per line (plain fixed-point floats)
+
+        ``decimals`` sets the fixed-point precision; variables stored in small
+        units (rain in m/day) need more than the default 4.
         """
         filepath = self.climate_dir / filename
 
@@ -676,31 +706,6 @@ none\thourly_climate_prefix
                 if np.isnan(value):
                     f.write("0.0000\n")
                 else:
-                    f.write(f"{value:.4f}\n")
+                    f.write(f"{value:.{decimals}f}\n")
 
         self.logger.debug(f"Climate file written: {filepath}")
-
-    def _create_synthetic_climate(
-        self,
-        start_date: datetime,
-        end_date: datetime
-    ) -> None:
-        """Create synthetic climate data for testing."""
-        self.climate_dir.mkdir(parents=True, exist_ok=True)
-
-        dates = pd.date_range(start_date, end_date, freq='D')
-
-        # Simple synthetic data
-        precip = np.random.exponential(2, len(dates))
-        temp = 10 + 10 * np.sin(2 * np.pi * np.arange(len(dates)) / 365) + np.random.normal(0, 2, len(dates))
-        tmax = temp + 5 + np.random.normal(0, 1, len(dates))
-        tmin = temp - 5 + np.random.normal(0, 1, len(dates))
-
-        base_name = f"{self.domain_name}_base"
-        self._write_base_station_file(base_name, 1, dates[0])
-        self._write_climate_file(f"{base_name}.rain", dates, precip)
-        self._write_climate_file(f"{base_name}.tmax", dates, tmax)
-        self._write_climate_file(f"{base_name}.tmin", dates, tmin)
-        self._write_climate_file(f"{base_name}.tavg", dates, temp)
-
-        self.logger.info("Synthetic climate files created")

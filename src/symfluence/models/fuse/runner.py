@@ -30,6 +30,7 @@ from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
 from ..mizuroute.mixins import MizuRouteConfigMixin
+from .elevation_band_manager import read_band_parameters
 from .subcatchment_processor import SubcatchmentProcessor
 
 
@@ -910,11 +911,13 @@ class FUSERunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, Miz
                 self.logger.warning(f"Elevation bands file not found: {elev_bands_path}")
                 return False
 
-            with xr.open_dataset(elev_bands_path) as eb_ds:
-                n_bands = eb_ds.sizes.get('elevation_band', 1)
-                mean_elevs = eb_ds['mean_elev'].values.flatten()
-                area_fracs = eb_ds['area_frac'].values.flatten()
-                z_forcing = float(np.sum(mean_elevs * area_fracs))
+            # Per-band values of the (first) spatial unit; Z_FORCING is the
+            # area-weighted mean elevation
+            bands = read_band_parameters(elev_bands_path)
+            n_bands = bands['n_bands']
+            mean_elevs = bands['mean_elev']
+            area_fracs = bands['area_frac']
+            z_forcing = bands['z_forcing']
 
             # Find constraints file
             constraints_file = self.setup_dir / 'fuse_zConstraints_snow.txt'
@@ -1015,13 +1018,13 @@ class FUSERunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, Miz
                 self.logger.warning(f"Elevation bands file not found: {elev_bands_path}")
                 return False
 
-            with xr.open_dataset(elev_bands_path) as eb_ds:
-                n_bands = eb_ds.sizes.get('elevation_band', 1)
-                mean_elevs = eb_ds['mean_elev'].values.flatten()
-                area_fracs = eb_ds['area_frac'].values.flatten()
-
-                # Calculate Z_FORCING as area-weighted mean elevation
-                z_forcing = float(np.sum(mean_elevs * area_fracs))
+            # Per-band values of the (first) spatial unit; Z_FORCING is the
+            # area-weighted mean elevation
+            bands = read_band_parameters(elev_bands_path)
+            n_bands = bands['n_bands']
+            mean_elevs = bands['mean_elev']
+            area_fracs = bands['area_frac']
+            z_forcing = bands['z_forcing']
 
             # Update para_def.nc with correct elevation band parameters
             with xr.open_dataset(para_def_path) as ds:
@@ -1141,11 +1144,13 @@ class FUSERunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, Miz
                 self.logger.warning(f"Elevation bands file not found: {elev_bands_path}")
                 return False
 
-            with xr.open_dataset(elev_bands_path) as eb_ds:
-                n_bands = eb_ds.sizes.get('elevation_band', 1)
-                mean_elevs = eb_ds['mean_elev'].values.flatten()
-                area_fracs = eb_ds['area_frac'].values.flatten()
-                z_forcing = float(np.sum(mean_elevs * area_fracs))
+            # Per-band values of the (first) spatial unit; Z_FORCING is the
+            # area-weighted mean elevation
+            bands = read_band_parameters(elev_bands_path)
+            n_bands = bands['n_bands']
+            mean_elevs = bands['mean_elev']
+            area_fracs = bands['area_frac']
+            z_forcing = bands['z_forcing']
 
             # Update para_sce.nc with correct elevation band parameters
             # Need to handle the 'par' dimension which may have multiple parameter sets
