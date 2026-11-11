@@ -59,7 +59,6 @@ class RetryExecutionMixin(ConfigMixin):
     Provides:
     - Retry logic with exponential backoff
     - Signal handling for clean termination
-    - Staggered worker starts
     """
 
     # =========================================================================
@@ -190,33 +189,6 @@ class RetryExecutionMixin(ConfigMixin):
 
         return delay
 
-    def retry_decorator(
-        self,
-        max_retries: Optional[int] = None,
-        retry_on: Optional[tuple] = None
-    ) -> Callable:
-        """
-        Create a retry decorator.
-
-        Args:
-            max_retries: Maximum retries
-            retry_on: Exception types to retry on
-
-        Returns:
-            Decorator function
-        """
-        def decorator(func: Callable) -> Callable:
-            @wraps(func)
-            def wrapper(*args, **kwargs):
-                return self.execute_with_retry(
-                    func, *args,
-                    max_retries=max_retries,
-                    retry_on=retry_on,
-                    **kwargs
-                )
-            return wrapper
-        return decorator
-
     # =========================================================================
     # Signal handling
     # =========================================================================
@@ -256,65 +228,10 @@ class RetryExecutionMixin(ConfigMixin):
         if self.shutdown_requested:
             raise KeyboardInterrupt("Shutdown requested")
 
-    # =========================================================================
-    # Worker start staggering
-    # =========================================================================
-
-    def add_initial_delay(self, max_delay: float = 1.0) -> None:
-        """
-        Add a random initial delay to stagger worker starts.
-
-        This helps prevent simultaneous file access conflicts
-        when multiple workers start at the same time.
-
-        Args:
-            max_delay: Maximum delay in seconds
-        """
-        delay = random.uniform(0, max_delay)
-        time.sleep(delay)
-
 
 # ============================================================================
 # Standalone utility functions (for use in worker scripts)
 # ============================================================================
-
-def retry_on_io_error(
-    func: Callable,
-    max_retries: int = 3,
-    base_delay: float = 0.5
-) -> Any:
-    """
-    Standalone retry function for I/O operations.
-
-    Args:
-        func: Function to execute (takes no arguments)
-        max_retries: Maximum number of retries
-        base_delay: Base delay for backoff
-
-    Returns:
-        Result from func
-    """
-    last_exception = None
-
-    for attempt in range(max_retries + 1):
-        try:
-            return func()
-        except (IOError, OSError, PermissionError) as e:
-            last_exception = e
-
-            if attempt >= max_retries:
-                raise
-
-            if not is_transient_error(e):
-                raise
-
-            delay = base_delay * (2 ** attempt) + random.uniform(0, 0.1)
-            time.sleep(delay)
-
-    if last_exception is not None:
-        raise last_exception
-    raise RetryExhaustedError(f"Function {func.__name__} failed: retry loop completed without success or captured error")
-
 
 def with_staggered_start(func: Callable, max_delay: float = 0.5) -> Callable:
     """

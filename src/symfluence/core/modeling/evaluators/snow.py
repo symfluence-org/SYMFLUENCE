@@ -437,28 +437,5 @@ class SnowEvaluator(ModelEvaluator):
             self.logger.error(f"Error loading observed snow data: {str(e)}")
             return None
 
-    def _convert_swe_units(self, obs_swe: pd.Series) -> pd.Series:
-        """Convert SWE units from inches to kg/m² (mm water equivalent).
-
-        Uses centralized UnitConverter for consistent unit handling.
-        This method provides explicit (non-auto-detect) conversion.
-
-        Physical basis:
-          - 1 inch = 25.4 mm (exact definition)
-          - SWE in mm = SWE in inches × 25.4
-          - 1 mm SWE = 1 kg/m² (water density = 1000 kg/m³)
-
-        Args:
-            obs_swe: SWE observations in inches
-
-        Returns:
-            pd.Series: SWE observations in kg/m² (mm water equivalent)
-        """
-        return UnitConverter.swe_inches_to_mm(
-            obs_swe,
-            auto_detect=False,
-            logger=self.logger
-        )
-
     def needs_routing(self) -> bool:
         return False
