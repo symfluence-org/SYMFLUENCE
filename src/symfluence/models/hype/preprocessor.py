@@ -98,7 +98,7 @@ class HYPEPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         calibration_params (Optional[Dict]): Parameter values for calibration runs
         spinup_days (int): Number of spinup days before evaluation period
         timeshift (int): Time zone adjustment in hours
-        frac_threshold (float): Minimum class fraction to include (default: 0.1)
+        frac_threshold (float): Minimum class fraction to include (default: 0.05)
 
     Example:
         >>> from symfluence.models.hype.preprocessor import HYPEPreProcessor
@@ -162,7 +162,7 @@ class HYPEPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         )
         self.frac_threshold = self._get_config_value(
             lambda: self.config.model.hype.frac_threshold if self.config.model and self.config.model.hype else None,
-            0.1
+            0.05
         )
 
         # If spinup_days not provided, calculate from SPINUP_PERIOD
@@ -438,10 +438,7 @@ class HYPEPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             gistool_output=self.gistool_output,
             subbasins_shapefile=basin_path,
             rivers_shapefile=river_path,
-            frac_threshold=self._get_config_value(
-                lambda: self.config.model.hype.frac_threshold if self.config.model and self.config.model.hype else None,
-                default=0.05
-            ),
+            frac_threshold=self.frac_threshold,
             intersect_base_path=self.intersect_path,
             elevation_band_shapefile=elevation_band_shp
         )

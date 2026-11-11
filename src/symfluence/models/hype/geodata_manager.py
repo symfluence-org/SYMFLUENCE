@@ -860,26 +860,40 @@ class HYPEGeoDataManager:
             # rank is 1-based position by ascending elevation.
             return int(band['hru_id']) if use_hru_id else pid * mult + rank
 
-        # Each parent's outlet (lowest-elevation) band, for downstream routing.
+        def is_expanded(bands: list[dict[str, float]] | None) -> bool:
+            # A parent with too many bands for the id scheme stays lumped.
+            return bool(bands) and (use_hru_id or len(bands) < mult)
+
+        # Outlet (lowest-elevation) band of each parent that is actually
+        # expanded, for downstream routing. A parent that keeps its own row
+        # (no bands, or kept lumped) is routed to by its own subid.
+        parent_ids = {int(v) for v in base_df['subid']}
         parent_outlet: dict[int, int] = {}
         for pid, bands in bands_by_parent.items():
-            if bands:
+            if is_expanded(bands):
                 low = sorted(bands, key=lambda b: b['elev_mean'])[0]
                 parent_outlet[pid] = band_subid(pid, 1, low)
+
+        def downstream_subid(parent_maindown: int) -> int:
+            if parent_maindown <= 0:
+                return 0
+            if parent_maindown in parent_outlet:
+                return parent_outlet[parent_maindown]
+            return parent_maindown if parent_maindown in parent_ids else 0
 
         out_rows: list[dict[str, Any]] = []
         for _, prow in base_df.iterrows():
             pid = int(prow['subid'])
             bands = bands_by_parent.get(pid)
             if not bands:
-                out_rows.append(prow.to_dict())
+                out_rows.append(self._route_to_outlet_band(prow.to_dict(), parent_outlet))
                 continue
             n = len(bands)
-            if not use_hru_id and n >= mult:
+            if not is_expanded(bands):
                 self.logger.warning(
                     "Sub-basin %d has %d elevation bands (>= id multiplier %d); "
                     "keeping it lumped to avoid id collisions.", pid, n, mult)
-                out_rows.append(prow.to_dict())
+                out_rows.append(self._route_to_outlet_band(prow.to_dict(), parent_outlet))
                 continue
 
             bands_sorted = sorted(bands, key=lambda b: b['elev_mean'])
@@ -907,8 +921,7 @@ class HYPEGeoDataManager:
                 row = prow.to_dict()
                 row['subid'] = subids[k]
                 if k == 0:
-                    row['maindown'] = (0 if parent_maindown <= 0
-                                       else parent_outlet.get(parent_maindown, 0))
+                    row['maindown'] = downstream_subid(parent_maindown)
                 else:
                     row['maindown'] = subids[k - 1]
                 row['grwdown'] = row['maindown']
@@ -951,6 +964,18 @@ class HYPEGeoDataManager:
                 result[col] = result[col].astype(int)
         return result
 
+    @staticmethod
+    def _route_to_outlet_band(row: dict[str, Any], parent_outlet: dict[int, int]) -> dict[str, Any]:
+        """Point an unexpanded sub-basin at its downstream parent's outlet band.
+
+        The downstream parent's own subid no longer exists once it has been
+        expanded into bands.
+        """
+        for col in ('maindown', 'grwdown'):
+            if col in row and int(row[col]) in parent_outlet:
+                row[col] = parent_outlet[int(row[col])]
+        return row
+
     def _shift_ids_if_needed(self, base_df: pd.DataFrame) -> pd.DataFrame:
         """
         Shift IDs if they start from 0 (HYPE requires > 0).
@@ -973,6 +998,10 @@ class HYPEGeoDataManager:
                 return 0  # Outlet
 
             base_df['maindown'] = base_df['maindown'].apply(update_downstream)
+            # The regional groundwater target is an id too; left unshifted it
+            # points each sub-basin at itself (or at a non-existent id).
+            if 'grwdown' in base_df.columns:
+                base_df['grwdown'] = base_df['grwdown'].apply(update_downstream)
 
         return base_df
 
