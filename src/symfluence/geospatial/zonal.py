@@ -88,30 +88,37 @@ def nearest_donor_zones(
     """For each empty zone, the position of the nearest zone that has data.
 
     A donor in the same group (same GRU) is preferred; otherwise the nearest
-    donor overall is used.  Distances are between representative points.
-    Zones for which no donor exists are absent from the result.
+    donor overall is used.  Distances are between centroids.  Zones for which
+    no donor exists are absent from the result.
     """
-    geoms = list(geometries)
-    empty_set = set(empty)
-    donors = [i for i in range(len(geoms)) if i not in empty_set]
-    if not donors or not empty:
+    import shapely
+    from scipy.spatial import cKDTree
+
+    geoms = np.asarray(list(geometries), dtype=object)
+    empty_set = set(int(i) for i in empty)
+    donors = np.array([i for i in range(len(geoms)) if i not in empty_set], dtype=int)
+    if donors.size == 0 or not empty_set:
         return {}
 
-    def _xy(idx: int) -> Tuple[float, float]:
-        point = geoms[idx].representative_point()
-        return point.x, point.y
+    centroids = shapely.centroid(geoms)
+    xy = np.column_stack([shapely.get_x(centroids), shapely.get_y(centroids)])
+    global_tree = cKDTree(xy[donors])
 
-    donor_xy = np.array([_xy(i) for i in donors])
-    donor_groups = None if group_ids is None else np.array([str(group_ids[i]) for i in donors])
+    groups = None if group_ids is None else np.array([str(g) for g in group_ids])
+    group_trees: Dict[str, Any] = {}
 
     out: Dict[int, int] = {}
-    for i in empty:
-        dist2 = np.sum((donor_xy - np.array(_xy(i))) ** 2, axis=1)
-        if donor_groups is not None:
-            same = donor_groups == str(group_ids[i])  # type: ignore[index]
-            if same.any():
-                dist2 = np.where(same, dist2, np.inf)
-        out[i] = donors[int(np.argmin(dist2))]
+    for i in sorted(empty_set):
+        if groups is not None:
+            key = groups[i]
+            if key not in group_trees:
+                members = donors[groups[donors] == key]
+                group_trees[key] = (cKDTree(xy[members]), members) if members.size else None
+            if group_trees[key] is not None:
+                tree, members = group_trees[key]
+                out[i] = int(members[tree.query(xy[i])[1]])
+                continue
+        out[i] = int(donors[global_tree.query(xy[i])[1]])
     return out
 
 
