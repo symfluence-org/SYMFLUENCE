@@ -126,13 +126,23 @@ _KNOWN_UNRESOLVED = {
 }
 
 
+# Config sections contributed by optional plugins. They resolve only when the
+# plugin is installed (it is not in CI), so reads under them are not checked.
+_PLUGIN_SECTIONS = ("config.model.droute",)
+
+
+def _in_plugin_section(entry: str) -> bool:
+    cfg_path = entry.rsplit(": ", 1)[1]
+    return any(cfg_path == s or cfg_path.startswith(s + ".") for s in _PLUGIN_SECTIONS)
+
+
 def _without_line(entry: str) -> str:
     location, cfg_path = entry.rsplit(": ", 1)
     return f"{Path(location.rsplit(':', 1)[0]).as_posix()}: {cfg_path}"
 
 
 def test_typed_config_paths_resolve():
-    found = _unresolvable_paths()
+    found = [entry for entry in _unresolvable_paths() if not _in_plugin_section(entry)]
     bad = [entry for entry in found if _without_line(entry) not in _KNOWN_UNRESOLVED]
     stale = _KNOWN_UNRESOLVED - {_without_line(entry) for entry in found}
     assert not stale, f"Fixed -- remove from _KNOWN_UNRESOLVED: {sorted(stale)}"
