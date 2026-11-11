@@ -758,7 +758,7 @@ class SummaForcingProcessor(BaseForcingProcessor):
             # 2. Find the file(s) containing these boundary time-steps
             # ------------------------------------------------------------------
             boundary_ds = {}    # key: 'feb28' or 'mar01', value: xr.Dataset single-time slice
-            boundary_sec = {}   # same keys, value: time of that slice (seconds since reference)
+            boundary_sec: dict[str, float] = {}   # same keys, value: time of that slice (seconds since reference)
             has_feb29 = False
 
             for fname in processed_files:

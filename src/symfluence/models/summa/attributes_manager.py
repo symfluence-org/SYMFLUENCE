@@ -70,7 +70,7 @@ def downslope_components(
     dz_drow, dz_dcol = np.gradient(np.asarray(dem, dtype=np.float64), cell_size_y, cell_size_x)
     dz_dnorth = -dz_drow if rows_southward else dz_drow
     dz_deast = dz_dcol if cols_eastward else -dz_dcol
-    return -dz_deast, -dz_dnorth
+    return np.asarray(-dz_deast), np.asarray(-dz_dnorth)
 
 
 def aspect_from_components(east: float, north: float) -> Optional[float]:
