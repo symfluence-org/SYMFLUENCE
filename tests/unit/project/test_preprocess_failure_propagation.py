@@ -19,7 +19,7 @@ def _manager(tmp_path):
     return SimpleNamespace(
         config={}, logger=MagicMock(), reporting_manager=None,
         project_forcing_dir=tmp_path,
-        _resolve_model_workflow=lambda: ['MHM'],
+        _resolve_model_workflow=lambda **_: ['MHM'],
     )
 
 

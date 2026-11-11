@@ -28,7 +28,8 @@ class RavenPreProcessor(BaseModelPreProcessor):
     def run_preprocessing(self):
         c = self.config
         s = c.model.raven
-        bands, forcing = daily_bands(c.paths.forcing_path, s.hru_file, c.domain.time_start, c.domain.time_end)
+        bands, forcing = daily_bands(
+            c.paths.forcing_path, s.hru_file, c.domain.time_start, c.domain.time_end, c.domain.discretization)
         ice = upper_ice_fractions(bands.HRU_area, bands.elev_mean, s.glacier_fraction)
         native.setup(self.setup_dir, bands, forcing, ice, s.glacier_ice_mm)
         return True
