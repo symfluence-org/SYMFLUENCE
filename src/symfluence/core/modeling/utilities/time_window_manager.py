@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
 import xarray as xr
@@ -63,7 +63,8 @@ class TimeWindowManager:
         self,
         forcing_path: Optional[Path] = None,
         default_start_offset_days: int = 0,
-        default_end_offset_days: int = 0
+        default_end_offset_days: int = 0,
+        catchment_path: Optional[Path] = None,
     ) -> Tuple[pd.Timestamp, pd.Timestamp]:
         """
         Get simulation start and end times from config.
@@ -74,6 +75,8 @@ class TimeWindowManager:
             forcing_path: Path to forcing files (required if using 'default')
             default_start_offset_days: Days to offset from forcing start (warm-up)
             default_end_offset_days: Days to offset from forcing end
+            catchment_path: The run's catchment shapefile, used to select the
+                forcing files remapped onto its HRUs (see get_forcing_time_range)
 
         Returns:
             Tuple of (start_time, end_time) as pd.Timestamp
@@ -87,7 +90,8 @@ class TimeWindowManager:
                 raise ValueError(
                     "forcing_path required when using 'default' simulation times"
                 )
-            forcing_start, forcing_end = self.get_forcing_time_range(forcing_path)
+            forcing_start, forcing_end = self.get_forcing_time_range(
+                forcing_path, catchment_path=catchment_path)
 
             if sim_start == 'default':
                 sim_start = forcing_start + pd.Timedelta(days=default_start_offset_days)
@@ -143,20 +147,34 @@ class TimeWindowManager:
 
     def get_forcing_time_range(
         self,
-        forcing_path: Path,
-        time_var: str = 'time'
+        forcing_path: Union[Path, List[Path]],
+        time_var: str = 'time',
+        catchment_path: Optional[Path] = None,
     ) -> Tuple[pd.Timestamp, pd.Timestamp]:
         """
         Extract time range from forcing NetCDF files.
 
         Args:
-            forcing_path: Path to directory containing forcing files
+            forcing_path: Directory containing forcing files, or the already
+                selected file list (used as given)
             time_var: Name of time variable in files
+            catchment_path: The run's catchment shapefile; a directory is
+                narrowed to this run's forcing (issue #339) by discretization
+                and, when the file exists, HRU geometry
 
         Returns:
             Tuple of (min_time, max_time) as pd.Timestamp
         """
-        forcing_files = sorted(forcing_path.glob('*.nc'))
+        if isinstance(forcing_path, (list, tuple)):
+            forcing_files = [Path(f) for f in forcing_path]
+        else:
+            from symfluence.core.modeling.forcing_naming import resolve_forcing_files
+            forcing_files = resolve_forcing_files(
+                sorted(Path(forcing_path).glob('*.nc')),
+                self._get_config_value('SUB_GRID_DISCRETIZATION', None) or self._get_discretization(),
+                catchment_path,
+                self._get_config_value('CATCHMENT_SHP_HRUID', None) or 'HRU_ID',
+            )
         if not forcing_files:
             raise FileNotFoundError(f"No forcing files found in {forcing_path}")
 
@@ -322,6 +340,12 @@ class TimeWindowManager:
         )
 
         return ds
+
+    def _get_discretization(self) -> Optional[str]:
+        """``config.domain.discretization`` on a typed config, else None."""
+        domain = getattr(self.config, 'domain', None)
+        disc = getattr(domain, 'discretization', None) if domain is not None else None
+        return disc or None
 
     def _get_config_value(
         self,

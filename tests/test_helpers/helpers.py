@@ -175,3 +175,31 @@ def is_cds_data_available(dataset="reanalysis-carra-single-levels"):
         # Other errors (like missing required fields) suggest the API is accessible
         _cloud_availability_cache[cache_key] = True
         return True
+
+
+# The Bow-at-Banff raw forcing for January 2004, newest bundle name first. The
+# bundle also ships a 3-step sample for the same month; both map to one
+# remapped output name, so tests must keep exactly one of them.
+BOW_JAN_2004_FORCING_GLOBS = ("*ERA5*200401*1month*.nc", "domain_*_ERA5_merged_200401.nc")
+
+
+def keep_single_raw_forcing(raw_dir, globs=BOW_JAN_2004_FORCING_GLOBS):
+    """Delete every raw forcing file in *raw_dir* except the first match of *globs*.
+
+    Fails when the folder holds several files and none matches, so a renamed
+    test bundle cannot silently leave overlapping forcing behind.
+    """
+    from pathlib import Path
+
+    raw_dir = Path(raw_dir)
+    if not raw_dir.exists():
+        return None
+    files = sorted(raw_dir.glob("*.nc"))
+    keep = next((m for g in globs for m in sorted(raw_dir.glob(g))), None)
+    if keep is None:
+        assert len(files) <= 1, f"No raw forcing in {raw_dir} matches {globs}: {[f.name for f in files]}"
+        return files[0] if files else None
+    for path in files:
+        if path != keep:
+            path.unlink()
+    return keep

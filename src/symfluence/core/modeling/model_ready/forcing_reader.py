@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import List, Union
+from typing import TYPE_CHECKING, List, Optional, Union
 
 import numpy as np
 import xarray as xr
@@ -36,6 +36,9 @@ from symfluence.core.modeling.forcing_naming import (
 )
 
 from .cf_conventions import CANONICAL_FORCING
+
+if TYPE_CHECKING:
+    from symfluence.core.modeling.forcing_naming import HruGeometry
 
 logger = logging.getLogger(__name__)
 _discretization_key_from_name = discretization_key_from_name
@@ -198,6 +201,7 @@ def assert_consistent_spatial_dims(files: List[Path]) -> None:
 def open_canonical_forcing(
     forcing_files: Union[Path, List[Path]],
     discretization: object = None,
+    geometry: Optional['HruGeometry'] = None,
 ) -> xr.Dataset:
     """Open model-ready forcing and return it under canonical CFIF names.
 
@@ -216,13 +220,15 @@ def open_canonical_forcing(
             collide (issue #339). ``None`` keeps the legacy behaviour of reading
             every file passed, with :func:`assert_consistent_spatial_dims` as a
             loud backstop against an accidental mix.
+        geometry: the run's catchment :class:`HruGeometry`; narrows the
+            selection to the forcing remapped onto that HRU set.
 
     Returns:
         xarray.Dataset with canonical variable names and a timestep_seconds attr.
     """
     files = [forcing_files] if isinstance(forcing_files, (str, Path)) else list(forcing_files)
     files = [Path(f) for f in files]
-    files = select_forcing_files(files, discretization)
+    files = select_forcing_files(files, discretization, geometry)
     if len(files) == 1:
         ds = xr.open_dataset(files[0])
     else:
