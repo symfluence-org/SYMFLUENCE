@@ -135,7 +135,9 @@ class CoastalWatershedDelineator(BaseGeofabricDelineator):
                 river_basins_centroids.geometry = river_basins_centroids.geometry.buffer(1.0)
 
                 # Create Voronoi polygons
-                voronoi_gdf = self._create_voronoi_tessellation(river_basins_centroids)
+                voronoi_gdf = self._create_voronoi_tessellation(
+                    river_basins_centroids, cover=coastal_strip
+                )
 
                 if voronoi_gdf is None or voronoi_gdf.empty:
                     self.logger.warning("Failed to create Voronoi tessellation. Using alternative approach.")
@@ -148,6 +150,7 @@ class CoastalWatershedDelineator(BaseGeofabricDelineator):
                         crs=utm_crs
                     )
                     coastal_watersheds = gpd.overlay(coastal_strip, voronoi_gdf, how='intersection')
+                    self._check_strip_area_conserved(coastal_strip, coastal_watersheds)
             except Exception as e:  # noqa: BLE001 — preprocessing resilience
                 self.logger.error(f"Error dividing coastal strip: {str(e)}", exc_info=True)
                 # Fallback to simpler approach: use a buffer method
@@ -396,12 +399,44 @@ class CoastalWatershedDelineator(BaseGeofabricDelineator):
             self.logger.error(f"Error creating land polygon from DEM: {str(e)}", exc_info=True)
             return None
 
-    def _create_voronoi_tessellation(self, points_gdf: gpd.GeoDataFrame) -> Optional[gpd.GeoDataFrame]:
+    def _check_strip_area_conserved(
+        self,
+        coastal_strip: gpd.GeoDataFrame,
+        coastal_watersheds: gpd.GeoDataFrame,
+        tolerance: float = 1e-3,
+    ) -> bool:
+        """Log an error if dividing the coastal strip lost or duplicated area."""
+        strip_area = float(coastal_strip.geometry.area.sum())
+        divided_area = float(coastal_watersheds.geometry.area.sum()) if len(coastal_watersheds) else 0.0
+        if strip_area <= 0:
+            return True
+        rel = abs(divided_area - strip_area) / strip_area
+        if rel > tolerance:
+            self.logger.error(
+                f"Coastal strip division does not conserve area: {divided_area / 1e6:.3f} km2 "
+                f"assigned of {strip_area / 1e6:.3f} km2 ({100 * divided_area / strip_area:.1f}%)."
+            )
+            return False
+        return True
+
+    def _create_voronoi_tessellation(
+        self,
+        points_gdf: gpd.GeoDataFrame,
+        cover: Optional[gpd.GeoDataFrame] = None,
+    ) -> Optional[gpd.GeoDataFrame]:
         """
         Create Voronoi polygons from point data.
 
+        Every input point gets a polygon and together the polygons tile the
+        bounding area of the points and of *cover* (the area to be divided):
+        far-away helper points are added before the tessellation so that the
+        regions of the outermost points — which are unbounded in a plain
+        Voronoi diagram, and are exactly the ones facing the coast — are
+        closed instead of being discarded.
+
         Args:
             points_gdf: Points to create Voronoi diagram from
+            cover: Geometries the tessellation must cover completely
 
         Returns:
             GeoDataFrame with Voronoi polygons or None if failed
@@ -420,35 +455,45 @@ class CoastalWatershedDelineator(BaseGeofabricDelineator):
 
                 coords.append((point.x, point.y))
 
-            coords = np.array(coords)
+            coords = np.unique(np.array(coords, dtype=float), axis=0)
 
-            if len(coords) < 4:
-                self.logger.warning("Not enough points for Voronoi tessellation (need at least 4).")
+            if len(coords) < 1:
+                self.logger.warning("No points for Voronoi tessellation.")
                 return None
 
-            # Create Voronoi diagram
-            vor = Voronoi(coords)
+            # Area the tessellation has to cover
+            minx, miny = coords.min(axis=0)
+            maxx, maxy = coords.max(axis=0)
+            if cover is not None and len(cover) > 0:
+                cminx, cminy, cmaxx, cmaxy = cover.total_bounds
+                minx, miny = min(minx, cminx), min(miny, cminy)
+                maxx, maxy = max(maxx, cmaxx), max(maxy, cmaxy)
+            margin = 1000.0  # projected CRS, metres
+            envelope = shapely.geometry.box(minx - margin, miny - margin, maxx + margin, maxy + margin)
 
-            # Create polygons from Voronoi regions
+            # Far helper points close every real point's region
+            cx, cy = (minx + maxx) / 2.0, (miny + maxy) / 2.0
+            reach = 10.0 * max(maxx - minx, maxy - miny, 10000.0)
+            helpers = np.array([
+                (cx + dx * reach, cy + dy * reach)
+                for dx, dy in [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+            ])
+            vor = Voronoi(np.vstack([coords, helpers]))
+
+            # One polygon per real point
             regions = []
-            for region in vor.regions:
-                if -1 not in region and len(region) > 0:  # Valid regions
-                    polygon = [vor.vertices[i] for i in region]
-                    if len(polygon) > 2:  # Valid polygon needs at least 3 points
-                        regions.append(shapely.geometry.Polygon(polygon))
+            for point_idx in range(len(coords)):
+                region = vor.regions[vor.point_region[point_idx]]
+                if len(region) < 3 or -1 in region:
+                    self.logger.warning(
+                        f"Voronoi region of point {point_idx} is unbounded; tessellation incomplete."
+                    )
+                    return None
+                polygon = shapely.geometry.Polygon([vor.vertices[i] for i in region])
+                regions.append(polygon.intersection(envelope))
 
             # Create GeoDataFrame
             voronoi_gdf = gpd.GeoDataFrame(geometry=regions, crs=points_gdf.crs)
-
-            # Create a convex hull around the points to limit Voronoi extent
-            convex_hull = points_gdf.union_all().convex_hull
-
-            # Use a large buffer around the convex hull (projected CRS, metres)
-            buffer_distance = 10000.0  # ~10 km
-            extended_hull = shapely.geometry.Polygon(convex_hull).buffer(buffer_distance)
-
-            # Clip Voronoi polygons to the extended hull
-            voronoi_gdf.geometry = [geom.intersection(extended_hull) for geom in voronoi_gdf.geometry]
 
             # Filter out empty geometries
             voronoi_gdf = voronoi_gdf[~voronoi_gdf.geometry.is_empty]

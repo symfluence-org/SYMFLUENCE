@@ -477,7 +477,6 @@ src/symfluence/fews/pi_xml.py:write_pi_xml_timeseries:except Exception as exc:  
 src/symfluence/fews/post_adapter.py:FEWSPostAdapter._load_model_output:except Exception:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/geospatial/delineation.py:DomainDelineator._delineate_lumped_domain:except Exception as e:  # noqa: BLE001 — geospatial resilience
 src/symfluence/geospatial/delineation_protocol.py:DelineationStrategyAdapter.delineate:except Exception as e:  # noqa: BLE001 — geospatial resilience
-src/symfluence/geospatial/discretization/attributes/combined.py:_create_combined_attribute_hrus:except Exception as e:  # noqa: BLE001 — geospatial resilience
 src/symfluence/geospatial/discretization/attributes/combined.py:_create_hru_from_combination_mask:except Exception as e:  # noqa: BLE001 — geospatial resilience
 src/symfluence/geospatial/discretization/attributes/grus.py:discretize:except Exception as e:  # noqa: BLE001 — geospatial resilience
 src/symfluence/geospatial/discretization/attributes/grus.py:discretize:except Exception as e:  # noqa: BLE001 — geospatial resilience
@@ -1048,7 +1047,6 @@ src/symfluence/models/summa/calibration/parameter_manager.py:SUMMAParameterManag
 src/symfluence/models/summa/calibration/parameter_manager.py:SUMMAParameterManager._load_original_depths:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/summa/calibration/parameter_manager.py:SUMMAParameterManager._parse_defaults_from_file:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/summa/calibration/parameter_manager.py:SUMMAParameterManager._parse_param_info_file:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/summa/calibration/summa_regionalization.py:load_hru_attributes:except Exception:  # noqa: BLE001
 src/symfluence/models/summa/calibration/worker.py:SUMMAWorker._apply_parameters_direct:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/summa/calibration/worker.py:SUMMAWorker._calculate_metrics_direct:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/summa/calibration/worker.py:SUMMAWorker._calculate_multi_gauge_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience

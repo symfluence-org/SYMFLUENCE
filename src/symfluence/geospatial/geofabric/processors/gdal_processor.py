@@ -136,7 +136,15 @@ class GDALProcessor:
             if dst_ds is None:
                 raise RuntimeError(f"Could not create output shapefile: {output_shapefile}")
 
-            dst_layer = dst_ds.CreateLayer("watersheds", srs=None)
+            # Carry the raster's CRS so the shapefile is not later assumed to
+            # be EPSG:4326 (the DEM may be projected).
+            raster_wkt = src_ds.GetProjection()
+            layer_srs = None
+            if raster_wkt:
+                from osgeo import osr
+                layer_srs = osr.SpatialReference()
+                layer_srs.ImportFromWkt(raster_wkt)
+            dst_layer = dst_ds.CreateLayer("watersheds", srs=layer_srs)
             if dst_layer is None:
                 raise RuntimeError("Could not create output layer")
 

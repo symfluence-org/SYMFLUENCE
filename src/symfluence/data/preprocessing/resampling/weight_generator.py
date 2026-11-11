@@ -200,8 +200,8 @@ class RemappingWeightGenerator(ConfigMixin):
             Path to the remapping CSV file
         """
         # Ensure shapefiles are in WGS84
-        source_shp_wgs84 = self.shapefile_processor.ensure_wgs84(source_shp_path, "_wgs84")
-        target_result = self.shapefile_processor.ensure_wgs84(target_shp_path, "_wgs84")
+        source_shp_wgs84 = self.shapefile_processor.ensure_wgs84(source_shp_path, "_wgs84", is_target=False)
+        target_result = self.shapefile_processor.ensure_wgs84(target_shp_path, "_wgs84", is_target=True)
 
         if isinstance(target_result, tuple):
             target_shp_wgs84, actual_hru_field = target_result

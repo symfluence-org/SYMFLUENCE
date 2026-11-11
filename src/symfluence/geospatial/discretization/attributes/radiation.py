@@ -12,7 +12,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Optional
 
-from symfluence.geospatial.raster_utils import calculate_annual_radiation
+from symfluence.geospatial.raster_utils import (
+    calculate_annual_radiation,
+    quantile_class_thresholds,
+    radiation_raster_is_current,
+)
 
 if TYPE_CHECKING:
     from ..core import DomainDiscretizer
@@ -69,16 +73,21 @@ def discretize(discretizer: "DomainDiscretizer") -> Optional[object]:
         )
         if radiation_raster is None:
             raise ValueError("Failed to calculate annual radiation")
+    else:
+        warn_if_stale_radiation_raster(discretizer, radiation_raster)
 
-    gru_gdf, radiation_thresholds = discretizer._read_and_prepare_data(
-        gru_shapefile, radiation_raster, radiation_class_number
+    # RADIATION_CLASS_NUMBER is a number of classes (quantiles of the whole
+    # raster), the same definition the combined discretization uses.
+    gru_gdf = discretizer._read_shapefile(gru_shapefile)
+    radiation_thresholds = quantile_class_thresholds(
+        radiation_raster, radiation_class_number, discretizer.logger
     )
     hru_gdf = discretizer._create_multipolygon_hrus(
         gru_gdf, radiation_raster, radiation_thresholds, "radiationClass"
     )
 
     if hru_gdf is not None and not hru_gdf.empty:
-        hru_gdf = discretizer._clean_and_prepare_hru_gdf(hru_gdf)
+        hru_gdf = discretizer._clean_and_prepare_hru_gdf(hru_gdf, gru_gdf)
         hru_gdf.to_file(output_shapefile)
         discretizer.logger.info(
             f"Radiation-based HRU Shapefile created with {len(hru_gdf)} HRUs and saved to {output_shapefile}"
@@ -90,3 +99,15 @@ def discretize(discretizer: "DomainDiscretizer") -> Optional[object]:
             "No valid HRUs were created. Check your input data and parameters."
         )
         return None
+
+
+def warn_if_stale_radiation_raster(discretizer: "DomainDiscretizer", radiation_raster) -> None:
+    """Warn when a reused radiation raster was not written by the current method."""
+    if not radiation_raster_is_current(radiation_raster):
+        discretizer.logger.warning(
+            f"Reusing existing radiation raster {radiation_raster}, which was not "
+            "produced by the current SYMFLUENCE radiation calculation. Rasters "
+            "written by earlier versions sampled the sun once a day at 00:00 UTC "
+            "and are not usable; delete the file to recompute it (ignore this "
+            "message if you supplied the raster yourself)."
+        )

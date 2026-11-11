@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Optional, Union
 
 import numpy as np
 
+from symfluence.core.exceptions import ValidationError
 from symfluence.core.mixins.project import resolve_data_subdir
 from symfluence.core.modeling.model_ready.cf_conventions import CF_STANDARD_NAMES, build_global_attrs
 
@@ -81,6 +82,8 @@ class AttributesNetCDFBuilder:
         self.catchment_dir = project_dir / 'shapefiles' / 'catchment'
         self.basin_dir = project_dir / 'shapefiles' / 'river_basins'
         self.target_dir = project_dir / 'data' / 'model_ready' / 'attributes'
+        self._catchment_hru_ids_cache: Optional[list] = None
+        self._catchment_hru_ids_loaded = False
 
     # ------------------------------------------------------------------
     # Public API
@@ -350,27 +353,23 @@ class AttributesNetCDFBuilder:
         if not climate_dir.exists():
             return False
 
-        csvs = list(climate_dir.glob('*.csv'))
+        csvs = self._pick_csv(climate_dir, 'worldclim_attributes.csv')
         if not csvs:
             return False
 
         try:
-            import pandas as pd
-            df = pd.read_csv(csvs[0])
-            if df.empty:
+            df, ids = self._combine_hru_tables(csvs, 'climate')
+            if df is None or df.empty:
                 return False
 
             grp = root.createGroup('climate')
-            n = len(df)
-            grp.createDimension('hru', n)
-
-            for col in df.select_dtypes(include=[np.number]).columns:
-                v = grp.createVariable(col, 'f4', ('hru',))
-                v[:] = df[col].values.astype('f4')
+            self._write_table_group(grp, df, ids)
 
             meta = SourceMetadata(source='climatological attributes')
             grp.setncatts(meta.to_netcdf_attrs())
             return True
+        except ValidationError:
+            raise
         except Exception as e:  # noqa: BLE001 — preprocessing resilience
             logger.debug("Could not build climate group: %s", e, exc_info=True)
             return False
@@ -381,27 +380,23 @@ class AttributesNetCDFBuilder:
         if not geo_dir.exists():
             return False
 
-        csvs = list(geo_dir.glob('*.csv'))
+        csvs = self._pick_csv(geo_dir, 'glhymps_attributes.csv')
         if not csvs:
             return False
 
         try:
-            import pandas as pd
-            df = pd.read_csv(csvs[0])
-            if df.empty:
+            df, ids = self._combine_hru_tables(csvs, 'hydrogeology')
+            if df is None or df.empty:
                 return False
 
             grp = root.createGroup('hydrogeology')
-            n = len(df)
-            grp.createDimension('hru', n)
-
-            for col in df.select_dtypes(include=[np.number]).columns:
-                v = grp.createVariable(col, 'f4', ('hru',))
-                v[:] = df[col].values.astype('f4')
+            self._write_table_group(grp, df, ids)
 
             meta = SourceMetadata(source='hydrogeological attributes')
             grp.setncatts(meta.to_netcdf_attrs())
             return True
+        except ValidationError:
+            raise
         except Exception as e:  # noqa: BLE001 — preprocessing resilience
             logger.debug("Could not build hydrogeology group: %s", e, exc_info=True)
             return False
@@ -417,28 +412,147 @@ class AttributesNetCDFBuilder:
             return False
 
         try:
-            import pandas as pd
-            frames = [pd.read_csv(c) for c in csvs]
-            df = pd.concat(frames, axis=1)
-            df = df.loc[:, ~df.columns.duplicated()]
-
-            if df.empty:
+            df, ids = self._combine_hru_tables(csvs, group_name)
+            if df is None or df.empty:
                 return False
 
             grp = root.createGroup(group_name)
-            n = len(df)
-            grp.createDimension('hru', n)
-
-            for col in df.select_dtypes(include=[np.number]).columns:
-                v = grp.createVariable(col, 'f4', ('hru',))
-                v[:] = df[col].values.astype('f4')
+            self._write_table_group(grp, df, ids)
 
             meta = SourceMetadata(source=f'{group_name} attributes')
             grp.setncatts(meta.to_netcdf_attrs())
             return True
+        except ValidationError:
+            raise
         except Exception as e:  # noqa: BLE001
             logger.debug("Could not build %s group: %s", group_name, e)
             return False
+
+    @staticmethod
+    def _pick_csv(directory: Path, preferred: str) -> list:
+        """The one CSV a single-file group is built from (deterministic)."""
+        if (directory / preferred).exists():
+            return [directory / preferred]
+        return sorted(directory.glob('*.csv'))[:1]
+
+    def _combine_hru_tables(self, csvs, group_name: str):
+        """Combine the per-HRU CSVs of one group into a single table.
+
+        Tables are joined on their ``hru_id`` column and ordered like the
+        catchment shapefile (numerically when the catchment is unavailable).
+        Tables without an id column cannot be joined to anything: a single
+        one is passed through unchanged (and written without an ``hru_id``
+        coordinate); next to id-keyed tables it is left out with a warning.
+
+        Returns:
+            ``(table, hru_ids)`` — *hru_ids* is None when the table carries
+            no ids; ``(None, None)`` when there is nothing to write.
+
+        Raises:
+            ValidationError: for a processor-written CSV that predates the
+                ``hru_id`` column and has too many rows to be trusted, for
+                duplicate ids, and for several id-less tables that cannot be
+                combined safely.
+        """
+        import pandas as pd
+
+        from symfluence.core.modeling.model_ready.hru_tables import (
+            HRU_ID_COLUMN,
+            LEGACY_POSITIONAL_MAX_ROWS,
+            PROCESSOR_CSV_NAMES,
+            legacy_table_error,
+            normalize_hru_id,
+            order_hru_ids,
+            read_hru_table,
+        )
+
+        keyed = []
+        unkeyed = []
+        for csv in sorted(csvs):
+            table = read_hru_table(csv)
+            if table.empty:
+                continue
+            if HRU_ID_COLUMN in table.columns:
+                if table[HRU_ID_COLUMN].duplicated().any():
+                    raise ValidationError(
+                        f"Per-HRU attribute table {csv} has duplicate '{HRU_ID_COLUMN}' values."
+                    )
+                keyed.append(table.set_index(HRU_ID_COLUMN))
+            else:
+                if csv.name in PROCESSOR_CSV_NAMES and len(table) > LEGACY_POSITIONAL_MAX_ROWS:
+                    raise legacy_table_error(csv, len(table))
+                unkeyed.append((csv, table))
+
+        if keyed:
+            for csv, table in unkeyed:
+                logger.warning(
+                    "Attribute table %s has no '%s' column and cannot be joined to the "
+                    "id-keyed tables of group '%s'; leaving it out.",
+                    csv, HRU_ID_COLUMN, group_name,
+                )
+            df = keyed[0]
+            for other in keyed[1:]:
+                new_cols = [c for c in other.columns if c not in df.columns]
+                df = df.join(other[new_cols], how='outer')
+            catchment_ids = self._catchment_hru_ids()
+            if catchment_ids is not None and set(df.index) <= set(catchment_ids):
+                order = [i for i in catchment_ids if i in set(df.index)]
+            else:
+                order = order_hru_ids(df.index, catchment_ids)
+            df = df.reindex(order)
+            ids = [normalize_hru_id(i) for i in df.index]
+            return df.reset_index(drop=True), ids
+
+        if not unkeyed:
+            return None, None
+        if len(unkeyed) == 1:
+            csv, table = unkeyed[0]
+            if len(table) > 1:
+                logger.warning(
+                    "Attribute table %s has no '%s' column; group '%s' is written "
+                    "without HRU ids and cannot be joined to HRUs by id.",
+                    csv, HRU_ID_COLUMN, group_name,
+                )
+            return table, None
+
+        lengths = {len(table) for _, table in unkeyed}
+        if len(lengths) != 1 or max(lengths) > LEGACY_POSITIONAL_MAX_ROWS:
+            raise ValidationError(
+                f"Attribute tables {[str(c) for c, _ in unkeyed]} for group "
+                f"'{group_name}' have no '{HRU_ID_COLUMN}' column and "
+                f"{sorted(lengths)} rows; they cannot be combined row by row safely. "
+                "Regenerate the attributes (processor-written tables now carry HRU "
+                f"ids) or add an '{HRU_ID_COLUMN}' column."
+            )
+        df = pd.concat([table for _, table in unkeyed], axis=1)
+        df = df.loc[:, ~df.columns.duplicated()]
+        return df, None
+
+    def _catchment_hru_ids(self):
+        """Normalized HRU ids in catchment-shapefile order, or None."""
+        if not self._catchment_hru_ids_loaded:
+            from symfluence.core.modeling.model_ready.hru_tables import normalize_hru_id
+
+            ids = None
+            gdf = self._find_catchment_shapefile()
+            id_col = self._cfg('CATCHMENT_SHP_HRUID', 'HRU_ID')
+            if gdf is not None and id_col in gdf.columns:
+                ids = [normalize_hru_id(v) for v in gdf[id_col]]
+            self._catchment_hru_ids_cache = ids
+            self._catchment_hru_ids_loaded = True
+        return self._catchment_hru_ids_cache
+
+    @staticmethod
+    def _write_table_group(grp, df, ids) -> None:
+        """Write a per-HRU table (and its ``hru_id`` coordinate) to a group."""
+        grp.createDimension('hru', len(df))
+        if ids is not None:
+            id_v = grp.createVariable('hru_id', str, ('hru',))
+            for i, sid in enumerate(ids):
+                id_v[i] = sid
+        for col in df.select_dtypes(include=[np.number]).columns:
+            v = grp.createVariable(col, 'f4', ('hru',))
+            v[:] = df[col].values.astype('f4')
 
     # ------------------------------------------------------------------
     # Helpers

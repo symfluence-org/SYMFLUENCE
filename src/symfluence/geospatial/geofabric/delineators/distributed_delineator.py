@@ -350,30 +350,28 @@ class GeofabricDelineator(BaseGeofabricDelineator):
         river_id_col = self._get_fabric_config(rivers)['river_id_col']
         rivers['GRU_ID'] = rivers[river_id_col]
 
-        # Calculate areas in UTM
-        utm_crs = basins.estimate_utm_crs()
-        basins_utm = basins.to_crs(utm_crs)
-        basins['GRU_area'] = basins_utm.geometry.area
-        basins['gru_to_seg'] = basins['GRU_ID']
-
         # Drop DN column
         if 'DN' in basins.columns:
             basins = basins.drop(columns=['DN'])
 
-        # Handle duplicate GRU_IDs
-        len(basins)
-        duplicated_ids = basins['GRU_ID'].duplicated(keep=False)
-        duplicate_count = duplicated_ids.sum()
-
+        # One watershed can come out of the (4-connected) polygonization as
+        # several polygons when parts of it touch only diagonally. They are
+        # one GRU: dissolve them (as the lumped path does). Keeping only the
+        # largest piece would leave holes in the domain and lose area.
+        duplicate_count = int(basins['GRU_ID'].duplicated(keep=False).sum())
         if duplicate_count > 0:
-            self.logger.info(f"Found {duplicate_count} rows with duplicate GRU_ID values")
+            n_before = len(basins)
+            basins = basins.dissolve(by='GRU_ID', as_index=False)
+            self.logger.info(
+                f"Dissolved {duplicate_count} polygon fragments sharing a GRU_ID into "
+                f"multipart GRUs ({n_before} polygons -> {len(basins)} GRUs)"
+            )
 
-            # Keep only the largest area for each GRU_ID
-            basins = basins.sort_values(['GRU_ID', 'GRU_area'], ascending=[True, False])
-            basins = basins.drop_duplicates(subset=['GRU_ID'], keep='first')
-
-            self.logger.info("Removed duplicates, keeping largest area for each GRU_ID")
-            self.logger.info(f"Remaining GRUs: {len(basins)}")
+        # Calculate areas in UTM (after dissolving, so fragments are included)
+        utm_crs = basins.estimate_utm_crs()
+        basins_utm = basins.to_crs(utm_crs)
+        basins['GRU_area'] = basins_utm.geometry.area
+        basins['gru_to_seg'] = basins['GRU_ID']
 
         return basins, rivers
 

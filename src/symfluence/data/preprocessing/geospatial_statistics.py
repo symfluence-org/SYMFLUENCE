@@ -212,6 +212,8 @@ See Also:
 from __future__ import annotations
 
 import gc
+import hashlib
+import json
 import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Union
@@ -221,11 +223,11 @@ import numpy as np
 import pandas as pd
 import rasterio
 from rasterio.windows import from_bounds
-from rasterstats import zonal_stats
 from shapely.geometry import box
 
 from symfluence.core import ConfigurableMixin
 from symfluence.data.path_manager import PathManager
+from symfluence.geospatial.zonal import fill_empty_zones, zonal_stats_covered
 
 if TYPE_CHECKING:
     from symfluence.core.config.models import SymfluenceConfig
@@ -444,6 +446,7 @@ class GeospatialStatistics(ConfigurableMixin):
         self.dem_path = self.paths.resolve('DEM_PATH', f"attributes/elevation/dem/{dem_name}")
         self.soil_path = self.paths.resolve('SOIL_CLASS_PATH', 'attributes/soilclass')
         self.land_path = self.paths.resolve('LAND_CLASS_PATH', 'attributes/landclass')
+        self._catchment_signature_cache: Any = None
 
     def get_nodata_value(self, raster_path):
         with rasterio.open(raster_path) as src:
@@ -459,7 +462,13 @@ class GeospatialStatistics(ConfigurableMixin):
         required_columns: tuple[str, ...] = (),
         warn_on_error: bool = True,
     ) -> bool:
-        """Return True when an existing shapefile has expected columns and rows."""
+        """Return True when an existing shapefile can be reused.
+
+        It must have the expected columns and rows AND describe the current
+        catchment shapefile (same HRU ids, extent and polygon areas): the
+        output file names are fixed, so a file left by another discretization
+        of the same domain would otherwise hand its values to renumbered HRUs.
+        """
         if not output_file.exists():
             return False
 
@@ -487,7 +496,109 @@ class GeospatialStatistics(ConfigurableMixin):
             if not has_required_prefix:
                 return False
 
+        return self._cached_output_matches_catchment(output_file, gdf)
+
+    def _zone_id_columns(self) -> tuple[str, str]:
+        """Names of the HRU and GRU id columns of the catchment shapefile."""
+        hru_col = self._get_config_value(lambda: self.config.paths.catchment_hruid, default='HRU_ID')
+        gru_col = self._get_config_value(lambda: self.config.paths.catchment_gruid, default='GRU_ID')
+        return str(hru_col or 'HRU_ID'), str(gru_col or 'GRU_ID')
+
+    def _layer_signature(self, gdf: gpd.GeoDataFrame) -> Dict[str, Any]:
+        """Identity of a polygon layer: ids, extent and per-polygon areas."""
+        hru_col, _ = self._zone_id_columns()
+        ids = [str(v) for v in gdf[hru_col]] if hru_col in gdf.columns else None
+        return {
+            'n': len(gdf),
+            'ids': ids,
+            'bounds': np.asarray(gdf.total_bounds, dtype=float),
+            'areas': np.asarray(gdf.geometry.area, dtype=float),
+        }
+
+    def _cached_output_matches_catchment(self, output_file: Path, cached_gdf: gpd.GeoDataFrame) -> bool:
+        """True when *cached_gdf* was computed for the current catchment shapefile."""
+        catchment_file = Path(self.catchment_path) / self.catchment_name
+        if not catchment_file.exists():
+            self.logger.debug(
+                f"Cannot validate {output_file} against the catchment: {catchment_file} not found"
+            )
+            return True
+
+        if getattr(self, '_catchment_signature_cache', None) is None:
+            self._catchment_signature_cache = self._layer_signature(gpd.read_file(catchment_file))
+        current = self._catchment_signature_cache
+        cached = self._layer_signature(cached_gdf)
+
+        reason = None
+        if cached['n'] != current['n']:
+            reason = f"{cached['n']} polygons vs {current['n']} in the catchment"
+        elif (cached['ids'] is None) != (current['ids'] is None):
+            reason = "HRU id column present in only one of the two files"
+        elif cached['ids'] is not None and set(cached['ids']) != set(current['ids']):
+            reason = "different HRU ids"
+        else:
+            extent = max(float(np.ptp(current['bounds'][[0, 2]])), float(np.ptp(current['bounds'][[1, 3]])), 1e-9)
+            if not np.allclose(cached['bounds'], current['bounds'], rtol=0.0, atol=1e-6 * extent):
+                reason = "different extent"
+            else:
+                if cached['ids'] is not None:
+                    cached_area = dict(zip(cached['ids'], cached['areas']))
+                    a = np.array([cached_area[i] for i in current['ids']])
+                else:
+                    a = cached['areas']
+                if not np.allclose(a, current['areas'], rtol=1e-6, atol=0.0):
+                    reason = "different HRU polygon areas"
+
+        if reason is not None:
+            self.logger.info(
+                f"Existing statistics file {output_file} was computed for a different "
+                f"catchment layer than {catchment_file.name} ({reason}). Recalculating."
+            )
+            return False
         return True
+
+    def _validate_checkpoints(self, checkpoint_dir: Path, gdf: gpd.GeoDataFrame, strategy: str) -> None:
+        """Discard elevation checkpoints that belong to another catchment layer or DEM.
+
+        Checkpoints are stored by tile / chunk number only. A signature of the
+        catchment layer, the DEM and the chunking is kept next to them; when
+        it differs the checkpoints are removed and recomputed.
+        """
+        sig = self._layer_signature(gdf)
+        digest = hashlib.sha256()
+        digest.update(str(sig['n']).encode())
+        if sig['ids'] is not None:
+            digest.update('\x1f'.join(sig['ids']).encode())
+        digest.update(np.round(sig['bounds'], 9).tobytes())
+        digest.update(np.asarray(sig['areas'], dtype=np.float32).tobytes())
+        dem_stat = Path(self.dem_path).stat() if Path(self.dem_path).exists() else None
+        signature = {
+            'strategy': strategy,
+            'catchments': digest.hexdigest(),
+            'dem': str(self.dem_path),
+            'dem_size': dem_stat.st_size if dem_stat else None,
+            'dem_mtime_ns': dem_stat.st_mtime_ns if dem_stat else None,
+        }
+
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        signature_file = checkpoint_dir / 'signature.json'
+        stored = None
+        if signature_file.exists():
+            try:
+                stored = json.loads(signature_file.read_text(encoding='utf-8'))
+            except (OSError, ValueError):
+                stored = None
+
+        if stored != signature:
+            stale = sorted(checkpoint_dir.glob('*.npy'))
+            if stale:
+                self.logger.info(
+                    f"Discarding {len(stale)} elevation checkpoint(s) in {checkpoint_dir}: they "
+                    "were written for a different catchment layer, DEM or chunking."
+                )
+                for npy in stale:
+                    npy.unlink()
+            signature_file.write_text(json.dumps(signature, indent=2), encoding='utf-8')
 
     def _migrate_legacy_bundle_raster(self, raster_path: Path, legacy_filename: str) -> None:
         """Rename known legacy Bow/Banff raster files to the configured filename."""
@@ -636,15 +747,30 @@ class GeospatialStatistics(ConfigurableMixin):
                     dem_transform = src.transform
                     dem_nodata = src.nodata
 
-                stats = zonal_stats(
+                # Catchments smaller than a DEM pixel are retried with every
+                # touched pixel, then filled from the nearest catchment of the
+                # same GRU (with a warning) rather than left without elevation.
+                hru_col, gru_col = self._zone_id_columns()
+                stats, empty = zonal_stats_covered(
                     catchment_gdf_projected.geometry,
                     dem_array,
                     affine=dem_transform,
                     stats=['mean'],
-                    nodata=dem_nodata if dem_nodata is not None else -9999
+                    nodata=dem_nodata if dem_nodata is not None else -9999,
+                    logger=self.logger,
+                    label='Elevation',
+                )
+                fill_empty_zones(
+                    stats,
+                    empty,
+                    catchment_gdf_projected.geometry,
+                    group_ids=catchment_gdf[gru_col].tolist() if gru_col in catchment_gdf.columns else None,
+                    zone_ids=catchment_gdf[hru_col].tolist() if hru_col in catchment_gdf.columns else None,
+                    logger=self.logger,
+                    label='Elevation',
                 )
                 for i, stat in enumerate(stats):
-                    if stat['mean'] is not None:
+                    if stat.get('mean') is not None:
                         elev_means[i] = stat['mean']
 
             # Add results to original GeoDataFrame
@@ -653,6 +779,12 @@ class GeospatialStatistics(ConfigurableMixin):
             # Report statistics
             valid_count = np.sum(~np.isnan(elev_means))
             self.logger.info(f"Computed elevation for {valid_count:,}/{n_catchments:,} catchments ({100*valid_count/n_catchments:.1f}%)")
+            if valid_count < n_catchments:
+                self.logger.warning(
+                    f"{n_catchments - valid_count:,} catchment(s) have no elevation (elev_mean is "
+                    "missing): the DEM has no valid pixel there or a chunk failed. Check the DEM "
+                    "coverage before using these catchments."
+                )
 
             # Save output
             intersect_path.mkdir(parents=True, exist_ok=True)
@@ -684,14 +816,13 @@ class GeospatialStatistics(ConfigurableMixin):
         reading only the required DEM window for each tile.
         """
 
-        checkpoint_dir.mkdir(parents=True, exist_ok=True)
-
         # Get domain bounds
         total_bounds = gdf.total_bounds  # (minx, miny, maxx, maxy)
 
         # Create tile grid - aim for ~50k catchments per tile
         n_catchments = len(gdf)
         target_per_tile = self._get_config_value(lambda: self.config.data.elev_tile_target, default=50_000)
+        self._validate_checkpoints(checkpoint_dir, gdf, f"tiles:{target_per_tile}")
         n_tiles_approx = max(1, n_catchments // target_per_tile)
 
         # Calculate grid dimensions
@@ -746,12 +877,17 @@ class GeospatialStatistics(ConfigurableMixin):
                 # Check for checkpoint
                 checkpoint_file = checkpoint_dir / f"tile_{row}_{col}.npy"
                 if checkpoint_file.exists():
-                    self.logger.debug("  Loading from checkpoint")
                     tile_elevs = np.load(checkpoint_file)
-                    for i, idx in enumerate(tile_indices):
-                        elev_means[idx] = tile_elevs[i]
-                    processed_count += len(tile_gdf)
-                    continue
+                    if len(tile_elevs) == len(tile_indices):
+                        self.logger.debug("  Loading from checkpoint")
+                        for i, idx in enumerate(tile_indices):
+                            elev_means[idx] = tile_elevs[i]
+                        processed_count += len(tile_gdf)
+                        continue
+                    self.logger.info(
+                        f"  Checkpoint {checkpoint_file.name} holds {len(tile_elevs)} values for "
+                        f"{len(tile_indices)} catchments; recomputing"
+                    )
 
                 try:
                     # Compute with windowed DEM reading
@@ -778,7 +914,7 @@ class GeospatialStatistics(ConfigurableMixin):
         """
         Process catchments in index-based chunks.
         """
-        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        self._validate_checkpoints(checkpoint_dir, gdf, f"chunks:{chunk_size}")
 
         n_catchments = len(gdf)
         n_chunks = (n_catchments + chunk_size - 1) // chunk_size
@@ -792,9 +928,15 @@ class GeospatialStatistics(ConfigurableMixin):
 
             checkpoint_file = checkpoint_dir / f"chunk_{chunk_idx}.npy"
             if checkpoint_file.exists():
-                self.logger.info(f"Chunk {chunk_idx + 1}/{n_chunks}: loading checkpoint")
-                elev_means[start_idx:end_idx] = np.load(checkpoint_file)
-                continue
+                chunk_values = np.load(checkpoint_file)
+                if len(chunk_values) == end_idx - start_idx:
+                    self.logger.info(f"Chunk {chunk_idx + 1}/{n_chunks}: loading checkpoint")
+                    elev_means[start_idx:end_idx] = chunk_values
+                    continue
+                self.logger.info(
+                    f"Chunk {chunk_idx + 1}/{n_chunks}: checkpoint holds {len(chunk_values)} values "
+                    f"for {end_idx - start_idx} catchments; recomputing"
+                )
 
             self.logger.info(f"Chunk {chunk_idx + 1}/{n_chunks}: indices {start_idx:,}-{end_idx:,}")
 
@@ -803,16 +945,16 @@ class GeospatialStatistics(ConfigurableMixin):
             try:
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    stats = zonal_stats(
+                    # zones without a pixel centre are retried with all_touched
+                    stats, _ = zonal_stats_covered(
                         chunk_gdf.geometry,
                         str(self.dem_path),
                         stats=['mean'],
                         nodata=dem_nodata,
-                        all_touched=False
                     )
 
                 chunk_elevs = np.array([
-                    s['mean'] if s['mean'] is not None else np.nan
+                    s['mean'] if s.get('mean') is not None else np.nan
                     for s in stats
                 ], dtype=np.float32)
 
@@ -847,16 +989,16 @@ class GeospatialStatistics(ConfigurableMixin):
             dem_transform = src.window_transform(window)
             dem_nodata = src.nodata if src.nodata is not None else -9999
 
-        stats = zonal_stats(
+        # zones without a pixel centre are retried with all_touched
+        stats, _ = zonal_stats_covered(
             gdf.geometry,
             dem_data,
             affine=dem_transform,
             stats=['mean'],
             nodata=dem_nodata,
-            all_touched=False
         )
 
-        elevs = [s['mean'] if s['mean'] is not None else np.nan for s in stats]
+        elevs = [s['mean'] if s.get('mean') is not None else np.nan for s in stats]
 
         del dem_data
         gc.collect()
@@ -908,13 +1050,28 @@ class GeospatialStatistics(ConfigurableMixin):
                 soil_transform = src.transform
                 soil_nodata = src.nodata
 
-            stats = zonal_stats(
+            # Catchments without a pixel centre are retried with every touched
+            # pixel, then given the class composition of the nearest catchment of
+            # the same GRU (with a warning) — never all-zero fractions.
+            hru_col, gru_col = self._zone_id_columns()
+            stats, empty = zonal_stats_covered(
                 catchment_gdf_projected.geometry,
                 soil_array,
                 affine=soil_transform,
                 stats=['count'],
                 categorical=True,
-                nodata=soil_nodata if soil_nodata is not None else 255
+                nodata=soil_nodata if soil_nodata is not None else 255,
+                logger=self.logger,
+                label='Soil class',
+            )
+            fill_empty_zones(
+                stats,
+                empty,
+                catchment_gdf_projected.geometry,
+                group_ids=catchment_gdf[gru_col].tolist() if gru_col in catchment_gdf.columns else None,
+                zone_ids=catchment_gdf[hru_col].tolist() if hru_col in catchment_gdf.columns else None,
+                logger=self.logger,
+                label='Soil class',
             )
 
             result_df = pd.DataFrame(stats).fillna(0)
@@ -1002,13 +1159,28 @@ class GeospatialStatistics(ConfigurableMixin):
             land_transform = src.transform
             land_nodata = src.nodata
 
-        stats = zonal_stats(
+        # Catchments without a pixel centre are retried with every touched
+        # pixel, then given the class composition of the nearest catchment of
+        # the same GRU (with a warning) — never all-zero fractions.
+        hru_col, gru_col = self._zone_id_columns()
+        stats, empty = zonal_stats_covered(
             catchment_gdf_projected.geometry,
             land_array,
             affine=land_transform,
             stats=['count'],
             categorical=True,
-            nodata=land_nodata if land_nodata is not None else 255
+            nodata=land_nodata if land_nodata is not None else 255,
+            logger=self.logger,
+            label='Land class',
+        )
+        fill_empty_zones(
+            stats,
+            empty,
+            catchment_gdf_projected.geometry,
+            group_ids=catchment_gdf[gru_col].tolist() if gru_col in catchment_gdf.columns else None,
+            zone_ids=catchment_gdf[hru_col].tolist() if hru_col in catchment_gdf.columns else None,
+            logger=self.logger,
+            label='Land class',
         )
 
         result_df = pd.DataFrame(stats).fillna(0)

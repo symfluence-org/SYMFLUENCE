@@ -15,14 +15,20 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 import geopandas as gpd
 import numpy as np
 import rasterio
-from rasterio.mask import mask
+from rasterio.enums import Resampling
+from rasterio.vrt import WarpedVRT
 from shapely.geometry import MultiPolygon, shape
 from shapely.validation import make_valid
 
+from symfluence.core.exceptions import DiscretizationError
 from symfluence.geospatial.raster_utils import (
     calculate_annual_radiation,
     calculate_aspect,
+    quantile_class_thresholds,
 )
+
+from ..hru_utils import fill_nodata_from_nearest, read_zone_window
+from .radiation import warn_if_stale_radiation_raster
 
 if TYPE_CHECKING:
     from ..core import DomainDiscretizer
@@ -77,7 +83,7 @@ def discretize(discretizer: "DomainDiscretizer", attributes: List[str]):
     )
 
     if hru_gdf is not None and not hru_gdf.empty:
-        hru_gdf = discretizer._clean_and_prepare_hru_gdf(hru_gdf)
+        hru_gdf = discretizer._clean_and_prepare_hru_gdf(hru_gdf, gru_gdf)
         hru_gdf.to_file(output_shapefile)
         discretizer.logger.info(
             f"Combined attribute HRU Shapefile created with {len(hru_gdf)} HRUs and saved to {output_shapefile}"
@@ -177,6 +183,8 @@ def _get_raster_info_for_attributes(
                 )
                 if radiation_raster is None:
                     raise ValueError("Failed to calculate annual radiation")
+            else:
+                warn_if_stale_radiation_raster(discretizer, radiation_raster)
 
             radiation_class_number = int(discretizer._get_config_value(
                 lambda: discretizer.config.domain.radiation_class_number,
@@ -186,7 +194,11 @@ def _get_raster_info_for_attributes(
             raster_info[attr] = {
                 "path": radiation_raster,
                 "type": "continuous",
-                "band_size": radiation_class_number,
+                # RADIATION_CLASS_NUMBER quantile classes of the whole raster —
+                # the same thresholds the single-attribute path uses.
+                "thresholds": quantile_class_thresholds(
+                    radiation_raster, radiation_class_number, discretizer.logger
+                ),
                 "class_name": "radiationClass",
             }
         elif attr_lower == "aspect":
@@ -231,6 +243,33 @@ def _get_raster_info_for_attributes(
     return raster_info
 
 
+def _open_on_reference_grid(path, ref, categorical: bool):
+    """Open *path* so that it reads on the grid of the open dataset *ref*.
+
+    Returns ``(dataset, to_close)``. A raster already on the reference grid is
+    read directly; any other resolution, origin or CRS is resampled on the fly
+    with a ``WarpedVRT`` (nearest neighbour for classes, bilinear otherwise).
+    """
+    src = rasterio.open(path)
+    same_grid = (
+        src.crs == ref.crs
+        and src.width == ref.width
+        and src.height == ref.height
+        and src.transform.almost_equals(ref.transform)
+    )
+    if same_grid:
+        return src, [src]
+    vrt = WarpedVRT(
+        src,
+        crs=ref.crs,
+        transform=ref.transform,
+        width=ref.width,
+        height=ref.height,
+        resampling=Resampling.nearest if categorical else Resampling.bilinear,
+    )
+    return vrt, [vrt, src]
+
+
 def _create_combined_attribute_hrus(
     discretizer: "DomainDiscretizer",
     gru_gdf,
@@ -240,6 +279,12 @@ def _create_combined_attribute_hrus(
     """
     Create HRUs based on unique combinations of multiple attributes within each GRU.
 
+    The first attribute's raster is the reference grid: the GRUs are
+    reprojected to its CRS and every other raster is read onto that grid
+    (resampled when its resolution, origin or CRS differ), so the attribute
+    layers are always co-registered. The HRUs are returned in the CRS of
+    *gru_gdf*.
+
     Args:
         gru_gdf: GeoDataFrame containing GRU data
         raster_info: Dictionary containing raster information for each attribute
@@ -247,6 +292,9 @@ def _create_combined_attribute_hrus(
 
     Returns:
         GeoDataFrame containing combined attribute HRUs
+
+    Raises:
+        DiscretizationError: if an attribute raster cannot be read for a GRU.
     """
     discretizer.logger.info(
         f"Creating combined attribute HRUs within {len(gru_gdf)} GRUs"
@@ -254,123 +302,150 @@ def _create_combined_attribute_hrus(
 
     all_hrus = []
     hru_id_counter = 1
+    output_crs = gru_gdf.crs
+    to_close: List[Any] = []
 
-    # Process each GRU individually
-    for gru_idx, gru_row in gru_gdf.iterrows():
-        discretizer.logger.info(f"Processing GRU {gru_idx + 1}/{len(gru_gdf)}")
+    try:
+        ref = rasterio.open(raster_info[attributes[0]]["path"])
+        to_close.append(ref)
+        datasets = {attributes[0]: ref}
+        for attr in attributes[1:]:
+            info = raster_info[attr]
+            ds, opened = _open_on_reference_grid(
+                info["path"], ref, categorical=info["type"] == "discrete"
+            )
+            to_close.extend(opened)
+            if len(opened) > 1:
+                discretizer.logger.info(
+                    f"{attr} raster {info['path']} is not on the grid of the "
+                    f"{attributes[0]} raster; resampling it onto that grid "
+                    f"({'nearest' if info['type'] == 'discrete' else 'bilinear'})."
+                )
+            datasets[attr] = ds
 
-        gru_geometry = gru_row.geometry
-        gru_id = gru_row.get("GRU_ID", gru_idx + 1)
+        if ref.crs is not None and gru_gdf.crs is not None and gru_gdf.crs != ref.crs:
+            discretizer.logger.info(
+                f"Reprojecting GRUs from {gru_gdf.crs} to raster CRS {ref.crs} for masking")
+            gru_gdf = gru_gdf.to_crs(ref.crs)
 
-        # Extract all raster data for this GRU
-        raster_data = {}
-        common_transform = None
-        common_shape = None
+        # Process each GRU individually
+        for gru_pos, (gru_idx, gru_row) in enumerate(gru_gdf.iterrows()):
+            discretizer.logger.info(f"Processing GRU {gru_pos + 1}/{len(gru_gdf)}")
 
-        for attr in attributes:
-            attr_info = raster_info[attr]
-            raster_path = attr_info["path"]
+            gru_geometry = gru_row.geometry
+            gru_id = gru_row.get("GRU_ID", gru_idx)
 
-            try:
-                with rasterio.open(raster_path) as src:
-                    out_image, out_transform = mask(
-                        src,
-                        [gru_geometry],
-                        crop=True,
-                        all_touched=True,
-                        filled=False,
+            # Extract all raster data for this GRU (same window on every raster)
+            raster_data = {}
+            common_transform = None
+            inside_mask = None
+
+            for attr in attributes:
+                try:
+                    data, inside, valid, out_transform = read_zone_window(
+                        datasets[attr], gru_geometry, all_touched=True
                     )
-                    out_image = out_image[0]
-                    nodata_value = src.nodata
+                except (rasterio.RasterioIOError, ValueError, RuntimeError) as e:
+                    raise DiscretizationError(
+                        f"Could not extract {attr} raster data for GRU {gru_id}: {e}. "
+                        "Every attribute of a combined discretization must cover every GRU."
+                    ) from e
 
-                    # Store raster data and metadata
-                    raster_data[attr] = {
-                        "data": out_image,
-                        "nodata": nodata_value,
-                        "info": attr_info,
-                    }
+                if common_transform is None:
+                    common_transform = out_transform
+                    inside_mask = inside
+                elif data.shape != inside_mask.shape:  # type: ignore[union-attr]
+                    raise DiscretizationError(
+                        f"{attr} raster window for GRU {gru_id} has shape {data.shape}, "
+                        f"expected {inside_mask.shape}; rasters are not co-registered."  # type: ignore[union-attr]
+                    )
+                raster_data[attr] = {"data": data, "valid": valid}
 
-                    # Set common transform and shape from first raster
-                    if common_transform is None:
-                        common_transform = out_transform
-                        common_shape = out_image.shape
+            assert inside_mask is not None
 
-            except Exception as e:  # noqa: BLE001 — geospatial resilience
+            # Nodata holes inside the GRU: fill each layer from its nearest
+            # valid pixel so the HRUs tile the GRU. A layer with no valid
+            # pixel in the GRU cannot be filled.
+            empty_layers = [a for a in attributes if not raster_data[a]["valid"].any()]
+            if empty_layers:
                 discretizer.logger.warning(
-                    f"Could not extract {attr} raster data for GRU {gru_id}: {str(e)}"
+                    f"No valid {', '.join(empty_layers)} pixels found in GRU {gru_id}; "
+                    "no HRUs created for it."
                 )
                 continue
 
-        if not raster_data:
-            discretizer.logger.warning(f"No valid raster data found for GRU {gru_id}")
-            continue
-
-        # Create combined valid mask (pixels that are valid in all rasters)
-        combined_valid_mask = np.full(common_shape, True, dtype=bool)  # type: ignore[type-var]
-        for attr, data in raster_data.items():
-            raster_array = data["data"]
-            nodata_value = data["nodata"]
-
-            if nodata_value is not None:
-                valid_mask = raster_array != nodata_value
-            else:
-                valid_mask = (
-                    ~np.isnan(raster_array)
-                    if raster_array.dtype == np.float64 or raster_array.dtype == np.float32
-                    else np.ones_like(raster_array, dtype=bool)
+            n_inside = int(inside_mask.sum())
+            for attr in attributes:
+                layer = raster_data[attr]
+                layer["data"], n_filled = fill_nodata_from_nearest(
+                    layer["data"], layer["valid"], inside_mask
                 )
+                if n_filled:
+                    discretizer.logger.warning(
+                        f"GRU {gru_id}: {n_filled} of {n_inside} raster pixels "
+                        f"({100.0 * n_filled / n_inside:.1f}%) have no {attr} data; assigned "
+                        "the nearest valid pixel's value so the HRUs cover the whole GRU."
+                    )
+            combined_valid_mask = inside_mask
 
-            combined_valid_mask = np.logical_and(combined_valid_mask, valid_mask)
+            # Classify each attribute and find unique combinations
+            classified_data = {}
+            for attr in attributes:
+                raster_array = raster_data[attr]["data"]
+                attr_info = raster_info[attr]
 
-        if not np.any(combined_valid_mask):
-            discretizer.logger.warning(f"No valid pixels found in GRU {gru_id}")
-            continue
+                if attr_info["type"] == "continuous":
+                    # Classify continuous data into bands
+                    classified_data[attr] = _classify_continuous_data(
+                        raster_array,
+                        combined_valid_mask,
+                        attr_info.get("band_size"),
+                        thresholds=attr_info.get("thresholds"),
+                    )
+                else:
+                    # Use discrete values directly
+                    classified_data[attr] = raster_array
 
-        # Classify each attribute and find unique combinations
-        classified_data = {}
-        for attr in attributes:
-            data_info = raster_data[attr]
-            raster_array = data_info["data"]
-            attr_info = data_info["info"]
+            # Find unique combinations of classified values
+            unique_combinations = _find_unique_combinations(
+                classified_data, combined_valid_mask
+            )
 
-            if attr_info["type"] == "continuous":
-                # Classify continuous data into bands
-                classified_data[attr] = _classify_continuous_data(
-                    raster_array, combined_valid_mask, attr_info["band_size"]
-                )
-            else:
-                # Use discrete values directly
-                classified_data[attr] = raster_array
+            # Create HRUs for each unique combination
+            gru_hrus = _create_hrus_from_combinations(
+                discretizer,
+                unique_combinations,
+                classified_data,
+                combined_valid_mask,
+                common_transform,
+                gru_geometry,
+                gru_row,
+                hru_id_counter,
+                attributes,
+                class_names={a: raster_info[a]["class_name"] for a in attributes},
+            )
 
-        # Find unique combinations of classified values
-        unique_combinations = _find_unique_combinations(
-            classified_data, combined_valid_mask
-        )
-
-        # Create HRUs for each unique combination
-        gru_hrus = _create_hrus_from_combinations(
-            discretizer,
-            unique_combinations,
-            classified_data,
-            combined_valid_mask,
-            common_transform,
-            gru_geometry,
-            gru_row,
-            hru_id_counter,
-            attributes,
-        )
-
-        all_hrus.extend(gru_hrus)
-        hru_id_counter += len(gru_hrus)
+            all_hrus.extend(gru_hrus)
+            hru_id_counter += len(gru_hrus)
+    finally:
+        for handle in to_close:
+            handle.close()
 
     discretizer.logger.info(
         f"Created {len(all_hrus)} combined attribute HRUs across all GRUs"
     )
-    return gpd.GeoDataFrame(all_hrus, crs=gru_gdf.crs)
+    hrus = gpd.GeoDataFrame(all_hrus, geometry="geometry", crs=gru_gdf.crs) if all_hrus \
+        else gpd.GeoDataFrame(all_hrus, crs=gru_gdf.crs)
+    if output_crs is not None and hrus.crs is not None and hrus.crs != output_crs:
+        hrus = hrus.to_crs(output_crs)
+    return hrus
 
 
 def _classify_continuous_data(
-    raster_array: np.ndarray, valid_mask: np.ndarray, band_size: float
+    raster_array: np.ndarray,
+    valid_mask: np.ndarray,
+    band_size: Optional[float] = None,
+    thresholds: Optional[np.ndarray] = None,
 ) -> np.ndarray:
     """
     Classify continuous raster data into discrete bands.
@@ -378,32 +453,41 @@ def _classify_continuous_data(
     Args:
         raster_array: Input raster array
         valid_mask: Boolean mask for valid pixels
-        band_size: Size of bands (for elevation) or number of classes (for radiation)
+        band_size: Width of the bands, counted from the minimum valid value of
+            this array (elevation bands, in metres)
+        thresholds: Explicit class boundaries (radiation classes); takes
+            precedence over *band_size*. Values outside them go to the first /
+            last class.
 
     Returns:
-        Classified array with discrete class values
+        Classified array with discrete class values (1-based; 0 = not valid)
     """
     valid_data = raster_array[valid_mask]
 
     if len(valid_data) == 0:
-        return raster_array.copy()
+        return np.zeros(raster_array.shape, dtype=int)
+
+    if thresholds is not None:
+        thresholds = np.asarray(thresholds, dtype=float)
+        n_classes = max(len(thresholds) - 1, 1)
+        # interior boundaries; right-open bands, last band closed
+        classes = np.searchsorted(thresholds[1:-1], raster_array, side="right") + 1
+        classes = np.clip(classes, 1, n_classes)
+        return np.where(valid_mask, classes, 0).astype(int)
+
+    if band_size is None or band_size <= 0:
+        raise ValueError(f"band_size must be positive, got {band_size}")
 
     data_min = np.min(valid_data)
     data_max = np.max(valid_data)
 
-    # Create classification based on band_size
-    if isinstance(band_size, int) and band_size < 50:  # Assume it's number of classes for radiation
-        # Use quantile-based classification
-        quantiles = np.linspace(0, 1, band_size + 1)
-        thresholds = np.quantile(valid_data, quantiles)
-    else:
-        # Use fixed band size for elevation
-        thresholds = np.arange(data_min, data_max + band_size, band_size)
-        if thresholds[-1] < data_max:
-            thresholds = np.append(thresholds, thresholds[-1] + band_size)
+    # Fixed band width from the minimum value
+    thresholds = np.arange(data_min, data_max + band_size, band_size)
+    if thresholds[-1] < data_max:
+        thresholds = np.append(thresholds, thresholds[-1] + band_size)
 
     # Classify the data
-    classified = np.zeros_like(raster_array, dtype=int)
+    classified = np.zeros(raster_array.shape, dtype=int)
     for i in range(len(thresholds) - 1):
         lower, upper = thresholds[i : i + 2]
         if i == len(thresholds) - 2:  # Last band
@@ -450,6 +534,7 @@ def _create_hrus_from_combinations(
     gru_row: Any,
     start_hru_id: int,
     attributes: List[str],
+    class_names: Optional[Dict[str, str]] = None,
 ) -> List[Dict]:
     """
     Create HRUs for each unique combination of attribute values.
@@ -492,6 +577,7 @@ def _create_hrus_from_combinations(
             current_hru_id,
             attributes,
             combination,
+            class_names=class_names,
         )
 
         if hru:
@@ -511,6 +597,7 @@ def _create_hru_from_combination_mask(
     hru_id: int,
     attributes: List[str],
     combination: Tuple,
+    class_names: Optional[Dict[str, str]] = None,
 ) -> Optional[Dict]:
     """
     Create a single HRU from a combination mask.
@@ -583,17 +670,18 @@ def _create_hru_from_combination_mask(
             "hru_type": f'combined_{"_".join(attributes)}',
         }
 
-        # Add individual attribute values
+        # Add individual attribute values (every attribute, aspect included)
+        default_names = {
+            "elevation": "elevClass",
+            "soilclass": "soilClass",
+            "landclass": "landClass",
+            "radiation": "radiationClass",
+            "aspect": "aspectClass",
+        }
         for i, attr in enumerate(sorted(attributes)):
-            attr_name = attr.lower()
-            if attr_name == "elevation":
-                hru_data["elevClass"] = combination[i]
-            elif attr_name == "soilclass":
-                hru_data["soilClass"] = combination[i]
-            elif attr_name == "landclass":
-                hru_data["landClass"] = combination[i]
-            elif attr_name == "radiation":
-                hru_data["radiationClass"] = combination[i]
+            column = (class_names or {}).get(attr) or default_names.get(attr.lower())
+            if column:
+                hru_data[column] = combination[i]
 
         # Add combined attribute identifier
         combined_id = "_".join([str(val) for val in combination])

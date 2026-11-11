@@ -208,9 +208,99 @@ def calculate_landcover_mode(
         dst.write(mode_data, 1)
 
 
+#: Metres per degree of latitude on the WGS84 sphere of equal area
+_METRES_PER_DEGREE = 111_194.93
+
+
+def terrain_slope_aspect(
+    dem: np.ndarray,
+    transform,
+    crs=None,
+    nodata=None,
+):
+    """
+    Slope and downslope compass aspect of a DEM, from metric gradients.
+
+    This is the single terrain-derivative implementation for the package.
+
+    Conventions:
+        - ``aspect_deg`` is the compass bearing the surface FACES (the downslope
+          direction): 0 = north, 90 = east, 180 = south, 270 = west. A plane
+          rising towards the north therefore has aspect 180.
+        - ``slope_rad`` is the angle from horizontal, from gradients in metres
+          per metre. For a geographic CRS the pixel size is converted with
+          ~111.2 km per degree and ``cos(latitude)`` per row for the east-west
+          spacing; for a projected CRS the CRS linear unit is used.
+        - Nodata / non-finite cells are excluded: they are NaN in both outputs
+          and never enter a neighbour's finite difference (one-sided
+          differences are used next to them).
+
+    Args:
+        dem: 2-D elevation array (rows north to south for a north-up raster).
+        transform: Affine transform of the array (rotation is not supported).
+        crs: rasterio CRS (None is treated as projected, in metres).
+        nodata: Nodata value of the DEM, if any.
+
+    Returns:
+        ``(slope_rad, aspect_deg, valid)`` — float arrays and the boolean mask
+        of cells with data. ``aspect_deg`` is 0 where the surface is flat.
+    """
+    valid = valid_pixel_mask(dem, nodata)
+    z = np.where(valid, np.ma.getdata(dem).astype(float), np.nan)
+
+    def _nan_gradient(arr: np.ndarray, axis: int) -> np.ndarray:
+        """Central difference; one-sided next to NaN/edges; 0 if isolated."""
+        arr = np.moveaxis(arr, axis, 0)
+        fwd = np.full_like(arr, np.nan)
+        bwd = np.full_like(arr, np.nan)
+        if arr.shape[0] > 1:
+            diff = arr[1:] - arr[:-1]
+            fwd[:-1] = diff
+            bwd[1:] = diff
+        both = np.isfinite(fwd) & np.isfinite(bwd)
+        grad = np.where(both, 0.5 * (fwd + bwd), np.where(np.isfinite(fwd), fwd, bwd))
+        grad = np.where(np.isfinite(grad), grad, 0.0)
+        return np.moveaxis(grad, 0, axis)
+
+    dz_drow = _nan_gradient(z, 0)
+    dz_dcol = _nan_gradient(z, 1)
+
+    n_rows = z.shape[0]
+    if crs is not None and getattr(crs, 'is_geographic', False):
+        row_lat = transform.f + (np.arange(n_rows) + 0.5) * transform.e
+        metres_per_row = transform.e * _METRES_PER_DEGREE  # signed: negative when north-up
+        cos_lat = np.maximum(np.cos(np.radians(row_lat)), 1e-6)
+        metres_per_col = (transform.a * _METRES_PER_DEGREE * cos_lat)[:, np.newaxis]
+    else:
+        unit = 1.0
+        if crs is not None:
+            try:
+                unit = float(crs.linear_units_factor[1])
+            except (AttributeError, TypeError, ValueError, rasterio.errors.CRSError):
+                unit = 1.0
+        metres_per_row = transform.e * unit
+        metres_per_col = transform.a * unit
+
+    # ``y`` of the transform increases northward, so d/dnorth = d/drow / e
+    dz_dnorth = dz_drow / metres_per_row
+    dz_deast = dz_dcol / metres_per_col
+
+    slope_rad = np.arctan(np.hypot(dz_deast, dz_dnorth))
+    # Bearing of the downslope vector (-dz/deast, -dz/dnorth)
+    aspect_deg = np.degrees(np.arctan2(-dz_deast, -dz_dnorth)) % 360.0
+
+    slope_rad = np.where(valid, slope_rad, np.nan)
+    aspect_deg = np.where(valid, aspect_deg, np.nan)
+    return slope_rad, aspect_deg, valid
+
+
 def calculate_aspect(dem_raster: Path, aspect_raster: Path, aspect_class_number: int, logger: Logger) -> Optional[Path]:
     """
     Calculate aspect (slope direction) from DEM and classify into directional classes.
+
+    Aspect is the compass direction the slope faces (0 = north, 90 = east; see
+    :func:`terrain_slope_aspect`). Classes: 0 = flat, 1..N clockwise from
+    north; -9999 = nodata.
 
     Args:
         dem_raster: Path to the DEM raster
@@ -230,28 +320,19 @@ def calculate_aspect(dem_raster: Path, aspect_raster: Path, aspect_class_number:
             crs = src.crs
             nodata = src.nodata
 
-        # Calculate gradients
-        dy, dx = np.gradient(dem.astype(float))
+        slope_rad, aspect_deg, valid = terrain_slope_aspect(dem, transform, crs, nodata)
 
-        # Calculate aspect in radians, then convert to degrees
-        aspect_rad = np.arctan2(-dx, dy)  # Note the negative sign for dx
-        aspect_deg = np.degrees(aspect_rad)
-
-        # Convert to compass bearing (0-360 degrees, 0 = North)
-        aspect_deg = (90 - aspect_deg) % 360
-
-        # Handle flat areas (where both dx and dy are near zero)
-        slope_magnitude = np.sqrt(dx*dx + dy*dy)
-        flat_threshold = 1e-6  # Adjust as needed
-        flat_mask = slope_magnitude < flat_threshold
+        # Flat areas have no aspect
+        flat_threshold = 1e-6  # m/m
+        flat_mask = np.tan(np.where(valid, slope_rad, 0.0)) < flat_threshold
 
         # Classify aspect into directional classes
-        classified_aspect = classify_aspect_into_classes(aspect_deg, flat_mask, aspect_class_number)
+        classified_aspect = classify_aspect_into_classes(
+            np.where(valid, aspect_deg, 0.0), flat_mask, aspect_class_number
+        )
 
-        # Handle nodata values from original DEM
-        if nodata is not None:
-            dem_nodata_mask = dem == nodata
-            classified_aspect[dem_nodata_mask] = -9999
+        # Nodata cells of the DEM have no aspect
+        classified_aspect[~valid] = -9999
 
         # Save the classified aspect raster
         aspect_raster.parent.mkdir(parents=True, exist_ok=True)
@@ -331,9 +412,31 @@ def classify_aspect_into_classes(aspect_deg: np.ndarray, flat_mask: np.ndarray,
 
     return classified
 
+#: Tag written to radiation rasters produced by :func:`calculate_annual_radiation`
+RADIATION_RASTER_METHOD = 'clearsky_poa_hourly_monthly_v2'
+RADIATION_NODATA = -9999.0
+
+
+def radiation_raster_is_current(radiation_raster: Path) -> bool:
+    """True if *radiation_raster* was written by the current radiation method."""
+    with rasterio.open(radiation_raster) as src:
+        return src.tags().get('SYMFLUENCE_RADIATION_METHOD') == RADIATION_RASTER_METHOD
+
+
 def calculate_annual_radiation(dem_raster: Path, radiation_raster: Path, logger: Logger) -> Optional[Path]:
     """
-    Calculate annual radiation from DEM.
+    Calculate annual clear-sky radiation on the terrain surface from a DEM.
+
+    For the 15th of each month the clear-sky irradiance on every pixel's
+    plane (slope/aspect from :func:`terrain_slope_aspect`, isotropic sky
+    diffuse) is evaluated every hour of the UTC day — a full 24 h, so every
+    longitude sees its whole daylight period — summed to a daily total and
+    weighted by the number of days in the month. Sun position and clear-sky
+    irradiance are those of the raster centre; terrain shading by neighbouring
+    cells is not modelled.
+
+    Output: float32 raster of annual irradiation in kWh m-2 yr-1, nodata
+    -9999 where the DEM has no data.
 
     Args:
         dem_raster: Path to the DEM raster
@@ -351,108 +454,84 @@ def calculate_annual_radiation(dem_raster: Path, radiation_raster: Path, logger:
             transform = src.transform
             crs = src.crs
             bounds = src.bounds
+            nodata = src.nodata
 
-        center_lat = (bounds.bottom + bounds.top) / 2
-        center_lon = (bounds.left + bounds.right) / 2
+        slope_rad, aspect_deg, valid = terrain_slope_aspect(dem, transform, crs, nodata)
+        if not np.any(valid):
+            raise ValueError(f"DEM {dem_raster} has no valid cells")
 
-        # Calculate slope and aspect
-        dy, dx = np.gradient(dem)
-        slope = np.arctan(np.sqrt(dx*dx + dy*dy))
-        aspect = np.arctan2(-dx, dy)
+        center_x = (bounds.left + bounds.right) / 2
+        center_y = (bounds.bottom + bounds.top) / 2
+        if crs is not None and not crs.is_geographic:
+            from rasterio.warp import transform as warp_transform
+            lons, lats = warp_transform(crs, 'EPSG:4326', [center_x], [center_y])
+            center_lon, center_lat = float(lons[0]), float(lats[0])
+        else:
+            center_lon, center_lat = float(center_x), float(center_y)
 
-        # Create a DatetimeIndex for the entire year (daily)
-        times = pd.date_range(start='2019-01-01', end='2019-12-31', freq='D')
+        mean_altitude = float(np.mean(np.ma.getdata(dem)[valid]))
+        location = pvlib.location.Location(
+            latitude=center_lat, longitude=center_lon, altitude=mean_altitude, tz='UTC'
+        )
 
-        # Create location object
-        location = pvlib.location.Location(latitude=center_lat, longitude=center_lon, altitude=np.mean(dem))
+        # Hourly samples (centred on the half hour) of the 15th of each month
+        year = 2019
+        times = pd.DatetimeIndex(np.concatenate([
+            pd.date_range(f'{year}-{month:02d}-15 00:30', periods=24, freq='h', tz='UTC').values
+            for month in range(1, 13)
+        ])).tz_localize('UTC')
+        day_weights = np.repeat(
+            [pd.Period(f'{year}-{month:02d}').days_in_month for month in range(1, 13)], 24
+        )
 
-        # Calculate solar position
-        location.get_solarposition(times=times)
-
-        # Calculate clear sky radiation
-        location.get_clearsky(times=times)
-
-        # Initialize the radiation array
-        radiation = np.zeros_like(dem, dtype=float)
-
-        logger.info("Calculating radiation for all pixels (vectorized)...")
-
-        # Flatten arrays for vectorization
-        slope_flat = np.degrees(slope.flatten())
-        aspect_flat = np.degrees(aspect.flatten())
-
-        # Calculate solar position (returns a DataFrame with time index)
-        # We need to broadcast this for each pixel, which is memory intensive
-        # Instead, we'll loop through days/times and accumulate radiation
-
-        # Get solar position for all times (this is constant across the domain for small domains)
-        # For larger domains, this is an approximation
         solar_pos = location.get_solarposition(times=times)
-
-        # Get clear sky data
-        cs = location.get_clearsky(times=times)
-
-        # Transpose solar data for broadcasting
-        # Shape: (n_times,)
+        clearsky = location.get_clearsky(times=times)
         zenith = solar_pos['apparent_zenith'].values
         azimuth = solar_pos['azimuth'].values
-        dni = cs['dni'].values
-        ghi = cs['ghi'].values
-        dhi = cs['dhi'].values
+        dni = clearsky['dni'].values
+        ghi = clearsky['ghi'].values
+        dhi = clearsky['dhi'].values
 
-        # To avoid MemoryError on large rasters, we can process in chunks or
-        # keep the loop over time (365 days) which is better than looping over pixels
+        tilt = np.degrees(slope_rad[valid])
+        surface_azimuth = aspect_deg[valid]
 
-        # Initialize total radiation accumulator
-        total_radiation_flat = np.zeros(dem.size)
+        logger.info(
+            f"Calculating radiation for {tilt.size} pixels at "
+            f"{int(np.sum(zenith < 90))} daylight time steps..."
+        )
 
-        # Process in batches of days to manage memory if needed,
-        # but for now let's try a vectorized approach over pixels, looping over time
-        # Actually, pvlib can handle arrays for surface_tilt and surface_azimuth
-
-        # We'll calculate the sum of radiation over the year
-        # This is still heavy if we do all times x all pixels at once
-        # Let's loop over time steps and accumulate, that's safer for memory
-
+        # Wh m-2 per representative-day hour, weighted by days in the month
+        total_wh = np.zeros(tilt.size, dtype=float)
         for t_idx in range(len(times)):
-            # Scalar values for this time step
-            z = zenith[t_idx]
-            az = azimuth[t_idx]
-            d = dni[t_idx]
-            g = ghi[t_idx]
-            dh = dhi[t_idx]
-
-            # Skip night time
-            if z > 90:
+            if not zenith[t_idx] < 90:  # night (or NaN)
                 continue
-
-            # Calculate irradiance for all pixels at this time step
             irrad = pvlib.irradiance.get_total_irradiance(
-                surface_tilt=slope_flat,
-                surface_azimuth=aspect_flat,
-                solar_zenith=z,
-                solar_azimuth=az,
-                dni=d,
-                ghi=g,
-                dhi=dh
+                surface_tilt=tilt,
+                surface_azimuth=surface_azimuth,
+                solar_zenith=zenith[t_idx],
+                solar_azimuth=azimuth[t_idx],
+                dni=dni[t_idx],
+                ghi=ghi[t_idx],
+                dhi=dhi[t_idx],
             )
+            poa = np.nan_to_num(np.asarray(irrad['poa_global'], dtype=float), nan=0.0)
+            total_wh += np.maximum(poa, 0.0) * day_weights[t_idx]
 
-            # Accumulate global POA (Plane of Array) radiation
-            # Nan values can occur if inputs are invalid, replace with 0
-            poa = irrad['poa_global'].fillna(0).values
-            total_radiation_flat += poa
-
-        # Reshape back to 2D
-        radiation = total_radiation_flat.reshape(dem.shape)
+        radiation = np.full(dem.shape, RADIATION_NODATA, dtype='float32')
+        radiation[valid] = (total_wh / 1000.0).astype('float32')
 
         # Save the radiation raster
         radiation_raster.parent.mkdir(parents=True, exist_ok=True)
 
         with rasterio.open(radiation_raster, 'w', driver='GTiff',
                         height=radiation.shape[0], width=radiation.shape[1],
-                        count=1, dtype=radiation.dtype,
-                        crs=crs, transform=transform) as dst:
+                        count=1, dtype='float32',
+                        crs=crs, transform=transform, nodata=RADIATION_NODATA) as dst:
             dst.write(radiation, 1)
+            dst.update_tags(
+                SYMFLUENCE_RADIATION_METHOD=RADIATION_RASTER_METHOD,
+                units='kWh m-2 yr-1',
+            )
 
         logger.info(f"Radiation raster saved to: {radiation_raster}")
         return radiation_raster
@@ -460,6 +539,38 @@ def calculate_annual_radiation(dem_raster: Path, radiation_raster: Path, logger:
     except Exception as e:  # noqa: BLE001 — plotting resilience
         logger.error(f"Error calculating annual radiation: {str(e)}", exc_info=True)
         return None
+
+
+def quantile_class_thresholds(
+    raster_path: Path,
+    n_classes: int,
+    logger: Optional[Logger] = None,
+) -> np.ndarray:
+    """
+    Class boundaries splitting a raster's valid values into *n_classes* quantile classes.
+
+    Used for radiation discretization (``RADIATION_CLASS_NUMBER`` is a class
+    COUNT). Thresholds are computed over the whole raster so a class means the
+    same radiation range in every GRU. Returns ``n_classes + 1`` boundaries
+    (fewer when the data have too few distinct values), from the minimum to
+    the maximum valid value.
+    """
+    n_classes = max(int(n_classes), 1)
+    with rasterio.open(raster_path) as src:
+        data = src.read(1)
+        values = data[valid_pixel_mask(data, src.nodata)].astype(float)
+    if values.size == 0:
+        raise ValueError(f"No valid data found in raster {raster_path}")
+    thresholds = np.unique(np.quantile(values, np.linspace(0.0, 1.0, n_classes + 1)))
+    if thresholds.size < 2:
+        thresholds = np.array([thresholds[0], thresholds[0]])
+    if logger:
+        logger.info(
+            f"{len(thresholds) - 1} quantile classes for {raster_path}: "
+            f"{np.array2string(thresholds, precision=2)}"
+        )
+    return thresholds
+
 
 def valid_pixel_mask(data, nodata=None):
     """Boolean mask of usable raster pixels.

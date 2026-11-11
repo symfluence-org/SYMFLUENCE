@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Tuple, Union
+from typing import Optional, Tuple, Union
 
 import geopandas as gpd
 
@@ -208,7 +208,8 @@ class ShapefileProcessor(ConfigMixin):
     def ensure_wgs84(
         self,
         shapefile_path: Path,
-        output_suffix: str = "_wgs84"
+        output_suffix: str = "_wgs84",
+        is_target: Optional[bool] = None,
     ) -> Union[Path, Tuple[Path, str]]:
         """
         Ensure shapefile is in WGS84 (EPSG:4326).
@@ -216,13 +217,21 @@ class ShapefileProcessor(ConfigMixin):
         Args:
             shapefile_path: Path to the shapefile
             output_suffix: Suffix for WGS84 version
+            is_target: True for the target (catchment/HRU) shapefile, False
+                for the source (forcing grid) shapefile. Pass it explicitly;
+                when omitted the role is guessed from the FILE name only
+                (never from parent directories, which may contain "catchment"
+                in a data root).
 
         Returns:
             For target shapefiles: (wgs84_path, hru_id_field)
             For source shapefiles: wgs84_path
         """
         shapefile_path = Path(shapefile_path)
-        is_target_shapefile = 'catchment' in str(shapefile_path).lower()
+        if is_target is None:
+            is_target_shapefile = 'catchment' in shapefile_path.name.lower()
+        else:
+            is_target_shapefile = bool(is_target)
 
         try:
             gdf = gpd.read_file(shapefile_path)

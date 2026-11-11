@@ -270,3 +270,125 @@ class TestD8Offsets:
             assert -1 <= dcol <= 1
             # Can't have both zero (that would be no movement)
             assert not (drow == 0 and dcol == 0)
+
+
+def _bare_grid_delineator(tmp_path, bbox="64.10/-19.10/64.00/-19.00"):
+    """GridDelineator without running __init__ (no TauDEM / project needed)."""
+    from symfluence.geospatial.geofabric.delineators.grid_delineator import GridDelineator
+
+    g = object.__new__(GridDelineator)
+    g.logger = MagicMock()
+    g.grid_cell_size = 1000.0
+    g.native_grid_dataset = 'era5'
+    g._get_config_value = lambda *a, **k: bbox
+    return g
+
+
+class TestD8TopologyDirection:
+    """The grid ``row`` index increases northward; D8 codes must respect that."""
+
+    @pytest.mark.parametrize("code,sign_dx,sign_dy", [
+        (1, 1, 0), (2, 1, 1), (3, 0, 1), (4, -1, 1),
+        (5, -1, 0), (6, -1, -1), (7, 0, -1), (8, 1, -1),
+    ])
+    def test_downstream_cell_lies_in_d8_direction(self, tmp_path, code, sign_dx, sign_dy):
+        import rasterio
+        from rasterio.transform import from_origin
+
+        g = _bare_grid_delineator(tmp_path)
+        grid = g._create_grid_from_bbox()
+        cent = grid.to_crs(grid.estimate_utm_crs()).geometry.centroid
+
+        d8_path = tmp_path / f"d8_{code}.tif"
+        with rasterio.open(
+            d8_path, 'w', driver='GTiff', height=800, width=800, count=1, dtype='int16',
+            crs='EPSG:4326', transform=from_origin(-19.2, 64.2, 0.0005, 0.0005), nodata=0,
+        ) as dst:
+            dst.write(np.full((800, 800), code, dtype='int16'), 1)
+
+        out = g._extract_grid_d8_topology(grid.copy(), d8_path)
+        x = dict(zip(out['GRU_ID'], cent.x))
+        y = dict(zip(out['GRU_ID'], cent.y))
+        linked = out[out['downstream'] > 0]
+        assert len(linked) > 0
+        dx = np.mean([x[d] - x[i] for i, d in zip(linked['GRU_ID'], linked['downstream'])])
+        dy = np.mean([y[d] - y[i] for i, d in zip(linked['GRU_ID'], linked['downstream'])])
+        assert np.sign(round(dx / 1000.0)) == sign_dx
+        assert np.sign(round(dy / 1000.0)) == sign_dy
+
+
+class TestTopologyCycles:
+    """Cycles in the dominant-direction topology are broken, not written."""
+
+    def _grid(self, downstream, elev):
+        from shapely.geometry import box
+        cells = []
+        gid = 1
+        for row in range(2):
+            for col in range(2):
+                cells.append({'geometry': box(col, row, col + 1, row + 1),
+                              'GRU_ID': gid, 'row': row, 'col': col})
+                gid += 1
+        gdf = gpd.GeoDataFrame(cells, crs='EPSG:4326')
+        gdf['downstream'] = downstream
+        gdf['elev_mean'] = elev
+        return gdf
+
+    def test_two_cell_cycle_redirected_to_lower_neighbour(self, tmp_path):
+        g = _bare_grid_delineator(tmp_path)
+        # 1 <-> 2 form a loop; 3 is lower than both and is an outlet
+        gdf = self._grid([2, 1, 0, 3], [100.0, 90.0, 50.0, 120.0])
+        out = g._resolve_topology_cycles(gdf)
+        down = dict(zip(out['GRU_ID'], out['downstream']))
+        assert down == {1: 2, 2: 3, 3: 0, 4: 3}
+        g.logger.warning.assert_called_once()
+
+    def test_cycle_without_lower_neighbour_becomes_outlet(self, tmp_path):
+        g = _bare_grid_delineator(tmp_path)
+        gdf = self._grid([2, 1, 0, 3], [100.0, 90.0, 150.0, 160.0])
+        out = g._resolve_topology_cycles(gdf)
+        down = dict(zip(out['GRU_ID'], out['downstream']))
+        assert down == {1: 2, 2: 0, 3: 0, 4: 3}
+
+    def test_acyclic_topology_untouched(self, tmp_path):
+        g = _bare_grid_delineator(tmp_path)
+        gdf = self._grid([2, 4, 1, 0], [3.0, 2.0, 4.0, 1.0])
+        out = g._resolve_topology_cycles(gdf)
+        assert list(out['downstream']) == [2, 4, 1, 0]
+        g.logger.warning.assert_not_called()
+
+
+class TestNativeGridCoordinates:
+    def _delineator(self, tmp_path, ds, bbox):
+        g = _bare_grid_delineator(tmp_path, bbox=bbox)
+        path = tmp_path / "era5_test.nc"
+        ds.to_netcdf(path)
+        g._locate_forcing_file = lambda: path
+        return g
+
+    def test_descending_latitude_keeps_file_index(self, tmp_path):
+        import xarray as xr
+        lat = np.array([47.0, 46.75, 46.5, 46.25, 46.0])   # ERA5 order: north first
+        lon = np.array([8.0, 8.25, 8.5])
+        ds = xr.Dataset({'t': (('latitude', 'longitude'), np.zeros((5, 3)))},
+                        coords={'latitude': lat, 'longitude': lon})
+        g = self._delineator(tmp_path, ds, "46.3/8.2/46.2/8.3")
+        grid = g._create_native_grid()
+        assert grid is not None and len(grid) > 0
+        for _, cell in grid.iterrows():
+            assert lat[int(cell['native_lat_idx'])] == pytest.approx(cell['center_lat'])
+            assert lon[int(cell['native_lon_idx'])] == pytest.approx(cell['center_lon'])
+        # row index increases northward
+        by_row = grid.groupby('row')['center_lat'].first()
+        assert by_row.is_monotonic_increasing
+
+    def test_two_dimensional_coordinates_raise(self, tmp_path):
+        import xarray as xr
+
+        from symfluence.core.exceptions import DiscretizationError
+        lat2d, lon2d = np.meshgrid(np.linspace(63, 65, 4), np.linspace(-20, -18, 5), indexing='ij')
+        ds = xr.Dataset({'t': (('y', 'x'), np.zeros((4, 5)))},
+                        coords={'latitude': (('y', 'x'), lat2d), 'longitude': (('y', 'x'), lon2d)})
+        g = self._delineator(tmp_path, ds, "64.5/-19.5/63.5/-18.5")
+        with pytest.raises(DiscretizationError, match="1-D"):
+            g._create_native_grid()

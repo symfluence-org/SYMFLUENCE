@@ -97,6 +97,14 @@ class BoundingBox:
             New bbox with normalized longitudes
         """
         _eps = 1e-10
+        # A box spanning the full circle would normalise to lon_min == lon_max
+        # (an empty box): it is the whole globe in either convention.
+        if self.lon_max - self.lon_min >= 360.0 - _eps:
+            if target_range == '0-360':
+                return BoundingBox(self.lat_min, self.lat_max, 0.0, 360.0)
+            if target_range == '-180-180':
+                return BoundingBox(self.lat_min, self.lat_max, -180.0, 180.0)
+            raise ValueError(f"Unknown target_range: {target_range}")
         if target_range == '0-360':
             lon_min = self.lon_min % 360
             lon_max = self.lon_max % 360

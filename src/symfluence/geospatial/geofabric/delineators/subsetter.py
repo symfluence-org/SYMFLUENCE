@@ -15,7 +15,10 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 import geopandas as gpd
+import numpy as np
+import pandas as pd
 
+from symfluence.core.exceptions import GeospatialError
 from symfluence.core.geometry_utils import feature_areas_m2, feature_lengths_m
 
 from ..base.base_delineator import BaseGeofabricDelineator
@@ -29,7 +32,7 @@ class GeofabricSubsetter(BaseGeofabricDelineator):
     Subsets geofabric data based on pour points and upstream basins.
 
     Supports four hydrofabric formats with different column naming conventions:
-    - MERIT: COMID-based with up1, up2, up3 upstream columns
+    - MERIT: COMID-based with up1..up4 upstream columns
     - TDX: streamID/LINKNO with USLINKNO1, USLINKNO2 upstream columns
     - NWS: divide_id-based with toid (reverse direction)
     - HYDROSHEDS: HYBAS_ID with NEXT_DOWN (reverse direction)
@@ -50,7 +53,7 @@ class GeofabricSubsetter(BaseGeofabricDelineator):
             'MERIT': {
                 'basin_id_col': 'COMID',
                 'river_id_col': 'COMID',
-                'upstream_cols': ['up1', 'up2', 'up3'],
+                'upstream_cols': ['up1', 'up2', 'up3', 'up4'],
                 'upstream_default': -9999
             },
             'TDX': {
@@ -135,6 +138,15 @@ class GeofabricSubsetter(BaseGeofabricDelineator):
             )
         else:
             # Standard path for MERIT, TDX, HydroSHEDS (same ID namespace)
+            # Only the link columns the file actually has (MERIT-Basins files
+            # carry up1..up4; older extracts stop at up3).
+            present = [c for c in fabric_config['upstream_cols'] if c in rivers.columns]
+            if not present:
+                raise GeospatialError(
+                    f"{hydrofabric_type} river network has none of the topology columns "
+                    f"{fabric_config['upstream_cols']}; cannot trace the upstream area."
+                )
+            fabric_config = dict(fabric_config, upstream_cols=present)
             river_graph = self.graph.build_river_graph(rivers, fabric_config)
             upstream_basin_ids = self.graph.find_upstream_basins(
                 downstream_basin_id, river_graph, self.logger
@@ -434,13 +446,40 @@ class GeofabricSubsetter(BaseGeofabricDelineator):
             hydrofabric_type: Type of hydrofabric (NWS, TDX, Merit)
         """
         if hydrofabric_type == 'NWS':
-            basins['GRU_ID'] = basins['divide_id']
-            basins['gru_to_seg'] = basins['divide_id']
+            # NextGen ids are strings in three namespaces (cat-N divides, wb-N
+            # flowpaths, nex-N nexuses). SYMFLUENCE topology needs integers in
+            # ONE namespace, with DSLINKNO naming the downstream segment.
+            cat_num = self._nextgen_numeric(basins['divide_id'], 'cat-', 'divide_id')
+            wb_num = self._nextgen_numeric(rivers['id'], 'wb-', 'flowpath id')
+            basins['SRC_ID'] = basins['divide_id'].astype(str)
+            basins['GRU_ID'] = cat_num
+            # divide cat-N is drained by flowpath wb-N
+            basins['gru_to_seg'] = cat_num
             # Area in a local equal-area CRS (was EPSG:3763, Portugal-only)
             basins['GRU_area'] = feature_areas_m2(basins)
-            # Rivers — flowpaths layer uses 'id' and 'toid'
-            rivers['LINKNO'] = rivers['id']
-            rivers['DSLINKNO'] = rivers['toid']
+            rivers['SRC_LINKNO'] = rivers['id'].astype(str)
+            rivers['SRC_DSLNK'] = rivers['toid'].astype(str)
+            rivers['LINKNO'] = wb_num
+            # A flowpath drains to a nexus; nexus nex-M is the inlet of flowpath
+            # wb-M (the rule _nws_upstream_subset traces with). Nexuses whose
+            # flowpath is not in the subset (the outlet, terminal tnx-*/cnx-*
+            # nexuses) become 0.
+            in_subset = set(wb_num.tolist())
+            ds = []
+            for toid in rivers['toid'].astype(str):
+                number = toid[4:] if toid.startswith('nex-') else ''
+                ds.append(int(number) if number.isdigit() and int(number) in in_subset else 0)
+            rivers['DSLINKNO'] = ds
+            n_outlets = int(sum(1 for d in ds if d == 0))
+            log = getattr(self, 'logger', None)
+            if log is not None:
+                log.warning(
+                    f"NWS hydrofabric: mapped cat-N/wb-N ids to integers and resolved each "
+                    f"flowpath's nexus nex-M to the downstream flowpath wb-M by the NextGen "
+                    f"naming convention (not read from the hydrofabric's network table); "
+                    f"{n_outlets} of {len(ds)} flowpaths have no downstream flowpath in the "
+                    "subset. Verify the routing topology before using it."
+                )
 
         elif hydrofabric_type == 'TDX':
             # GEOGLOWS V2 catchments carry only 'linkno' + geometry; the link id
@@ -470,6 +509,82 @@ class GeofabricSubsetter(BaseGeofabricDelineator):
             # Rivers (same data as basins for HydroSHEDS)
             rivers['LINKNO'] = rivers['HYBAS_ID']
             rivers['DSLINKNO'] = rivers['NEXT_DOWN']
+
+        # Ids must fit 32-bit integers (SUMMA attribute/forcing files, mizuRoute
+        # topology). 10-digit HydroBASINS HYBAS_IDs do not: renumber compactly.
+        self._compact_ids_if_needed(basins, rivers, force=hydrofabric_type == 'HYDROSHEDS')
+
+    @staticmethod
+    def _nextgen_numeric(values: pd.Series, prefix: str, what: str) -> pd.Series:
+        """Integer part of NextGen ids such as ``cat-123`` / ``wb-123``."""
+        text = values.astype(str)
+        number = text.str.extract(rf'^{prefix}(\d+)$', expand=False)
+        if number.isna().any():
+            bad = text[number.isna()].unique()[:5].tolist()
+            raise GeospatialError(
+                f"NWS hydrofabric {what} values are not of the form '{prefix}<number>' "
+                f"(e.g. {bad}); cannot build an integer routing topology from them."
+            )
+        return number.astype('int64')
+
+    def _compact_ids_if_needed(
+        self, basins: gpd.GeoDataFrame, rivers: gpd.GeoDataFrame, force: bool = False
+    ) -> bool:
+        """Renumber GRU / segment ids to 1..N when they do not fit int32.
+
+        The same mapping is applied to ``GRU_ID``, ``gru_to_seg``, ``LINKNO``
+        and ``DSLINKNO`` so the topology is unchanged; a downstream id outside
+        the subset becomes 0 (outlet). Source ids are kept in ``SRC_ID``
+        (basins) and ``SRC_LINKNO`` / ``SRC_DSLNK`` (rivers). Modifies the
+        GeoDataFrames in place.
+
+        Returns:
+            True if ids were renumbered.
+        """
+        id_cols = [(basins, 'GRU_ID'), (basins, 'gru_to_seg'), (rivers, 'LINKNO'), (rivers, 'DSLINKNO')]
+        present = [(df, col) for df, col in id_cols if col in df.columns and len(df)]
+        if not present:
+            return False
+        numeric = [pd.to_numeric(df[col], errors='coerce') for df, col in present]
+        limit = np.iinfo('int32').max
+        too_big = any((series.abs() > limit).any() for series in numeric)
+        if not (force or too_big):
+            return False
+
+        segment_ids = list(dict.fromkeys(
+            [int(v) for v in pd.to_numeric(basins['GRU_ID'], errors='coerce').dropna()]
+            + ([int(v) for v in pd.to_numeric(rivers['LINKNO'], errors='coerce').dropna()]
+               if 'LINKNO' in rivers.columns else [])
+        ))
+        mapping = {old: new for new, old in enumerate(sorted(segment_ids), start=1)}
+
+        def _remap(series: pd.Series) -> pd.Series:
+            values = pd.to_numeric(series, errors='coerce')
+            return values.map(lambda v: mapping.get(int(v), 0) if pd.notna(v) else 0).astype('int64')
+
+        if 'SRC_ID' not in basins.columns:
+            # stored as text: shapefile integer fields cannot hold every 64-bit id safely
+            basins['SRC_ID'] = basins['GRU_ID'].astype(str)
+        if 'LINKNO' in rivers.columns and 'SRC_LINKNO' not in rivers.columns:
+            rivers['SRC_LINKNO'] = rivers['LINKNO'].astype(str)
+        if 'DSLINKNO' in rivers.columns and 'SRC_DSLNK' not in rivers.columns:
+            rivers['SRC_DSLNK'] = rivers['DSLINKNO'].astype(str)
+
+        basins['GRU_ID'] = _remap(basins['GRU_ID'])
+        if 'gru_to_seg' in basins.columns:
+            basins['gru_to_seg'] = _remap(basins['gru_to_seg'])
+        if 'LINKNO' in rivers.columns:
+            rivers['LINKNO'] = _remap(rivers['LINKNO'])
+        if 'DSLINKNO' in rivers.columns:
+            rivers['DSLINKNO'] = _remap(rivers['DSLINKNO'])
+
+        log = getattr(self, 'logger', None)
+        if log is not None:
+            log.info(
+                f"Renumbered {len(mapping)} GRU/segment ids to 1..{len(mapping)} (source ids "
+                "exceed 32-bit integers); originals kept in SRC_ID / SRC_LINKNO / SRC_DSLNK."
+            )
+        return True
 
     def aggregate_to_lumped(
         self,

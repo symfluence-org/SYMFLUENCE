@@ -99,6 +99,16 @@ class BaseGeofabricDelineator(ABC, PathResolverMixin):
             default=0,
             dict_key='MIN_GRU_SIZE'
         )
+        try:
+            min_gru_size_set = float(self.min_gru_size or 0) > 0
+        except (TypeError, ValueError):
+            min_gru_size_set = False
+        if min_gru_size_set:
+            self.logger.warning(
+                f"MIN_GRU_SIZE={self.min_gru_size} is set but is not applied: delineated "
+                "GRUs are never merged, whatever their size. Set it to 0 to silence this "
+                "warning (MIN_HRU_SIZE, in km², does merge undersized HRUs within a GRU)."
+            )
 
         # TauDEM configuration
         self.taudem_dir = self._get_taudem_dir()

@@ -28,17 +28,23 @@ from ..base.base_delineator import BaseGeofabricDelineator
 from ..processors.gdal_processor import GDALProcessor
 from ..processors.taudem_executor import TauDEMExecutor
 
-# D8 flow direction encoding (TauDEM convention)
-# Maps direction code to (row_offset, col_offset) for downstream cell
+# D8 flow direction encoding (TauDEM convention: 1=E, 2=NE, 3=N, ... 8=SE,
+# counter-clockwise from east).
+#
+# Maps direction code to (row_offset, col_offset) of the downstream GRID cell.
+# The grid ``row`` index is NOT a raster row: every grid built in this module
+# numbers rows from the southern edge upward (``y = miny + row * size`` in
+# ``_create_grid_from_bbox``; ascending latitude in ``_create_native_grid``),
+# so ``row + 1`` is the cell to the NORTH and ``col + 1`` the cell to the EAST.
 D8_OFFSETS = {
     1: (0, 1),    # East
-    2: (-1, 1),   # Northeast
-    3: (-1, 0),   # North
-    4: (-1, -1),  # Northwest
+    2: (1, 1),    # Northeast
+    3: (1, 0),    # North
+    4: (1, -1),   # Northwest
     5: (0, -1),   # West
-    6: (1, -1),   # Southwest
-    7: (1, 0),    # South
-    8: (1, 1),    # Southeast
+    6: (-1, -1),  # Southwest
+    7: (-1, 0),   # South
+    8: (-1, 1),   # Southeast
 }
 
 
@@ -143,6 +149,11 @@ class GridDelineator(BaseGeofabricDelineator):
 
         # Step 5: Add additional grid attributes (elevation, slope, centroids)
         grid_gdf = self._add_grid_attributes(grid_gdf)
+
+        # Step 5b: The dominant-direction topology is not guaranteed acyclic
+        # (two neighbouring cells can each have the other as dominant
+        # direction). Break any cycle before the network is written.
+        grid_gdf = self._resolve_topology_cycles(grid_gdf)
 
         # Step 6: Save grid as river basins shapefile
         grid_gdf.to_file(river_basins_path)
@@ -421,6 +432,7 @@ class GridDelineator(BaseGeofabricDelineator):
             grid_raster_crs = grid_gdf.to_crs(d8_crs)
 
             downstream_ids = []
+            n_leaving_domain = 0
 
             for idx, cell in grid_raster_crs.iterrows():
                 # Get cell bounds
@@ -464,6 +476,10 @@ class GridDelineator(BaseGeofabricDelineator):
                     downstream_row = grid_row + drow
                     downstream_col = grid_col + dcol
                     downstream_id = cell_lookup.get((downstream_row, downstream_col), 0)
+                    if downstream_id == 0:
+                        # Flows into a cell outside the grid (domain edge, or a
+                        # sliver removed by the watershed clip): becomes an outlet.
+                        n_leaving_domain += 1
                 else:
                     downstream_id = 0  # Outlet or no data
 
@@ -475,6 +491,12 @@ class GridDelineator(BaseGeofabricDelineator):
             # Count outlets
             n_outlets = sum(1 for d in downstream_ids if d == 0)
             self.logger.info(f"Grid topology: {len(grid_gdf)} cells, {n_outlets} outlets")
+            if n_leaving_domain > 0:
+                self.logger.info(
+                    f"{n_leaving_domain} grid cell(s) drain to a cell outside the grid "
+                    "(domain edge or clipped-away sliver) and were made outlets; "
+                    f"{n_outlets - n_leaving_domain} cell(s) have no valid D8 direction."
+                )
 
             return grid_gdf
 
@@ -485,6 +507,112 @@ class GridDelineator(BaseGeofabricDelineator):
             # Set all cells as outlets on error
             grid_gdf['downstream'] = 0
             return grid_gdf
+
+    def _resolve_topology_cycles(self, grid_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+        """
+        Detect and break cycles in the cell-to-cell ``downstream`` topology.
+
+        Each cell has at most one downstream cell, so every cycle is a simple
+        loop. A loop is broken at its lowest cell (ties: smallest GRU_ID): that
+        cell is redirected to its lowest 8-neighbour that does not drain back
+        into the loop and is not higher than the cell itself; when there is no
+        such neighbour the cell becomes an outlet (``downstream = 0``).
+
+        Raises:
+            DiscretizationError: if cycles remain after resolution.
+        """
+        if 'downstream' not in grid_gdf.columns or len(grid_gdf) == 0:
+            return grid_gdf
+
+        ids = [int(v) for v in grid_gdf['GRU_ID']]
+        down = dict(zip(ids, (int(v) for v in grid_gdf['downstream'])))
+
+        def find_cycles() -> list:
+            state: Dict[int, int] = {}  # 1 = on current walk, 2 = finished
+            cycles = []
+            for start in ids:
+                if state.get(start):
+                    continue
+                path = []
+                node = start
+                while node in down and node != 0 and not state.get(node):
+                    state[node] = 1
+                    path.append(node)
+                    node = down[node]
+                if node in down and state.get(node) == 1:
+                    cycles.append(path[path.index(node):])
+                for visited in path:
+                    state[visited] = 2
+            return cycles
+
+        cycles = find_cycles()
+        if not cycles:
+            return grid_gdf
+
+        has_elev = 'elev_mean' in grid_gdf.columns
+        elev = (
+            dict(zip(ids, (float(v) for v in grid_gdf['elev_mean'])))
+            if has_elev else {i: 0.0 for i in ids}
+        )
+        has_rc = 'row' in grid_gdf.columns and 'col' in grid_gdf.columns
+        rc_of: Dict[int, Tuple[int, int]] = {}
+        id_at: Dict[Tuple[int, int], int] = {}
+        if has_rc:
+            for gid, r, c in zip(ids, grid_gdf['row'], grid_gdf['col']):
+                rc_of[gid] = (int(r), int(c))
+                id_at[(int(r), int(c))] = gid
+
+        def drains_into(start: int, targets: set) -> bool:
+            seen = set()
+            node = start
+            while node in down and node != 0 and node not in seen:
+                if node in targets:
+                    return True
+                seen.add(node)
+                node = down[node]
+            return False
+
+        n_redirected = 0
+        n_outlets = 0
+        for cycle in cycles:
+            members = set(cycle)
+            breaker = min(cycle, key=lambda g: (elev[g], g))
+            new_down = 0
+            if has_rc:
+                r0, c0 = rc_of[breaker]
+                candidates = []
+                for drow, dcol in D8_OFFSETS.values():
+                    nb = id_at.get((r0 + drow, c0 + dcol))
+                    if nb is None or nb in members or elev[nb] > elev[breaker]:
+                        continue
+                    if drains_into(nb, members):
+                        continue
+                    candidates.append((elev[nb], nb))
+                if candidates:
+                    new_down = min(candidates)[1]
+            down[breaker] = new_down
+            if new_down == 0:
+                n_outlets += 1
+            else:
+                n_redirected += 1
+
+        remaining = find_cycles()
+        if remaining:
+            raise DiscretizationError(
+                f"Grid D8 topology still contains {len(remaining)} cycle(s) after "
+                f"resolution (e.g. GRU_IDs {remaining[0][:10]}); refusing to write a "
+                "cyclic routing network."
+            )
+
+        self.logger.warning(
+            f"Grid D8 topology contained {len(cycles)} cycle(s) (cells whose dominant "
+            f"flow directions point at each other). Broke each at its lowest cell: "
+            f"{n_redirected} redirected to a lower neighbour, {n_outlets} turned into "
+            "internal outlets (no lower neighbour outside the loop). Example loop "
+            f"GRU_IDs: {cycles[0][:10]}"
+        )
+        grid_gdf['downstream'] = [down[i] for i in ids]
+        return grid_gdf
 
     def _add_grid_attributes(self, grid_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """
@@ -661,10 +789,17 @@ class GridDelineator(BaseGeofabricDelineator):
             GeoDataFrame with grid cells matching native forcing resolution,
             or None if forcing data cannot be read.
 
-        Supported datasets:
-            - era5: ERA5 reanalysis (~0.25 degree resolution)
-            - cerra: CERRA reanalysis (~5.5 km resolution)
-            - carra: CARRA reanalysis (~2.5 km resolution)
+        Supported datasets: any forcing file on a regular latitude/longitude
+        grid with 1-D coordinate variables (e.g. ERA5, RDRS on a regular grid).
+        Forcing on a projected/curvilinear grid with 2-D latitude/longitude
+        (native CARRA / CERRA Lambert grids) is not supported and raises.
+
+        The returned ``row`` index increases northward and ``col`` eastward
+        (see ``D8_OFFSETS``); ``native_lat_idx`` / ``native_lon_idx`` index the
+        forcing file's own coordinate arrays, whatever their order.
+
+        Raises:
+            DiscretizationError: if the latitude/longitude coordinates are not 1-D.
         """
         self.logger.info(f"Creating native grid from dataset: {self.native_grid_dataset}")
 
@@ -698,13 +833,25 @@ class GridDelineator(BaseGeofabricDelineator):
                 self.logger.info(f"Detected coordinates: lat='{lat_name}', lon='{lon_name}'")
 
                 # Get coordinate arrays
-                lat_vals = ds[lat_name].values
-                lon_vals = ds[lon_name].values
+                lat_vals = np.asarray(ds[lat_name].values)
+                lon_vals = np.asarray(ds[lon_name].values)
 
-                # Ensure latitude is in ascending order for processing
-                lat_ascending = lat_vals[0] < lat_vals[-1] if len(lat_vals) > 1 else True
-                if not lat_ascending:
-                    lat_vals = lat_vals[::-1]
+            if lat_vals.ndim != 1 or lon_vals.ndim != 1:
+                raise DiscretizationError(
+                    f"GRID_SOURCE='native' needs a regular latitude/longitude grid with "
+                    f"1-D coordinates, but '{lat_name}'/'{lon_name}' in {forcing_path} "
+                    f"have shapes {lat_vals.shape}/{lon_vals.shape} (a projected or "
+                    "curvilinear grid such as native CARRA/CERRA). Regrid the forcing "
+                    "to a regular lat/lon grid, or use GRID_SOURCE='generate' with an "
+                    "explicit GRID_CELL_SIZE."
+                )
+
+            # Process latitude in ascending order (row index increases
+            # northward), remembering each value's index in the file.
+            n_lat_native = len(lat_vals)
+            lat_ascending = lat_vals[0] < lat_vals[-1] if n_lat_native > 1 else True
+            if not lat_ascending:
+                lat_vals = lat_vals[::-1]
 
             # Step 3: Parse bounding box to filter grid cells
             bbox_coords = self._get_config_value(
@@ -760,6 +907,9 @@ class GridDelineator(BaseGeofabricDelineator):
 
             # Store original indices for native grid referencing
             lat_indices = np.where(lat_mask)[0]
+            if not lat_ascending:
+                # lat_vals was reversed above; map back to the file's own index
+                lat_indices = (n_lat_native - 1) - lat_indices
             lon_indices = np.where(lon_mask)[0]
 
             for i, lat in enumerate(filtered_lats):
@@ -803,6 +953,8 @@ class GridDelineator(BaseGeofabricDelineator):
 
             return grid_gdf
 
+        except DiscretizationError:
+            raise
         except Exception as e:  # noqa: BLE001 — preprocessing resilience
             self.logger.error(f"Error creating native grid: {str(e)}", exc_info=True)
             import traceback
