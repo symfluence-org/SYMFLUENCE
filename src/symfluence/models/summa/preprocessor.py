@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 # Third-party imports
+import geopandas as gpd
 import pandas as pd
 import xarray as xr
 
@@ -27,7 +28,6 @@ from symfluence.core.registries import R
 from .attributes_manager import SummaAttributesManager
 from .config_manager import SummaConfigManager
 from .forcing_processor import SummaForcingProcessor
-from .glacier_manager import GlacierAttributesManager
 
 
 @R.preprocessors.add('SUMMA')
@@ -184,26 +184,6 @@ class SummaPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             get_default_path_callback=self._get_default_path
         )
 
-        # Lazy-initialize glacier attributes manager (only when needed)
-        self._glacier_manager = None
-
-    @property
-    def glacier_manager(self) -> Optional[GlacierAttributesManager]:
-        """Get glacier manager, initializing lazily if needed."""
-        if self._glacier_manager is None:
-            try:
-                self._glacier_manager = GlacierAttributesManager(
-                    config=self.config_dict,
-                    logger=self.logger,
-                    domain_name=self.domain_name,
-                    dem_path=self.dem_path,
-                    project_dir=self.project_dir
-                )
-            except Exception as e:  # noqa: BLE001 — model execution resilience
-                self.logger.debug(f"Glacier manager initialization skipped: {e}", exc_info=True)
-                return None
-        return self._glacier_manager
-
     def run_preprocessing(self):
         """
         Run the complete SUMMA spatial preprocessing workflow.
@@ -244,9 +224,8 @@ class SummaPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         if glacier_mode:
             self.run_glacier_preprocessing()
 
-    def _is_glacier_mode_enabled(self) -> bool:
-        """Check if glacier mode is enabled based on config, file manager name, or data presence."""
-        # Check explicit config flag
+    def _glacier_mode_requested(self) -> bool:
+        """Whether the configuration asks for glacier mode (flag or file manager name)."""
         glacier_mode = self._get_config_value(
             lambda: self.config.model.summa.glacier_mode if self.config.model.summa else None,
             default=False
@@ -255,7 +234,6 @@ class SummaPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             self.logger.debug("Glacier mode enabled via SETTINGS_SUMMA_GLACIER_MODE")
             return True
 
-        # Check file manager name
         filemanager_name = self._get_config_value(
             lambda: self.config.model.summa.filemanager if self.config.model.summa else None,
             default='fileManager.txt'
@@ -264,10 +242,37 @@ class SummaPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             self.logger.debug("Glacier mode enabled via fileManager name")
             return True
 
-        # Check for glacier raster data (only if glacier manager can be initialized)
+        return False
+
+    def _glacier_data_present(self) -> bool:
+        """Whether glacier rasters/intersections exist in the project (acquired data)."""
+        intersect_base = self.project_dir / 'shapefiles' / 'catchment_intersection'
+        domain_type_shp = intersect_base / 'with_domain_type' / 'catchment_with_domain_type.shp'
+        dem_domain_shp = intersect_base / 'with_dem_domain' / 'catchment_with_dem_domain.shp'
+        if domain_type_shp.exists() and dem_domain_shp.exists():
+            try:
+                columns = gpd.read_file(domain_type_shp, rows=1).columns
+                if any(col.startswith('domType_') for col in columns):
+                    return True
+            except (OSError, KeyError, IndexError, ValueError):
+                pass
+
         glacier_dir = self.project_attributes_dir / 'glaciers'
-        if self.glacier_manager is not None and self.glacier_manager.has_glacier_data(glacier_dir):
-            self.logger.info("Glacier raster data detected, enabling glacier mode")
+        if not glacier_dir.exists():
+            return False
+        return all(
+            any((glacier_dir / f"{prefix}{name}").exists()
+                for prefix in (f"domain_{self.domain_name}_", f"{self.domain_name}_"))
+            for name in ('domain_type.tif', 'hru_id.tif', 'rgi_id.tif')
+        )
+
+    def _is_glacier_mode_enabled(self) -> bool:
+        """Check if glacier preprocessing should run: requested by config, or glacier data present."""
+        if self._glacier_mode_requested():
+            return True
+
+        if self._glacier_data_present():
+            self.logger.info("Glacier data detected in the project")
             return True
 
         return False
@@ -276,12 +281,22 @@ class SummaPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         """
         Run glacier-specific preprocessing for SUMMA.
 
-        This method creates glacier-specific files required for SUMMA glacier simulations:
-        - Glacier attributes file (attributes_glac.nc)
-        - Glacier initial conditions (coldState_glac.nc)
+        Glacier inputs are built from explicit geometry only:
+        ``SUMMA_GLACIER_OUTLINE_PATH`` (glacier outlines) and
+        ``SUMMA_GLACIER_THICKNESS_DIR`` (``*thickness.tif`` ice-thickness
+        rasters), which extend the attributes and cold-state files in place
+        (see ``glacier_geometry.prepare_glacier_geometry``).
 
-        The glacier preprocessing is triggered when SETTINGS_SUMMA_GLACIER_MODE is True
-        or when the file manager name contains 'glac'.
+        Without them, glacier mode is only satisfied by a complete pair of
+        user-provided glacier files in the settings directory. Anything else
+        raises: an earlier raster/shapefile route assumed a 50 m ice thickness,
+        set the bed to the DEM surface (zero ice) and, when it failed, copied
+        the ordinary files under the glacier names.
+
+        Raises:
+            ConfigurationError: glacier mode is requested but neither the
+                explicit geometry inputs nor a usable pair of glacier files
+                is available.
         """
         self.logger.info("Running glacier preprocessing for SUMMA")
 
@@ -304,93 +319,60 @@ class SummaPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             )
             return
 
-        try:
-            # Check if glacier files already exist (user-provided)
-            glacier_attr_path = self.setup_dir / 'attributes_glac.nc'
-            glacier_cold_path = self.setup_dir / 'coldState_glac.nc'
-
-            if glacier_attr_path.exists() and glacier_cold_path.exists():
-                self.logger.info("Glacier files already exist, skipping generation")
-                self._log_glacier_files_status()
-                return
-
-            # Create glacier files from base files if they don't exist
-            self._create_glacier_files()
-
-        except Exception as e:  # noqa: BLE001 — model execution resilience
-            self.logger.warning(f"Glacier preprocessing failed: {e}", exc_info=True)
-            self.logger.info("Continuing without glacier-specific files - using base SUMMA configuration")
-            # Don't raise - allow the workflow to continue without glacier files
-
-    def _create_glacier_files(self) -> None:
-        """
-        Create glacier-specific SUMMA files from raster data or base files.
-
-        If glacier raster data exists in attributes/glaciers/, processes the
-        rasters into proper glacier NetCDF files. Otherwise, falls back to
-        copying base attributes and coldState files.
-        """
-        import shutil
-
-        glacier_dir = self.project_attributes_dir / 'glaciers'
-        base_attr = self.setup_dir / self.attribute_name
-
-        # Check if we can process raster data (glacier manager must be available)
-        can_process_raster = (
-            self.glacier_manager is not None and
-            self.glacier_manager.has_glacier_data(glacier_dir) and
-            base_attr.exists()
-        )
-
-        if can_process_raster:
-            self.logger.info("Processing glacier attributes from raster data")
-            success = self.glacier_manager.process_glacier_attributes(
-                glacier_dir=glacier_dir,
-                settings_dir=self.setup_dir,
-                base_attributes_file=base_attr
+        if not self._glacier_mode_requested():
+            # Glacier data was merely found in the project (e.g. acquired for
+            # another model or for evaluation); nothing asked SUMMA to use it.
+            self.logger.warning(
+                "Glacier data is present in the project but SUMMA glacier mode is not configured; "
+                "running SUMMA without glaciers. To model glaciers set SETTINGS_SUMMA_GLACIER_MODE: true "
+                "with SUMMA_GLACIER_OUTLINE_PATH and SUMMA_GLACIER_THICKNESS_DIR."
             )
-            if success:
-                self._log_glacier_files_status()
-                return
-            else:
-                self.logger.warning("Glacier raster processing failed, falling back to base files")
+            return
 
-        # Fallback: Copy base files to glacier files
-        base_cold = self.setup_dir / self.coldstate_name
-
-        glacier_attr_name = self._get_config_value(
+        glacier_attr_path = self.setup_dir / self._get_config_value(
             lambda: self.config.model.summa.glacier_attributes if self.config.model.summa else None,
             default='attributes_glac.nc'
         )
-        glacier_cold_name = self._get_config_value(
+        glacier_cold_path = self.setup_dir / self._get_config_value(
             lambda: self.config.model.summa.glacier_coldstate if self.config.model.summa else None,
             default='coldState_glac.nc'
         )
+        how_to = (
+            "Set SUMMA_GLACIER_OUTLINE_PATH (glacier outline polygons) and SUMMA_GLACIER_THICKNESS_DIR "
+            "(directory of '*thickness.tif' ice-thickness rasters) so the glacier geometry can be built, "
+            f"or place a complete pair of glacier files ({glacier_attr_path.name}, {glacier_cold_path.name}) "
+            f"in {self.setup_dir}."
+        )
 
-        glacier_attr_path = self.setup_dir / glacier_attr_name
-        glacier_cold_path = self.setup_dir / glacier_cold_name
+        if not (glacier_attr_path.exists() and glacier_cold_path.exists()):
+            missing = [p.name for p in (glacier_attr_path, glacier_cold_path) if not p.exists()]
+            raise ConfigurationError(
+                "SUMMA glacier mode is enabled but there is nothing to build glacier inputs from "
+                f"(missing: {', '.join(missing)}). {how_to}"
+            )
 
-        # Copy base files to glacier files if they don't exist
-        if not glacier_attr_path.exists() and base_attr.exists():
-            shutil.copy2(base_attr, glacier_attr_path)
-            self.logger.info(f"Created {glacier_attr_name} from {self.attribute_name}")
+        self._check_provided_glacier_files(glacier_attr_path, glacier_cold_path, how_to)
+        self.logger.info(
+            f"Using the glacier files provided in {self.setup_dir}: "
+            f"{glacier_attr_path.name}, {glacier_cold_path.name}"
+        )
 
-        if not glacier_cold_path.exists() and base_cold.exists():
-            shutil.copy2(base_cold, glacier_cold_path)
-            self.logger.info(f"Created {glacier_cold_name} from {self.coldstate_name}")
+    @staticmethod
+    def _check_provided_glacier_files(attributes: Path, coldstate: Path, how_to: str) -> None:
+        """Reject a glacier attributes file paired with an ordinary cold state.
 
-        self._log_glacier_files_status()
-
-    def _log_glacier_files_status(self) -> None:
-        """Log the status of glacier files."""
-        glacier_files = [
-            'attributes_glac.nc',
-            'coldState_glac.nc',
-        ]
-        for gf in glacier_files:
-            path = self.setup_dir / gf
-            status = "EXISTS" if path.exists() else "MISSING"
-            self.logger.info(f"Glacier file {gf}: {status}")
+        That pair is what the removed raster/shapefile route left behind when
+        it failed half-way: glacier grids in the attributes file and a plain
+        copy of coldState.nc (no ``dom`` dimension, so no glacier states).
+        """
+        with xr.open_dataset(attributes) as att, xr.open_dataset(coldstate) as cold:
+            has_glaciers = 'grid' in att.dims or ('nGlac' in att and int(att['nGlac'].sum()) > 0)
+            has_domains = 'dom' in cold.dims
+        if has_glaciers and not has_domains:
+            raise ConfigurationError(
+                f"{attributes.name} describes glaciers but {coldstate.name} has no 'dom' dimension "
+                f"(it is an ordinary cold state without glacier domains). Remove both files. {how_to}"
+            )
 
     def copy_base_settings(self):  # type: ignore[override]
         """
