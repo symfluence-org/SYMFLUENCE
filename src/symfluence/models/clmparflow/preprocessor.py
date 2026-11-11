@@ -25,7 +25,6 @@ Output:
 from __future__ import annotations
 
 import logging
-import math
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -35,12 +34,16 @@ from symfluence.core.exceptions import ShapefileError
 from symfluence.core.mixins.project import resolve_data_subdir, resolve_forcing_basin_path
 from symfluence.core.modeling.base.base_preprocessor import BaseModelPreProcessor
 from symfluence.core.registries import R
+from symfluence.models.parflow.lumped_forcing import (
+    LumpedForcingMixin,
+    location_from_forcing,
+)
 
 logger = logging.getLogger(__name__)
 
 
 @R.preprocessors.add("CLMPARFLOW")
-class CLMParFlowPreProcessor(BaseModelPreProcessor):
+class CLMParFlowPreProcessor(LumpedForcingMixin, BaseModelPreProcessor):  # type: ignore[misc]
     """Generates ParFlow-CLM input files for integrated hydrologic simulation."""
 
     MODEL_NAME = "CLMPARFLOW"
@@ -128,18 +131,10 @@ class CLMParFlowPreProcessor(BaseModelPreProcessor):
             return self._location_cache
         except FileNotFoundError as e:
             shp_error = e
-        forcing_dir = self._get_forcing_dir()
-        if forcing_dir:
-            import xarray as xr
-            nc_files = sorted(forcing_dir.glob('*.nc'))
-            if nc_files:
-                with xr.open_dataset(nc_files[0]) as ds:
-                    if 'latitude' in ds and 'longitude' in ds:
-                        self._location_cache = (
-                            float(ds['latitude'].values.flat[0]),
-                            float(ds['longitude'].values.flat[0]),
-                        )
-                        return self._location_cache
+        location = location_from_forcing(self._get_forcing_dir())
+        if location is not None:
+            self._location_cache = location
+            return self._location_cache
         raise ShapefileError(
             f"Cannot determine CLM-ParFlow site location: {shp_error}; and no "
             "basin-averaged forcing with latitude/longitude was found."
@@ -148,249 +143,11 @@ class CLMParFlowPreProcessor(BaseModelPreProcessor):
     def _get_latitude(self) -> float:
         return self._get_location()[0]
 
-    def _get_time_info(self):
-        import pandas as pd
-        try:
-            start = self.config.domain.time_start
-        except (AttributeError, TypeError):
-            start = '2000-01-01'
-        try:
-            end = self.config.domain.time_end
-        except (AttributeError, TypeError):
-            end = '2001-01-01'
+    LUMPED_MODEL_LABEL = 'CLMParFlow'
 
-        start_dt = pd.Timestamp(str(start))
-        end_dt = pd.Timestamp(str(end))
-        n_hours = int((end_dt - start_dt).total_seconds() / 3600)
-        if n_hours <= 0:
-            n_hours = 8760
-
-        timestep_hours = float(self._get_pf_cfg('TIMESTEP_HOURS', 1.0))
-        n_steps = max(1, int(math.ceil(n_hours / timestep_hours)))
-
-        return n_steps, timestep_hours, n_hours
-
-    def _compute_oudin_pet(self, temp_k, dates, latitude_deg):
-        import pandas as pd
-        temp_c = temp_k - 273.15
-        doy = pd.DatetimeIndex(dates).dayofyear
-        lat_rad = np.radians(latitude_deg)
-
-        dr = 1.0 + 0.033 * np.cos(2.0 * np.pi * doy / 365.0)
-        delta = 0.409 * np.sin(2.0 * np.pi * doy / 365.0 - 1.39)
-        ws = np.arccos(-np.tan(lat_rad) * np.tan(delta))
-        ws = np.clip(ws, 0.0, np.pi)
-        ra = (24.0 * 60.0 / np.pi) * 0.0820 * dr * (
-            ws * np.sin(lat_rad) * np.sin(delta)
-            + np.cos(lat_rad) * np.cos(delta) * np.sin(ws)
-        )
-
-        lam_rho = 2.45 * 1000.0
-        pet_mm_day = np.where(
-            temp_c > -5.0,
-            ra / lam_rho * (temp_c + 5.0) / 100.0 * 1000.0,
-            0.0,
-        )
-        pet_mm_day = np.maximum(pet_mm_day, 0.0)
-        return pet_mm_day / 24.0
-
-    # Elevation bands for multi-band Snow-17 (same as ParFlow)
-    ELEVATION_BANDS = [
-        (1521, 0.2),
-        (1890, 0.2),
-        (2099, 0.2),
-        (2340, 0.2),
-        (2614, 0.2),
-    ]
-    BASIN_MEAN_ELEV = 2099.0
-    DEFAULT_LAPSE_RATE = 0.0065
-
-    def _apply_snow_model(self, ppt_mm_hr, temp_c_hourly, times,
-                          lapse_rate=None):
-        """Apply elevation-band Snow-17 model to hourly forcing."""
-        import pandas as pd
-        from jsnow17.bmi import Snow17BMI
-
-        if lapse_rate is None:
-            lapse_rate = self.DEFAULT_LAPSE_RATE
-
-        latitude = self._get_latitude()
-
-        time_idx = pd.DatetimeIndex(times)
-        df_hourly = pd.DataFrame({
-            'ppt': ppt_mm_hr, 'temp': temp_c_hourly
-        }, index=time_idx)
-
-        daily = df_hourly.resample('D').agg({
-            'ppt': 'sum',
-            'temp': 'mean',
-        })
-        daily['doy'] = daily.index.dayofyear
-
-        n_days = len(daily)
-        rpm_weighted = np.zeros(n_days)
-        band_info = []
-
-        for band_elev, area_frac in self.ELEVATION_BANDS:
-            temp_offset = -lapse_rate * (band_elev - self.BASIN_MEAN_ELEV)
-            temp_band = daily['temp'].values + temp_offset
-
-            snow = Snow17BMI(latitude=latitude, dt=1.0)
-            snow.initialize()
-
-            rpm_band = snow.update_batch(
-                daily['ppt'].values, temp_band, daily['doy'].values,
-            )
-            rpm_weighted += rpm_band * area_frac
-
-            peak_swe = max(
-                float(snow.get_value('swe')),
-                float(snow.get_value('w_i') + snow.get_value('w_q'))
-            )
-            band_info.append(
-                f"{band_elev}m: offset={temp_offset:+.1f}°C, "
-                f"peak_SWE={peak_swe:.0f}mm"
-            )
-
-        daily_rpm = pd.Series(rpm_weighted, index=daily.index)
-
-        effective = np.zeros(len(df_hourly))
-        for date, rpm_mm_day in daily_rpm.items():
-            mask = df_hourly.index.normalize() == date
-            n_hours = mask.sum()
-            if n_hours > 0:
-                effective[mask] = rpm_mm_day / n_hours
-
-        self.logger.info(
-            f"Snow-17 elevation bands (lapse={lapse_rate*1000:.1f} °C/km):"
-        )
-        for info in band_info:
-            self.logger.info(f"  {info}")
-        self.logger.info(
-            f"  Area-weighted: mean rain+melt={np.mean(rpm_weighted):.2f} mm/day, "
-            f"mean effective={np.mean(effective):.4f} mm/hr"
-        )
-        return effective
-
-    def _prepare_daily_rainfall(self, settings_dir):
-        """Compute daily effective rainfall from ERA5 with snow model.
-
-        Reuses same logic as ParFlow preprocessor for consistency.
-        """
-        import pandas as pd
-
-        forcing_dir = self._get_forcing_dir()
-        if forcing_dir is None:
-            self.logger.warning(
-                "No forcing data found. CLMParFlow will run without rainfall."
-            )
-            return None
-
-        try:
-            from symfluence.core.modeling.model_ready.forcing_reader import (
-                open_canonical_forcing,
-                resample_canonical_forcing,
-            )
-            nc_files = sorted(forcing_dir.glob('*.nc'))
-            era5 = [f for f in nc_files if 'ERA5' in f.name or 'remapped' in f.name]
-            if era5:
-                nc_files = era5
-            if not nc_files:
-                self.logger.warning("No forcing files found")
-                return None
-
-            self.logger.info(f"Reading forcing from {len(nc_files)} files")
-
-            ds = open_canonical_forcing(nc_files)
-            if 'precipitation_flux' not in ds:
-                self.logger.warning("No precipitation_flux in forcing")
-                return None
-
-            # CLM-ParFlow's pipeline treats one forcing step as one hour; resample
-            # any non-hourly source (e.g. CARRA 3-hourly) to hourly so the cadence
-            # assumption holds. Hourly source (ERA5) passes through unchanged.
-            ds = resample_canonical_forcing(ds, 3600.0).sortby('time')
-
-            def _series(name):
-                arr = ds[name].values
-                return arr[:, 0] if arr.ndim > 1 else np.asarray(arr)
-
-            pptrate = _series('precipitation_flux')
-            airtemp = _series('air_temperature')
-            times = pd.DatetimeIndex(ds['time'].values).values
-
-        except Exception as e:  # noqa: BLE001 — model execution resilience
-            self.logger.warning(f"Could not read ERA5 forcing: {e}", exc_info=True)
-            return None
-
-        try:
-            start = self.config.domain.time_start
-        except (AttributeError, TypeError):
-            start = '2000-01-01'
-        try:
-            end = self.config.domain.time_end
-        except (AttributeError, TypeError):
-            end = '2001-01-01'
-
-        start_dt = pd.Timestamp(str(start))
-        end_dt = pd.Timestamp(str(end))
-        time_idx = pd.DatetimeIndex(times)
-        mask = (time_idx >= start_dt) & (time_idx < end_dt)
-        pptrate, airtemp, times = pptrate[mask], airtemp[mask], times[mask]
-
-        if len(pptrate) == 0:
-            self.logger.warning("No forcing data in simulation period")
-            return None
-
-        latitude = self._get_latitude()
-        pet_mm_hr = self._compute_oudin_pet(airtemp, times, latitude)
-        ppt_mm_hr = np.maximum(pptrate * 3600.0, 0.0)
-        temp_c = airtemp - 273.15
-
-        effective_mm_hr = self._apply_snow_model(ppt_mm_hr, temp_c, times)
-
-        np.savez_compressed(
-            settings_dir / 'hourly_forcing_cache.npz',
-            ppt_mm_hr=ppt_mm_hr, pet_mm_hr=pet_mm_hr,
-            temp_c=temp_c, times=times.astype('int64'),
-        )
-
-        # Also save raw forcing for CLM met file generation
-        self._write_clm_met_forcing(settings_dir, pptrate, airtemp, times)
-
-        time_idx = pd.DatetimeIndex(times)
-        df = pd.DataFrame({
-            'effective': effective_mm_hr, 'pet': pet_mm_hr
-        }, index=time_idx)
-
-        daily = df.resample('D').agg(['mean', 'count'])
-        days = []
-        for dt, row in daily.iterrows():
-            eff_mean = row[('effective', 'mean')]
-            pet_mean = row[('pet', 'mean')]
-            n_hours = int(row[('effective', 'count')])
-            if n_hours == 0:
-                continue
-            net_mm_hr = eff_mean - pet_mean
-            net_m_hr = net_mm_hr * 0.001
-            label = f"d{dt.strftime('%Y%m%d')}"
-            days.append((label, n_hours, net_m_hr))
-
-        if not days:
-            self.logger.warning("No daily data computed")
-            return None
-
-        rainfall_arr = np.array([(d[1], d[2]) for d in days])
-        np.save(settings_dir / 'daily_rainfall.npy', rainfall_arr)
-
-        total_eff = df['effective'].mean()
-        total_pet = df['pet'].mean()
-        self.logger.info(
-            f"Prepared {len(days)} daily rainfall entries (with snow model): "
-            f"mean effective={total_eff:.4f} mm/hr, mean PET={total_pet:.4f} mm/hr, "
-            f"mean net={(total_eff - total_pet):.4f} mm/hr"
-        )
-        return days
+    def _on_hourly_forcing(self, output_dir, pptrate, airtemp, times):
+        # Raw forcing for the CLM met file
+        self._write_clm_met_forcing(output_dir, pptrate, airtemp, times)
 
     def _write_clm_met_forcing(self, settings_dir, pptrate, airtemp, times):
         """Write CLM 1D met forcing file from ERA5 data.

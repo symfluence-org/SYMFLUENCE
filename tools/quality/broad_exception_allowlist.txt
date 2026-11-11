@@ -628,7 +628,6 @@ src/symfluence/models/clmparflow/plotter.py:CLMParFlowPlotter.plot_results:excep
 src/symfluence/models/clmparflow/postprocessor.py:CLMParFlowPostProcessor.extract_streamflow:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/clmparflow/postprocessor.py:CLMParFlowPostProcessor.extract_streamflow:except Exception:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/clmparflow/postprocessor.py:CLMParFlowPostProcessor.extract_streamflow:except Exception:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/clmparflow/preprocessor.py:CLMParFlowPreProcessor._prepare_daily_rainfall:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/clmparflow/runner.py:CLMParFlowRunner._get_parflow_dir:except Exception:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/crhm/calibration/optimizer.py:CRHMModelOptimizer.run_final_evaluation:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/crhm/calibration/parameter_manager.py:CRHMParameterManager.copy_params_to_worker_dir:except Exception as e:  # noqa: BLE001 — calibration resilience
@@ -957,8 +956,6 @@ src/symfluence/models/parflow/postprocessor.py:ParFlowPostProcessor._try_generat
 src/symfluence/models/parflow/postprocessor.py:ParFlowPostProcessor.extract_streamflow:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/parflow/postprocessor.py:ParFlowPostProcessor.extract_streamflow:except Exception:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/parflow/postprocessor.py:ParFlowPostProcessor.extract_streamflow:except Exception:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/parflow/preprocessor.py:ParFlowPreProcessor._get_latitude:except Exception:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/parflow/preprocessor.py:ParFlowPreProcessor._prepare_daily_rainfall:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/parflow/runner.py:ParFlowRunner._get_parflow_dir:except Exception:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/pcrglobwb/calibration/worker.py:PCRGLOBWBWorker.calculate_metrics:except Exception as e:  # noqa: BLE001
 src/symfluence/models/pcrglobwb/extractor.py:PCRGLOBWBResultExtractor.extract_variable:except Exception as e:  # noqa: BLE001

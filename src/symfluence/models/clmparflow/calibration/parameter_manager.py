@@ -32,8 +32,6 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import numpy as np
-
 from symfluence.core.calibration.parameters.base_parameter_manager import BaseParameterManager
 from symfluence.core.mixins.project import resolve_data_subdir
 from symfluence.core.registries import R
@@ -245,10 +243,7 @@ class CLMParFlowParameterManager(BaseParameterManager):
 
         Delegates to ParFlow's implementation since the forcing format is identical.
         """
-        import pandas as pd
-        from jsnow17.bmi import Snow17BMI
-
-        from symfluence.models.clmparflow.preprocessor import CLMParFlowPreProcessor
+        from symfluence.models.parflow.lumped_forcing import update_snow17_boundary_values
 
         cache_path = self.forcing_input_dir / 'hourly_forcing_cache.npz'
         if not cache_path.exists():
@@ -258,65 +253,7 @@ class CLMParFlowParameterManager(BaseParameterManager):
             self.logger.warning("No hourly forcing cache; skipping Snow-17 update")
             return
 
-        cache = np.load(cache_path)
-        ppt_mm_hr = cache['ppt_mm_hr']
-        pet_mm_hr = cache['pet_mm_hr']
-        temp_c = cache['temp_c']
-        times = pd.DatetimeIndex(cache['times'].astype('datetime64[ns]'))
-
-        # Build Snow-17 param dict (strip SNOW17_ prefix)
-        s17_params = {}
-        lapse_rate = CLMParFlowPreProcessor.DEFAULT_LAPSE_RATE
-        for k, v in snow_params.items():
-            if k == 'SNOW_LAPSE_RATE':
-                lapse_rate = v
-            else:
-                s17_key = k.replace('SNOW17_', '')
-                s17_params[s17_key] = v
-
-        # Get latitude from config
-        lat = float(self._get_config_value(lambda: None, default=51.36, dict_key='CATCHMENT_LATITUDE'))
-        try:
-            pp_coords = self._get_config_value(lambda: self.config.domain.pour_point_coords, default='', dict_key='POUR_POINT_COORDS')
-            if '/' in str(pp_coords):
-                lat = float(str(pp_coords).split('/')[0])
-        except (ValueError, AttributeError):
-            pass
-
-        # Aggregate hourly to daily for Snow-17
-        df_hourly = pd.DataFrame({'ppt': ppt_mm_hr, 'temp': temp_c}, index=times)
-        daily = df_hourly.resample('D').agg({'ppt': 'sum', 'temp': 'mean'})
-        daily['doy'] = daily.index.dayofyear
-
-        # Run elevation-band Snow-17
-        n_days = len(daily)
-        rpm_daily = np.zeros(n_days)
-
-        for band_elev, area_frac in CLMParFlowPreProcessor.ELEVATION_BANDS:
-            temp_offset = -lapse_rate * (band_elev - CLMParFlowPreProcessor.BASIN_MEAN_ELEV)
-            temp_band = daily['temp'].values + temp_offset
-
-            snow = Snow17BMI(params=s17_params, latitude=lat, dt=1.0)
-            snow.initialize()
-            rpm_band = snow.update_batch(
-                daily['ppt'].values, temp_band, daily['doy'].values,
-            )
-            rpm_daily += rpm_band * area_frac
-
-        # Distribute to hourly and compute daily effective rate
-        df_pet = pd.DataFrame({'pet': pet_mm_hr}, index=times)
-        daily_pet = df_pet.resample('D').mean()
-
-        # Update BC values in entries
-        for i, (dt, pet_row) in enumerate(daily_pet.iterrows()):
-            label = f"d{dt.strftime('%Y%m%d')}"
-            key = f'Patch.z_upper.BCPressure.{label}.Value'
-            if key in entries:
-                n_hours = 24
-                eff_mm_hr = rpm_daily[i] / n_hours
-                pet_mean = pet_row['pet']
-                net_m_hr = (eff_mm_hr - pet_mean) * 0.001
-                entries[key] = f'{-net_m_hr:g}'
+        update_snow17_boundary_values(entries, snow_params, cache_path)
 
     def get_initial_parameters(self) -> Optional[Dict[str, float]]:
         """Get initial parameter values from .pfidb or defaults."""
