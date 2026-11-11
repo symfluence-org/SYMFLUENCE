@@ -32,6 +32,10 @@ from typing import Any, Callable, Dict, List, Optional
 
 from ..worker_environment import WorkerEnvironmentConfig
 from .base import ExecutionStrategy
+from .mpi import batch_deadline_seconds, symfluence_import_root
+
+#: How often the coordinator's wait loop beats the eval watchdog.
+_BEAT_INTERVAL_SECONDS = 15.0
 
 #: Signal used for the unblockable second-stage kill of the worker group.
 #:
@@ -193,6 +197,9 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
                     pass  # Good — still running
 
                 self._register_atexit_reaper()
+                # os._exit (the eval watchdog) skips atexit; let the watchdog
+                # kill this group itself if it ever fires.
+                self._watchdog_register(self._process.pid)
                 self.logger.info("Persistent MPI workers started successfully")
                 return
 
@@ -240,21 +247,42 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
         results_signal = comm_dir / 'results.ready'
         results_file = comm_dir / 'results.pkl'
         poll_interval = 0.5  # seconds
-        # Generous timeout: allow each task up to SUMMA_TIMEOUT
-        timeout = max(7200, len(tasks) * 300)
+        # Generous deadline: every task queued on a rank may use the model's
+        # full configured timeout. Rank 0 is the broker, so N-1 ranks work.
+        from symfluence.core.calibration.eval_watchdog import (
+            get_watchdog,
+            model_timeout_from_tasks,
+        )
+        model_timeout = model_timeout_from_tasks(tasks)
+        watchdog = get_watchdog()
+        watchdog.ensure_covers(model_timeout)
+        n_workers = max(1, min(max_workers or self.num_processes, self.num_processes) - 1)
+        timeout = batch_deadline_seconds(len(tasks), n_workers, model_timeout)
         start = time.monotonic()
+        last_beat = start
 
         while not results_signal.exists():
-            if time.monotonic() - start > timeout:
+            now = time.monotonic()
+            if now - last_beat >= _BEAT_INTERVAL_SECONDS:
+                # The coordinator is alive and waiting; this loop's own
+                # deadline bounds a hung batch. Without the beat every batch
+                # longer than the watchdog limit killed the run (exit 75).
+                watchdog.beat()
+                last_beat = now
+            if now - start > timeout:
+                # Kill the ranks: the batch is abandoned, and they would keep
+                # writing into the per-process directories.
+                self._signal_group(HARD_KILL_SIGNAL, hard=True)
                 self._handle_dead_process()
                 raise RuntimeError(
                     f"Timed out waiting for MPI worker results "
-                    f"after {timeout}s"
+                    f"after {timeout:.0f}s"
                 )
             if self._process.poll() is not None:
                 self._handle_dead_process()
                 raise RuntimeError("Persistent MPI workers died during execution")
             time.sleep(poll_interval)
+        watchdog.beat()
 
         # Read results
         with open(results_file, 'rb') as f:
@@ -317,6 +345,7 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
         except (OSError, subprocess.SubprocessError, ValueError) as exc:
             self.logger.error(f"Error during MPI shutdown: {exc}")
         finally:
+            self._watchdog_unregister(self._process.pid)
             self._process = None
 
         # Clean up temp files
@@ -404,7 +433,21 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
     def _handle_dead_process(self) -> None:
         rc = self._process.poll() if self._process else None
         self.logger.error(f"Persistent MPI process died (returncode={rc})")
+        if self._process is not None:
+            self._watchdog_unregister(self._process.pid)
         self._process = None
+
+    @staticmethod
+    def _watchdog_register(pid: Any) -> None:
+        from symfluence.core.calibration.eval_watchdog import get_watchdog
+        if isinstance(pid, int):
+            get_watchdog().register_child_group(pid)
+
+    @staticmethod
+    def _watchdog_unregister(pid: Any) -> None:
+        from symfluence.core.calibration.eval_watchdog import get_watchdog
+        if isinstance(pid, int):
+            get_watchdog().unregister_child_group(pid)
 
     def _drain_stderr(self) -> None:
         try:
@@ -441,9 +484,7 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
         Search order (first match wins):
         1. $SYMFLUENCE_PYTHON — explicit override for HPC job scripts
         2. Venv in $SLURM_TMPDIR — avoids NFS metadata IOPS
-        3. Active $VIRTUAL_ENV (local scratch preferred)
-        4. Standard venv locations relative to package root
-        5. sys.executable (fallback)
+        3. sys.executable — the interpreter running the calibration
         """
         venv_bin = "Scripts" if os.name == "nt" else "bin"
         slurm_tmpdir = os.environ.get('SLURM_TMPDIR')
@@ -465,36 +506,11 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
                     )
                     return str(scratch_py)
 
-        # 3. Active VIRTUAL_ENV (prefer if on local storage)
-        active_venv = os.environ.get('VIRTUAL_ENV')
-        if active_venv:
-            for name in ("python3", "python"):
-                active_py = Path(active_venv) / venv_bin / name
-                if active_py.exists() and os.access(str(active_py), os.X_OK):
-                    is_local = self._is_local_path(str(active_py), slurm_tmpdir)
-                    if not is_local and slurm_tmpdir:
-                        self.logger.warning(
-                            f"Active VIRTUAL_ENV Python ({active_py}) is on shared storage. "
-                            f"Copy venv to $SLURM_TMPDIR/venv to reduce NFS IOPS."
-                        )
-                    self.logger.info(f"Using active VIRTUAL_ENV Python: {active_py}")
-                    return str(active_py)
-
-        # 4. Standard venv locations relative to package root
+        # 3. This interpreter. Workers must import the same packages as the
+        # coordinator. (This used to fall through to any ``venv`` next to the
+        # package or ``~/venv/bin/python`` that happened to exist, in
+        # preference to the interpreter actually running the calibration.)
         python_exe = sys.executable
-        pkg_root = Path(__file__).parent.parent.parent.parent.parent.parent
-        venv_paths = [
-            pkg_root / "venv" / venv_bin / "python",
-            pkg_root / "venv" / venv_bin / "python3",
-            pkg_root / "venv" / venv_bin / "python3.11",
-            Path.home() / "venv" / venv_bin / "python",
-            Path.home() / "venv" / venv_bin / "python3",
-        ]
-        for venv_path in venv_paths:
-            if venv_path.exists():
-                python_exe = str(venv_path)
-                self.logger.info(f"Using venv Python: {python_exe}")
-                break
 
         # Warn if final choice is on shared storage in a SLURM environment
         if slurm_tmpdir and not self._is_local_path(python_exe, slurm_tmpdir):
@@ -554,7 +570,7 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
 
     def _build_mpi_environment(self) -> Dict[str, str]:
         mpi_env = os.environ.copy()
-        src_path = str(Path(__file__).parent.parent.parent.parent.parent)
+        src_path = str(symfluence_import_root())
         current_pythonpath = mpi_env.get('PYTHONPATH', '')
         if current_pythonpath:
             mpi_env['PYTHONPATH'] = f"{src_path}{os.pathsep}{current_pythonpath}"
@@ -585,7 +601,7 @@ class PersistentMPIExecutionStrategy(ExecutionStrategy):
         - Ranks 1..N-1 loop waiting for tasks from rank 0.
         - A ``shutdown`` file signals graceful exit.
         """
-        src_path = Path(__file__).parent.parent.parent.parent.parent
+        src_path = symfluence_import_root()
 
         script_content = f'''#!/usr/bin/env python3
 # Auto-generated persistent MPI worker script — do not edit.

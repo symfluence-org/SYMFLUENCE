@@ -61,8 +61,10 @@ class ProcessPoolExecutionStrategy(ExecutionStrategy):
 
         results: List[Dict[str, Any]] = [{} for _ in tasks]
 
-        from symfluence.core.calibration.eval_watchdog import get_watchdog
+        from symfluence.core.calibration.eval_watchdog import cover_model_timeout, get_watchdog
         watchdog = get_watchdog()
+        # The default limit is below most models' own timeout.
+        cover_model_timeout(tasks)
 
         try:
             # Use ProcessPoolExecutor.map to preserve order

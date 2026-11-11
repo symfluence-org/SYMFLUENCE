@@ -16,12 +16,45 @@ import pickle  # nosec B403
 import shutil
 import subprocess
 import sys
+import time
 import uuid
 from pathlib import Path
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 from ..worker_environment import WorkerEnvironmentConfig
 from .base import ExecutionStrategy
+
+#: How often the coordinator wakes while waiting on an MPI batch.
+_WAIT_POLL_SECONDS = 15.0
+
+
+def symfluence_import_root() -> Path:
+    """Directory to put on ``sys.path`` so ``import symfluence`` resolves here.
+
+    Derived from the imported package rather than by counting ``.parent``s
+    from this file: the count was short, so MPI workers got
+    ``src/symfluence/core`` on their path — exposing ``config``, ``metrics``,
+    ``logging_utils`` ... as top-level modules that shadow unrelated packages.
+    """
+    import symfluence
+
+    return Path(symfluence.__file__).resolve().parent.parent
+
+
+def batch_deadline_seconds(
+    n_tasks: int, n_workers: int, model_timeout_s: Optional[float] = None
+) -> float:
+    """Wall-clock bound for one MPI batch.
+
+    At least 7200 s and 300 s per task (the historical rule); when the model
+    timeout is known, also enough for every task queued on a rank to use its
+    full budget.
+    """
+    deadline = float(max(7200, n_tasks * 300))
+    if model_timeout_s:
+        waves = -(-max(1, n_tasks) // max(1, n_workers))  # ceil
+        deadline = max(deadline, waves * float(model_timeout_s) + 300.0)
+    return deadline
 
 
 class MPIExecutionStrategy(ExecutionStrategy):
@@ -126,7 +159,7 @@ class MPIExecutionStrategy(ExecutionStrategy):
 
                 self.logger.debug(f"MPI command: {' '.join(mpi_cmd)}")
 
-                result = subprocess.run(mpi_cmd, capture_output=True, text=True, env=mpi_env)
+                result = self._run_mpi_batch(mpi_cmd, mpi_env, tasks, num_procs)
                 self._log_mpi_output(result)
 
                 if result.returncode == 0 and results_file.exists():
@@ -170,29 +203,82 @@ class MPIExecutionStrategy(ExecutionStrategy):
             "_evaluate_parameters_worker_safe"
         )
 
+    def _run_mpi_batch(
+        self,
+        mpi_cmd: List[str],
+        mpi_env: Dict[str, str],
+        tasks: List[Dict[str, Any]],
+        num_procs: int,
+    ) -> subprocess.CompletedProcess:
+        """Run one MPI batch to completion, keeping the eval watchdog informed.
+
+        The launcher runs in its own process group, registered with the
+        watchdog, so neither a batch deadline nor a watchdog kill leaves ranks
+        behind. The wait loop beats the watchdog: a batch legitimately takes
+        many evaluations' worth of time, and its own deadline bounds a hang.
+        """
+        from symfluence.core.calibration.eval_watchdog import (
+            get_watchdog,
+            model_timeout_from_tasks,
+        )
+        from symfluence.core.process_exec import kill_process_group
+
+        model_timeout = model_timeout_from_tasks(tasks)
+        watchdog = get_watchdog()
+        watchdog.ensure_covers(model_timeout)
+        deadline_s = batch_deadline_seconds(len(tasks), num_procs, model_timeout)
+
+        group_kwargs: Dict[str, Any] = {} if os.name == 'nt' else {'start_new_session': True}
+        proc = subprocess.Popen(
+            mpi_cmd,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=mpi_env,
+            **group_kwargs,
+        )
+        watchdog.register_child_group(proc.pid)
+        start = time.monotonic()
+        try:
+            while True:
+                watchdog.beat()
+                try:
+                    stdout, stderr = proc.communicate(timeout=_WAIT_POLL_SECONDS)
+                    break
+                except subprocess.TimeoutExpired:
+                    if time.monotonic() - start > deadline_s:
+                        kill_process_group(proc.pid)
+                        proc.kill()
+                        stdout, stderr = proc.communicate()
+                        return subprocess.CompletedProcess(
+                            mpi_cmd, -9, stdout,
+                            (stderr or '') + f"\nMPI batch exceeded its {deadline_s:.0f}s deadline and was killed",
+                        )
+        except BaseException:
+            # Interrupted (KeyboardInterrupt, ...): the launcher is in its own
+            # session, so nothing else will stop it.
+            kill_process_group(proc.pid)
+            proc.kill()
+            raise
+        finally:
+            watchdog.unregister_child_group(proc.pid)
+            watchdog.beat()
+        return subprocess.CompletedProcess(mpi_cmd, proc.returncode, stdout, stderr)
+
     def _find_python_executable(self) -> str:
-        """Find the Python executable to use for MPI workers."""
-        python_exe = sys.executable
-        self.logger.debug(f"sys.executable: {python_exe}, exists: {Path(python_exe).exists()}")
+        """Python for the MPI workers: this interpreter, unless overridden.
 
-        # Check for venv Python (platform-aware: Scripts on Windows, bin on Unix)
-        venv_bin = "Scripts" if os.name == "nt" else "bin"
-        pkg_root = Path(__file__).parent.parent.parent.parent.parent.parent
-        venv_paths = [
-            pkg_root / "venv" / venv_bin / "python",
-            pkg_root / "venv" / venv_bin / "python3",
-            pkg_root / "venv" / venv_bin / "python3.11",
-            Path.home() / "venv" / venv_bin / "python",
-            Path.home() / "venv" / venv_bin / "python3",
-        ]
-
-        for venv_path in venv_paths:
-            if venv_path.exists():
-                python_exe = str(venv_path)
-                self.logger.info(f"Using venv Python: {python_exe}")
-                break
-
-        return python_exe
+        Workers must import the same packages as the coordinator, so the
+        default is ``sys.executable``. ``$SYMFLUENCE_PYTHON`` is the explicit
+        override. (This used to prefer any ``~/venv/bin/python`` that happened
+        to exist over the interpreter actually running the calibration.)
+        """
+        explicit = os.environ.get('SYMFLUENCE_PYTHON')
+        if explicit and os.access(explicit, os.X_OK):
+            self.logger.info(f"Using SYMFLUENCE_PYTHON override: {explicit}")
+            return explicit
+        return sys.executable
 
     @staticmethod
     def _detect_mpi_launchers() -> list:
@@ -247,8 +333,8 @@ class MPIExecutionStrategy(ExecutionStrategy):
         """Build environment for MPI execution."""
         mpi_env = os.environ.copy()
 
-        # Add src to PYTHONPATH
-        src_path = str(Path(__file__).parent.parent.parent.parent.parent)
+        # Add the directory that contains the symfluence package to PYTHONPATH
+        src_path = str(symfluence_import_root())
         current_pythonpath = mpi_env.get('PYTHONPATH', '')
         if current_pythonpath:
             mpi_env['PYTHONPATH'] = f"{src_path}{os.pathsep}{current_pythonpath}"
@@ -302,8 +388,8 @@ class MPIExecutionStrategy(ExecutionStrategy):
         worker_function: str
     ) -> None:
         """Create the MPI worker script file."""
-        # Calculate path to src directory
-        src_path = Path(__file__).parent.parent.parent.parent.parent
+        # Directory that contains the symfluence package
+        src_path = symfluence_import_root()
 
         script_content = f'''#!/usr/bin/env python3
 import sys

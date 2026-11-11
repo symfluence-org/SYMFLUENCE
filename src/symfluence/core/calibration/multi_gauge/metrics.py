@@ -63,6 +63,10 @@ class MultiGaugeMetrics:
         # Cache for observed data
         self._obs_cache: Dict[int, pd.Series] = {}
 
+        # mizuRoute output handle shared by all gauges of one evaluation
+        self._sim_handle: Optional[Tuple[tuple, Tuple[Any, np.ndarray, str]]] = None
+        self._sim_session_active = False
+
     def _load_gauge_mapping(self) -> pd.DataFrame:
         """Load the gauge-to-segment mapping from CSV."""
         if not self.gauge_segment_mapping_path.exists():
@@ -152,60 +156,94 @@ class MultiGaugeMetrics:
             pandas Series with datetime index and streamflow in m³/s
         """
         try:
-            import xarray as xr
-
-            with xr.open_dataset(mizuroute_output_path) as ds:
-                # Get segment indices
-                if 'segId' in ds.variables:
-                    seg_ids = ds['segId'].values
-                elif 'reachID' in ds.variables:
-                    seg_ids = ds['reachID'].values
-                else:
-                    # Try to get from topology file
-                    if topology_path and topology_path.exists():
-                        with xr.open_dataset(topology_path) as topo_ds:
-                            if 'segId' in topo_ds.variables:
-                                seg_ids = topo_ds['segId'].values
-                            else:
-                                self.logger.error("Cannot find segment IDs")
-                                return None
-                    else:
-                        self.logger.error("Cannot find segment IDs in mizuRoute output")
-                        return None
-
+            opened = self._open_simulation(mizuroute_output_path, topology_path)
+            if opened is None:
+                return None
+            ds, seg_ids, runoff_var = opened
+            try:
                 # Find segment index
                 seg_idx = np.where(seg_ids == segment_id)[0]
                 if len(seg_idx) == 0:
                     self.logger.warning(f"Segment {segment_id} not found in mizuRoute output")
                     return None
-                seg_idx = seg_idx[0]
-
-                # Extract streamflow variable
-                if 'IRFroutedRunoff' in ds.variables:
-                    runoff = ds['IRFroutedRunoff'].isel(seg=seg_idx)
-                elif 'dlayRunoff' in ds.variables:
-                    runoff = ds['dlayRunoff'].isel(seg=seg_idx)
-                elif 'KWTroutedRunoff' in ds.variables:
-                    runoff = ds['KWTroutedRunoff'].isel(seg=seg_idx)
-                else:
-                    self.logger.error(f"No routed runoff variable found in {mizuroute_output_path}")
-                    return None
 
                 # Convert to pandas Series (avoid DataFrame return from generic stubs)
-                sim = runoff.to_series()
+                sim = ds[runoff_var].isel(seg=seg_idx[0]).to_series()
 
                 # Ensure datetime index
                 if not isinstance(sim.index, pd.DatetimeIndex):
                     sim.index = pd.to_datetime(sim.index)
 
                 # Resample to daily if needed (mizuRoute may output hourly)
-                sim = sim.resample('D').mean()
-
-                return sim
+                return sim.resample('D').mean()
+            finally:
+                if not self._sim_session_active:
+                    self._close_simulation()
 
         except Exception as e:  # noqa: BLE001 — calibration resilience
             self.logger.error(f"Error extracting simulated at segment {segment_id}: {e}", exc_info=True)
             return None
+
+    def _open_simulation(
+        self, mizuroute_output_path: Path, topology_path: Optional[Path]
+    ) -> Optional[Tuple[Any, np.ndarray, str]]:
+        """Open the mizuRoute output once and keep it for the evaluation.
+
+        Returns ``(dataset, segment ids, routed-runoff variable)``. Inside
+        :meth:`calculate_multi_gauge_metrics` the handle is reused for every
+        gauge (it used to be reopened once per gauge per evaluation) and
+        closed when the evaluation ends.
+        """
+        import xarray as xr
+
+        key = (str(mizuroute_output_path), str(topology_path))
+        if self._sim_handle is not None and self._sim_handle[0] == key:
+            return self._sim_handle[1]
+        self._close_simulation()
+
+        ds = xr.open_dataset(mizuroute_output_path)
+        opened: Optional[Tuple[Any, np.ndarray, str]] = None
+        try:
+            # Get segment indices
+            seg_ids = None
+            if 'segId' in ds.variables:
+                seg_ids = ds['segId'].values
+            elif 'reachID' in ds.variables:
+                seg_ids = ds['reachID'].values
+            elif topology_path and topology_path.exists():
+                # Try to get from topology file
+                with xr.open_dataset(topology_path) as topo_ds:
+                    if 'segId' in topo_ds.variables:
+                        seg_ids = topo_ds['segId'].values
+                if seg_ids is None:
+                    self.logger.error("Cannot find segment IDs")
+            else:
+                self.logger.error("Cannot find segment IDs in mizuRoute output")
+
+            runoff_var = next(
+                (v for v in ('IRFroutedRunoff', 'dlayRunoff', 'KWTroutedRunoff') if v in ds.variables),
+                None,
+            )
+            if seg_ids is not None and runoff_var is None:
+                self.logger.error(f"No routed runoff variable found in {mizuroute_output_path}")
+
+            if seg_ids is not None and runoff_var is not None:
+                opened = (ds, seg_ids, runoff_var)
+        finally:
+            if opened is None:
+                ds.close()
+        if opened is not None:
+            self._sim_handle = (key, opened)
+        return opened
+
+    def _close_simulation(self) -> None:
+        """Close the cached mizuRoute dataset, if any."""
+        if self._sim_handle is not None:
+            handle, self._sim_handle = self._sim_handle, None
+            try:
+                handle[1][0].close()
+            except (OSError, RuntimeError, ValueError):
+                pass
 
     def _calculate_kge(
         self,
@@ -272,8 +310,17 @@ class MultiGaugeMetrics:
         if not any([max_distance, min_obs_cv, min_specific_q]):
             return gauge_ids
 
-        # Return cached result if the input gauge set hasn't changed
-        cache_key = tuple(sorted(gauge_ids))
+        # Return cached result only for the same question: same gauges, same
+        # filter thresholds, same period, same mapping and observations. Keyed
+        # on the gauge ids alone, the first caller's answer was handed to every
+        # later instance in the process (a different period, different
+        # thresholds, another domain with overlapping ids).
+        cache_key = (
+            tuple(sorted(gauge_ids)),
+            tuple(sorted((str(k), repr(v)) for k, v in filter_config.items())),
+            str(start_date), str(end_date),
+            str(self.gauge_segment_mapping_path), str(self.obs_data_dir),
+        )
         if MultiGaugeMetrics._filter_cache is not None and MultiGaugeMetrics._filter_cache[0] == cache_key:
             return list(MultiGaugeMetrics._filter_cache[1])
 
@@ -401,9 +448,38 @@ class MultiGaugeMetrics:
 
         results['n_total_gauges'] = len(gauge_ids)
 
-        kge_values = []
-        valid_weights = []
+        kge_values: List[float] = []
+        valid_weights: List[float] = []
 
+        # One open of the simulation output for the whole evaluation.
+        self._sim_session_active = True
+        try:
+            self._score_gauges(
+                gauge_ids, mizuroute_output_path, topology_path, start_date, end_date,
+                min_overlap_days, weights, results, kge_values, valid_weights,
+            )
+        finally:
+            self._sim_session_active = False
+            self._close_simulation()
+
+        return self._aggregate_gauge_scores(
+            results, kge_values, valid_weights, min_gauges, aggregation, kge_floor
+        )
+
+    def _score_gauges(
+        self,
+        gauge_ids: List[int],
+        mizuroute_output_path: Path,
+        topology_path: Optional[Path],
+        start_date: Optional[str],
+        end_date: Optional[str],
+        min_overlap_days: int,
+        weights: Optional[Dict[int, float]],
+        results: Dict[str, Any],
+        kge_values: List[float],
+        valid_weights: List[float],
+    ) -> None:
+        """KGE at every gauge; fills ``results['per_gauge']`` and the two lists."""
         for gauge_id in gauge_ids:
             # Get segment ID for this gauge
             gauge_row = self.gauge_mapping[self.gauge_mapping['id'] == gauge_id]
@@ -485,6 +561,16 @@ class MultiGaugeMetrics:
                     else:
                         valid_weights.append(1.0)
 
+    def _aggregate_gauge_scores(
+        self,
+        results: Dict[str, Any],
+        kge_values: List[float],
+        valid_weights: List[float],
+        min_gauges: int,
+        aggregation: str,
+        kge_floor: Optional[float],
+    ) -> Dict[str, Any]:
+        """Aggregate per-gauge KGE into the objective value."""
         results['n_valid_gauges'] = len(kge_values)
 
         # Log per-gauge diagnostic on first evaluation to help identify problem gauges
@@ -563,9 +649,26 @@ class MultiGaugeMetrics:
         elif aggregation == 'median':
             results['kge'] = float(np.median(kge_array))
         elif aggregation == 'weighted':
-            # Normalize weights
-            weight_array = weight_array / weight_array.sum()
-            results['kge'] = float(np.sum(kge_array * weight_array))
+            # A gauge without a usable weight (NaN / non-positive catchment
+            # area) cannot take part in a weighted mean; one such gauge used
+            # to turn the whole aggregate into NaN.
+            weight_array = weight_array.astype(float)
+            usable = np.isfinite(weight_array) & (weight_array > 0)
+            if not usable.all():
+                self.logger.warning(
+                    f"Weighted multi-gauge aggregation: {int((~usable).sum())} of "
+                    f"{len(weight_array)} gauges have no finite positive weight "
+                    f"(catchment area) and are left out of the weighted mean"
+                )
+            results['n_weighted_gauges'] = int(usable.sum())
+            if not usable.any():
+                self.logger.error(
+                    "Weighted multi-gauge aggregation: no gauge has a finite "
+                    "positive weight; cannot aggregate"
+                )
+                return results
+            normalised = weight_array[usable] / weight_array[usable].sum()
+            results['kge'] = float(np.sum(kge_array[usable] * normalised))
         elif aggregation == 'min':
             # Worst gauge performance (conservative)
             results['kge'] = float(np.min(kge_array))

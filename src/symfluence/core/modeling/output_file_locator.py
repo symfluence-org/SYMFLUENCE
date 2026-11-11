@@ -24,6 +24,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import List, Optional, Union
 
@@ -188,11 +189,12 @@ class OutputFileLocator:
         output_type: str
     ) -> List[Path]:
         """Find model-specific output files."""
-        model_upper = model.upper()
-        if model_upper not in self.MODEL_PATTERNS:
+        # Case-insensitive: the table has mixed-case keys ('RHESSys',
+        # 'mizuRoute') that an upper-cased lookup could never hit.
+        by_upper = {name.upper(): spec for name, spec in self.MODEL_PATTERNS.items()}
+        patterns = by_upper.get(model.upper())
+        if patterns is None:
             return []
-
-        patterns = self.MODEL_PATTERNS[model_upper]
 
         # Check specific files first
         if output_type in patterns:
@@ -269,8 +271,13 @@ class OutputFileLocator:
             Sorted list of file paths
         """
         if self.experiment_id:
-            # Prioritize files containing experiment_id
-            matching = [f for f in files if self.experiment_id in f.name]
+            # Prioritize files whose name contains the experiment id as a
+            # whole token: a bare substring test let 'run_1' claim
+            # 'run_10_timestep.nc'.
+            token = re.compile(
+                rf"(?<![A-Za-z0-9]){re.escape(self.experiment_id)}(?![A-Za-z0-9])"
+            )
+            matching = [f for f in files if token.search(f.name)]
             if matching:
                 self.logger.debug(
                     f"Found {len(matching)} files matching experiment_id '{self.experiment_id}'"
