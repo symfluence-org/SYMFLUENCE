@@ -12,9 +12,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Optional
 
+import numpy as np
+import pandas as pd
 import rasterio
 from pyproj import CRS
 
+from symfluence.core.exceptions import DiscretizationError
 from symfluence.geospatial.zonal import fill_empty_zones, zonal_stats_covered
 
 if TYPE_CHECKING:
@@ -170,6 +173,19 @@ def discretize(discretizer: "DomainDiscretizer") -> Optional[object]:
         gru_gdf["GRU_ID"] = gru_gdf["COMID"]
     elif "fid" in gru_gdf.columns:
         gru_gdf["GRU_ID"] = gru_gdf["fid"]
+
+    # GRU/HRU ids are written to 32-bit integer variables downstream (SUMMA
+    # attributes and forcing, mizuRoute topology). Refuse ids that would wrap.
+    numeric_ids = pd.to_numeric(gru_gdf["GRU_ID"], errors="coerce")
+    too_big = numeric_ids.abs() > np.iinfo("int32").max
+    if too_big.any():
+        example = gru_gdf["GRU_ID"][too_big].iloc[0]
+        raise DiscretizationError(
+            f"GRU_ID values such as {example!r} do not fit 32-bit integers and would overflow "
+            "in the model input files. Re-run the domain definition (geofabric "
+            "subsetting now assigns compact ids and keeps the source id in SRC_ID), or "
+            "renumber GRU_ID in the river basins shapefile."
+        )
 
     gru_gdf["HRU_area"] = gru_gdf["GRU_area"]
     gru_gdf["HRU_ID"] = gru_gdf["GRU_ID"]
