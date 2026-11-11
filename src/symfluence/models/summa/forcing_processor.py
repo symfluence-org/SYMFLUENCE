@@ -30,6 +30,9 @@ from symfluence.core.exceptions import FileOperationError, ModelExecutionError
 from symfluence.core.modeling.utilities import BaseForcingProcessor
 from symfluence.models.summa.forcing_time import infer_forcing_step_from_filenames
 
+# SUMMA stores file paths in Fortran character(len=256) variables.
+SUMMA_PATH_MAX = 256
+
 
 class SummaForcingProcessor(BaseForcingProcessor):
     """
@@ -1735,6 +1738,16 @@ class SummaForcingProcessor(BaseForcingProcessor):
             len(forcing_files),
             forcing_dataset,
         )
+
+        # SUMMA joins forcingPath and each listed name into a Fortran
+        # character(len=256); a longer path is silently truncated and SUMMA then
+        # stops with a FileNotFound on the cut-off name.
+        too_long = [n for n in forcing_files if len(f"{forcing_path}/{n}") > SUMMA_PATH_MAX]
+        if too_long:
+            raise FileOperationError(
+                f"SUMMA forcing path is {len(f'{forcing_path}/{too_long[0]}')} characters, over "
+                f"SUMMA's {SUMMA_PATH_MAX}-character limit: {forcing_path}/{too_long[0]}. "
+                "Use a shorter SYMFLUENCE_DATA_DIR or DOMAIN_NAME.")
 
         with open(file_list_path, "w", encoding="utf-8") as fobj:
             for fname in forcing_files:
