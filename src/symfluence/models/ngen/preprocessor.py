@@ -702,7 +702,8 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         catchment_gdf = gpd.read_file(self.get_catchment_path())
         catchment_ids = [f"cat-{x}" for x in catchment_gdf[self.hru_id_col].astype(str).tolist()]
         fdp = ForcingDataProcessor(self.config, self.logger)
-        forcing_data = fdp.load_forcing_data(self.forcing_basin_path)
+        forcing_data = fdp.load_forcing_data(
+            self.forcing_basin_path, catchment_path=self._get_catchment_file_path())
         forcing_data = forcing_data.sortby('time')
 
         # Validate temporal completeness before any transformation
@@ -734,7 +735,8 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
         twm = TimeWindowManager(self.config, self.logger)
         try:
-            start_time, end_time = twm.get_simulation_times(forcing_path=self.forcing_basin_path)
+            start_time, end_time = twm.get_simulation_times(
+                forcing_path=self.forcing_basin_path, catchment_path=self._get_catchment_file_path())
         except (ValueError, KeyError, TypeError) as e:
             self.logger.debug(f"Could not get simulation times from TimeWindowManager, using config: {e}")
             start_time = pd.to_datetime(self.time_start)

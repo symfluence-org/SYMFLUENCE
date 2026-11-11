@@ -10,17 +10,23 @@ import pandas as pd
 import xarray as xr
 
 from symfluence.core.exceptions import ValidationError
+from symfluence.core.modeling.forcing_naming import resolve_forcing_files
 from symfluence.core.modeling.mixins.pet_calculator import PETCalculatorMixin
 from symfluence.core.modeling.model_ready.forcing_reader import forcing_timestep_seconds, open_canonical_forcing
 
 
-def daily_bands(forcing_dir, hru_file, start, end):
+def daily_bands(forcing_dir, hru_file, start, end, discretization=None):
+    """Daily band forcing for the HRUs in *hru_file*.
+
+    With *discretization*, only the forcing remapped onto *hru_file* is read
+    (issue #339); without it every ``*.nc`` in *forcing_dir* is.
+    """
     bands = gpd.read_file(hru_file).sort_values("HRU_ID").reset_index(drop=True)
     if not {"HRU_ID", "HRU_area", "elev_mean", "center_lat", "center_lon"} <= set(bands):
         raise ValidationError("Elevation geometry lacks required HRU attributes")
     if bands.HRU_ID.duplicated().any() or (bands.HRU_area <= 0).any():
         raise ValidationError("Invalid or duplicate elevation HRUs")
-    files = sorted(Path(forcing_dir).glob("*.nc"))
+    files = resolve_forcing_files(sorted(Path(forcing_dir).glob("*.nc")), discretization, hru_file, "HRU_ID")
     ds = open_canonical_forcing(files)
     try:
         ds = ds.sel(

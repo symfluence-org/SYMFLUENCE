@@ -255,6 +255,10 @@ class IGNACIOPreProcessor(BaseModelPreProcessor):
         Returns:
             Path to generated weather CSV or None
         """
+        # Only the forcing remapped onto this run's HRUs (issue #339).
+        basin_files = (self._select_run_forcing(sorted(self.forcing_basin_path.glob('*.nc')))
+                       if self.forcing_basin_path.exists() else [])
+
         try:
             import numpy as np
             import pandas as pd
@@ -276,6 +280,9 @@ class IGNACIOPreProcessor(BaseModelPreProcessor):
                     continue
                 # Look for files matching the configured dataset first
                 matched = list(forcing_dir.glob(f'*{forcing_dataset}*.nc'))
+                if forcing_dir == self.forcing_basin_path:
+                    dataset_files = set(matched)
+                    matched = [f for f in basin_files if f in dataset_files]
                 if matched:
                     nc_files = matched
                     self.logger.info(f"Using {forcing_dataset} forcing from: {forcing_dir.name}")
@@ -284,7 +291,8 @@ class IGNACIOPreProcessor(BaseModelPreProcessor):
             if not nc_files:
                 for forcing_dir in forcing_dirs:
                     if forcing_dir.exists():
-                        found = list(forcing_dir.glob('*.nc'))
+                        found = (list(basin_files) if forcing_dir == self.forcing_basin_path
+                                 else list(forcing_dir.glob('*.nc')))
                         if found:
                             nc_files = found
                             self.logger.info(f"Using forcing from: {forcing_dir.name}")

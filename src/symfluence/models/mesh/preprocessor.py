@@ -176,7 +176,8 @@ class MESHPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             self._forcing_processor = MESHForcingProcessor(
                 self.forcing_dir,
                 self._meshflow_config,
-                self.logger
+                self.logger,
+                forcing_selector=self._select_run_forcing,
             )
         assert self._forcing_processor is not None
         return self._forcing_processor
@@ -331,18 +332,15 @@ class MESHPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         use to order the Dataset objects for concatenation" — the MESH exp-02
         preprocessing failure on native Windows.
 
-        Narrow the glob to the files whose token matches the run's
-        discretization (read the SAME way the remap writer stamps it, so tokens
-        agree). Return an explicit single-file path when exactly one matches
+        Narrow the glob to the files remapped onto this run's HRU set
+        (``_select_run_forcing``: discretization plus catchment geometry, the
+        same token the remap writer stamps). Return an explicit single-file path when exactly one matches
         (meshflow reads it directly, no concat), a token-scoped glob when a
         subset of a larger multi-chunk store matches, or the original glob
         unchanged when selection is a no-op (single-discretization stores, or
         stores predating namespacing) so nothing regresses.
         """
-        from symfluence.core.modeling.forcing_naming import (
-            discretization_token,
-            select_forcing_files,
-        )
+        from symfluence.core.modeling.forcing_naming import discretization_key_from_name
 
         resolved = sorted(glob.glob(forcing_files_glob))
         if len(resolved) <= 1:
@@ -354,7 +352,7 @@ class MESHPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             lambda: self.config.domain.discretization,
             dict_key='SUB_GRID_DISCRETIZATION',
         )
-        selected = [str(p) for p in select_forcing_files(resolved, discretization)]
+        selected = [str(p) for p in self._select_run_forcing(resolved)]
 
         if len(selected) == len(resolved):
             # No token matched — a single-discretization / pre-namespacing store.
@@ -371,7 +369,7 @@ class MESHPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
         # A multi-chunk subset of one discretization: scope the glob to its token
         # so meshflow re-globs only those chunks (orderable by time).
-        token = discretization_token(discretization)
+        token = discretization_key_from_name(Path(selected[0]).name)
         scoped = str(forcing_files_path / f'*_remapped_{token}*.nc')
         self.logger.info(
             f"Scoped forcing glob to discretization '{discretization}' "

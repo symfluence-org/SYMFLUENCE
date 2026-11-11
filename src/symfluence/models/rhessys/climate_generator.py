@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import geopandas as gpd
 import numpy as np
@@ -46,9 +46,12 @@ class RHESSysClimateGenerator:
         config: Dict[str, Any],
         project_dir: Path,
         domain_name: str,
-        logger: Optional[logging.Logger] = None
+        logger: Optional[logging.Logger] = None,
+        forcing_selector: Optional[Callable[[List[Path]], List[Path]]] = None,
     ):
         self.config = config
+        # Narrows basin forcing to this run's HRU set (issue #339).
+        self.forcing_selector = forcing_selector
         self.project_dir = Path(project_dir)
         self.domain_name = domain_name
         self.logger = logger or logging.getLogger(__name__)
@@ -195,7 +198,11 @@ class RHESSysClimateGenerator:
         ``{domain}_{forcing}_remapped_*`` namespace as the lumped 1-HRU basin
         average. ``open_canonical_forcing`` merges/aligns everything it is
         handed, so an incompatible file crashes on dimension alignment (the
-        observed ``hru {1, 12}`` mismatch). Since ``_basin_average`` collapses
+        observed ``hru {1, 12}`` mismatch). For the basin store,
+        ``_load_forcing_data`` first narrows to the files remapped onto this
+        run's HRU set (``forcing_selector``, issue #339); this method then
+        handles other forcing datasets, legacy untokened stores and the
+        fallback locations. Since ``_basin_average`` collapses
         every non-time dimension anyway, RHESSys only needs one spatially
         compatible representation — prefer the single-HRU lumped remap.
 
@@ -286,7 +293,9 @@ class RHESSysClimateGenerator:
         forcing_files = []
         for path in search_paths:
             if path.exists():
-                files = list(path.glob("*.nc"))
+                files = sorted(path.glob("*.nc"))
+                if path == self.forcing_basin_path and self.forcing_selector is not None:
+                    files = self.forcing_selector(files)
                 if files:
                     self.logger.info(f"Found {len(files)} forcing files in {path}")
                     forcing_files = self._select_forcing_files(files)

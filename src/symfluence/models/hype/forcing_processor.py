@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 # Third-party imports
 import cdo
@@ -67,7 +67,8 @@ class HYPEForcingProcessor(BaseForcingProcessor):
         output_path: Path,
         cache_path: Path,
         timeshift: int = 0,
-        forcing_units: Optional[Dict[str, Any]] = None
+        forcing_units: Optional[Dict[str, Any]] = None,
+        forcing_selector: Optional[Callable[[List[Path]], List[Path]]] = None,
     ):
         """
         Initialize the HYPE forcing processor.
@@ -80,13 +81,16 @@ class HYPEForcingProcessor(BaseForcingProcessor):
             cache_path: Path for temporary processing files
             timeshift: Hour offset for time zone correction
             forcing_units: Mapping of variables to units and names
+            forcing_selector: Narrows basin forcing files to this run's HRU
+                set (the preprocessor's ``_select_run_forcing``, issue #339)
         """
         super().__init__(
             config=config,
             logger=logger,
             input_path=forcing_input_dir,
             output_path=output_path,
-            cache_path=cache_path
+            cache_path=cache_path,
+            forcing_selector=forcing_selector,
         )
         # Keep forcing_input_dir as alias for backward compatibility
         self.forcing_input_dir = self.input_path
@@ -194,7 +198,12 @@ class HYPEForcingProcessor(BaseForcingProcessor):
         if not easymore_nc_files:
             self.logger.warning(f"No forcing files found in {self.forcing_input_dir}")
             return None
-        easymore_nc_files = self._select_forcing_for_banding(easymore_nc_files)
+        if self._elevation_bands:
+            # Banding lapse-expands the single-column series itself, so it reads
+            # that series rather than the run's banded HRU set.
+            easymore_nc_files = self._select_forcing_for_banding(easymore_nc_files)
+        else:
+            easymore_nc_files = self._select_run_files(easymore_nc_files)
 
         merged_forcing_path = self.cache_path / 'merged_forcing.nc'
 

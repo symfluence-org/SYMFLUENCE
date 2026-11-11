@@ -13,7 +13,7 @@ Uses shared utilities from symfluence.core.modeling.utilities for common operati
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Callable, Dict, List, Optional
 
 import geopandas as gpd
 import numpy as np
@@ -59,7 +59,8 @@ class FuseForcingProcessor(BaseForcingProcessor):
         calculate_pet_callback,
         calculate_catchment_centroid_callback,
         get_simulation_time_window_callback,
-        subset_to_simulation_time_callback
+        subset_to_simulation_time_callback,
+        forcing_selector: Optional[Callable[[List[Path]], List[Path]]] = None,
     ):
         """
         Initialize the FUSE forcing processor.
@@ -76,6 +77,8 @@ class FuseForcingProcessor(BaseForcingProcessor):
             calculate_catchment_centroid_callback: Callback to parent's calculate_catchment_centroid method
             get_simulation_time_window_callback: Callback to parent's _get_simulation_time_window method
             subset_to_simulation_time_callback: Callback to parent's _subset_to_simulation_time method
+            forcing_selector: Narrows basin forcing files to this run's HRU
+                set (the preprocessor's ``_select_run_forcing``, issue #339)
         """
         super().__init__(
             config=config,
@@ -83,7 +86,8 @@ class FuseForcingProcessor(BaseForcingProcessor):
             input_path=forcing_basin_path,
             output_path=forcing_fuse_path,
             project_dir=project_dir,
-            catchment_path=catchment_path
+            catchment_path=catchment_path,
+            forcing_selector=forcing_selector,
         )
         # Keep original attribute names for backward compatibility
         self.forcing_basin_path = self.input_path
@@ -149,7 +153,8 @@ class FuseForcingProcessor(BaseForcingProcessor):
             self.logger.debug(f"Preparing FUSE forcing data in {spatial_mode} mode")
 
             # Read and process forcing data
-            forcing_files = sorted(self.forcing_basin_path.glob('*.nc'))
+            # Only the forcing remapped onto this run's HRUs (issue #339).
+            forcing_files = self._select_run_files(sorted(self.forcing_basin_path.glob('*.nc')))
             if not forcing_files:
                 raise FileOperationError("No forcing files found in basin-averaged data directory")
 
