@@ -309,3 +309,29 @@ class TestGagewatershedSelection:
         out = d._select_gagewatershed_basin(regions, {0: 1, 1: 0})
 
         assert sorted(out['ID'].tolist()) == [0, 1]
+
+
+def test_min_gru_size_warns_that_it_is_not_applied(tmp_path):
+    """MIN_GRU_SIZE is read but nothing merges GRUs: say so instead of ignoring it."""
+    from unittest.mock import MagicMock, patch
+
+    from symfluence.geospatial.geofabric.base.base_delineator import BaseGeofabricDelineator
+
+    class _Delineator(BaseGeofabricDelineator):
+        def _get_delineation_method_name(self):
+            return 'test'
+
+    def _make(min_gru_size):
+        logger = MagicMock()
+        config = {'SYMFLUENCE_DATA_DIR': str(tmp_path), 'DOMAIN_NAME': 'd', 'MIN_GRU_SIZE': min_gru_size}
+        with patch.object(BaseGeofabricDelineator, '_get_taudem_dir', return_value=tmp_path), \
+                patch.object(BaseGeofabricDelineator, '_set_taudem_path'), \
+                patch.object(BaseGeofabricDelineator, '_get_dem_path', return_value=tmp_path / 'dem.tif'):
+            try:
+                _Delineator(config, logger)
+            except Exception:  # noqa: BLE001 - later init steps need a full config; irrelevant here
+                pass
+        return [str(c) for c in logger.warning.call_args_list]
+
+    assert any('MIN_GRU_SIZE' in w and 'not applied' in w for w in _make(5.0))
+    assert not any('MIN_GRU_SIZE' in w for w in _make(0))

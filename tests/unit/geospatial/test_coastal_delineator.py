@@ -136,3 +136,46 @@ class TestExtendingBoundariesMethod:
         # This method claims a single 1 km buffer band; with a 2 km strip the
         # claimed area is the inner band only.
         assert result.geometry.area.sum() < coastal_strip.geometry.area.sum()
+
+
+class TestVoronoiDivision:
+    """The primary division must cover the whole strip (outer regions included)."""
+
+    def _tessellate(self, delineator, river_basins, strip):
+        centroids = river_basins.copy()
+        centroids.geometry = river_basins.geometry.centroid.buffer(1.0)
+        return CoastalWatershedDelineator._create_voronoi_tessellation(delineator, centroids, cover=strip)
+
+    def test_outer_regions_are_kept_and_strip_area_conserved(self, delineator):
+        # 3 x 2 block of basins with a coastal ring around it: every basin is on
+        # the hull, so every plain-Voronoi region is unbounded (previously dropped)
+        basins = gpd.GeoDataFrame(
+            {'GRU_ID': range(1, 7)},
+            geometry=[box(10_000 * i, 10_000 * j, 10_000 * (i + 1), 10_000 * (j + 1))
+                      for j in range(2) for i in range(3)],
+            crs=UTM_CRS,
+        )
+        land = box(-3_000, -3_000, 33_000, 23_000)
+        strip = gpd.GeoDataFrame(geometry=[land.difference(basins.union_all())], crs=UTM_CRS)
+
+        voronoi = self._tessellate(delineator, basins, strip)
+        assert voronoi is not None and len(voronoi) == 6
+
+        pieces = gpd.overlay(strip, voronoi, how='intersection')
+        assert pieces.geometry.area.sum() == pytest.approx(strip.geometry.area.sum(), rel=1e-6)
+        assert CoastalWatershedDelineator._check_strip_area_conserved(delineator, strip, pieces)
+
+    def test_works_with_fewer_than_four_basins(self, delineator, river_basins, coastal_strip):
+        voronoi = self._tessellate(delineator, river_basins, coastal_strip)
+        assert voronoi is not None and len(voronoi) == 3
+        pieces = gpd.overlay(coastal_strip, voronoi, how='intersection')
+        assert pieces.geometry.area.sum() == pytest.approx(coastal_strip.geometry.area.sum(), rel=1e-6)
+        # each third of the strip goes to the basin above it
+        assert sorted(round(a) for a in pieces.geometry.area) == [20_000_000] * 3
+
+    def test_lost_area_is_reported(self, river_basins, coastal_strip):
+        from unittest.mock import MagicMock
+        d = types.SimpleNamespace(logger=MagicMock())
+        half = gpd.GeoDataFrame(geometry=[box(0, -2_000, 15_000, 0)], crs=UTM_CRS)
+        assert not CoastalWatershedDelineator._check_strip_area_conserved(d, coastal_strip, half)
+        d.logger.error.assert_called_once()
