@@ -15,7 +15,6 @@ The preprocessor generates:
 """
 from __future__ import annotations
 
-import math
 from pathlib import Path
 from typing import Dict
 
@@ -192,7 +191,7 @@ class CWatMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         )
 
     def _estimate_pet(self, temp_c, times, lat_deg):
-        """Estimate PET in m/day using Hamon method."""
+        """Estimate PET in m/day (Hamon by default, or Oudin)."""
         from symfluence.core.modeling.mixins.pet_calculator import PETCalculatorMixin
 
         pet_method = self._get_config_value(
@@ -205,15 +204,9 @@ class CWatMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             pet_mm_day = PETCalculatorMixin.oudin_pet_numpy(temp_c, doy, lat_deg)
             return pet_mm_day / 1000.0
 
-        # Hamon
-        lat_rad = math.radians(lat_deg)
-        decl = 0.4093 * np.sin(2 * np.pi / 365 * doy - 1.405)
-        cos_omega = np.clip(-np.tan(lat_rad) * np.tan(decl), -1, 1)
-        day_length = 24 / np.pi * np.arccos(cos_omega)
-        es = 0.6108 * np.exp(17.27 * temp_c / (temp_c + 237.3))
-        pet_mm_day = np.maximum(
-            0.1651 * (day_length / 12.0) * es * 216.7 / (temp_c + 273.3), 0.0
-        )
+        # Shared Hamon (Lu et al. 2005 form). The private copy that lived here
+        # put kPa into the hPa formula and was about 10x too low.
+        pet_mm_day = PETCalculatorMixin.hamon_pet_numpy(temp_c, doy, lat_deg)
         return pet_mm_day / 1000.0
 
     def _get_forcing_path(self) -> Path:
@@ -319,6 +312,11 @@ class CWatMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         _sub('TavgMaps', f'{self.forcing_out_dir}/tavg*')
         _sub('E0Maps', f'{self.forcing_out_dir}/EWRef*')
         _sub('ETMaps', f'{self.forcing_out_dir}/ETRef*')
+        # The forcing written above is already in m/day. The CWatM-Earth
+        # template ships precipitation_coversion = 86.4 (kg m-2 s-1 -> m/day),
+        # which would multiply the m/day precipitation by 86.4.
+        _sub('precipitation_coversion', '1.0')
+        _sub('evaporation_coversion', '1.0')
         _sub('load_initial', 'False')
         _sub('save_initial', 'False')
         _sub('calc_evaporation', 'False')

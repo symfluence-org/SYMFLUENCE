@@ -495,19 +495,11 @@ class PCRGLOBWBPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             )
             return pet_mm_day / 1000.0  # mm/day -> m/day
 
-        # Default: Hamon
-        self.logger.info(f"Using Hamon PET (method={pet_method})")
-        return self._estimate_pet_hamon(temp_c, times, lat_deg)
-
-    def _estimate_pet_hamon(self, temp_c, times, lat_deg):
-        doy = np.array([t.timetuple().tm_yday for t in times])
-        lat_rad = math.radians(lat_deg)
-        decl = 0.4093 * np.sin(2 * np.pi / 365 * doy - 1.405)
-        cos_omega = np.clip(-np.tan(lat_rad) * np.tan(decl), -1, 1)
-        day_length = 24 / np.pi * np.arccos(cos_omega)
-        es = 0.6108 * np.exp(17.27 * temp_c / (temp_c + 237.3))
-        pet_mm_day = np.maximum(
-            0.1651 * (day_length / 12.0) * es * 216.7 / (temp_c + 273.3), 0.0
+        # Shared Hamon (Lu et al. 2005 form). The private copy that lived here
+        # put kPa into the hPa formula and was about 10x too low.
+        pet_mm_day = PETCalculatorMixin.hamon_pet_numpy(temp_c, doy, lat_deg)
+        self.logger.info(
+            f"Hamon PET: annual mean = {pet_mm_day.mean() * 365.25:.0f} mm/yr"
         )
         return pet_mm_day / 1000.0  # mm/day -> m/day
 
