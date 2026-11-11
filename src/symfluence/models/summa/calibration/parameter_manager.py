@@ -33,7 +33,9 @@ from .forcing_scaling import (
     split_forcing_params,
 )
 from .parameter_files import (
+    SummaSettingsFiles,
     calculate_soil_depths,
+    resolve_settings_file_names,
     select_trial_params,
     update_mizuroute_params,
     update_soil_depths,
@@ -117,7 +119,7 @@ class SUMMAParameterManager(BaseParameterManager):
             self.original_depths = self._load_original_depths()
 
         # Get attribute file path
-        self.attr_file_path = self.settings_dir / self._get_config_value(lambda: self.config.model.summa.attributes, default='attributes.nc', dict_key='SETTINGS_SUMMA_ATTRIBUTES')
+        self.attr_file_path = self.settings_dir / self._settings_files().attributes
 
         # Regionalization setup
         self._regionalization_method = self._get_config_value(
@@ -820,10 +822,14 @@ class SUMMAParameterManager(BaseParameterManager):
             )
             defaults.update(basin_defaults)
 
-        # Add depth parameters
-        if self.depth_params:
-            defaults['total_mult'] = np.array([1.0])
-            defaults['shape_factor'] = np.array([1.0])
+        # Add depth parameters: every one being calibrated starts neutral (1.0).
+        # This used to seed total_mult / shape_factor whichever depth
+        # parameters were calibrated, so a run calibrating only
+        # total_soil_depth_multiplier got two defaults for parameters it does
+        # not have and none for the one it has -- which then started at
+        # mid-range (2.55x the soil depth) instead of 1.0.
+        for param in self.depth_params:
+            defaults[param] = np.array([1.0])
 
         # Add mizuRoute parameters
         if self.mizuroute_params:
@@ -932,7 +938,11 @@ class SUMMAParameterManager(BaseParameterManager):
         return None
 
     def _coldstate_path(self) -> Path:
-        return self.settings_dir / self._get_config_value(lambda: self.config.model.summa.coldstate, default='coldState.nc', dict_key='SETTINGS_SUMMA_COLDSTATE')
+        return self.settings_dir / self._settings_files().coldstate
+
+    def _settings_files(self) -> SummaSettingsFiles:
+        """Names of the files SUMMA reads: from the file manager, else config."""
+        return resolve_settings_file_names(self.config, self.settings_dir)
 
     def _update_soil_depths(self, params: Dict[str, np.ndarray]) -> bool:
         """Rescale the soil layers in the coldState file (shared with the worker)."""
@@ -973,7 +983,7 @@ class SUMMAParameterManager(BaseParameterManager):
         Soil-depth, mizuRoute and forcing pseudo-parameters are applied to
         other files and are left out here.
         """
-        trial_params_path = self.settings_dir / self._get_config_value(lambda: self.config.model.summa.trialparams, default='trialParams.nc', dict_key='SETTINGS_SUMMA_TRIALPARAMS')
+        trial_params_path = self.settings_dir / self._settings_files().trialparams
         trial_params = select_trial_params(
             {k: v for k, v in params.items() if k not in self.depth_params},
             self.mizuroute_params)

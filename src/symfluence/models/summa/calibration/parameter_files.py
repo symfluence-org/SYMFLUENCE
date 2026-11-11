@@ -66,14 +66,59 @@ def _file_name(value: Any, default: str) -> str:
     return default if value in (None, '', 'default') else str(value)
 
 
-def resolve_settings_file_names(config: Any) -> SummaSettingsFiles:
-    """Resolve the attributes / coldState / trialParams file names from config.
+# fileManager keys naming the three files calibration touches.
+_FILE_MANAGER_FIELDS = {
+    'attributeFile': 'attributes',
+    'initConditionFile': 'coldstate',
+    'trialParamFile': 'trialparams',
+}
+_FILE_MANAGER_ENTRY = re.compile(r"""^\s*(\w+)\s+(['"])(.*?)\2""")
+DEFAULT_FILE_MANAGER = 'fileManager.txt'
+
+
+def read_file_manager_names(file_manager_path: Path) -> Dict[str, str]:
+    """Return the attributes / coldstate / trialparams names a file manager sets.
+
+    Keys are :class:`SummaSettingsFiles` field names; entries the file manager
+    does not set (or sets to an empty string) are absent. A missing or
+    unreadable file manager gives an empty dict.
+    """
+    names: Dict[str, str] = {}
+    try:
+        with open(file_manager_path, 'r', encoding='utf-8') as fm:
+            for line in fm:
+                match = _FILE_MANAGER_ENTRY.match(line)
+                if match and match.group(1) in _FILE_MANAGER_FIELDS and match.group(3).strip():
+                    names[_FILE_MANAGER_FIELDS[match.group(1)]] = match.group(3).strip()
+    except OSError:
+        return {}
+    return names
+
+
+def file_manager_name(config: Any) -> str:
+    """The configured SUMMA file manager name (``SETTINGS_SUMMA_FILEMANAGER``)."""
+    return _file_name(resolve_config_value(
+        config, lambda: config.model.summa.filemanager, None, 'SETTINGS_SUMMA_FILEMANAGER'),
+        DEFAULT_FILE_MANAGER)
+
+
+def resolve_settings_file_names(config: Any, settings_dir: Optional[Path] = None) -> SummaSettingsFiles:
+    """Resolve the attributes / coldState / trialParams file names.
 
     Works for typed configs and for the flat dicts calibration workers get.
-    The names are those the file manager points SUMMA at
-    (``SETTINGS_SUMMA_ATTRIBUTES`` / ``_COLDSTATE`` / ``_TRIALPARAMS``).
+
+    SUMMA reads whatever its file manager names, so when ``settings_dir`` is
+    given and holds the configured file manager, the names come from that file
+    manager. Config (``SETTINGS_SUMMA_ATTRIBUTES`` / ``_COLDSTATE`` /
+    ``_TRIALPARAMS``) fills in anything the file manager does not set, and is
+    the only source without ``settings_dir``. For a file manager SYMFLUENCE
+    generated the two agree; they differ for a hand-written one, typically a
+    glacier setup (``fileManager_glac.txt`` naming ``attributes_glac.nc`` /
+    ``coldState_glac.nc``) whose config still carries the default names --
+    calibration then wrote soil depths and trial parameters to files SUMMA
+    never opened.
     """
-    return SummaSettingsFiles(
+    configured = SummaSettingsFiles(
         attributes=_file_name(resolve_config_value(
             config, lambda: config.model.summa.attributes, None, 'SETTINGS_SUMMA_ATTRIBUTES'),
             DEFAULT_ATTRIBUTES_FILE),
@@ -84,6 +129,10 @@ def resolve_settings_file_names(config: Any) -> SummaSettingsFiles:
             config, lambda: config.model.summa.trialparams, None, 'SETTINGS_SUMMA_TRIALPARAMS'),
             DEFAULT_TRIALPARAMS_FILE),
     )
+    if settings_dir is None:
+        return configured
+    from_file_manager = read_file_manager_names(Path(settings_dir) / file_manager_name(config))
+    return configured._replace(**from_file_manager)
 
 
 def _record_error(message: str, logger, debug_info: Optional[Dict]) -> None:
