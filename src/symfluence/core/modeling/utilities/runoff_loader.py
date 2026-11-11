@@ -159,13 +159,11 @@ def resolve_runoff_file(
     runoff_path = output_dir / filename
 
     if not runoff_path.exists():
-        # Fallback: find any .nc file in the directory
-        if output_dir.exists():
-            nc_files = [f for f in output_dir.glob("*.nc") if '_para_' not in f.name]
-            if nc_files:
-                logger.info(f"Using fallback output file: {nc_files[0]}")
-                return nc_files[0]
-        logger.warning(f"Runoff file not found: {runoff_path}")
+        # No "first *.nc in the directory" fallback: glob order is arbitrary,
+        # so that handed routing a parameter trial, a restart or another
+        # experiment's file — which the time-precision fix then rewrote in
+        # place.
+        logger.warning(f"Runoff file not found (expected {runoff_path})")
         return None
 
     return runoff_path
@@ -203,183 +201,242 @@ def detect_runoff_variable(ds: Any, source_model: str = 'SUMMA') -> Optional[str
     return None
 
 
+#: CF time-unit spellings -> pandas timedelta unit.
+_CF_TIME_UNITS = {
+    'seconds': 's', 'second': 's', 'secs': 's', 'sec': 's', 's': 's',
+    'minutes': 'min', 'minute': 'min', 'mins': 'min', 'min': 'min',
+    'hours': 'h', 'hour': 'h', 'hrs': 'h', 'hr': 'h', 'h': 'h',
+    'days': 'D', 'day': 'D', 'd': 'D',
+}
+_CF_UNIT_NAMES = {'s': 'seconds', 'min': 'minutes', 'h': 'hours', 'D': 'days'}
+_STANDARD_CALENDARS = {'', 'standard', 'gregorian', 'proleptic_gregorian'}
+
+
+def parse_cf_time_units(units: str) -> Optional[tuple]:
+    """Split CF ``"<unit> since <reference>"`` into (pandas unit, reference).
+
+    The reference is returned as a timezone-naive UTC ``pd.Timestamp``.
+    Returns None when *units* is not a numeric CF time encoding this module
+    understands (no ``since``, an unknown unit such as months, an unparseable
+    reference) — callers must then leave the axis alone rather than guess.
+    """
+    import pandas as pd
+
+    parts = re.split(r'\s+since\s+', str(units).strip(), maxsplit=1, flags=re.IGNORECASE)
+    if len(parts) != 2:
+        return None
+    unit = _CF_TIME_UNITS.get(parts[0].strip().lower())
+    if unit is None:
+        return None
+    try:
+        reference = pd.Timestamp(parts[1].strip())
+    except (ValueError, TypeError):
+        return None
+    if pd.isna(reference):
+        return None
+    if reference.tzinfo is not None:
+        reference = reference.tz_convert('UTC').tz_localize(None)
+    return unit, reference
+
+
+def normalize_cf_time_units(units: str) -> str:
+    """Same CF epoch, spelled ``YYYY-MM-DD HH:MM:SS`` in UTC.
+
+    ISO spellings ('T' separator, timezone suffix) are valid CF but are
+    rejected by Fortran readers such as mizuRoute's. The unit word is kept as
+    written; unparseable strings are returned unchanged.
+    """
+    import pandas as pd
+
+    parts = re.split(r'\s+since\s+', str(units), maxsplit=1, flags=re.IGNORECASE)
+    if len(parts) != 2:
+        return units
+    try:
+        reference = pd.Timestamp(parts[1])
+    except (ValueError, TypeError):
+        return units
+    if pd.isna(reference):
+        return units
+    if reference.tzinfo is not None:
+        reference = reference.tz_convert('UTC').tz_localize(None)
+    return f"{parts[0]} since {reference.isoformat(sep=' ')}"
+
+
+def _round_time_stamps(stamps: Any, rounding_freq: str) -> Any:
+    """Round *stamps* to *rounding_freq*, or to their own step if that is finer.
+
+    Rounding sub-hourly output to the hour would merge neighbouring stamps, so
+    when the axis' own step (median spacing, to the second) is shorter than
+    the requested frequency the stamps are snapped to that step instead,
+    anchored on the first stamp so an off-grid phase (00:30, 01:30, ...) is
+    preserved.
+    """
+    import numpy as np
+    import pandas as pd
+    from pandas.tseries.frequencies import to_offset
+
+    anchor = pd.Timestamp('2000-01-01')
+    freq_td = (anchor + to_offset(rounding_freq)) - anchor
+
+    step = None
+    if len(stamps) > 1:
+        median_step = pd.Timedelta(np.median(np.diff(stamps.values))).round('s')
+        if median_step > pd.Timedelta(0):
+            step = median_step
+
+    if step is None or step >= freq_td:
+        return stamps.round(rounding_freq)
+
+    origin = stamps[0].round('s')
+    step_seconds = int(step / pd.Timedelta(seconds=1))
+    n_steps = np.rint(np.asarray((stamps - origin) / step, dtype='float64')).astype('int64')
+    return pd.DatetimeIndex(origin + pd.to_timedelta(n_steps * step_seconds, unit='s'))
+
+
 def fix_time_precision(
     runoff_filepath: Path,
-    rounding_freq: str = 'h',
-) -> Optional[Path]:
+    rounding_freq: Optional[str] = 'h',
+    normalize_epoch: bool = False,
+) -> Path:
     """
-    Fix model output time precision by rounding to configurable frequency.
+    Remove sub-step noise from a runoff file's numeric CF time axis.
 
-    Detects time format (SUMMA seconds-since-1990, generic since, datetime64)
-    and applies appropriate rounding. Writes result to a temp file then
-    atomically replaces the original.
+    The single implementation behind every routing model's "time precision
+    fix". The axis is decoded from its CF ``units`` (seconds, minutes, hours
+    or days since any reference), **every** stamp is rounded to
+    *rounding_freq* — or to the axis' own step when that is finer — and the
+    result is written back in the file's original unit and epoch.
+
+    The file is only rewritten (temp file, then atomic replace) when a value
+    or the units string actually changes; an already-clean file is untouched.
 
     Args:
-        runoff_filepath: Path to the NetCDF runoff file
-        rounding_freq: Frequency to round to ('h', 'min', 'none' to disable)
+        runoff_filepath: Path to the NetCDF runoff file.
+        rounding_freq: pandas frequency to round to ('h', 'min', 's');
+            ``None`` or ``'none'`` disables rounding.
+        normalize_epoch: Also respell the reference epoch as
+            ``YYYY-MM-DD HH:MM:SS`` UTC (needed by mizuRoute's Fortran parser).
+            Applied even when rounding is disabled.
 
     Returns:
-        Path to the (fixed) runoff file, or None on failure.
-    """
-    if rounding_freq == 'none':
-        return runoff_filepath
+        *runoff_filepath*.
 
+    Raises:
+        ModelExecutionError: the file is missing, unreadable, has an empty or
+            non-finite time axis, or rounding would merge distinct time stamps
+            into duplicates.
+    """
     import os
 
+    import numpy as np
     import pandas as pd
     import xarray as xr
 
-    if not runoff_filepath.exists():
-        logger.error(f"Runoff file not found: {runoff_filepath}")
-        return None
+    from symfluence.core.exceptions import ModelExecutionError
 
-    if runoff_filepath.stat().st_size < 1000:
-        logger.error(f"Runoff file too small ({runoff_filepath.stat().st_size} bytes): {runoff_filepath}")
-        return None
+    runoff_filepath = Path(runoff_filepath)
+    if rounding_freq is not None and str(rounding_freq).lower() == 'none':
+        rounding_freq = None
+    if rounding_freq is None and not normalize_epoch:
+        return runoff_filepath
+
+    if not runoff_filepath.exists():
+        raise ModelExecutionError(f"Runoff file not found: {runoff_filepath}")
 
     try:
         ds = xr.open_dataset(runoff_filepath, decode_times=False)
     except (OSError, RuntimeError, ValueError) as nc_err:
-        logger.error(f"Failed to open runoff file: {runoff_filepath} - {nc_err}")
-        return None
+        raise ModelExecutionError(
+            f"Failed to open runoff file {runoff_filepath}: {nc_err}. The file "
+            f"appears to be corrupt or incomplete, which usually means the "
+            f"upstream hydrological model failed or timed out before finishing."
+        ) from nc_err
 
-    time_attrs = ds.time.attrs
-    time_values = ds.time.values
-
-    if len(time_values) == 0:
-        ds.close()
-        logger.error(f"Empty time dimension in: {runoff_filepath}")
-        return None
-
-    needs_fix = False
-    time_format = None
-    time_unit = 's'
-
-    if 'units' in time_attrs:
-        units_str = time_attrs['units'].lower()
-
-        if 'since 1990-01-01' in units_str:
-            time_format = 'summa_seconds_1990'
-            first_time = pd.to_datetime(time_values[0], unit='s', origin='1990-01-01')
-            needs_fix = (first_time != first_time.round(rounding_freq))
-
-        elif 'since' in units_str:
-            since_match = re.search(r'since\s+([0-9-]+(?:\s+[0-9:]+)?)', units_str)
-            if since_match:
-                ref_time_str = since_match.group(1).strip()
-                time_format = f'generic_since_{ref_time_str}'
-
-                if 'second' in units_str:
-                    first_time = pd.to_datetime(time_values[0], unit='s', origin=ref_time_str)
-                    time_unit = 's'
-                elif 'hour' in units_str:
-                    first_time = pd.Timestamp(ref_time_str) + pd.Timedelta(hours=float(time_values[0]))
-                    time_unit = 'h'
-                elif 'day' in units_str:
-                    first_time = pd.to_datetime(time_values[0], unit='D', origin=ref_time_str)
-                    time_unit = 'D'
-                else:
-                    first_time = pd.to_datetime(time_values[0], unit='s', origin=ref_time_str)
-                    time_unit = 's'
-
-                needs_fix = (first_time != first_time.round(rounding_freq))
-        else:
-            time_format = _try_decode_datetime64(runoff_filepath, rounding_freq)
-            if time_format == 'datetime64':
-                needs_fix = True
-            else:
-                ds.close()
-                return runoff_filepath
-    else:
-        time_format = _try_decode_datetime64(runoff_filepath, rounding_freq)
-        if time_format != 'datetime64':
-            ds.close()
+    try:
+        if 'time' not in ds.variables:
+            logger.warning(f"No 'time' variable in {runoff_filepath}; time axis left unchanged")
             return runoff_filepath
-        needs_fix = True
 
-    if not needs_fix:
+        time_values = np.asarray(ds['time'].values)
+        if time_values.size == 0:
+            raise ModelExecutionError(
+                f"Empty time dimension in model output: {runoff_filepath}. The "
+                f"upstream model output is incomplete or corrupted."
+            )
+
+        old_units = ds['time'].attrs.get('units')
+        parsed = parse_cf_time_units(old_units) if old_units else None
+        calendar = str(ds['time'].attrs.get('calendar', '')).lower()
+        if (
+            parsed is None
+            or calendar not in _STANDARD_CALENDARS
+            or not np.issubdtype(time_values.dtype, np.number)
+        ):
+            logger.warning(
+                f"Time axis of {runoff_filepath} is not a numeric CF axis this "
+                f"fix understands (units={old_units!r}, calendar={calendar or 'unset'!r}); "
+                f"left unchanged"
+            )
+            return runoff_filepath
+        time_unit, reference = parsed
+
+        new_units = normalize_cf_time_units(old_units) if normalize_epoch else old_units
+        new_values = time_values
+
+        if rounding_freq is not None:
+            if not np.all(np.isfinite(time_values.astype('float64'))):
+                raise ModelExecutionError(
+                    f"Non-finite values on the time axis of {runoff_filepath}"
+                )
+            stamps = pd.DatetimeIndex(reference + pd.to_timedelta(time_values, unit=time_unit))
+            rounded = _round_time_stamps(stamps, rounding_freq)
+
+            if rounded.has_duplicates and not stamps.has_duplicates:
+                raise ModelExecutionError(
+                    f"Rounding the time axis of {runoff_filepath} to "
+                    f"'{rounding_freq}' would merge distinct time stamps into "
+                    f"duplicates (step ~{pd.Timedelta(np.median(np.diff(stamps.values)))}). "
+                    f"Refusing to rewrite the file; use a finer rounding "
+                    f"frequency or 'none'."
+                )
+
+            candidate = np.asarray((rounded - reference) / pd.Timedelta(1, unit=time_unit), dtype='float64')
+            if not np.array_equal(candidate, time_values.astype('float64')):
+                max_shift = np.abs(rounded - stamps).max()
+                logger.info(
+                    f"Rounding time axis of {runoff_filepath.name} to "
+                    f"'{rounding_freq}' (max shift {max_shift})"
+                )
+                if np.issubdtype(time_values.dtype, np.integer) and np.all(candidate == np.rint(candidate)):
+                    new_values = candidate.astype(time_values.dtype)
+                else:
+                    new_values = candidate
+
+        if new_values is time_values and new_units == old_units:
+            logger.debug(f"Time axis of {runoff_filepath} is already clean")
+            return runoff_filepath
+
+        time_attrs = dict(ds['time'].attrs)
+        time_attrs['units'] = new_units
+        if new_values is not time_values and rounding_freq is not None:
+            # Spell the unit and epoch canonically whenever values are rewritten.
+            time_attrs['units'] = (
+                f"{_CF_UNIT_NAMES[time_unit]} since {reference.strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            time_attrs.setdefault('calendar', 'standard')
+            time_attrs.setdefault('long_name', 'time')
+        ds = ds.assign_coords(time=(ds['time'].dims, new_values, time_attrs))
+
+        ds.load()
+        temp_filepath = runoff_filepath.with_suffix('.tmp.nc')
+        ds.to_netcdf(temp_filepath, format='NETCDF4')
+    finally:
         ds.close()
-        return runoff_filepath
-
-    # Apply fix based on format
-    if time_format == 'summa_seconds_1990':
-        time_stamps = pd.to_datetime(time_values, unit='s', origin='1990-01-01')
-        rounded_stamps = time_stamps.round(rounding_freq)
-        reference = pd.Timestamp('1990-01-01')
-        rounded_seconds = (rounded_stamps - reference).total_seconds().values
-
-        ds = ds.assign_coords(time=rounded_seconds)
-        ds.time.attrs.clear()
-        ds.time.attrs['units'] = 'seconds since 1990-01-01 00:00:00'
-        ds.time.attrs['calendar'] = 'standard'
-        ds.time.attrs['long_name'] = 'time'
-
-    elif time_format and time_format.startswith('generic_since_'):
-        ref_time_str = time_format.split('generic_since_')[1]
-        reference = pd.Timestamp(ref_time_str)
-
-        if time_unit == 's':
-            time_stamps = reference + pd.to_timedelta(time_values, unit='s')
-        elif time_unit == 'h':
-            time_stamps = reference + pd.to_timedelta(time_values, unit='h')
-        elif time_unit == 'D':
-            time_stamps = reference + pd.to_timedelta(time_values, unit='D')
-        else:
-            time_stamps = reference + pd.to_timedelta(time_values, unit='s')
-
-        rounded_stamps = time_stamps.round(rounding_freq)
-
-        if time_unit == 's':
-            rounded_values = (rounded_stamps - reference).total_seconds().values
-        elif time_unit == 'h':
-            rounded_values = (rounded_stamps - reference) / pd.Timedelta(hours=1)
-        elif time_unit == 'D':
-            rounded_values = (rounded_stamps - reference) / pd.Timedelta(days=1)
-        else:
-            rounded_values = (rounded_stamps - reference).total_seconds().values
-
-        ds = ds.assign_coords(time=rounded_values)
-        ds.time.attrs.clear()
-        _unit_names = {'s': 'seconds', 'h': 'hours', 'D': 'days'}
-        full_unit_name = _unit_names.get(time_unit, time_unit)
-        normalized_ref = reference.strftime('%Y-%m-%d %H:%M:%S')
-        ds.time.attrs['units'] = f"{full_unit_name} since {normalized_ref}"
-        ds.time.attrs['calendar'] = 'standard'
-        ds.time.attrs['long_name'] = 'time'
-
-    elif time_format == 'datetime64':
-        ds_decoded = xr.open_dataset(runoff_filepath, decode_times=True)
-        time_stamps = pd.to_datetime(ds_decoded.time.values)
-        rounded_stamps = time_stamps.round(rounding_freq)
-        ds = ds_decoded.assign_coords(time=rounded_stamps)
-        ds_decoded.close()
-
-    # Save atomically
-    ds.load()
-    temp_filepath = runoff_filepath.with_suffix('.tmp.nc')
-    ds.to_netcdf(temp_filepath, format='NETCDF4')
-    ds.close()
 
     if os.name != 'nt':
+        # Security rationale: Group-writable for HPC shared access
         os.chmod(temp_filepath, 0o664)  # nosec B103
     temp_filepath.replace(runoff_filepath)
 
     logger.info(f"Fixed time precision in {runoff_filepath}")
     return runoff_filepath
-
-
-def _try_decode_datetime64(filepath: Path, rounding_freq: str) -> Optional[str]:
-    """Try to open file with decoded times to check if rounding needed."""
-    import pandas as pd
-    import xarray as xr
-
-    try:
-        ds_decoded = xr.open_dataset(filepath, decode_times=True)
-        first_time = pd.Timestamp(ds_decoded.time.values[0])
-        needs_fix = (first_time != first_time.round(rounding_freq))
-        ds_decoded.close()
-        if needs_fix:
-            return 'datetime64'
-        return None
-    except (ValueError, TypeError, KeyError):
-        return None

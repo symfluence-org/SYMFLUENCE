@@ -121,16 +121,9 @@ def test_hype_is_not_a_resolvable_source():
 
 
 # A second, wrongly-named ``.nc`` written alongside the expected one in every
-# filename test below.
-#
-# ``resolve_runoff_file`` falls back to ``glob('*.nc')[0]`` when the name it
-# built does not exist. With exactly one file in the directory that fallback
-# returns the very file the test expected, so a WRONG ``output_file_pattern``
-# still produced a green test — the filename assertions proved nothing, and
-# ``test_fuse_file_id_is_hashed_past_six_chars`` in particular never exercised
-# the hashing at all. A decoy makes the fallback observable: it sorts first, so
-# a mis-built name resolves to the decoy, and the tests additionally assert the
-# fallback branch never logged, which is deterministic regardless of glob order.
+# filename test below, so a mis-built ``output_file_pattern`` cannot be rescued
+# by anything that picks "some .nc in the directory" (``resolve_runoff_file``
+# used to have exactly that glob fallback; it has been removed).
 _DECOY_NC = 'aaa_decoy_not_the_runoff_file.nc'
 
 
@@ -204,19 +197,20 @@ def test_fuse_file_id_is_hashed_past_six_chars(tmp_path: Path, caplog):
     _assert_no_glob_fallback(caplog)
 
 
-def test_the_glob_fallback_the_decoys_defeat_still_exists(tmp_path: Path, caplog):
-    """Pinning the behaviour the decoys above are there to neutralise.
+def test_no_glob_fallback_to_an_arbitrary_netcdf(tmp_path: Path, caplog):
+    """A differently named ``.nc`` in the output directory is not the runoff file.
 
-    The fallback is deliberate — a model that wrote its output under a slightly
-    different name should still be routable — so the decoy files are not
-    asserting it away. It is pinned here instead, once, where it is the subject
-    rather than an accident.
+    ``resolve_runoff_file`` used to return ``glob('*.nc')[0]`` when the name
+    it built did not exist — whatever sorted first, e.g. a restart file or
+    another experiment's output — and the time-precision fix then rewrote that
+    file in place. A missing expected file now resolves to None, naming the
+    expected path.
     """
     out_dir = tmp_path / 'simulations' / EXPERIMENT_ID / 'NGEN'
     out_dir.mkdir(parents=True)
     (out_dir / 'something_else_entirely.nc').write_bytes(b'')
 
-    with caplog.at_level(logging.INFO):
+    with caplog.at_level(logging.WARNING):
         resolved = resolve_runoff_file(
             source_model='NGEN',
             project_dir=tmp_path,
@@ -224,8 +218,8 @@ def test_the_glob_fallback_the_decoys_defeat_still_exists(tmp_path: Path, caplog
             domain_name=DOMAIN_NAME,
         )
 
-    assert resolved is not None
-    assert resolved.name == 'something_else_entirely.nc'
+    assert resolved is None
+    assert any(f"{EXPERIMENT_ID}_runoff.nc" in r.getMessage() for r in caplog.records)
 
 
 def test_missing_output_resolves_to_none_not_a_guess(tmp_path: Path, caplog):

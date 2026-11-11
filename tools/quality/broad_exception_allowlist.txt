@@ -885,7 +885,6 @@ src/symfluence/models/mhm/preprocessor.py:MHMPreProcessor.run_preprocessing:exce
 src/symfluence/models/mizuroute/calibration/optimizer.py:MizuRouteModelOptimizer._get_simulation_results:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/mizuroute/calibration/optimizer.py:MizuRouteModelOptimizer._update_model_parameters:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/mizuroute/control_writer.py:ControlFileWriter._detect_runoff_variable:except Exception as e:  # noqa: BLE001 — detection is best-effort; keep config on failure
-src/symfluence/models/mizuroute/runner.py:MizuRouteRunner.fix_time_precision:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/mizuroute/runner.py:MizuRouteRunner.sync_control_file_dimensions:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/mizuroute/topology_generator.py:MizuRouteTopologyGenerator._find_closest_segment_to_pour_point:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/modflow/calibration/parameter_manager.py:CoupledGWParameterManager._update_modflow_files:except Exception as e:  # noqa: BLE001 — calibration resilience
