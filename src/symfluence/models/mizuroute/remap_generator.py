@@ -94,6 +94,9 @@ class MizuRouteRemapGenerator:
                 )
             shp_catchments = gpd.read_file(catchment_path)
             weights = shp_catchments['avg_subbas'].values
+            # Same ids, same order, as the topology's hruId for this layout
+            # (create_network_topology_file takes them from GRU_ID too).
+            gru_ids = shp_catchments['GRU_ID'].values.astype(int)
         remap_name = self.pp.mizu_remap_file
         if not remap_name:
             remap_name = "remap_file.nc"

@@ -22,7 +22,7 @@ from typing import Any, Dict, Optional
 import numpy as np
 import xarray as xr
 
-from symfluence.core.exceptions import ModelExecutionError, symfluence_error_handler
+from symfluence.core.exceptions import ConfigurationError, ModelExecutionError, symfluence_error_handler
 from symfluence.core.modeling.base import BaseModelRunner
 from symfluence.core.registries import R
 
@@ -219,10 +219,6 @@ class TRouteRunner(BaseModelRunner):  # type: ignore[misc]
             - troute_output.nc: routed discharge (flow), velocity, depth per segment
         """
         start = time.time()
-        dt = float(self._get_config_value(
-            lambda: self.config.model.troute.dt_seconds if self.config.model and self.config.model.troute else None,
-            default=3600
-        ))
 
         # --- Load topology ---
         topo = xr.open_dataset(topology_filepath)
@@ -253,8 +249,7 @@ class TRouteRunner(BaseModelRunner):  # type: ignore[misc]
         topo_order = self._topological_sort(downstream, n_seg)
 
         self.logger.info(
-            f"Topology loaded: {n_seg} segments, "
-            f"dt={dt}s, outlet segments: "
+            f"Topology loaded: {n_seg} segments, outlet segments: "
             f"{sum(1 for d in downstream if d == -1)}"
         )
 
@@ -276,7 +271,15 @@ class TRouteRunner(BaseModelRunner):  # type: ignore[misc]
         time_vals = ds_runoff['time'].values
         n_time = len(time_vals)
 
-        self.logger.info(f"Lateral inflows loaded: {n_time} timesteps, {q_lat_vals.shape[-1]} HRUs")
+        # Routing step = the runoff file's own time step. Taking it from
+        # TROUTE dt_seconds (default 3600) regardless of the data routed daily
+        # runoff with travel times 24x too long, volume-conserving and so
+        # unflagged.
+        dt = self._resolve_routing_dt(time_vals, runoff_filepath)
+
+        self.logger.info(
+            f"Lateral inflows loaded: {n_time} timesteps, {q_lat_vals.shape[-1]} HRUs, dt={dt:.0f}s"
+        )
 
         # Map HRU inflows to segment inflows
         # q_lateral is in m/s (depth rate per unit area) → convert to m³/s
@@ -284,19 +287,24 @@ class TRouteRunner(BaseModelRunner):  # type: ignore[misc]
         if q_lat_vals.ndim == 1:
             q_lat_vals = q_lat_vals.reshape(-1, 1)
 
-        q_seg = np.zeros((n_time, n_seg), dtype=np.float64)
+        runoff_columns = self._match_runoff_columns(
+            topo, ds_runoff, spatial_dim, n_hru, runoff_filepath, topology_filepath
+        )
 
-        if n_hru == 1 and n_seg > 1:
-            # Lumped-to-distributed: spread single HRU runoff across all
-            # segments proportionally to subcatchment areas
-            for s in range(n_seg):
-                q_seg[:, s] = q_lat_vals[:, 0] * hru_areas[s]
-        else:
-            for h in range(min(n_hru, len(hru_to_seg))):
-                seg_for_hru = int(hru_to_seg[h])
-                seg_idx = seg_id_to_idx.get(seg_for_hru, -1)
-                if seg_idx >= 0 and h < len(hru_areas):
-                    q_seg[:, seg_idx] += q_lat_vals[:, h] * hru_areas[h]
+        q_seg = np.zeros((n_time, n_seg), dtype=np.float64)
+        unrouted = []
+        for h, col in enumerate(runoff_columns):
+            seg_idx = seg_id_to_idx.get(int(hru_to_seg[h]), -1)
+            if seg_idx < 0:
+                unrouted.append(int(hru_to_seg[h]))
+                continue
+            q_seg[:, seg_idx] += q_lat_vals[:, col] * hru_areas[h]
+        if unrouted:
+            raise ModelExecutionError(
+                f"t-route topology {topology_filepath} maps {len(unrouted)} HRU(s) to "
+                f"segment ids that are not in the network (e.g. {unrouted[:10]}); "
+                f"their runoff would be dropped. Regenerate the topology."
+            )
 
         # --- Channel geometry ---
         if 'channel_width' in topo:
@@ -496,6 +504,109 @@ class TRouteRunner(BaseModelRunner):  # type: ignore[misc]
 
         topo.close()
         ds_runoff.close()
+
+    def _resolve_routing_dt(self, time_vals: np.ndarray, runoff_filepath: Path) -> float:
+        """Routing time step (s), taken from the runoff time axis.
+
+        ``SETTINGS_TROUTE_DT_SECONDS`` is only a cross-check: when it was set
+        explicitly and disagrees with the data, that is a configuration error.
+        """
+        explicit = None
+        troute_cfg = getattr(getattr(self.config, 'model', None), 'troute', None)
+        if troute_cfg is not None and 'dt_seconds' in getattr(troute_cfg, 'model_fields_set', ()):
+            explicit = float(troute_cfg.dt_seconds)
+
+        if len(time_vals) < 2:
+            if explicit is None:
+                raise ModelExecutionError(
+                    f"Cannot determine the routing time step: {runoff_filepath} has "
+                    f"{len(time_vals)} time step(s). Set SETTINGS_TROUTE_DT_SECONDS."
+                )
+            return explicit
+
+        if not np.issubdtype(np.asarray(time_vals).dtype, np.datetime64):
+            raise ModelExecutionError(
+                f"Time axis of {runoff_filepath} could not be decoded to dates "
+                f"(dtype {np.asarray(time_vals).dtype}); cannot determine the routing time step."
+            )
+        steps = np.diff(time_vals) / np.timedelta64(1, 's')
+        dt = float(np.median(steps))
+        if dt <= 0 or float(np.max(np.abs(steps - dt))) > 1.0:
+            raise ModelExecutionError(
+                f"Runoff time axis of {runoff_filepath} is not regular "
+                f"(steps range {float(steps.min()):.0f}-{float(steps.max()):.0f} s); "
+                f"the built-in Muskingum-Cunge router needs a constant time step."
+            )
+        if explicit is not None and abs(explicit - dt) > 1.0:
+            raise ConfigurationError(
+                f"SETTINGS_TROUTE_DT_SECONDS={explicit:.0f} disagrees with the runoff "
+                f"file's time step ({dt:.0f} s, {runoff_filepath}). The routing step "
+                f"must equal the runoff step; remove the setting or correct it."
+            )
+        return dt
+
+    def _match_runoff_columns(
+        self,
+        topo: xr.Dataset,
+        ds_runoff: xr.Dataset,
+        spatial_dim: Optional[str],
+        n_hru: int,
+        runoff_filepath: Path,
+        topology_filepath: Path,
+    ) -> list:
+        """Runoff column for each topology HRU, matched by id (never by position).
+
+        A single-column (lumped) runoff file feeds every topology HRU: the
+        depth rate is uniform and each HRU contributes it times its own area.
+        """
+        n_topo_hru = int(topo['link_id_hru'].shape[0])
+        if n_hru == 1:
+            return [0] * n_topo_hru
+
+        if 'hruId' not in topo.variables:
+            raise ModelExecutionError(
+                f"t-route topology {topology_filepath} has no 'hruId' variable, so "
+                f"runoff columns cannot be matched to its HRUs by id (matching by "
+                f"position silently routes the wrong catchment's runoff when the "
+                f"orders differ). Re-run t-route preprocessing to regenerate it."
+            )
+        topo_ids = [int(v) for v in topo['hruId'].values]
+
+        id_var = None
+        candidates = [f'{spatial_dim}Id', 'gruId', 'hruId', 'gru_id', 'hru_id', 'feature_id']
+        if spatial_dim is not None:
+            candidates.append(spatial_dim)
+        for name in candidates:
+            if (
+                name in ds_runoff.variables
+                and ds_runoff[name].dims == (spatial_dim,)
+                and np.issubdtype(ds_runoff[name].dtype, np.number)
+            ):
+                id_var = name
+                break
+        if id_var is None:
+            raise ModelExecutionError(
+                f"Runoff file {runoff_filepath} has no id variable along "
+                f"'{spatial_dim}' (looked for {candidates}); cannot match its "
+                f"{n_hru} columns to the topology HRUs."
+            )
+        runoff_ids = [int(v) for v in ds_runoff[id_var].values]
+        column_of = {rid: i for i, rid in enumerate(runoff_ids)}
+        if len(column_of) != len(runoff_ids):
+            raise ModelExecutionError(
+                f"Runoff file {runoff_filepath} has duplicate ids in '{id_var}'."
+            )
+
+        missing = [hid for hid in topo_ids if hid not in column_of]
+        extra = sorted(set(runoff_ids) - set(topo_ids))
+        if missing or extra:
+            raise ModelExecutionError(
+                f"Runoff ids ('{id_var}' in {runoff_filepath}) do not match the "
+                f"topology HRU ids ({topology_filepath}): "
+                f"{len(missing)} topology HRU(s) have no runoff (e.g. {missing[:10]}), "
+                f"{len(extra)} runoff column(s) have no topology HRU (e.g. {extra[:10]})."
+            )
+        return [column_of[hid] for hid in topo_ids]
 
     @staticmethod
     def _topological_sort(downstream: np.ndarray, n: int) -> list:

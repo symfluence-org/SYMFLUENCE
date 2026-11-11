@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from symfluence.core.constants import ModelDefaults
 from symfluence.core.exceptions import RetryExhaustedError
+from symfluence.core.logging_utils import log_once
 from symfluence.core.metrics.metric_transformer import MetricTransformer
 from symfluence.core.metrics.penalty import is_failure_sentinel, is_penalty, sanitize_score
 from symfluence.core.metrics.streamflow_metrics import StreamflowMetrics
@@ -298,12 +299,13 @@ class BaseWorker(ABC):
     DEFAULT_BASE_DELAY = 0.5
     DEFAULT_PENALTY_SCORE = ModelDefaults.PENALTY_SCORE
 
-    # Transient errors that warrant retry
+    # Transient errors that warrant retry. Deliberately NOT 'no such file or
+    # directory' / 'permission denied': a parameter set that crashes the model
+    # leaves no output, which surfaces as exactly those messages, and retrying
+    # reran the same doomed simulation WORKER_MAX_RETRIES more times.
     TRANSIENT_ERRORS = (
         'stale file handle',
         'resource temporarily unavailable',
-        'no such file or directory',
-        'permission denied',
         'connection refused',
         'broken pipe',
     )
@@ -688,6 +690,16 @@ class BaseWorker(ABC):
         raw_value = self._find_metric_value(metrics, metric_name)
         if raw_value is None:
             source_metric, raw_value = self._find_fallback_metric(metrics, metric_name)
+            if raw_value is not None:
+                # The run is being scored on a metric the user did not ask
+                # for; say so (once per process, not once per trial).
+                log_once(
+                    self.logger, logging.WARNING,
+                    f"metric_fallback:{type(self).__name__}:{metric_name}:{source_metric}",
+                    f"Configured metric '{metric_name}' was not produced by "
+                    f"{type(self).__name__}; scoring on '{source_metric}' instead. "
+                    f"Available metrics: {sorted(metrics.keys())}",
+                )
 
         # Return penalty if no metric found
         if raw_value is None:

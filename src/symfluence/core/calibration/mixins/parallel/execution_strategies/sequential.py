@@ -55,8 +55,10 @@ class SequentialExecutionStrategy(ExecutionStrategy):
         """
         results = []
 
-        from symfluence.core.calibration.eval_watchdog import get_watchdog
+        from symfluence.core.calibration.eval_watchdog import cover_model_timeout, get_watchdog
         watchdog = get_watchdog()
+        # The default limit is below most models' own timeout.
+        cover_model_timeout(tasks)
 
         for task in tasks:
             try:

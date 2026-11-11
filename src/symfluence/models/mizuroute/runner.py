@@ -10,20 +10,27 @@ Refactored to use the Unified Model Execution Framework.
 from __future__ import annotations
 
 import logging
-import traceback
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-import numpy as np
 import pandas as pd
 
 from symfluence.core.exceptions import ModelExecutionError, symfluence_error_handler
 from symfluence.core.modeling.base import BaseModelRunner
 from symfluence.core.modeling.utilities.runoff_loader import (
     MODEL_CONFIGS,
+    normalize_cf_time_units,
     resolve_runoff_file,
+    round_time_stamps,
+)
+from symfluence.core.modeling.utilities.runoff_loader import (
+    fix_time_precision as shared_fix_time_precision,
 )
 from symfluence.core.registries import R
+
+#: Slack for filesystems that store whole-second modification times.
+_MTIME_TOLERANCE_S = 1.0
 
 
 @R.runners.add('MIZUROUTE', runner_method='run_mizuroute')
@@ -60,23 +67,31 @@ class MizuRouteRunner(BaseModelRunner):  # type: ignore[misc]
     @staticmethod
     def _normalize_time_units(units: str) -> str:
         """Keep the same CF epoch while spelling it for the Fortran parser."""
-        import re
-
-        parts = re.split(r'\s+since\s+', units, maxsplit=1, flags=re.IGNORECASE)
-        if len(parts) != 2:
-            return units
-        reference = pd.Timestamp(parts[1])
-        if reference.tzinfo is not None:
-            reference = reference.tz_convert('UTC').tz_localize(None)
-        return f"{parts[0]} since {reference.isoformat(sep=' ')}"
+        return normalize_cf_time_units(units)
 
     @staticmethod
-    def _validate_routing_output(log_path: Path, output_path: Path) -> None:
-        """Fortran STOP may return zero after fatal initialization errors."""
+    def _validate_routing_output(log_path: Path, output_path: Path, run_started: float) -> None:
+        """Require output written by *this* run.
+
+        Fortran STOP may return zero after fatal initialization errors, and
+        the output directory usually still holds the previous run's files, so
+        neither the exit status nor "some .nc exists" is evidence of a routed
+        result. ``run_started`` is ``time.time()`` taken before launch.
+        """
         if 'FATAL ERROR' in log_path.read_text(errors='replace').upper():
             raise ModelExecutionError(f'mizuRoute reported a fatal error; see {log_path}')
-        if not any(output_path.glob('*.nc')):
+        outputs = list(output_path.glob('*.nc'))
+        if not outputs:
             raise ModelExecutionError(f'mizuRoute produced no NetCDF output in {output_path}')
+        # Whole-second mtimes on some filesystems: allow the truncation.
+        fresh = [f for f in outputs if f.stat().st_mtime >= run_started - _MTIME_TOLERANCE_S]
+        if not fresh:
+            newest = max(outputs, key=lambda f: f.stat().st_mtime)
+            raise ModelExecutionError(
+                f'mizuRoute wrote no NetCDF output during this run: the newest '
+                f'file in {output_path} ({newest.name}) predates the run start. '
+                f'Refusing to treat stale output as the result; see {log_path}'
+            )
 
     def _get_time_rounding_freq(self) -> Optional[str]:
         """Get time rounding frequency from config.
@@ -109,15 +124,10 @@ class MizuRouteRunner(BaseModelRunner):  # type: ignore[misc]
     def _round_stamps(self, stamps, freq):
         """Round *stamps* to *freq*, or to whole seconds if that would merge steps.
 
-        Rounding sub-hourly output to the hour would give duplicate times; the
-        jitter this fixes is far below a second, so seconds suffice there.
+        Thin wrapper: the rule lives in runoff_loader.round_time_stamps, the
+        one implementation every routing model uses.
         """
-        stamps = pd.DatetimeIndex(stamps)
-        rounded = stamps.round(freq)
-        if rounded.has_duplicates and not stamps.has_duplicates:
-            self.logger.debug(f"Rounding times to '{freq}' would merge steps; rounding to seconds")
-            rounded = stamps.round('s')
-        return rounded
+        return round_time_stamps(pd.DatetimeIndex(stamps), freq)
 
     def fix_time_precision(self) -> Optional[Path]:
         """
@@ -164,9 +174,9 @@ class MizuRouteRunner(BaseModelRunner):  # type: ignore[misc]
         # still falls back to SUMMA, re-introducing the silent default that
         # get_model_config() deliberately dropped (it now raises rather than
         # resolving SUMMA paths for an unroutable model). A HYPE-only or
-        # MESH-only run therefore resolves SUMMA paths, and can pick up a stale
-        # SUMMA file through resolve_runoff_file's *.nc fallback. Made loud
-        # rather than changed, because the fallback is pinned by
+        # MESH-only run therefore resolves SUMMA paths, and touches a SUMMA
+        # file of the same experiment id if one exists. Made loud rather than
+        # changed, because the fallback is pinned by
         # tests/unit/models/test_mizuroute_runner_source_resolution.py.
         source_model = candidates[0] if candidates else 'SUMMA'
         if not candidates:
@@ -204,225 +214,16 @@ class MizuRouteRunner(BaseModelRunner):  # type: ignore[misc]
 
         self.logger.info(f"Resolved runoff filepath: {runoff_filepath}")
 
-        try:
-            import os
-
-            import xarray as xr
-
-            self.logger.debug(f"Processing {runoff_filepath}")
-
-            # Check file size before opening — empty files from SIGSEGV crashes
-            if runoff_filepath.stat().st_size < 1000:
-                self.logger.error(f"Model output file too small ({runoff_filepath.stat().st_size} bytes): {runoff_filepath}")
-                return None
-
-            # Open dataset and examine time format
-            try:
-                ds = xr.open_dataset(runoff_filepath, decode_times=False)
-            except (OSError, RuntimeError, ValueError) as nc_err:
-                self.logger.error(f"Failed to open model output file: {runoff_filepath}")
-                self.logger.error("The file appears to be corrupt or incomplete.")
-                self.logger.error("This usually happens when the upstream hydrological model (e.g., SUMMA) fails or times out before finishing.")
-                self.logger.error(f"Underlying error: {nc_err}")
-                raise
-
-            # Detect the time format by examining attributes and values
-            time_attrs = ds.time.attrs
-            time_values = ds.time.values
-
-            self.logger.debug(f"Time units: {time_attrs.get('units', 'No units specified')}")
-
-            # Check if time_values is empty
-            if len(time_values) == 0:
-                self.logger.error(f"Time dimension in {runoff_filepath} is empty (no time values found)")
-                self.logger.error("This indicates the upstream model output is incomplete or corrupted")
-                self.logger.error("Please verify the model run completed successfully and produced valid output")
-                ds.close()
-                raise ModelExecutionError(f"Empty time dimension in model output: {runoff_filepath}")
-
-            self.logger.debug(f"Time range: {time_values.min()} to {time_values.max()}")
-
-            # Check if time precision fix is needed and determine format
-            needs_fix = False
-            time_format_detected = None
-
-            if 'units' in time_attrs:
-                units_str = time_attrs['units'].lower()
-
-                if 'since 1990-01-01' in units_str:
-                    # SUMMA-style format: seconds since 1990-01-01
-                    time_format_detected = 'summa_seconds_1990'
-                    needs_fix = self._times_misaligned(
-                        pd.to_datetime(time_values, unit='s', origin='1990-01-01'))
-
-                elif 'since' in units_str:
-                    # Other reference time format - extract the reference
-                    import re
-                    since_match = re.search(r'since\s+([0-9-]+(?:\s+[0-9:]+)?)', units_str)
-                    if since_match:
-                        ref_time_str = since_match.group(1).strip()
-                        time_format_detected = f'generic_since_{ref_time_str}'
-
-                        # Determine the unit (seconds, hours, days)
-                        if 'hour' in units_str:
-                            time_unit = 'h'
-                        elif 'day' in units_str:
-                            time_unit = 'D'
-                        else:  # seconds, and the default
-                            time_unit = 's'
-                        offsets = pd.to_timedelta(
-                            np.asarray(time_values, dtype=float), unit=time_unit)  # type: ignore[call-overload]
-                        needs_fix = self._times_misaligned(pd.Timestamp(ref_time_str) + offsets)
-
-                else:
-                    # No 'since' found, might be already in datetime format
-                    time_format_detected = 'unknown'
-                    try:
-                        # Try to interpret as datetime directly
-                        ds_decoded = xr.open_dataset(runoff_filepath, decode_times=True)
-                        needs_fix = self._times_misaligned(pd.to_datetime(ds_decoded.time.values))
-                        ds_decoded.close()
-                        time_format_detected = 'datetime64'
-                    except (ValueError, TypeError, KeyError) as e:
-                        self.logger.warning(f"Could not determine time format - skipping time precision fix: {e}")
-                        ds.close()
-                        return runoff_filepath
-            else:
-                # No units attribute - try to decode directly
-                try:
-                    ds_decoded = xr.open_dataset(runoff_filepath, decode_times=True)
-                    needs_fix = self._times_misaligned(pd.to_datetime(ds_decoded.time.values))
-                    ds_decoded.close()
-                    time_format_detected = 'datetime64'
-                except (ValueError, TypeError, KeyError) as e:
-                    self.logger.warning(f"No time units and cannot decode times - skipping time precision fix: {e}")
-                    ds.close()
-                    return runoff_filepath
-
-            self.logger.debug(f"Detected time format: {time_format_detected}")
-            self.logger.debug(f"Needs time precision fix: {needs_fix}")
-
-            # A perfectly aligned numeric axis can still have an ISO epoch
-            # ('T', timezone suffix) that mizuRoute's Fortran parser rejects.
-            old_units = time_attrs.get('units', '')
-            normalized_units = self._normalize_time_units(old_units)
-            if normalized_units != old_units:
-                ds.time.attrs['units'] = normalized_units
-                ds.load()
-                temp_filepath = runoff_filepath.with_suffix('.tmp.nc')
-                ds.to_netcdf(temp_filepath, format='NETCDF4')
-                ds.close()
-                temp_filepath.replace(runoff_filepath)
-                # Re-enter with the normalized epoch so time arithmetic also
-                # preserves non-midnight references and timezone offsets.
-                return self.fix_time_precision()
-
-            if not needs_fix:
-                self.logger.debug("Time precision is already correct")
-                ds.close()
-                return runoff_filepath
-
-            # Apply the appropriate fix based on detected format
-            if time_format_detected == 'summa_seconds_1990':
-                # Original SUMMA logic
-                rounding_freq = self._get_time_rounding_freq()
-                self.logger.info(f"Applying SUMMA-style time precision fix (rounding to '{rounding_freq}')")
-                time_stamps = pd.to_datetime(time_values, unit='s', origin='1990-01-01')
-                if rounding_freq:
-                    rounded_stamps = self._round_stamps(time_stamps, rounding_freq)
-                    max_shift = np.abs(rounded_stamps - time_stamps).max()
-                    if max_shift > pd.Timedelta(minutes=5):
-                        self.logger.info(f"Time rounding applied, max shift: {max_shift}")
-                else:
-                    rounded_stamps = time_stamps  # No rounding
-                reference = pd.Timestamp('1990-01-01')
-                rounded_seconds = (rounded_stamps - reference).total_seconds().values
-
-                ds = ds.assign_coords(time=rounded_seconds)
-                ds.time.attrs.clear()
-                ds.time.attrs['units'] = 'seconds since 1990-01-01 00:00:00'
-                ds.time.attrs['calendar'] = 'standard'
-                ds.time.attrs['long_name'] = 'time'
-
-            elif time_format_detected.startswith('generic_since_'):
-                # Generic 'since' format
-                rounding_freq = self._get_time_rounding_freq()
-                self.logger.info(f"Applying generic time precision fix for format: {time_format_detected} (rounding to '{rounding_freq}')")
-                ref_time_str = time_format_detected.split('generic_since_')[1]
-
-                reference = pd.Timestamp(ref_time_str)
-                # Convert time values based on unit
-                if time_unit == 's':
-                    time_stamps = reference + pd.to_timedelta(time_values, unit='s')
-                elif time_unit == 'h':
-                    time_stamps = reference + pd.to_timedelta(time_values, unit='h')
-                elif time_unit == 'D':
-                    time_stamps = reference + pd.to_timedelta(time_values, unit='D')
-                else:
-                    time_stamps = reference + pd.to_timedelta(time_values, unit='s')
-                if rounding_freq:
-                    rounded_stamps = self._round_stamps(time_stamps, rounding_freq)
-                    max_shift = np.abs(rounded_stamps - time_stamps).max()
-                    if max_shift > pd.Timedelta(minutes=5):
-                        self.logger.info(f"Time rounding applied, max shift: {max_shift}")
-                else:
-                    rounded_stamps = time_stamps  # No rounding
-
-                if time_unit == 's':
-                    rounded_values = (rounded_stamps - reference).total_seconds().values
-                elif time_unit == 'h':
-                    rounded_values = (rounded_stamps - reference) / pd.Timedelta(hours=1)
-                elif time_unit == 'D':
-                    rounded_values = (rounded_stamps - reference) / pd.Timedelta(days=1)
-
-                ds = ds.assign_coords(time=rounded_values)
-                ds.time.attrs.clear()
-                # Normalize unit name and reference time for CF/mizuRoute compliance
-                _unit_names = {'s': 'seconds', 'h': 'hours', 'D': 'days'}
-                full_unit_name = _unit_names.get(time_unit, time_unit)
-                normalized_ref = reference.strftime('%Y-%m-%d %H:%M:%S')
-                ds.time.attrs['units'] = f"{full_unit_name} since {normalized_ref}"
-                ds.time.attrs['calendar'] = 'standard'
-                ds.time.attrs['long_name'] = 'time'
-
-            elif time_format_detected == 'datetime64':
-                # Already in datetime format, just round
-                rounding_freq = self._get_time_rounding_freq()
-                self.logger.info(f"Applying datetime64 time precision fix (rounding to '{rounding_freq}')")
-                ds_decoded = xr.open_dataset(runoff_filepath, decode_times=True)
-                time_stamps = pd.to_datetime(ds_decoded.time.values)
-                if rounding_freq:
-                    rounded_stamps = self._round_stamps(time_stamps, rounding_freq)
-                    max_shift = np.abs(rounded_stamps - time_stamps).max()
-                    if max_shift > pd.Timedelta(minutes=5):
-                        self.logger.info(f"Time rounding applied, max shift: {max_shift}")
-                else:
-                    rounded_stamps = time_stamps  # No rounding
-
-                # Keep original format but with rounded times
-                ds = ds_decoded.assign_coords(time=rounded_stamps)
-                ds_decoded.close()
-
-            # Save the corrected file safely using a temp file
-            ds.load()
-            temp_filepath = runoff_filepath.with_suffix('.tmp.nc')
-
-            # Ensure permissions are set on temp file after creation
-            ds.to_netcdf(temp_filepath, format='NETCDF4')
-            ds.close()
-
-            if os.name != 'nt':
-                # Security rationale: Group-writable for HPC shared access
-                os.chmod(temp_filepath, 0o664)  # nosec B103
-            temp_filepath.replace(runoff_filepath)
-
-            self.logger.info("Time precision fixed successfully")
-            return runoff_filepath
-
-        except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
-            self.logger.error(f"Error fixing time precision: {e}")
-            self.logger.error(f"Traceback: {traceback.format_exc()}")
-            raise
+        # One implementation for every routing model (runoff_loader): decodes
+        # the CF units, rounds every stamp, refuses to create duplicates and
+        # leaves an already-clean file untouched. normalize_epoch respells an
+        # ISO reference ('T', timezone suffix) that mizuRoute's Fortran parser
+        # rejects, even when rounding is disabled.
+        return shared_fix_time_precision(
+            runoff_filepath,
+            rounding_freq=self._get_time_rounding_freq(),
+            normalize_epoch=True,
+        )
 
     def sync_control_file_dimensions(self, control_path: Path, netcdf_path: Path):
         """
@@ -618,6 +419,7 @@ class MizuRouteRunner(BaseModelRunner):  # type: ignore[misc]
             mizu_env = {**__import__('os').environ, 'OMP_NUM_THREADS': str(mizu_num_threads)}
             self.logger.debug(f'Running mizuRoute with command: {" ".join(mizu_command)} (OMP_NUM_THREADS={mizu_num_threads})')
 
+            run_started = time.time()
             self.execute_subprocess(
                 mizu_command,
                 mizu_log_path / mizu_log_name,
@@ -627,7 +429,7 @@ class MizuRouteRunner(BaseModelRunner):  # type: ignore[misc]
 
             # Fortran STOP can return zero even after a fatal initialization
             # error. Exit status alone is not evidence of a routed result.
-            self._validate_routing_output(mizu_log_path / mizu_log_name, mizu_out_path)
+            self._validate_routing_output(mizu_log_path / mizu_log_name, mizu_out_path, run_started)
             self.logger.info('mizuRoute run completed successfully')
 
             return mizu_out_path

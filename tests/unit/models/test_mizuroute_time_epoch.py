@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import time
 from types import SimpleNamespace
 
 import numpy as np
@@ -41,7 +43,7 @@ def test_zero_exit_with_fatal_log_rejected_even_with_stale_output(tmp_path):
     log.write_text('FATAL ERROR: init_time failed')
     (tmp_path / 'old.nc').touch()
     with pytest.raises(ModelExecutionError, match='fatal error'):
-        MizuRouteRunner._validate_routing_output(log, tmp_path)
+        MizuRouteRunner._validate_routing_output(log, tmp_path, time.time())
 
 
 def test_missing_routing_output_rejected(tmp_path):
@@ -50,4 +52,23 @@ def test_missing_routing_output_rejected(tmp_path):
     log = tmp_path / 'routing.log'
     log.write_text('STOP')
     with pytest.raises(ModelExecutionError, match='no NetCDF output'):
-        MizuRouteRunner._validate_routing_output(log, tmp_path)
+        MizuRouteRunner._validate_routing_output(log, tmp_path, time.time())
+
+
+def test_stale_output_from_a_previous_run_is_not_accepted(tmp_path):
+    """A clean log plus last week's .nc is not evidence that this run routed."""
+    from symfluence.core.exceptions import ModelExecutionError
+
+    log = tmp_path / 'routing.log'
+    log.write_text('')
+    stale = tmp_path / 'stale_from_last_week.h.nc'
+    stale.touch()
+    week_ago = time.time() - 7 * 86400
+    os.utime(stale, (week_ago, week_ago))
+
+    run_started = time.time()
+    with pytest.raises(ModelExecutionError, match='predates the run start'):
+        MizuRouteRunner._validate_routing_output(log, tmp_path, run_started)
+
+    (tmp_path / 'case.h.2010-01-01.nc').touch()
+    MizuRouteRunner._validate_routing_output(log, tmp_path, run_started)
