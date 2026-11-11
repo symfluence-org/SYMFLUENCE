@@ -334,7 +334,8 @@ class CRHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
     def _load_forcing_data(self) -> xr.Dataset:
         """Load basin-averaged forcing data from NetCDF files."""
-        forcing_files = list(self.forcing_basin_path.glob("*.nc"))
+        # Only the forcing remapped onto this run's HRUs (issue #339).
+        forcing_files = self._select_run_forcing(sorted(self.forcing_basin_path.glob("*.nc")))
 
         if not forcing_files:
             # Try merged_path

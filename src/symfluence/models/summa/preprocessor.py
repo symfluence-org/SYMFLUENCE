@@ -141,7 +141,8 @@ class SummaPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             data_step=self.data_step,
             gruId=self.gruId,
             hruId=self.hruId,
-            catchment_name=self.catchment_name
+            catchment_name=self.catchment_name,
+            forcing_selector=self._select_run_forcing,
         )
 
         # Initialize configuration manager
@@ -565,7 +566,7 @@ class SummaPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         if not forcing_dir.exists():
             return []
 
-        forcing_files = sorted(forcing_dir.glob("*.nc"))
+        forcing_files = self._select_run_forcing(sorted(forcing_dir.glob("*.nc")))
         if not forcing_files:
             return []
 

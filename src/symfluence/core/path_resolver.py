@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from symfluence.core.mixins.project import resolve_data_subdir
 
@@ -567,6 +567,22 @@ class PathResolverMixin(ConfigurableMixin):
             self.domain_definition_method / self.experiment_id / catchment_name
         )
         return new_path
+
+    def _select_run_forcing(self, forcing_files, pattern: str = '*.nc') -> List[Path]:
+        """Select the remapped forcing for THIS run's HRU set (issue #339).
+
+        *forcing_files* is a directory (globbed with *pattern*) or a file list.
+        Selection uses the run's discretization and a content hash of its
+        catchment shapefile; see
+        :func:`symfluence.core.modeling.forcing_naming.select_forcing_files`.
+        """
+        from symfluence.core.modeling.forcing_naming import resolve_forcing_files
+
+        hru_field = self._get_config_value(
+            lambda: self.config.paths.catchment_hruid, default='HRU_ID', dict_key='CATCHMENT_SHP_HRUID')
+        catchment = self._get_catchment_file_path()
+        return resolve_forcing_files(
+            forcing_files, self.domain_discretization, catchment, hru_field, pattern)
 
     def _find_basin_shapefile(
         self,

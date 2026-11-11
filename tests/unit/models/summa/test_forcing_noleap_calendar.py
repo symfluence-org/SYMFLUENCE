@@ -206,3 +206,23 @@ def test_step_that_does_not_divide_a_day_is_an_error(tmp_path):
 
     with pytest.raises(ModelExecutionError, match='does not divide a day'):
         processor._insert_noleap_leap_days()
+
+
+def test_leap_day_is_built_from_and_named_for_this_runs_hru_set(tmp_path):
+    """SUMMA_input is shared between HRU sets (#339): only this run's files are read."""
+    mine = 'toy_gcm_remapped_grus-h2-0123abcd_2004-02-01-00-00-00.nc'
+    other = 'toy_gcm_remapped_elevation-h9-89abcdef_2004-02-01-00-00-00.nc'
+    _write_processed(tmp_path, _noleap_times('3h'), name=mine)
+    # another HRU set's forcing, with Feb 29 present: must not suppress the insertion
+    _write_processed(tmp_path, pd.date_range('2004-02-27', '2004-03-03', freq='3h', inclusive='left'), name=other)
+    processor = _processor(tmp_path, 10800)
+    processor._source_calendar = 'noleap'
+    processor._written_forcing_names = {mine}
+
+    processor._insert_noleap_leap_days()
+
+    leap_name = 'toy_gcm_remapped_grus-h2-0123abcd_leapday_2004-02-29-00-00-00.nc'
+    assert [p.name for p in tmp_path.glob('*leapday*')] == [leap_name]
+    assert leap_name in processor._written_forcing_names
+    from symfluence.core.modeling.forcing_naming import discretization_key_from_name
+    assert discretization_key_from_name(leap_name) == 'grus-h2-0123abcd'

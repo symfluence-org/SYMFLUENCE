@@ -24,7 +24,7 @@ def test_unknown_model_raises():
 
 def test_postprocess_failure_raises_after_all_models():
     manager = _manager()
-    manager._resolve_model_workflow = lambda: ['SUMMA', 'MIZUROUTE']
+    manager._resolve_model_workflow = lambda **_: ['SUMMA', 'MIZUROUTE']
     calls = []
 
     def _pp(model):

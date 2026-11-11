@@ -14,7 +14,7 @@ import pytest
 # Import SYMFLUENCE - this should work now since we added the path
 from symfluence import SYMFLUENCE
 from symfluence.core.exceptions import DataAcquisitionError
-from test_helpers.helpers import load_config_template, write_config
+from test_helpers.helpers import keep_single_raw_forcing, load_config_template, write_config
 
 pytestmark = [pytest.mark.integration, pytest.mark.domain, pytest.mark.requires_data, pytest.mark.slow]
 
@@ -35,17 +35,9 @@ def _copy_with_name_adaptation(src: Path, dst: Path, old_name: str, new_name: st
     return True
 
 
-def _prune_raw_forcing(project_dir: Path, keep_glob: str) -> None:
+def _prune_raw_forcing(project_dir: Path) -> None:
     raw_dir = project_dir / "data" / "forcing" / "raw_data"
-    if not raw_dir.exists():
-        return
-    candidates = sorted(raw_dir.glob(keep_glob))
-    if not candidates:
-        return
-    keep = candidates[0]
-    for path in raw_dir.glob("*.nc"):
-        if path != keep:
-            path.unlink()
+    keep_single_raw_forcing(raw_dir)
 
 
 @pytest.fixture(scope="function")
@@ -194,7 +186,7 @@ def test_semi_distributed_basin_workflow(config_path, model, symfluence_data_roo
                 src_path, dst_path, lumped_domain, config["DOMAIN_NAME"]
             )
 
-    _prune_raw_forcing(project_dir, "domain_*_ERA5_merged_200401.nc")
+    _prune_raw_forcing(project_dir)
 
     # Clear processed forcing outputs so HRU counts stay consistent
     forcing_dir = project_dir / "data" / "forcing"
