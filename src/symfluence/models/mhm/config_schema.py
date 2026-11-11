@@ -47,7 +47,11 @@ class MHMConfig(BaseModel):
     distributed_morph: bool = Field(default=False, alias='MHM_DISTRIBUTED')
     grid_res: float = Field(default=0.02, alias='MHM_GRID_RES', gt=0.0)
 
-    match_lumped_area: bool = Field(default=False, alias='MHM_MATCH_LUMPED_AREA')
+    # Lumped layout only: size the two grid cells so their area equals the
+    # catchment area. mRM discharge is runoff x grid area and nothing rescales
+    # it afterwards; False keeps the legacy fixed 0.35 deg cells (~1914 km2 at
+    # 51N whatever the catchment) and logs the resulting discharge scale factor.
+    match_lumped_area: bool = Field(default=True, alias='MHM_MATCH_LUMPED_AREA')
     # Model time step in hours; mHM accepts divisors of 24.
     timestep: Literal[1, 2, 3, 4, 6, 12, 24] = Field(default=1, alias='MHM_TIMESTEP')
     # mRM channel routing (processCase(8)): 1 = Muskingum, 2 = adaptive time
@@ -60,7 +64,14 @@ class MHMConfig(BaseModel):
     # Distributed-forcing options (only used with distributed_morph). The
     # basin-mean forcing is taken to represent the basin-mean DEM elevation and
     # temperature is lapsed to each cell's elevation; None keeps it uniform.
-    temp_lapse_rate: Optional[float] = Field(default=None, alias='MHM_TEMP_LAPSE_RATE')  # K/km
+    temp_lapse_rate: Optional[float] = Field(
+        default=None, alias='MHM_TEMP_LAPSE_RATE',
+        description=(
+            "Temperature gradient dT/dz in K/km, applied as "
+            "T_cell = T_basin + rate * (z_cell - z_mean) / 1000. Cooling with "
+            "height needs a NEGATIVE value (e.g. -6.5): the opposite sign "
+            "convention to the framework's LAPSE_RATE (positive = cooling). A "
+            "positive value warms high cells and logs a warning."))
     pet_method: Literal['hamon', 'oudin'] = Field(default='hamon', alias='MHM_PET_METHOD')
     # Glacier outline (vector). Cells whose glacierised fraction is at least
     # glacier_min_fraction become mHM land class 2 (fully sealed) and receive

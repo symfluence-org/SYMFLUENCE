@@ -96,3 +96,69 @@ def test_solved_ice_factor_reproduces_the_target_balance():
     melt, snow = MHMWorker._glacier_ice_melt(pre, tavg, ddf, 0.0, return_snow=True)
     balance = MHMWorker._glacier_net_balance(melt, snow, np.ones(2), index)
     assert np.mean([balance[y] for y in years]) == pytest.approx(-1.5, abs=1e-3)
+
+
+# --- namelist bounds follow the written value --------------------------------
+# mHM aborts ("parameter in namelist ... out of bound") when a value is outside
+# the row's own lower/upper. The writer replaced only the value column, so a
+# calibration bound wider than the row killed every run sampling the gap.
+
+def _row(text, name):
+    line = next(ln for ln in text.splitlines() if ln.split("=")[0].strip() == name)
+    return [c.strip() for c in line.split("=")[1].split(",")]
+
+
+def test_value_outside_row_bounds_widens_them(tmp_path):
+    nml = tmp_path / "mhm_parameter.nml"
+    nml.write_text(NML)
+    assert _worker()._update_namelist_file(
+        nml, {"degreeDayFactor_pervious": 3.5, "degreeDayFactor_impervious": -0.25})
+    text = nml.read_text()
+    assert _row(text, "degreeDayFactor_pervious") == ["0.0000", "3.500000", "3.500000", "1", "1"]
+    assert _row(text, "degreeDayFactor_impervious") == ["-0.250000", "1.0", "-0.250000", "1", "1"]
+    # Untouched rows are byte-identical.
+    assert _row(text, "maxDegreeDayFactor_pervious") == ["0.0000", "8.0", "4.0", "1", "1"]
+
+
+def test_value_inside_row_bounds_leaves_them_alone(tmp_path):
+    nml = tmp_path / "mhm_parameter.nml"
+    nml.write_text(NML)
+    assert _worker()._update_namelist_file(nml, {"degreeDayFactor_pervious": 2.0})
+    assert _row(nml.read_text(), "degreeDayFactor_pervious") == ["0.0000", "2.0", "2.0", "1", "1"]
+
+
+def test_parameter_manager_and_worker_share_one_writer(tmp_path):
+    from symfluence.models.mhm import namelist
+    from symfluence.models.mhm.calibration import parameter_manager, worker
+    assert worker.update_namelist_parameters is namelist.update_namelist_parameters
+    assert parameter_manager.update_namelist_parameters is namelist.update_namelist_parameters
+
+    pm = parameter_manager.MHMParameterManager.__new__(parameter_manager.MHMParameterManager)
+    pm.logger = logging.getLogger("test")
+    pm.namelist_path = tmp_path / "mhm_parameter.nml"
+    pm._is_param_nml = True
+    pm.namelist_path.write_text(NML)
+    other = tmp_path / "w" / "mhm_parameter.nml"
+    other.parent.mkdir()
+    other.write_text(NML)
+    params = {"degreeDayFactor_pervious": 3.5, "maxDegreeDayFactor_impervious": 0.0005}
+    assert pm.update_namelist(params)
+    assert _worker()._update_namelist_file(other, params)
+    assert pm.namelist_path.read_text() == other.read_text()
+    assert _row(other.read_text(), "maxDegreeDayFactor_impervious")[2] == "5.000000e-04"
+
+
+def test_legacy_single_value_namelist_still_updates(tmp_path):
+    nml = tmp_path / "mhm.nml"
+    nml.write_text("&x\n  foo = 1.5\n  foobar = 2.5\n/\n")
+    assert _worker()._update_namelist_file(nml, {"foo": 0.25})
+    assert "  foo = 0.250000\n  foobar = 2.5\n" in nml.read_text()
+
+
+def test_builtin_calibration_bounds_fit_the_generated_namelist():
+    """Every built-in calibration bound lies inside its generated nml row."""
+    from symfluence.models.mhm.parameters import MHM_PARAMETER_NML_SPEC, PARAM_BOUNDS
+    rows = {name: (lo, hi) for _, block in MHM_PARAMETER_NML_SPEC for name, lo, hi, *_ in block}
+    outside = {name: (b, rows[name]) for name, b in PARAM_BOUNDS.items()
+               if name in rows and (b['min'] < rows[name][0] or b['max'] > rows[name][1])}
+    assert outside == {}
