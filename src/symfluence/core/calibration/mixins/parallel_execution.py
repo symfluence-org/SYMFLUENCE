@@ -434,30 +434,30 @@ class ParallelExecutionMixin(ConfigMixin):
     @property
     def _directory_manager(self) -> DirectoryManager:
         """Get or create directory manager."""
-        if not hasattr(self, '__directory_manager'):
-            self.__directory_manager = DirectoryManager(self.logger)
-        return self.__directory_manager
+        if getattr(self, '_cached_directory_manager', None) is None:
+            self._cached_directory_manager = DirectoryManager(self.logger)
+        return self._cached_directory_manager
 
     @property
     def _config_updater(self) -> ConfigurationUpdater:
         """Get or create configuration updater."""
-        if not hasattr(self, '__config_updater'):
-            self.__config_updater = ConfigurationUpdater(self.config, self.logger)
-        return self.__config_updater
+        if getattr(self, '_cached_config_updater', None) is None:
+            self._cached_config_updater = ConfigurationUpdater(self.config, self.logger)
+        return self._cached_config_updater
 
     @property
     def _task_distributor(self) -> TaskDistributor:
         """Get or create task distributor."""
-        if not hasattr(self, '__task_distributor'):
-            self.__task_distributor = TaskDistributor(self.num_processes)
-        return self.__task_distributor
+        if getattr(self, '_cached_task_distributor', None) is None:
+            self._cached_task_distributor = TaskDistributor(self.num_processes)
+        return self._cached_task_distributor
 
     @property
     def _worker_env_config(self) -> WorkerEnvironmentConfig:
         """Get or create worker environment config."""
-        if not hasattr(self, '__worker_env_config'):
-            self.__worker_env_config = WorkerEnvironmentConfig()
-        return self.__worker_env_config
+        if getattr(self, '_cached_worker_env_config', None) is None:
+            self._cached_worker_env_config = WorkerEnvironmentConfig()
+        return self._cached_worker_env_config
 
     # =========================================================================
     # Properties

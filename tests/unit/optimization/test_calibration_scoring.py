@@ -276,7 +276,12 @@ def test_initial_guess_is_evaluated(cls):
 
 
 def test_cmaes_mean_starts_at_initial_guess(monkeypatch):
-    monkeypatch.setattr(np.random, "randn", lambda n: np.zeros(n))
+    class _ZeroNormal:
+        def standard_normal(self, n):
+            return np.zeros(n)
+
+    # CMA-ES draws from its per-run Generator, not the global np.random.
+    monkeypatch.setattr(CMAESAlgorithm, "_new_rng", lambda self: _ZeroNormal())
     seen: list = []
     CMAESAlgorithm({"NUMBER_OF_ITERATIONS": 1, "POPULATION_SIZE": 4}, LOG).optimize(
         n_params=2, initial_guess=GUESS, **_cb(seen))

@@ -89,6 +89,8 @@ class DREAMAlgorithm(OptimizationAlgorithm):
         Returns:
             Optimization results dictionary including posterior samples
         """
+        # Per-run RNG (OptimizationAlgorithm._new_rng): never the process-global stream.
+        self._rng = self._new_rng()
         self.logger.info(f"Starting DREAM optimization with {n_params} parameters")
 
         # DREAM parameters from config
@@ -133,7 +135,7 @@ class DREAMAlgorithm(OptimizationAlgorithm):
         )
 
         # Initialize chains uniformly in [0, 1]
-        chains = np.random.uniform(0, 1, (n_chains, n_params))
+        chains = self._rng.uniform(0, 1, (n_chains, n_params))
 
         # Evaluate initial chain positions
         fitness = evaluate_population(chains, 0)
@@ -160,6 +162,9 @@ class DREAMAlgorithm(OptimizationAlgorithm):
         # (Vrugt 2016, Section 3.1 - "Burn-in Period")
         burn_in = int(self.max_iterations * DREAMDefaults.BURN_IN_FRACTION)
         posterior_samples: List[np.ndarray] = []
+        # Chain positions at every iteration, for the R-hat diagnostic
+        chain_history: List[np.ndarray] = [chains.copy()]
+        r_hat = float('nan')
 
         # Acceptance tracking for adaptive scaling
         acceptance_history = np.zeros((n_chains, 100))  # Rolling window
@@ -178,7 +183,7 @@ class DREAMAlgorithm(OptimizationAlgorithm):
                     available = [j for j in range(n_chains) if j != i]
 
                     # Select 2*n_pairs chains for differential evolution
-                    selected = np.random.choice(available, size=2 * n_pairs, replace=False)
+                    selected = self._rng.choice(available, size=2 * n_pairs, replace=False)
                     r1 = selected[:n_pairs]
                     r2 = selected[n_pairs:]
 
@@ -191,23 +196,23 @@ class DREAMAlgorithm(OptimizationAlgorithm):
                     # Subspace sampling: randomly select dimensions to update
                     # This improves mixing in high dimensions
                     # (Vrugt 2009, Section 2.3)
-                    crossover_mask = np.random.random(n_params) < CR
+                    crossover_mask = self._rng.random(n_params) < CR
                     if not crossover_mask.any():
                         # Ensure at least one dimension is updated
-                        crossover_mask[np.random.randint(n_params)] = True
+                        crossover_mask[self._rng.integers(n_params)] = True
 
                     # Adaptive jump rate
                     # MODE_JUMP_PROBABILITY = 0.1: occasionally use gamma = 1 for mode jumping
                     # This helps escape local modes in multimodal distributions
                     # (Vrugt 2009, Section 2.2 - "Jump Rate")
-                    if np.random.random() < DREAMDefaults.MODE_JUMP_PROBABILITY:
+                    if self._rng.random() < DREAMDefaults.MODE_JUMP_PROBABILITY:
                         gamma = 1.0
                     else:
                         gamma = gamma_base
 
                     # Generate proposal: x_proposal = x_current + gamma * diff + noise
                     proposal = chains[i].copy()
-                    jump = gamma * diff + eps_std * np.random.randn(n_params)
+                    jump = gamma * diff + eps_std * self._rng.standard_normal(n_params)
                     proposal[crossover_mask] += jump[crossover_mask]
 
                     # Reflect at bounds
@@ -243,7 +248,7 @@ class DREAMAlgorithm(OptimizationAlgorithm):
                 log_alpha = proposal_log_lik[i] - log_likelihood[i]
 
                 # Accept or reject
-                if np.log(np.random.random()) < log_alpha:
+                if np.log(self._rng.random()) < log_alpha:
                     chains[i] = proposals[i]
                     fitness[i] = proposal_fitness[i]
                     log_likelihood[i] = proposal_log_lik[i]
@@ -289,18 +294,23 @@ class DREAMAlgorithm(OptimizationAlgorithm):
             # Log progress
             log_progress(self.name, iteration, best_fit, n_accepted, n_chains, unit='gens')
 
-            # Convergence check via Gelman-Rubin diagnostic (simplified)
-            # R-hat < 1.1 indicates approximate convergence of chains
-            # (Gelman & Rubin, 1992; Vrugt 2016, Section 3.2)
+            # Convergence diagnostic: Gelman-Rubin R-hat over the second half
+            # of the chain histories. R-hat < 1.1 indicates approximate
+            # convergence (Gelman & Rubin, 1992; Vrugt 2016, Section 3.2).
+            # Diagnostic only: the run always continues to NUMBER_OF_ITERATIONS
+            # so the posterior sample count does not depend on it.
+            chain_history.append(chains.copy())
             if iteration > burn_in and iteration % 50 == 0:
                 try:
-                    r_hat = self._compute_gelman_rubin(chains, fitness)
-                    if r_hat < DREAMDefaults.RHAT_THRESHOLD:
-                        self.logger.info(
-                            f"DREAM converged at iteration {iteration} (R-hat = {r_hat:.3f})"
-                        )
-                        # Continue to collect more samples rather than stopping
-                        pass
+                    r_hat = self._compute_gelman_rubin(np.array(chain_history))
+                    verdict = (
+                        "chains have converged"
+                        if r_hat < DREAMDefaults.RHAT_THRESHOLD
+                        else f"not converged (threshold {DREAMDefaults.RHAT_THRESHOLD})"
+                    )
+                    self.logger.info(
+                        f"DREAM iteration {iteration}: max R-hat = {r_hat:.3f} ({verdict})"
+                    )
                 except (ValueError, FloatingPointError) as e:
                     self.logger.debug(f"Error computing R-hat: {e}")
 
@@ -322,7 +332,8 @@ class DREAMAlgorithm(OptimizationAlgorithm):
             'credible_interval_95': (credible_lower, credible_upper),
             'n_posterior_samples': len(posterior_samples),
             'final_chains': chains,
-            'final_fitness': fitness
+            'final_fitness': fitness,
+            'r_hat': r_hat,
         }
 
     def _correct_outlier_chains(
@@ -366,55 +377,60 @@ class DREAMAlgorithm(OptimizationAlgorithm):
 
             # Restart outlier chains from random good chains
             for i in np.where(outliers)[0]:
-                source = np.random.choice(good_chains)
+                source = self._rng.choice(good_chains)
                 chains[i] = chains[source].copy()
                 fitness[i] = fitness[source]
                 log_likelihood[i] = log_likelihood[source]
 
             self.logger.debug(f"Corrected {outliers.sum()} outlier chains")
 
-    def _compute_gelman_rubin(
-        self,
-        chains: np.ndarray,
-        fitness: np.ndarray
-    ) -> float:
+    def _compute_gelman_rubin(self, chain_history: np.ndarray) -> float:
         """
-        Compute simplified Gelman-Rubin convergence diagnostic.
+        Gelman-Rubin potential scale reduction factor (R-hat).
 
-        The R-hat statistic compares within-chain and between-chain variance.
-        Values close to 1.0 indicate convergence.
+        Computed per parameter from the second half of each chain's history
+        (the first half is discarded as warm-up) and maximised over
+        parameters. For ``m`` chains of ``n`` retained draws each::
+
+            W      = mean over chains of the within-chain variance
+            B / n  = variance of the chain means
+            var+   = (n - 1) / n * W + B / n
+            R-hat  = sqrt(var+ / W)
+
+        Values close to 1.0 indicate the chains have mixed.
 
         Reference:
             Gelman, A. and Rubin, D.B. (1992). Inference from iterative simulation
             using multiple sequences. Statistical Science, 7(4), 457-472.
 
         Args:
-            chains: Current chain positions (n_chains, n_params)
-            fitness: Current fitness values (for weighting)
+            chain_history: Chain positions over iterations,
+                shape (n_iterations, n_chains, n_params)
 
         Returns:
-            R-hat statistic (target: < 1.1 for convergence)
+            Maximum R-hat over parameters (target: < 1.1 for convergence);
+            ``inf`` when it cannot be computed (fewer than 2 chains or fewer
+            than 2 retained draws per chain).
         """
-        n_chains, n_params = chains.shape
-
-        if n_chains < 2:
+        history = np.asarray(chain_history, dtype=float)
+        if history.ndim != 3:
+            raise ValueError(
+                "chain_history must have shape (n_iterations, n_chains, n_params), "
+                f"got {history.shape}"
+            )
+        draws = history[history.shape[0] // 2:]
+        n, m, _ = draws.shape
+        if m < 2 or n < 2:
             return float('inf')
 
-        # Compute between-chain variance
-        _chain_means = np.mean(chains, axis=1)  # (n_chains,) for each param
-        _overall_mean = np.mean(chains, axis=0)  # (n_params,)
+        chain_means = draws.mean(axis=0)                 # (m, d)
+        within = draws.var(axis=0, ddof=1).mean(axis=0)  # W, (d,)
+        between_over_n = chain_means.var(axis=0, ddof=1)  # B/n, (d,)
+        var_plus = (n - 1) / n * within + between_over_n
 
-        B = np.var(np.mean(chains, axis=0))  # Simplified: variance of means
-
-        # Compute within-chain variance
-        W = np.mean([np.var(chains[i]) for i in range(n_chains)])
-
-        if W < 1e-10:
-            return 1.0
-
-        # Simplified R-hat
-        # Full formula would use chain length, but we use current snapshot
-        var_estimate = W + B
-        r_hat = np.sqrt(var_estimate / W)
-
-        return r_hat
+        r_hat = np.ones_like(within)
+        moving = within > 0
+        r_hat[moving] = np.sqrt(var_plus[moving] / within[moving])
+        # No within-chain movement: converged only if the chains also agree.
+        r_hat[~moving & (between_over_n > 0)] = np.inf
+        return float(np.max(r_hat))

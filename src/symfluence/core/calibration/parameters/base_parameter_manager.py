@@ -246,14 +246,26 @@ class BaseParameterManager(ConfigMixin, ABC):
         Returns:
             Normalized array in [0, 1] range, one value per parameter.
 
-        Missing parameters default to 0.5 with a warning.
+        Parameters missing from ``params`` (or without bounds) are placed at
+        mid-range (0.5); each such parameter is reported once at INFO. Callers
+        with a partial set that should fall back to model defaults must
+        overlay it on ``get_initial_parameters()`` first (the optimizer does
+        this for a partial INITIAL_GUESS).
         """
         normalized = np.zeros(len(self.all_param_names))
 
         for i, param_name in enumerate(self.all_param_names):
             # Handle missing parameters
             if param_name not in params or param_name not in self.param_bounds:
-                self.logger.debug(f"Parameter {param_name} missing, using 0.5")
+                log_once(
+                    self.logger,
+                    logging.INFO,
+                    key=f'normalize-missing-param-{param_name}',
+                    message=(
+                        f"Parameter {param_name} missing from the values to normalize; "
+                        "using mid-range (0.5 normalized)"
+                    ),
+                )
                 normalized[i] = 0.5
                 continue
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable, Dict, List
 
-from .base import ExecutionStrategy
+from .base import ExecutionStrategy, task_error_result
 
 
 class SequentialExecutionStrategy(ExecutionStrategy):
@@ -65,6 +65,6 @@ class SequentialExecutionStrategy(ExecutionStrategy):
                 results.append(result)
             except (ValueError, RuntimeError, IOError) as e:
                 self.logger.error(f"Task failed in sequential execution: {e}")
-                results.append({'error': str(e), 'task': task})
+                results.append(task_error_result(task, e))
 
         return results

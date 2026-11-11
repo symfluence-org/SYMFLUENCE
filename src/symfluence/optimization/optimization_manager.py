@@ -585,8 +585,10 @@ class OptimizationManager(BaseManager):
                         if not results_df.empty and param_cols:
                             # Try to load best params from JSON file first (most reliable)
                             import json
-                            best_params_json = results_file.parent / f"{self.experiment_id}_{algorithm.lower().replace('/', '_')}_best_params.json"
-                            if best_params_json.exists():
+                            best_params_json = self._find_best_params_json(
+                                Path(results_file).parent, algorithm
+                            )
+                            if best_params_json is not None:
                                 try:
                                     with open(best_params_json, 'r', encoding='utf-8') as f:
                                         best_data = json.load(f)
@@ -633,6 +635,25 @@ class OptimizationManager(BaseManager):
                 f"{model_name} {algorithm} optimization failed: {e}"
             ) from e
 
+
+    def _find_best_params_json(self, run_dir: Path, algorithm: str) -> Optional[Path]:
+        """This run's ``<experiment>_<algorithm>_best_params.json``, or None.
+
+        The optimizer names the file with the canonical ``algorithm_slug``.
+        Run directories written by older releases used the algorithm's
+        display name instead ('nsga-ii', 'cma-es', 'asyncdds', 'moea_d', ...),
+        so fall back to the configured spelling and then to whatever single
+        best-params file the directory holds.
+        """
+        from symfluence.core.calibration.optimizers.algorithms import algorithm_slug
+
+        names = [algorithm_slug(algorithm), str(algorithm).lower().replace('/', '_')]
+        for name in dict.fromkeys(names):
+            candidate = run_dir / f"{self.experiment_id}_{name}_best_params.json"
+            if candidate.exists():
+                return candidate
+        found = sorted(run_dir.glob(f"{self.experiment_id}_*_best_params.json"))
+        return found[0] if found else None
 
     def get_optimization_status(self) -> Dict[str, Any]:
         """

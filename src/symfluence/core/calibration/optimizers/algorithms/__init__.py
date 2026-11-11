@@ -210,6 +210,25 @@ def resolve_algorithm_name(name: str) -> str:
     return _normalize_name(name)  # registered directly into ALGORITHM_REGISTRY
 
 
+def algorithm_slug(name: str) -> str:
+    """Canonical, filesystem-safe slug for an algorithm's result files.
+
+    One name per algorithm regardless of how it was spelled: the primary
+    registry name (``resolve_algorithm_name``), e.g. 'NSGA-II' / 'nsga2' ->
+    'nsga2', 'CMA-ES' -> 'cmaes', 'MOEA/D' / 'moea_d' -> 'moead'. Result files
+    used to be named after the algorithm class's display name
+    (``algorithm.name.lower()``: 'nsga-ii', 'cma-es', 'asyncdds', 'moea_d',
+    'sa', ...) while readers looked them up under the configured name, so the
+    two only met for algorithms whose names happened to coincide. Unregistered
+    names fall back to plain normalization.
+    """
+    try:
+        slug = resolve_algorithm_name(name)
+    except ValueError:
+        slug = _normalize_name(str(name))
+    return slug.replace('/', '_')
+
+
 def list_algorithms() -> list:
     """
     List all available algorithm names.
@@ -224,6 +243,7 @@ def list_algorithms() -> list:
 __all__ = [
     'register_algorithm',
     'resolve_algorithm_name',
+    'algorithm_slug',
     # Base class
     'OptimizationAlgorithm',
     # Algorithm classes

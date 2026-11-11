@@ -91,6 +91,8 @@ class BasinHoppingAlgorithm(OptimizationAlgorithm):
         Returns:
             Optimization results dictionary
         """
+        # Per-run RNG (OptimizationAlgorithm._new_rng): never the process-global stream.
+        self._rng = self._new_rng()
         self.logger.info(f"Starting Basin Hopping optimization with {n_params} parameters")
 
         # Basin Hopping parameters from config
@@ -142,7 +144,7 @@ class BasinHoppingAlgorithm(OptimizationAlgorithm):
         )
 
         # Initialize at random point or center
-        current_pos = self._start_point(n_params, kwargs, np.random.uniform(0, 1, n_params))
+        current_pos = self._start_point(n_params, kwargs, self._rng.uniform(0, 1, n_params))
         current_fit = evaluate_solution(current_pos, 0)
 
         # Local minimize the starting point
@@ -168,7 +170,7 @@ class BasinHoppingAlgorithm(OptimizationAlgorithm):
         # Main Basin Hopping loop
         for iteration in range(1, self.max_iterations + 1):
             # Random perturbation (jump to new basin)
-            perturbation = np.random.uniform(-step_size, step_size, n_params)
+            perturbation = self._rng.uniform(-step_size, step_size, n_params)
             new_pos = current_pos + perturbation
 
             # Reflect at bounds
@@ -190,7 +192,7 @@ class BasinHoppingAlgorithm(OptimizationAlgorithm):
                 delta = new_fit - current_fit
                 if temperature > 0:
                     accept_prob = np.exp(delta / temperature)
-                    accept = np.random.random() < accept_prob
+                    accept = self._rng.random() < accept_prob
 
             accept_history.append(accept)
 

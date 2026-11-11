@@ -225,6 +225,65 @@ class ResultsTrackingMixin(ConfigMixin):
     # Results persistence
     # =========================================================================
 
+    def rotate_previous_results(self, experiment_id: Optional[str] = None) -> List[Path]:
+        """Move a previous run's result files aside before a new run writes.
+
+        Every run of an experiment writes the same file names into its run
+        directory, so a restarted calibration used to overwrite the previous
+        run's ``<experiment>_parallel_iteration_results.csv`` (and best-params
+        JSON) at its first checkpoint -- hundreds of evaluations gone, with
+        nothing in the log. This is not a resume: the new run starts from
+        scratch, but the old results are kept, renamed to
+        ``<stem>.prev-<YYYYmmdd-HHMMSS>[-N]<suffix>`` in the same directory
+        (a name none of the result-file globs match), and the move is logged.
+
+        Returns:
+            The backup paths created (empty when there was nothing to rotate).
+        """
+        if experiment_id is None:
+            experiment_id = self._get_config_value(lambda: self.config.domain.experiment_id, default='optimization', dict_key='EXPERIMENT_ID')
+
+        results_dir = Path(self.results_dir)
+        if not results_dir.is_dir():
+            return []
+
+        previous: List[Path] = []
+        for pattern in (
+            f"{experiment_id}_parallel_iteration_results.csv",
+            f"{experiment_id}_*_best_params.json",
+            f"{experiment_id}_*_pareto_front.csv",
+            f"{experiment_id}_*_final_evaluation.json",
+        ):
+            previous.extend(sorted(p for p in results_dir.glob(pattern) if p.is_file()))
+        if not previous:
+            return []
+
+        stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+        backups: List[Path] = []
+        for path in dict.fromkeys(previous):
+            backup = path.with_name(f"{path.stem}.prev-{stamp}{path.suffix}")
+            counter = 1
+            while backup.exists():
+                backup = path.with_name(f"{path.stem}.prev-{stamp}-{counter}{path.suffix}")
+                counter += 1
+            try:
+                path.rename(backup)
+            except OSError as e:
+                self.logger.warning(
+                    f"Could not move previous result file {path} aside ({e}); "
+                    "this run will overwrite it"
+                )
+                continue
+            backups.append(backup)
+
+        if backups:
+            self.logger.warning(
+                f"Found results of a previous run in {results_dir}; kept them as "
+                + ", ".join(b.name for b in backups)
+                + ". This run starts from scratch (calibration resume is not supported)."
+            )
+        return backups
+
     def save_results(
         self,
         algorithm: str,

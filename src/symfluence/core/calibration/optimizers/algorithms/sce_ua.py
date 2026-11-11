@@ -181,7 +181,7 @@ class SCEUAAlgorithm(OptimizationAlgorithm):
             n_members = complex_sizes[c]
 
             # Draw n_params+1 unique indices from the complex (without replacement).
-            simplex_idx = np.random.choice(n_members, simplex_size, replace=False)
+            simplex_idx = self._rng.choice(n_members, simplex_size, replace=False)
 
             # worst_in_simplex is an index into sub_complex (range 0..n_members-1)
             # pointing to the simplex member with the lowest fitness score.  This is
@@ -363,7 +363,7 @@ class SCEUAAlgorithm(OptimizationAlgorithm):
             else:
                 # Contraction also failed -- fall back to a uniformly random
                 # point.  This is the original SCE-UA final fallback.
-                random_point = np.random.uniform(0.0, 1.0, n_params)
+                random_point = self._rng.uniform(0.0, 1.0, n_params)
                 random_complex_ids.append(c)
                 random_candidates.append(random_point)
                 contraction_accepted.append(False)
@@ -499,6 +499,8 @@ class SCEUAAlgorithm(OptimizationAlgorithm):
                 best_score     -- Best fitness score.
                 best_params    -- Best parameters as a denormalised dict.
         """
+        # Per-run RNG (OptimizationAlgorithm._new_rng): never the process-global stream.
+        self._rng = self._new_rng()
         self.logger.info(f"Starting SCE-UA optimization with {n_params} parameters")
 
         # ---- Evolution tracking CSV setup ----
@@ -566,7 +568,7 @@ class SCEUAAlgorithm(OptimizationAlgorithm):
         # ---- Phase 1: Initialise and evaluate the full population ----
         self.logger.info(f"Evaluating initial population ({pop_size} individuals)...")
         population = self._seed_population(
-            np.random.uniform(0.0, 1.0, (pop_size, n_params)), kwargs)
+            self._rng.uniform(0.0, 1.0, (pop_size, n_params)), kwargs)
         fitness = evaluate_population(population, 0)
 
         # Rank population: index 0 is the best individual (descending fitness)

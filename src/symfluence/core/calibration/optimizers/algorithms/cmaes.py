@@ -87,6 +87,8 @@ class CMAESAlgorithm(OptimizationAlgorithm):
         Returns:
             Optimization results dictionary
         """
+        # Per-run RNG (OptimizationAlgorithm._new_rng): never the process-global stream.
+        self._rng = self._new_rng()
         self.logger.info(f"Starting CMA-ES optimization with {n_params} parameters")
 
         # Population size (lambda) - default heuristic from Hansen (2006)
@@ -153,7 +155,7 @@ class CMAESAlgorithm(OptimizationAlgorithm):
             z_samples = np.zeros((lambda_, n_params))
 
             for k in range(lambda_):
-                z = np.random.randn(n_params)
+                z = self._rng.standard_normal(n_params)
                 z_samples[k] = z
                 y = B @ (D * z)  # Transform by sqrt(C)
                 x = mean + sigma * y
@@ -298,10 +300,14 @@ class CMAESAlgorithm(OptimizationAlgorithm):
             # Update previous best for next iteration
             prev_best_fit = best_fit
 
-            # Early stopping: if sigma becomes very small, we've converged
-            # sigma < 1e-12 indicates the search has effectively collapsed to a point
-            if sigma < CMAESDefaults.CONVERGENCE_THRESHOLD:
-                self.logger.info(f"CMA-ES converged at generation {generation} (sigma < {CMAESDefaults.CONVERGENCE_THRESHOLD})")
+            # Early stopping: sigma has collapsed onto its floor, i.e. the search
+            # distribution has shrunk to a point (steps of 1e-10 in a unit box)
+            # and further generations re-evaluate the same parameter set.
+            if sigma <= CMAESDefaults.CONVERGENCE_THRESHOLD:
+                self.logger.info(
+                    f"CMA-ES converged at generation {generation} "
+                    f"(sigma <= {CMAESDefaults.CONVERGENCE_THRESHOLD:g})"
+                )
                 break
 
         return {

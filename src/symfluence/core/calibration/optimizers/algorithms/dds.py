@@ -65,6 +65,8 @@ class DDSAlgorithm(OptimizationAlgorithm):
         Returns:
             Optimization results dictionary
         """
+        # Per-run RNG (OptimizationAlgorithm._new_rng): never the process-global stream.
+        self._rng = self._new_rng()
         # DDS perturbation range (default 0.2, higher values explore more)
         r = self._get_config_value(lambda: self.config.optimization.dds.r, default=0.2, dict_key='DDS_R')
 
@@ -83,7 +85,7 @@ class DDSAlgorithm(OptimizationAlgorithm):
                 f"range=[{x_best.min():.4f}, {x_best.max():.4f}]"
             )
         else:
-            x_best = np.random.uniform(0, 1, n_params)
+            x_best = self._rng.uniform(0, 1, n_params)
             self.logger.info(f"Starting DDS optimization with {n_params} parameters (random start)")
 
         f_best = evaluate_solution(x_best, 0)
@@ -125,18 +127,18 @@ class DDSAlgorithm(OptimizationAlgorithm):
             p = max(p_min, max(1.0 / n_params, p))  # Ensure minimum perturbation probability
 
             # Select parameters to perturb
-            perturb_mask = np.random.random(n_params) < p
+            perturb_mask = self._rng.random(n_params) < p
 
             # Ensure at least one parameter is perturbed
             if not perturb_mask.any():
-                perturb_mask[np.random.randint(n_params)] = True
+                perturb_mask[self._rng.integers(n_params)] = True
 
             # Generate candidate solution
             x_new = x_best.copy()
 
             for i in range(n_params):
                 if perturb_mask[i]:
-                    perturbation = current_r * np.random.standard_normal()
+                    perturbation = current_r * self._rng.standard_normal()
                     x_new[i] = x_best[i] + perturbation
 
                     # Reflect at boundaries (use while loop for large perturbations)
