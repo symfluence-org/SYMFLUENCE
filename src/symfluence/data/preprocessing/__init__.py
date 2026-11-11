@@ -38,16 +38,9 @@ except ImportError as _e:
     RemappingWeightApplier: Any = None  # type: ignore[no-redef]
     _logger.warning("Failed to import resampling weight classes: %s", _e)
 
-try:
-    from .elevation_correction import ElevationCorrectionProcessor
-except ImportError as _e:
-    ElevationCorrectionProcessor: Any = None  # type: ignore[no-redef]
-    _logger.debug("ElevationCorrectionProcessor not available: %s", _e)
-
 __all__ = [
     'ForcingResampler',
     'GeospatialStatistics',
     'RemappingWeightGenerator',
     'RemappingWeightApplier',
-    'ElevationCorrectionProcessor',
 ]

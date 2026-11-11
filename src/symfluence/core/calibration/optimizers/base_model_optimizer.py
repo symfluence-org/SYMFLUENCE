@@ -891,6 +891,7 @@ class BaseModelOptimizer(
     def _evaluate_solution(
         self,
         normalized_params: np.ndarray,
+        *,
         proc_id: int = 0
     ) -> float:
         """
@@ -898,12 +899,14 @@ class BaseModelOptimizer(
 
         Args:
             normalized_params: Normalized parameters [0, 1]
-            proc_id: Process ID for parallel execution
+            proc_id: Process ID whose directories the evaluation uses
+                (keyword-only, so that an iteration counter cannot be passed
+                in its place)
 
         Returns:
             Fitness score
         """
-        score = self.population_evaluator.evaluate_solution(normalized_params, proc_id)
+        score = self.population_evaluator.evaluate_solution(normalized_params, proc_id=proc_id)
         self._metrics_tracker.track_evaluation(score)
         return score
 
@@ -1154,8 +1157,17 @@ class BaseModelOptimizer(
             default=10, dict_key='CHECKPOINT_INTERVAL',
         )
 
-        def evaluate_solution(normalized_params, proc_id=0):
-            return self._evaluate_solution(normalized_params, proc_id)
+        def evaluate_solution(normalized_params, step_id=0):
+            # The algorithm contract is ``evaluate_solution(x, step_id)``: the
+            # second argument is the algorithm's own iteration/step counter
+            # (Nelder-Mead, simulated annealing, Bayesian optimisation and
+            # single-objective MOEA/D pass it). It is NOT a process id — it
+            # used to be forwarded as one, which pointed those evaluations at
+            # another process's directories, or at the non-parallel defaults
+            # once the counter exceeded the number of processes. Single
+            # evaluations run in this process and always use process 0.
+            del step_id
+            return self._evaluate_solution(normalized_params, proc_id=0)
 
         def evaluate_population(population, iteration=0):
             return self._evaluate_population(population, iteration)

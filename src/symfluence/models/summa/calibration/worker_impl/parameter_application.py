@@ -44,8 +44,8 @@ def _apply_parameters_worker(params: Dict, task_data: Dict, settings_dir: Path, 
     """Apply a trial parameter set to the SUMMA (and mizuRoute) settings files.
 
     Uses the writers in ``calibration.parameter_files`` that
-    ``SUMMAParameterManager.update_model_files`` uses too, with the settings
-    file names taken from config.
+    ``SUMMAParameterManager.update_model_files`` uses too, on the files the
+    file manager in ``settings_dir`` points SUMMA at.
     """
     try:
         config = task_data['config']
@@ -92,13 +92,13 @@ def _apply_parameters_worker(params: Dict, task_data: Dict, settings_dir: Path, 
 
 
 def _update_soil_depths_worker(params: Dict, task_data: Dict, settings_dir: Path, logger, debug_info: Dict) -> bool:
-    """Rescale the soil layers of the configured coldState file."""
+    """Rescale the soil layers of the coldState file SUMMA reads."""
     original_depths_list = task_data.get('original_depths')
     if not original_depths_list:
         logger.debug("No original depths provided, skipping soil depth update")
         return True
 
-    names = resolve_settings_file_names(task_data.get('config'))
+    names = resolve_settings_file_names(task_data.get('config'), settings_dir)
     return update_soil_depths(
         Path(settings_dir) / names.coldstate, original_depths_list, params, logger, debug_info)
 
@@ -118,11 +118,11 @@ def _update_mizuroute_params_worker(params: Dict, task_data: Dict, logger, debug
 
 def _generate_trial_params_worker(params: Dict, settings_dir: Path, logger, debug_info: Dict,
                                   config: Optional[Dict] = None) -> bool:
-    """Write the configured trialParams file (in place when its layout allows)."""
-    names = resolve_settings_file_names(config)
+    """Write the trialParams file SUMMA reads (in place when its layout allows)."""
+    settings_dir = Path(settings_dir)
+    names = resolve_settings_file_names(config, settings_dir)
     basin_params = _configured_list(resolve_config_value(
         config, lambda: config.model.summa.basin_params_to_calibrate, None, 'BASIN_PARAMS_TO_CALIBRATE'))
-    settings_dir = Path(settings_dir)
     return write_trial_params(
         settings_dir / names.trialparams, settings_dir / names.attributes, params,
         logger, debug_info, gru_level_params=basin_params)

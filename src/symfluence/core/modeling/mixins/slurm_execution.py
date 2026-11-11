@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 from typing import Callable, List, Optional, Union
 
+from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.modeling.execution.model_executor import (
     ExecutionMode,
     ExecutionResult,
@@ -40,6 +41,21 @@ _SLURM_QUEUED_STATES = frozenset({
 
 #: Slack beyond the job's own time limit before the monitor cancels it.
 SLURM_TIME_LIMIT_MARGIN_S = 600.0
+
+
+class SlurmJobNotMonitoredError(ModelExecutionError):
+    """A SLURM job was submitted without monitoring, so the run is not finished.
+
+    Not a model failure: ``sbatch`` accepted the job and the caller was asked
+    not to wait for it. It is still an error for the step that submitted it,
+    because that step has produced no output yet and must not be recorded as
+    complete, nor may anything downstream consume its (absent or stale)
+    results. ``job_id`` identifies the job to check on.
+    """
+
+    def __init__(self, message: str, job_id: Optional[str] = None):
+        super().__init__(message)
+        self.job_id = job_id
 
 
 def parse_slurm_time_limit(value: Optional[str]) -> Optional[float]:

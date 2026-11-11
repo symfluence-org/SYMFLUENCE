@@ -141,6 +141,16 @@ class TaskBuilder(ConfigMixin):
         Returns:
             Task dictionary for worker execution
         """
+        # A process id outside the configured range silently selected the
+        # non-parallel default directories (or, inside the range, another
+        # process's). Algorithms used to reach this with an iteration counter.
+        n_proc = max(1, int(self.num_processes))
+        is_int = isinstance(proc_id, (int, np.integer)) and not isinstance(proc_id, bool)
+        if not is_int or not 0 <= proc_id < n_proc:
+            raise ValueError(
+                f"Invalid proc_id {proc_id!r} for an evaluation task: expected an "
+                f"integer in [0, {n_proc}) (NUM_PROCESSES={self.num_processes})."
+            )
         dirs = self.parallel_dirs.get(proc_id, {})
         settings_dir = Path(dirs.get('settings_dir', self.optimization_settings_dir))
         sim_dir = dirs.get('sim_dir', self.default_sim_dir)

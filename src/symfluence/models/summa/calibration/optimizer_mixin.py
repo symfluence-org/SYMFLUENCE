@@ -28,6 +28,7 @@ from .parameter_files import (
     DEFAULT_COLDSTATE_FILE,
     DEFAULT_TRIALPARAMS_FILE,
     SummaSettingsFiles,
+    read_file_manager_names,
 )
 
 if TYPE_CHECKING:
@@ -109,9 +110,9 @@ class SUMMAOptimizerMixin:
         """Copy necessary SUMMA settings files from project to optimization directory.
 
         Copies SUMMA configuration and control files needed for model runs.
-        Handles two modes:
-        1. **Regular mode**: Uses standard attributes.nc and coldState.nc
-        2. **Glacier mode**: Tries glacier-specific files first, falls back to regular
+        The attributes, coldState and trialParams files are the ones the file
+        manager names (e.g. attributes_glac.nc / coldState_glac.nc in a glacier
+        setup), falling back to the configured names.
 
         Files Copied:
             Required (all must exist):
@@ -121,9 +122,9 @@ class SUMMAOptimizerMixin:
             - basinParamInfo.txt: Basin parameter definitions
             - fileManager.txt (or custom): SUMMA file manager
 
-            Conditional (glacier mode):
-            - attributes.nc or attributes_glac.nc: Domain attributes
-            - coldState.nc or coldState_glac.nc: Initial conditions
+            Named by the file manager:
+            - attributeFile (required): Domain attributes
+            - initConditionFile: Initial conditions
 
             Optional (copy if exists):
             - *.TBL files: Parameter tables (GENPARM, MPTABLE, SOILPARM, VEGPARM)
@@ -141,7 +142,6 @@ class SUMMAOptimizerMixin:
         if not source_settings_dir.exists():
             raise FileOperationError(f"Source SUMMA settings directory not found: {source_settings_dir}")
 
-        glacier_mode = self._is_glacier_mode()
         summa_fm = self._get_summa_file_manager_name()
 
         required_files = [
@@ -155,21 +155,21 @@ class SUMMAOptimizerMixin:
         else:
             required_files.append('fileManager.txt')
 
-        # Add attributes and coldState files based on glacier mode
-        # File names come from config (SETTINGS_SUMMA_ATTRIBUTES / _COLDSTATE /
-        # _TRIALPARAMS): these are the files the file manager points SUMMA at
-        # and the ones the calibration writers update.
-        names = SummaSettingsFiles(
+        # Attributes / coldState / trialParams: the files the file manager
+        # points SUMMA at -- also the ones the calibration writers update (see
+        # resolve_settings_file_names). Config names (SETTINGS_SUMMA_ATTRIBUTES
+        # / _COLDSTATE / _TRIALPARAMS) fill in what the file manager leaves out.
+        # Glacier mode used to be guessed from 'glac' in the file manager name
+        # and then copied attributes_glac.nc / coldState_glac.nc whenever they
+        # existed, whichever files the file manager actually named.
+        configured = SummaSettingsFiles(
             attributes=self._get_config_value_safe('SETTINGS_SUMMA_ATTRIBUTES', DEFAULT_ATTRIBUTES_FILE),
             coldstate=self._get_config_value_safe('SETTINGS_SUMMA_COLDSTATE', DEFAULT_COLDSTATE_FILE),
             trialparams=self._get_config_value_safe('SETTINGS_SUMMA_TRIALPARAMS', DEFAULT_TRIALPARAMS_FILE),
         )
-        if glacier_mode:
-            attr_files = ['attributes_glac.nc', names.attributes]
-            cold_files = ['coldState_glac.nc', names.coldstate]
-        else:
-            attr_files = [names.attributes]
-            cold_files = [names.coldstate]
+        names = configured._replace(**read_file_manager_names(source_settings_dir / required_files[-1]))
+        attr_files = [names.attributes]
+        cold_files = [names.coldstate]
 
         optional_files = [
             'TBL_GENPARM.TBL', 'TBL_MPTABLE.TBL', 'TBL_SOILPARM.TBL', 'TBL_VEGPARM.TBL',
@@ -187,7 +187,7 @@ class SUMMAOptimizerMixin:
             else:
                 raise FileOperationError(f"Required SUMMA settings file not found: {source_path}")
 
-        # Copy attributes files (glacier mode tries glacier files first)
+        # Copy the attributes file
         attr_copied = False
         for attr_file in attr_files:
             source_path = source_settings_dir / attr_file
@@ -198,9 +198,10 @@ class SUMMAOptimizerMixin:
                 attr_copied = True
                 break
         if not attr_copied:
-            raise FileOperationError(f"No attributes file found in {source_settings_dir}")
+            raise FileOperationError(
+                f"Attributes file {names.attributes} (named by {required_files[-1]}) not found in {source_settings_dir}")
 
-        # Copy coldState files (glacier mode tries glacier files first)
+        # Copy the coldState file
         cold_copied = False
         for cold_file in cold_files:
             source_path = source_settings_dir / cold_file
