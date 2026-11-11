@@ -721,88 +721,10 @@ class MizuRouteTopologyGenerator:
             else:
                 adj[i] = -1
 
-        visited = set()
-        path_set = set()
-        path_stack = []
         cycles_found = 0
         fixed_down_ids = down_seg_ids.copy()
 
-        def visit(u):
-            nonlocal cycles_found
-
-            [(u, iter(adj.get(u, []) if u in adj and adj[u] != -1 else []))]
-            path_set.add(u)
-            path_stack.append(u)
-            visited.add(u)
-
-            # Iterative DFS to avoid recursion depth issues
-            curr = u
-            while True:
-                neighbor = adj.get(curr, -1)
-
-                if neighbor == -1:
-                    # End of path
-                    path_set.remove(curr)
-                    path_stack.pop()
-                    if not path_stack:
-                        break
-                    curr = path_stack[-1]
-                    continue
-
-                if neighbor in path_set:
-                    # Cycle detected
-                    cycle_nodes_idx = []
-                    # Extract cycle from path_stack
-                    try:
-                        start_pos = path_stack.index(neighbor)
-                        cycle_nodes_idx = path_stack[start_pos:]
-                    except ValueError:
-                        pass # Should not happen
-
-                    if cycle_nodes_idx:
-                        cycles_found += 1
-
-                        # Find node with lowest elevation in cycle
-                        min_elev = float('inf')
-                        sink_node_idx = -1
-
-                        for idx in cycle_nodes_idx:
-                            elev = elevations[idx]
-                            if elev < min_elev:
-                                min_elev = elev
-                                sink_node_idx = idx
-
-                        # Break cycle: make sink_node an outlet
-                        if sink_node_idx != -1:
-                            fixed_down_ids[sink_node_idx] = 0
-                            # Update adjacency to reflect break for future traversals
-                            adj[sink_node_idx] = -1
-
-                    # Backtrack
-                    path_set.remove(curr)
-                    path_stack.pop()
-                    if not path_stack:
-                        break
-                    curr = path_stack[-1]
-                    continue
-
-                if neighbor not in visited:
-                    visited.add(neighbor)
-                    path_set.add(neighbor)
-                    path_stack.append(neighbor)
-                    curr = neighbor
-                else:
-                    # Already visited, not a cycle
-                    path_set.remove(curr)
-                    path_stack.pop()
-                    if not path_stack:
-                        break
-                    curr = path_stack[-1]
-
-        # Iterative DFS wrapper
-        # The above nested function approach was a bit mix of recursive/iterative thinking.
-        # Let's implement a clean iterative DFS.
-
+        # Iterative DFS (no recursion-depth limit on long networks)
         visited = set()
         path_set = set()
 
@@ -874,15 +796,6 @@ class MizuRouteTopologyGenerator:
     def _create_topology_dimensions(self, ncid, num_seg, num_hru):
         ncid.createDimension('seg', num_seg)
         ncid.createDimension('hru', num_hru)
-
-    def _create_topology_variables(self, ncid, shp_river, shp_basin):
-        self._create_and_fill_nc_var(ncid, 'segId', 'int', 'seg', shp_river[self.pp.river_segid_col].values.astype(int), 'Unique ID of each stream segment', '-')
-        self._create_and_fill_nc_var(ncid, 'downSegId', 'int', 'seg', shp_river[self.pp.river_downsegid_col].values.astype(int), 'ID of the downstream segment', '-')
-        self._create_and_fill_nc_var(ncid, 'slope', 'f8', 'seg', shp_river[self.pp.river_slope_col].values.astype(float), 'Segment slope', '-')
-        self._create_and_fill_nc_var(ncid, 'length', 'f8', 'seg', shp_river[self.pp.river_length_col].values.astype(float), 'Segment length', 'm')
-        self._create_and_fill_nc_var(ncid, 'hruId', 'int', 'hru', shp_basin[self.pp.basin_gruid_col].values.astype(int), 'Unique hru ID', '-')
-        self._create_and_fill_nc_var(ncid, 'hruToSegId', 'int', 'hru', shp_basin[self.pp.basin_hru_to_seg_col].values.astype(int), 'ID of the stream segment to which the HRU discharges', '-')
-        self._create_and_fill_nc_var(ncid, 'area', 'f8', 'hru', shp_basin[self.pp.basin_area_col].values.astype(float), 'HRU area', 'm^2')
 
     def _create_and_fill_nc_var(self, ncid, var_name, var_type, dim, fill_data, long_name, units):
         ncvar = ncid.createVariable(var_name, var_type, (dim,))
