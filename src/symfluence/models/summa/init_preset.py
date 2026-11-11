@@ -106,7 +106,7 @@ def summa_basic_preset():
             'GEOFABRIC_TYPE': 'TDX',
             'STREAM_THRESHOLD': 1000,
             'ELEVATION_BAND_SIZE': 200,
-            'MIN_HRU_SIZE': 4,
+            'MIN_HRU_SIZE': 0,
 
             # Forcing settings
             'FORCING_DATASET': 'ERA5',
