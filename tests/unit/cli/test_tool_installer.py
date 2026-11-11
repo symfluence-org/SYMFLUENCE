@@ -164,23 +164,113 @@ def test_clone_with_retry_reraises_after_exhausting_attempts(mock_external_tools
         installer._clone_with_retry(["git", "clone", "x", "y"], {}, tmp_path / "c", attempts=3)
 
 
-def test_install_fails_fast_when_required_tool_missing(mock_external_tools, tmp_path):
-    """A tool with unmet `requires` should not proceed to build."""
+def _mocked_installer(mock_external_tools, tmp_path):
     from symfluence.cli.services.tool_installer import ToolInstaller
 
     installer = ToolInstaller(external_tools=mock_external_tools)
-
     installer._load_config = MagicMock(return_value={"SYMFLUENCE_DATA_DIR": str(tmp_path)})
     installer._clone_repository = MagicMock(return_value=True)
     installer._check_system_dependencies = MagicMock(return_value=[])
     installer._run_build_commands = MagicMock(return_value=True)
     installer._verify_installation = MagicMock(return_value=True)
+    return installer
+
+
+def _built(installer):
+    return [call.args[0] for call in installer._run_build_commands.call_args_list]
+
+
+def test_install_fails_dependents_of_a_failed_requirement(mock_external_tools, tmp_path):
+    """A tool whose required tool failed must not be built against it."""
+    installer = _mocked_installer(mock_external_tools, tmp_path)
+    installer._run_build_commands = MagicMock(
+        side_effect=lambda name, info, install_dir: name != "sundials")
 
     result = installer.install(specific_tools=["summa"], force=True)
 
-    assert all(call.args[0] != "summa" for call in installer._run_build_commands.call_args_list)
+    assert _built(installer) == ["sundials"]
+    assert "sundials" in result["failed"]
     assert "summa" in result["failed"]
     assert "summa" not in result["successful"]
+    assert any("summa requires sundials" in e for e in result["errors"])
+    # the dependent was refused before its checkout was touched
+    cloned = [call.args[2].name for call in installer._clone_repository.call_args_list]
+    assert cloned == ["sundials"]
+
+
+def test_requirement_must_verify_not_merely_exist(mock_external_tools, tmp_path):
+    """`requires` only tested that the dependency *directory* existed -- which
+    a failed build leaves behind."""
+    installer = _mocked_installer(mock_external_tools, tmp_path)
+    tools = {"summa": mock_external_tools["summa"]}
+    (tmp_path / "installs" / "sundials").mkdir(parents=True)  # no library inside
+    installer._verify_installation = MagicMock(
+        side_effect=lambda name, info, install_dir: name != "sundials")
+
+    unmet = installer._unmet_requirement(
+        tools["summa"], tmp_path / "installs",
+        {"successful": [], "failed": [], "skipped": []}, dry_run=False)
+
+    assert unmet is not None and "does not verify" in unmet
+
+
+def test_overrides_and_force_apply_only_to_named_tools(mock_external_tools, tmp_path):
+    """`binary install summa --git-hash <sha> --force` applied the SUMMA hash
+    to the auto-added SUNDIALS checkout (which fails) after wiping a working
+    SUNDIALS."""
+    installer = _mocked_installer(mock_external_tools, tmp_path)
+    sundials_lib = tmp_path / "installs" / "sundials" / "lib"
+    sundials_lib.mkdir(parents=True)
+    (sundials_lib / "libsundials_core.a").write_text("lib")
+    (tmp_path / "installs" / "summa").mkdir()
+
+    result = installer.install(
+        specific_tools=["summa"], force=True, git_hash="abc123", branch_override="feature/x")
+
+    # SUNDIALS verified and was left alone; only SUMMA was rebuilt
+    assert "sundials" in result["skipped"]
+    assert (sundials_lib / "libsundials_core.a").exists()
+    assert _built(installer) == ["summa"]
+    (clone_call,) = installer._clone_repository.call_args_list
+    assert clone_call.args[1] == "feature/x"
+    assert clone_call.kwargs["git_hash"] == "abc123"
+
+
+def test_overrides_reach_a_dependency_only_when_it_is_named(mock_external_tools, tmp_path):
+    installer = _mocked_installer(mock_external_tools, tmp_path)
+
+    installer.install(specific_tools=["summa"], git_hash="abc123")
+    by_tool = {c.args[2].name: c for c in installer._clone_repository.call_args_list}
+    assert by_tool["sundials"].kwargs["git_hash"] is None
+    assert by_tool["summa"].kwargs["git_hash"] == "abc123"
+
+
+def test_unknown_tool_fails_before_anything_is_done(mock_external_tools, tmp_path):
+    installer = _mocked_installer(mock_external_tools, tmp_path)
+
+    result = installer.install(specific_tools=["taudem", "no-such-tool"])
+
+    assert result["failed"] == ["no-such-tool"]
+    assert result["successful"] == []
+    assert any("Unknown tool: no-such-tool" in e for e in result["errors"])
+    installer._clone_repository.assert_not_called()
+    installer._run_build_commands.assert_not_called()
+    assert not (tmp_path / "installs").exists()
+
+
+def test_dry_run_changes_nothing(mock_external_tools, tmp_path):
+    installer = _mocked_installer(mock_external_tools, tmp_path)
+    existing = tmp_path / "installs" / "summa"
+    existing.mkdir(parents=True)
+    (existing / "keep.txt").write_text("x")
+
+    result = installer.install(specific_tools=["summa"], force=True, dry_run=True)
+
+    assert (existing / "keep.txt").exists()
+    installer._clone_repository.assert_not_called()
+    installer._run_build_commands.assert_not_called()
+    assert result["failed"] == []
+    assert "summa (dry run)" in result["successful"]
 
 
 def test_install_rebuilds_when_existing_dir_fails_verification(mock_external_tools, tmp_path):

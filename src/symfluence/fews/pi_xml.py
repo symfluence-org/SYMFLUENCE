@@ -4,23 +4,33 @@
 """
 PI-XML timeseries reader and writer.
 
-Implements read/write for the Delft-FEWS PI-XML timeseries format using only
-``xml.etree.ElementTree`` (stdlib) and ``xarray``.
+Implements read/write for the Delft-FEWS PI-XML timeseries format
+(``pi_timeseries.xsd``) using only ``xml.etree.ElementTree`` (stdlib) and
+``xarray``.
 
 PI-XML namespace: ``http://www.wldelft.nl/fews/PI``
+
+Conventions honoured on both sides:
+
+* a series is identified by ``(parameterId, locationId)`` -- two locations of
+  one parameter are two series, not one;
+* each header's ``<missVal>`` marks that series' missing values;
+* event times are local to the document's ``<timeZone>`` (decimal hours from
+  GMT); datasets always carry UTC.
 """
 from __future__ import annotations
 
 # Security rationale: parsing trusted FEWS PI-XML files
 import xml.etree.ElementTree as ET  # nosec B405
-from datetime import datetime, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import xarray as xr
 
 from .exceptions import PIXMLError
+from .run_info import local_name, parse_time_zone
 
 # FEWS PI namespace
 _NS = "http://www.wldelft.nl/fews/PI"
@@ -34,9 +44,22 @@ def _tag(name: str) -> str:
 
 def _strip_ns(tag: str) -> str:
     """Remove namespace prefix from tag."""
-    if "}" in tag:
-        return tag.split("}", 1)[1]
-    return tag
+    return local_name(tag)
+
+
+def _child(elem: ET.Element, name: str) -> Optional[ET.Element]:
+    """First child with the given local name, whatever its namespace."""
+    for child in elem:
+        if local_name(child.tag) == name:
+            return child
+    return None
+
+
+def _child_text(elem: ET.Element, name: str) -> Optional[str]:
+    child = _child(elem, name)
+    if child is None or child.text is None or not child.text.strip():
+        return None
+    return child.text.strip()
 
 
 # ---------------------------------------------------------------------------
@@ -46,18 +69,26 @@ def _strip_ns(tag: str) -> str:
 def read_pi_xml_timeseries(path: Path, missing_value: float = -999.0) -> xr.Dataset:
     """Read a PI-XML timeseries file into an xarray Dataset.
 
-    Each ``<series>`` becomes a data variable keyed by its parameterId.
-    The time axis is the union of all event timestamps.
+    Each parameterId becomes a data variable. When the file holds a single
+    location the variables are 1-D over ``time`` and carry the location in
+    their ``location_id`` attribute; with several locations every variable is
+    2-D over ``(time, location)`` with a ``location`` coordinate, so no series
+    is dropped. The time axis is the union of all event timestamps, in UTC
+    (the document's ``<timeZone>`` offset is removed).
 
     Args:
         path: Path to PI-XML file
-        missing_value: Value to interpret as NaN
+        missing_value: Missing-value sentinel for series whose header has no
+            ``<missVal>``
 
     Returns:
-        xr.Dataset with time dimension and one variable per series
+        xr.Dataset with a UTC ``time`` dimension; variables carry ``units``
+        (when the header has them) and ``fews_type`` attributes
 
     Raises:
-        PIXMLError: If the file cannot be parsed
+        PIXMLError: If the file cannot be parsed, or two series share the
+            same (parameterId, locationId) -- qualifiers and ensemble members
+            are not supported and are refused rather than overwritten
     """
     path = Path(path)
     if not path.is_file():
@@ -69,108 +100,137 @@ def read_pi_xml_timeseries(path: Path, missing_value: float = -999.0) -> xr.Data
         raise PIXMLError(f"Malformed PI-XML in {path}: {exc}") from exc
 
     root = tree.getroot()
+    time_zone_hours = parse_time_zone(root, error=PIXMLError)
+    tz_shift = timedelta(hours=time_zone_hours)
 
-    # Detect namespace
-    ns = ""
-    if root.tag.startswith("{"):
-        ns = root.tag.split("}")[0] + "}"
-
-    series_elements = root.findall(f"{ns}series")
-    if not series_elements:
-        # Fallback: try without namespace
-        series_elements = root.findall("series")
-
+    series_elements = [e for e in root if local_name(e.tag) == "series"]
     if not series_elements:
         raise PIXMLError(f"No <series> elements found in {path}")
 
-    all_times: List[datetime] = []
-    series_data: List[Dict] = []
+    all_times: set = set()
+    series_data: Dict[Tuple[str, str], Dict] = {}
 
     for series_elem in series_elements:
-        header = series_elem.find(f"{ns}header")
-        if header is None:
-            header = series_elem.find("header")
+        header = _child(series_elem, "header")
         if header is None:
             raise PIXMLError("Missing <header> in <series>")
 
-        param_elem = header.find(f"{ns}parameterId")
-        if param_elem is None:
-            param_elem = header.find("parameterId")
-        param_id = param_elem.text.strip() if param_elem is not None and param_elem.text else "unknown"
+        param_id = _child_text(header, "parameterId")
+        if param_id is None:
+            raise PIXMLError(f"<series> header without <parameterId> in {path}")
+        location_id = _child_text(header, "locationId") or "default"
 
-        loc_elem = header.find(f"{ns}locationId")
-        if loc_elem is None:
-            loc_elem = header.find("locationId")
-        location_id = loc_elem.text.strip() if loc_elem is not None and loc_elem.text else "default"
+        key = (param_id, location_id)
+        if key in series_data:
+            raise PIXMLError(
+                f"Two series in {path} share parameterId '{param_id}' and locationId "
+                f"'{location_id}' (qualifiers / ensemble members are not supported); "
+                "export one series per parameter and location."
+            )
 
-        # Read events
+        miss_text = _child_text(header, "missVal")
+        try:
+            series_missing = float(miss_text) if miss_text is not None else float(missing_value)
+        except ValueError:
+            raise PIXMLError(f"Invalid <missVal> '{miss_text}' in {path}") from None
+
         events: Dict[datetime, float] = {}
-        for event in series_elem.findall(f"{ns}event"):
-            dt_str = event.get("date", "") + "T" + event.get("time", "00:00:00")
-            try:
-                dt = datetime.fromisoformat(dt_str).replace(tzinfo=timezone.utc)
-            except ValueError:
+        for event in series_elem:
+            if local_name(event.tag) != "event":
                 continue
-            val_str = event.get("value", "")
+            stamp = f"{event.get('date', '')}T{event.get('time', '00:00:00')}"
             try:
-                val = float(val_str)
+                dt = datetime.fromisoformat(stamp) - tz_shift
             except ValueError:
+                raise PIXMLError(
+                    f"Invalid event date/time '{stamp}' for {param_id}@{location_id} in {path}"
+                ) from None
+            try:
+                val = float(event.get("value", ""))
+            except ValueError:
+                val = np.nan
+            # NaN missVal (the schema default) never equals anything; NaN
+            # values are missing already.
+            if not np.isnan(val) and not np.isnan(series_missing) \
+                    and np.isclose(val, series_missing):
                 val = np.nan
             events[dt] = val
 
-        if not events:
-            # Try without namespace
-            for event in series_elem.findall("event"):
-                dt_str = event.get("date", "") + "T" + event.get("time", "00:00:00")
-                try:
-                    dt = datetime.fromisoformat(dt_str).replace(tzinfo=timezone.utc)
-                except ValueError:
-                    continue
-                val_str = event.get("value", "")
-                try:
-                    val = float(val_str)
-                except ValueError:
-                    val = np.nan
-                events[dt] = val
-
-        all_times.extend(events.keys())
-        series_data.append({
-            "param_id": param_id,
-            "location_id": location_id,
+        all_times.update(events)
+        series_data[key] = {
             "events": events,
-        })
+            "units": _child_text(header, "units"),
+            "type": _child_text(header, "type"),
+        }
 
     if not all_times:
         raise PIXMLError(f"No timesteps found in {path}")
 
-    # Build unified time axis
-    unique_times = sorted(set(all_times))
-    time_index = np.array([dt.replace(tzinfo=None) for dt in unique_times], dtype="datetime64[ns]")
+    unique_times = sorted(all_times)
+    position = {t: i for i, t in enumerate(unique_times)}
+    time_index = np.array(unique_times, dtype="datetime64[ns]")
+
+    locations = sorted({loc for _, loc in series_data})
+    parameters: List[str] = []
+    for param_id, _ in series_data:
+        if param_id not in parameters:
+            parameters.append(param_id)
+    multi_location = len(locations) > 1
 
     data_vars = {}
-    for sd in series_data:
-        values = np.full(len(unique_times), np.nan, dtype=np.float64)
-        for i, t in enumerate(unique_times):
-            if t in sd["events"]:
-                val = sd["events"][t]
-                if np.isclose(val, missing_value):
-                    values[i] = np.nan
-                else:
-                    values[i] = val
-        var_name = sd["param_id"]
-        data_vars[var_name] = xr.DataArray(
-            values,
-            dims=["time"],
-            attrs={"location_id": sd["location_id"]},
-        )
+    for param_id in parameters:
+        members = {loc: sd for (p, loc), sd in series_data.items() if p == param_id}
+        attrs: Dict[str, str] = {}
+        units = {sd["units"] for sd in members.values() if sd["units"]}
+        if len(units) > 1:
+            raise PIXMLError(
+                f"parameterId '{param_id}' has different units at different "
+                f"locations in {path}: {sorted(units)}"
+            )
+        if units:
+            attrs["units"] = units.pop()
+        types = {sd["type"] for sd in members.values() if sd["type"]}
+        if len(types) == 1:
+            attrs["fews_type"] = types.pop()
 
-    ds = xr.Dataset(data_vars, coords={"time": time_index})
-    return ds
+        if multi_location:
+            values = np.full((len(unique_times), len(locations)), np.nan)
+            for loc, sd in members.items():
+                column = locations.index(loc)
+                for t, val in sd["events"].items():
+                    values[position[t], column] = val
+            data_vars[param_id] = xr.DataArray(values, dims=["time", "location"], attrs=attrs)
+        else:
+            (loc, sd), = members.items()
+            values = np.full(len(unique_times), np.nan)
+            for t, val in sd["events"].items():
+                values[position[t]] = val
+            attrs["location_id"] = loc
+            data_vars[param_id] = xr.DataArray(values, dims=["time"], attrs=attrs)
+
+    coords: Dict[str, object] = {"time": time_index}
+    if multi_location:
+        coords["location"] = locations
+    return xr.Dataset(data_vars, coords=coords)
 
 
 # ---------------------------------------------------------------------------
 # Writer
 # ---------------------------------------------------------------------------
+
+def _time_step_attrs(times: np.ndarray) -> Dict[str, str]:
+    """PI ``<timeStep>`` attributes for a time axis (equidistant or not)."""
+    if len(times) >= 2:
+        steps = np.diff(times.astype("datetime64[s]")).astype("int64")
+        if steps[0] > 0 and np.all(steps == steps[0]):
+            return {"unit": "second", "multiplier": str(int(steps[0]))}
+    return {"unit": "nonequidistant"}
+
+
+def _set_date_time(elem: ET.Element, dt: datetime) -> None:
+    elem.set("date", dt.strftime("%Y-%m-%d"))
+    elem.set("time", dt.strftime("%H:%M:%S"))
+
 
 def write_pi_xml_timeseries(
     dataset: xr.Dataset,
@@ -182,14 +242,20 @@ def write_pi_xml_timeseries(
 ) -> None:
     """Write an xarray Dataset as PI-XML timeseries.
 
-    Each data variable in the dataset becomes a ``<series>``.
+    Each data variable becomes one ``<series>`` per location: variables over
+    ``(time, location)`` write a series for every entry of the ``location``
+    coordinate; 1-D variables use their ``location_id`` attribute, else
+    ``location_id``. Headers are complete per ``pi_timeseries.xsd`` (type,
+    locationId, parameterId, timeStep, startDate, endDate, missVal, and units
+    when the variable has a ``units`` attribute).
 
     Args:
-        dataset: Dataset with a ``time`` coordinate
+        dataset: Dataset with a UTC ``time`` coordinate
         path: Output file path
         missing_value: Value to use for NaN in PI-XML
-        location_id: Default location ID (overridden by variable attr if present)
-        time_zone: Timezone offset in hours (0.0 = UTC)
+        location_id: Location ID for 1-D variables without a ``location_id`` attr
+        time_zone: Offset in hours from GMT of the *written* times; the UTC
+            times of the dataset are shifted by it and ``<timeZone>`` records it
 
     Raises:
         PIXMLError: If writing fails
@@ -197,48 +263,63 @@ def write_pi_xml_timeseries(
     path = Path(path)
 
     try:
+        if "time" not in dataset.coords or dataset.sizes.get("time", 0) == 0:
+            raise ValueError("dataset has no time steps")
+
         root = ET.Element("TimeSeries")
         root.set("xmlns", _NS)
         root.set("xmlns:xsi", "http://www.w3.org/2001/XMLSchema-instance")
 
         tz_elem = ET.SubElement(root, "timeZone")
-        tz_elem.text = str(time_zone)
+        tz_elem.text = str(float(time_zone))
 
-        times = dataset["time"].values
+        times_utc = dataset["time"].values.astype("datetime64[s]")
+        local = [
+            t.astype(datetime) + timedelta(hours=float(time_zone)) for t in times_utc
+        ]
+        time_step = _time_step_attrs(times_utc)
 
         for var_name in dataset.data_vars:
             da = dataset[var_name]
-            series = ET.SubElement(root, "series")
-            header = ET.SubElement(series, "header")
+            extra_dims = [d for d in da.dims if d != "time"]
+            if "time" not in da.dims or extra_dims not in ([], ["location"]):
+                raise ValueError(
+                    f"variable '{var_name}' has dimensions {da.dims}; PI-XML series "
+                    "need (time) or (time, location)"
+                )
+            if extra_dims:
+                columns = [
+                    (str(loc), da.sel(location=loc).transpose("time").values)
+                    for loc in da["location"].values
+                ]
+            else:
+                columns = [(str(da.attrs.get("location_id", location_id)), da.values)]
 
-            type_elem = ET.SubElement(header, "type")
-            type_elem.text = "instantaneous"
+            for series_location, values in columns:
+                series = ET.SubElement(root, "series")
+                header = ET.SubElement(series, "header")
 
-            loc_elem = ET.SubElement(header, "locationId")
-            loc_elem.text = da.attrs.get("location_id", location_id)
+                ET.SubElement(header, "type").text = str(
+                    da.attrs.get("fews_type", "instantaneous"))
+                ET.SubElement(header, "locationId").text = series_location
+                ET.SubElement(header, "parameterId").text = str(var_name)
+                ET.SubElement(header, "timeStep", time_step)
+                _set_date_time(ET.SubElement(header, "startDate"), local[0])
+                _set_date_time(ET.SubElement(header, "endDate"), local[-1])
+                ET.SubElement(header, "missVal").text = str(missing_value)
+                units = da.attrs.get("units")
+                if units:
+                    # <units> is optional; an invented "-" is worse than none
+                    ET.SubElement(header, "units").text = str(units)
 
-            param_elem = ET.SubElement(header, "parameterId")
-            param_elem.text = str(var_name)
-
-            miss_elem = ET.SubElement(header, "missVal")
-            miss_elem.text = str(missing_value)
-
-            unit_elem = ET.SubElement(header, "units")
-            unit_elem.text = da.attrs.get("units", "-")
-
-            values = da.values
-            for i, t in enumerate(times):
-                val = float(values[i])
-                ts = np.datetime64(t, "ns")
-                dt = ts.astype("datetime64[s]").astype(datetime)
-
-                event = ET.SubElement(series, "event")
-                event.set("date", dt.strftime("%Y-%m-%d"))
-                event.set("time", dt.strftime("%H:%M:%S"))
-                if np.isnan(val):
-                    event.set("value", str(missing_value))
-                else:
-                    event.set("value", f"{val:.6g}")
+                for dt, raw in zip(local, values):
+                    val = float(raw)
+                    event = ET.SubElement(series, "event")
+                    _set_date_time(event, dt)
+                    if np.isnan(val):
+                        event.set("value", str(missing_value))
+                    else:
+                        event.set("value", f"{val:.6g}")
 
         path.parent.mkdir(parents=True, exist_ok=True)
         tree = ET.ElementTree(root)

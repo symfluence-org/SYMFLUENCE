@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import sys
-import tempfile
 from pathlib import Path
 
 # Python 3.9+ importlib.resources
@@ -262,9 +262,69 @@ def get_agents_dir() -> Path:
         ) from e
 
 
+def _user_cache_base() -> Path:
+    """The current user's cache directory (no third-party dependency)."""
+    if sys.platform == 'win32':
+        base = os.environ.get('LOCALAPPDATA')
+        return Path(base) if base else Path.home() / 'AppData' / 'Local'
+    if sys.platform == 'darwin':
+        return Path.home() / 'Library' / 'Caches'
+    base = os.environ.get('XDG_CACHE_HOME')
+    return Path(base) if base else Path.home() / '.cache'
+
+
+def _ensure_private_dir(path: Path) -> Path:
+    """Create ``path`` as a directory only its owner can use, or refuse it.
+
+    The agent cache carries permission requests and their replies, job
+    records and the skill files handed to the agent CLI. If another local
+    user could write there they could approve a tool call on the user's
+    behalf or swap a skill file, so the directory must belong to the current
+    user and be closed to group and others (mode 0700). An existing directory
+    that fails either test -- or is a symlink -- is refused, never "fixed":
+    its contents may already have been tampered with.
+
+    On Windows the per-user profile directory already carries a user-only
+    ACL, and POSIX mode bits are not meaningful, so only creation is done.
+    """
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if sys.platform == 'win32':
+        return path
+    info = os.lstat(path)
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+        raise PermissionError(
+            f"Refusing to use the agent cache at {path}: it is not a real directory."
+        )
+    if info.st_uid != os.getuid():
+        raise PermissionError(
+            f"Refusing to use the agent cache at {path}: it is owned by another user."
+        )
+    if stat.S_IMODE(info.st_mode) & 0o077:
+        raise PermissionError(
+            f"Refusing to use the agent cache at {path}: it is accessible to other "
+            f"users (mode {stat.S_IMODE(info.st_mode):04o}). Remove it, or run "
+            f"'chmod 700 {path}' after checking its contents."
+        )
+    return path
+
+
 def agent_cache_root() -> Path:
-    """The scratch directory where launch-time agent context is materialized."""
-    return Path(tempfile.gettempdir()) / 'symfluence-agent-skills'
+    """The per-user directory where launch-time agent context is materialized.
+
+    Lives under the user's cache directory (``SYMFLUENCE_AGENT_CACHE_DIR``
+    overrides the location), is created with mode 0700, and is verified to be
+    owned by the current user and closed to others on every call -- it used to
+    be a fixed name in the shared temp directory. The path is deterministic
+    because the TUI and the MCP server (a child of the agent CLI, not of the
+    TUI) meet there.
+
+    Raises:
+        PermissionError: If the directory exists but is not private to the
+            current user.
+    """
+    override = os.environ.get('SYMFLUENCE_AGENT_CACHE_DIR')
+    path = Path(override) if override else _user_cache_base() / 'symfluence' / 'agent'
+    return _ensure_private_dir(path)
 
 
 def parse_frontmatter(md_file: Path) -> tuple[dict, str] | None:

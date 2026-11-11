@@ -21,6 +21,71 @@ from .base import BaseCommand, cli_exception_handler
 logger = logging.getLogger(__name__)
 
 
+DELTARES_FEWS_URL = "https://oss.deltares.nl/web/delft-fews"
+
+
+def _diag_path(run_info_path: Path) -> Path:
+    """Where FEWS expects the diagnostics file for this run.
+
+    The run file names it (``<outputDiagnosticFile>``); hand-written run files
+    without one get ``toFews/diag.xml`` next to the run file. A run file that
+    cannot be parsed also falls back there, so the parse error itself can
+    still be reported to FEWS.
+    """
+    fallback = run_info_path.parent / "toFews" / "diag.xml"
+    from symfluence.fews.exceptions import FEWSAdapterError
+    from symfluence.fews.run_info import parse_run_info
+    try:
+        run_info = parse_run_info(run_info_path)
+    except (FEWSAdapterError, OSError, ValueError):
+        return fallback
+    return run_info.output_diagnostic_file or fallback
+
+
+def _run_model(config_path: Path, overrides: dict, debug: bool = False) -> list:
+    """Run the SYMFLUENCE workflow for a FEWS run; return failed step names.
+
+    The FEWS-derived overrides (run period, DOMAIN_NAME, ...) are applied on
+    top of the base configuration -- running the base config unchanged would
+    simulate whatever period it happens to contain.
+    """
+    from symfluence import SYMFLUENCE
+
+    symfluence = SYMFLUENCE(config_path, config_overrides=dict(overrides), debug_mode=debug)
+    symfluence.run_workflow()
+    return list(symfluence.get_failed_steps())
+
+
+def _find_fews_installation():
+    """Locate a real Delft-FEWS installation, or return ``(None, searched)``.
+
+    ``FEWS_HOME`` wins; otherwise the directory ``symfluence binary install
+    openfews`` prepares. It only counts as an installation when Deltares'
+    FEWS jars are actually there -- SYMFLUENCE creates the directory and the
+    adapter template but cannot ship FEWS itself.
+    """
+    import os
+
+    candidates = []
+    if os.environ.get("FEWS_HOME"):
+        candidates.append(Path(os.environ["FEWS_HOME"]))
+    try:
+        from symfluence.cli.services.tool_installer import ToolInstaller
+        installer = ToolInstaller()
+        data_dir, _ = installer._resolve_data_dir(installer._load_config(None))
+        candidates.append(Path(data_dir) / "installs" / "openfews")
+    except (ImportError, AttributeError, OSError, TypeError, ValueError):
+        pass
+
+    for home in candidates:
+        lib = home / "lib"
+        if lib.is_dir() and any(lib.rglob("*fews*.jar")) or (
+            (home / "bin").is_dir() and any((home / "bin").rglob("Delft_FEWS*.jar"))
+        ):
+            return home, candidates
+    return None, candidates
+
+
 class FEWSCommands(BaseCommand):
     """Command handlers for the ``symfluence fews`` category."""
 
@@ -32,14 +97,11 @@ class FEWSCommands(BaseCommand):
         from symfluence.fews.pre_adapter import FEWSPreAdapter
 
         run_info_path = Path(args.run_info)
-        base_config = Path(args.config) if hasattr(args, 'config') and args.config else None
+        base_config = Path(args.config) if getattr(args, 'config', None) else None
         data_format = getattr(args, 'format', 'netcdf-cf')
         id_map_path = getattr(args, 'id_map', None)
 
-        # Determine diagnostics output location
-        diag_dir = run_info_path.parent / "toFews"
-        diag_dir.mkdir(parents=True, exist_ok=True)
-        diag = DiagnosticsCollector(diag_dir / "diag.xml")
+        diag = DiagnosticsCollector(_diag_path(run_info_path))
 
         try:
             adapter = FEWSPreAdapter(
@@ -48,7 +110,7 @@ class FEWSCommands(BaseCommand):
                 data_format=data_format,
                 id_map_path=id_map_path,
             )
-            config, run_info = adapter.run(diag=diag)
+            adapter.run(diag=diag)
             diag.info("Pre-adapter completed successfully")
             FEWSCommands._console.success("FEWS pre-adapter completed")
             return ExitCode.SUCCESS
@@ -66,13 +128,11 @@ class FEWSCommands(BaseCommand):
         from symfluence.fews.post_adapter import FEWSPostAdapter
 
         run_info_path = Path(args.run_info)
-        config_path = Path(args.config) if hasattr(args, 'config') and args.config else None
+        config_path = Path(args.config) if getattr(args, 'config', None) else None
         data_format = getattr(args, 'format', 'netcdf-cf')
         id_map_path = getattr(args, 'id_map', None)
 
-        diag_dir = run_info_path.parent / "toFews"
-        diag_dir.mkdir(parents=True, exist_ok=True)
-        diag = DiagnosticsCollector(diag_dir / "diag.xml")
+        diag = DiagnosticsCollector(_diag_path(run_info_path))
 
         try:
             adapter = FEWSPostAdapter(
@@ -100,15 +160,26 @@ class FEWSCommands(BaseCommand):
         from symfluence.fews.pre_adapter import FEWSPreAdapter
 
         run_info_path = Path(args.run_info)
-        base_config = Path(args.config) if hasattr(args, 'config') and args.config else None
+        base_config = Path(args.config) if getattr(args, 'config', None) else None
         data_format = getattr(args, 'format', 'netcdf-cf')
         id_map_path = getattr(args, 'id_map', None)
 
-        diag_dir = run_info_path.parent / "toFews"
-        diag_dir.mkdir(parents=True, exist_ok=True)
-        diag = DiagnosticsCollector(diag_dir / "diag.xml")
+        diag = DiagnosticsCollector(_diag_path(run_info_path))
 
         try:
+            # Without a configuration there is no model to run and no output
+            # to locate; "skip the model and export whatever is lying around"
+            # is not a successful FEWS run.
+            if base_config is None or not base_config.is_file():
+                message = (
+                    "'fews run' requires --config <SYMFLUENCE config file>"
+                    + (f" (not found: {base_config})" if base_config else "")
+                    + "; the model cannot be run without it."
+                )
+                diag.fatal(message)
+                FEWSCommands._console.error(message)
+                return ExitCode.CONFIG_ERROR if base_config else ExitCode.USAGE_ERROR
+
             # Pre-adapter
             diag.info("Starting pre-adapter")
             pre = FEWSPreAdapter(
@@ -120,23 +191,25 @@ class FEWSCommands(BaseCommand):
             config, run_info = pre.run(diag=diag)
             FEWSCommands._console.info("Pre-adapter complete")
 
-            # Model execution
-            diag.info("Starting model execution")
-            if base_config and Path(base_config).is_file():
-                from symfluence.cli.commands.workflow_commands import WorkflowCommands
-                model_args = Namespace(
-                    config=str(base_config),
-                    force_rerun=False,
-                    continue_on_error=False,
-                    debug=getattr(args, 'debug', False),
-                )
-                exit_code = WorkflowCommands.run(model_args)
-                if exit_code != ExitCode.SUCCESS:
-                    diag.error(f"Model execution returned exit code {exit_code}")
-                    return exit_code
-                diag.info("Model execution completed")
-            else:
-                diag.warning("No base config provided, skipping model execution")
+            notice = (
+                f"FEWS forcing was translated to {pre.forcing_path}, but the SYMFLUENCE "
+                "workflow reads the forcing configured in the SYMFLUENCE config; the "
+                "FEWS-supplied forcing is not injected into the model run."
+            )
+            diag.warning(notice)
+            FEWSCommands._console.warning(notice)
+
+            # Model execution, with the FEWS overrides (period, domain, ...)
+            diag.info(f"Starting model execution with overrides {pre.config_overrides}")
+            failed = _run_model(
+                base_config, pre.config_overrides, debug=getattr(args, 'debug', False)
+            )
+            if failed:
+                message = f"Model execution failed in step(s): {', '.join(failed)}"
+                diag.fatal(message)
+                FEWSCommands._console.error(message)
+                return ExitCode.WORKFLOW_ERROR
+            diag.info("Model execution completed")
 
             # Post-adapter
             diag.info("Starting post-adapter")
@@ -145,6 +218,7 @@ class FEWSCommands(BaseCommand):
                 config_path=base_config,
                 data_format=data_format,
                 id_map_path=id_map_path,
+                config=config,
             )
             output_dir = post.run(diag=diag)
             diag.info("Full FEWS adapter cycle completed")
@@ -159,46 +233,43 @@ class FEWSCommands(BaseCommand):
     @staticmethod
     @cli_exception_handler
     def launch(args: Namespace) -> int:
-        """Launch openFEWS with SYMFLUENCE adapter support.
+        """Launch an existing Delft-FEWS installation with SYMFLUENCE on its PATH.
 
-        Starts the openFEWS application, auto-configuring the General Adapter
-        module to point at the SYMFLUENCE CLI.
+        SYMFLUENCE does not distribute or download Delft-FEWS (it is obtained
+        from Deltares). Without a real installation this fails; it never
+        pretends to have started anything.
         """
-        import shutil
+        import os
 
         config_path = getattr(args, 'config', None)
-        port = getattr(args, 'port', 8080)
 
-        # Locate openFEWS installation
-        openfews_exe = shutil.which("openfews")
-        if openfews_exe is None:
-            # Try SYMFLUENCE installs directory
-            try:
-                from symfluence.cli.services.build_registry import BuildInstructionsRegistry
-                instructions = BuildInstructionsRegistry.get_instructions('openfews')
-                if instructions:
-                    # Try loading config for data dir
-                    candidate = Path.cwd() / "data" / instructions.get('default_path_suffix', '')
-                    if candidate.exists():
-                        openfews_exe = str(candidate / instructions.get('default_exe', 'bin/fews.sh'))
-            except (ImportError, AttributeError, OSError, TypeError, ValueError):
-                pass
-
-        if openfews_exe is None:
+        fews_home, searched = _find_fews_installation()
+        if fews_home is None:
             FEWSCommands._console.error(
-                "openFEWS not found. Install it with: symfluence binary install openfews"
+                "No Delft-FEWS installation found. Delft-FEWS must be obtained from "
+                f"Deltares ({DELTARES_FEWS_URL}); SYMFLUENCE does not download it."
+            )
+            FEWSCommands._console.indent(
+                "Set FEWS_HOME to the installation directory. "
+                "'symfluence binary install openfews' only generates the General "
+                "Adapter configuration template."
+            )
+            for path in searched:
+                FEWSCommands._console.indent(f"searched: {path}")
+            return ExitCode.BINARY_ERROR
+
+        launcher = fews_home / "bin" / "fews.sh"
+        if not launcher.is_file():
+            FEWSCommands._console.error(
+                f"Delft-FEWS found at {fews_home} but it has no bin/fews.sh launcher; "
+                "start FEWS with its own launcher."
             )
             return ExitCode.BINARY_ERROR
 
-        # Build launch command
-        cmd = [openfews_exe]
-        if port:
-            cmd.extend(["--port", str(port)])
+        cmd = [str(launcher)]
+        FEWSCommands._console.info(f"Launching Delft-FEWS: {' '.join(cmd)}")
 
-        FEWSCommands._console.info(f"Launching openFEWS: {' '.join(cmd)}")
-
-        # Set environment so openFEWS knows where SYMFLUENCE is
-        import os
+        # Set environment so the General Adapter can find SYMFLUENCE
         env = os.environ.copy()
         env["SYMFLUENCE_CLI"] = sys.executable + " -m symfluence"
         if config_path:
@@ -207,9 +278,9 @@ class FEWSCommands(BaseCommand):
         try:
             proc = subprocess.run(cmd, env=env)
             return proc.returncode
-        except FileNotFoundError:
-            FEWSCommands._console.error(f"Cannot execute: {openfews_exe}")
+        except (FileNotFoundError, PermissionError):
+            FEWSCommands._console.error(f"Cannot execute: {launcher}")
             return ExitCode.BINARY_ERROR
         except KeyboardInterrupt:
-            FEWSCommands._console.info("openFEWS terminated by user")
+            FEWSCommands._console.info("Delft-FEWS terminated by user")
             return ExitCode.SUCCESS

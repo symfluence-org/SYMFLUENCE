@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import xarray as xr
 
@@ -30,6 +30,11 @@ from .run_info import RunInfo, parse_run_info
 from .state import import_states
 
 logger = logging.getLogger(__name__)
+
+
+def translated_forcing_path(run_info: RunInfo) -> Path:
+    """Where the pre-adapter writes forcing translated to SYMFLUENCE names."""
+    return run_info.work_dir / "symfluence" / "forcing.nc"
 
 
 class FEWSPreAdapter:
@@ -56,6 +61,9 @@ class FEWSPreAdapter:
         self.data_format = data_format
         self.id_map_path = id_map_path
         self._fews_config = fews_config
+        # Set by run(): FEWS-derived config overrides and the translated forcing
+        self.config_overrides: Dict[str, Any] = {}
+        self.forcing_path: Optional[Path] = None
 
     def run(self, diag: Optional[DiagnosticsCollector] = None):
         """Execute the pre-adapter workflow.
@@ -110,44 +118,50 @@ class FEWSPreAdapter:
                 if diag:
                     diag.info("Imported state files")
 
-        # 7. Write forcing to model input directory
-        forcing_output = run_info.input_dir / "forcing.nc"
+        # 7. Write the translated forcing. It goes to the adapter's own
+        #    directory, not back into FEWS's toModel/: there it would overwrite
+        #    the file FEWS exported and be re-read as input (or mistaken for
+        #    model output) on the next call.
+        forcing_output = translated_forcing_path(run_info)
         write_fews_netcdf(forcing_ds, forcing_output)
+        self.forcing_path = forcing_output
         logger.info("Wrote forcing to %s", forcing_output)
         if diag:
             diag.info(f"Wrote forcing to {forcing_output}")
 
         # 8. Build SymfluenceConfig
+        self.config_overrides = run_info.to_config_overrides()
         config = self._build_config(run_info, fews_cfg)
 
         return config, run_info
 
     def _load_forcing(self, run_info: RunInfo, fews_cfg: FEWSConfig) -> xr.Dataset:
-        """Load forcing data from the FEWS input directory."""
+        """Load forcing data exported by FEWS.
+
+        The files named in the run file (``inputTimeSeriesFile`` /
+        ``inputNetcdfFile``) are used when present; otherwise every file of
+        the configured format in the input directory.
+        """
         input_dir = run_info.input_dir
 
         if fews_cfg.data_format == "pi-xml":
-            # Look for PI-XML files
-            xml_files = sorted(input_dir.glob("*.xml"))
+            xml_files = list(run_info.input_timeseries_files) or sorted(input_dir.glob("*.xml"))
             if not xml_files:
                 raise FEWSAdapterError(f"No PI-XML files found in {input_dir}")
-            # Read first file (primary forcing)
-            ds = read_pi_xml_timeseries(xml_files[0], missing_value=fews_cfg.missing_value)
-            # Merge additional files
-            for xml_file in xml_files[1:]:
-                extra = read_pi_xml_timeseries(xml_file, missing_value=fews_cfg.missing_value)
-                ds = ds.merge(extra)
-            return ds
+            datasets = [
+                read_pi_xml_timeseries(f, missing_value=fews_cfg.missing_value)
+                for f in xml_files
+            ]
         else:
-            # NetCDF-CF
-            nc_files = sorted(input_dir.glob("*.nc"))
+            nc_files = list(run_info.input_netcdf_files) or sorted(input_dir.glob("*.nc"))
             if not nc_files:
                 raise FEWSAdapterError(f"No NetCDF files found in {input_dir}")
-            ds = read_fews_netcdf(nc_files[0])
-            for nc_file in nc_files[1:]:
-                extra = read_fews_netcdf(nc_file)
-                ds = ds.merge(extra)
-            return ds
+            datasets = [read_fews_netcdf(f) for f in nc_files]
+
+        ds = datasets[0]
+        for extra in datasets[1:]:
+            ds = ds.merge(extra)
+        return ds
 
     def _build_config(self, run_info: RunInfo, fews_cfg: FEWSConfig):
         """Build SymfluenceConfig from base config + FEWS overrides."""

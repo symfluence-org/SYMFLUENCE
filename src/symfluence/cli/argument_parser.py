@@ -67,33 +67,51 @@ def resolve_step_name(name: str) -> str:
 # Domain definition methods
 DOMAIN_DEFINITION_METHODS = ['lumped', 'point', 'subset', 'delineate']
 
-# Available tools for binary installation
-# Default tools are installed by `symfluence binary install` (no arguments).
-# Experimental tools require explicit naming, e.g. `symfluence binary install rhessys`.
-# The default tier is the set `symfluence binary install` (no args)
-# compiles out of the box. Every process-based model that appears in
-# the paper's Fig 4 / Fig 8 multi-model ensemble is here so a fresh
-# install is enough to reproduce the paper. JAX re-implementations
-# (HBV*, SACSMA*, XAJ*, HECHMS*, TOPMODEL*, SUMMA+MOD) arrive as
-# pip/jax dependencies in pyproject.toml and don't need a binary
-# install. LSTM and GR4J are pure-Python / R-bridge models (no binary).
-DEFAULT_TOOLS = [
-    # Framework glue
-    'sundials', 'taudem', 'gistool', 'datatool',
-    # Routing
-    'mizuroute', 'troute',
-    # Hydrology engines in the paper's ensemble (alphabetical)
-    'clm', 'clmparflow', 'crhm', 'fuse', 'gsflow', 'hype',
-    'mesh', 'mhm', 'ngen', 'ngiab', 'parflow', 'pihm',
-    'prms', 'rhessys', 'summa', 'swat', 'vic', 'watflood',
-    'wflow', 'wrfhydro',
-]
-# Experimental tier: not in the paper ensemble, still buildable on
-# explicit request.
-EXPERIMENTAL_TOOLS = [
-    'openfews', 'wmfire', 'cfuse', 'droute', 'ignacio',
-    'modflow', 'enzyme', 'summa-glacier',
-]
+# Tools for binary installation.
+#
+# The tool lists are derived from the build-instruction registry -- the same
+# registry ``ToolInstaller`` installs from -- so the help text, the lists and
+# the installer's behaviour cannot drift apart:
+#
+# * default tools: registered without ``optional`` -- what a bare
+#   ``symfluence binary install`` builds;
+# * optional tools: registered with ``optional: True`` -- built only when
+#   named, e.g. ``symfluence binary install rhessys``.
+#
+# Which tools are registered depends on the installed model packages, so the
+# lists are computed on demand rather than frozen at import time.
+# JAX re-implementations (HBV*, SACSMA*, XAJ*, HECHMS*, TOPMODEL*, SUMMA+MOD)
+# arrive as pip/jax dependencies and don't need a binary install. LSTM and
+# GR4J are pure-Python / R-bridge models (no binary).
+def _registered_tools() -> dict:
+    from .external_tools_config import get_external_tools_definitions
+    tools = get_external_tools_definitions()
+    return dict(sorted(tools.items(), key=lambda kv: (kv[1].get('order', 999), kv[0])))
+
+
+def get_default_tools() -> List[str]:
+    """Tools a bare ``symfluence binary install`` builds (install order)."""
+    return [name for name, info in _registered_tools().items()
+            if not info.get('optional', False)]
+
+
+def get_optional_tools() -> List[str]:
+    """Registered tools that are only built when named explicitly."""
+    return sorted(name for name, info in _registered_tools().items()
+                  if info.get('optional', False))
+
+
+def __getattr__(name: str):
+    # Former module constants, kept importable but now registry-derived.
+    if name == 'DEFAULT_TOOLS':
+        return get_default_tools()
+    if name == 'EXPERIMENTAL_TOOLS':
+        return get_optional_tools()
+    if name == 'EXTERNAL_TOOLS':
+        return get_default_tools() + get_optional_tools()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 # Exactly the binaries the Paper 3 case studies need (examples/
 # paper_case_studies): TauDEM+SUNDIALS for domains, mizuRoute for
 # routing, and the compiled members of the Fig 7 ensemble. RHESSys is
@@ -105,8 +123,6 @@ PAPER_REPRO_TOOLS = [
     'crhm', 'fuse', 'gsflow', 'hype', 'mesh', 'mhm',
     'prms', 'rhessys', 'summa', 'swat',
 ]
-EXTERNAL_TOOLS = DEFAULT_TOOLS + EXPERIMENTAL_TOOLS
-
 # Hydrological models
 MODELS = ['SUMMA', 'FUSE', 'GR', 'HYPE', 'MESH', 'RHESSys', 'NGEN', 'LSTM']
 
@@ -455,13 +471,17 @@ For more help on a specific command:
             'install',
             help='Install external tools'
         )
+        default_tools = get_default_tools()
+        optional_tools = get_optional_tools()
         _tools_help = (
-            'Tools to install. If not specified, installs all default tools.\n'
+            'Tools to install. If none are named, installs the default tools.\n'
             '\n'
-            f'  Default ({len(DEFAULT_TOOLS)} tools — covers every process-based model '
-            'in the paper Fig 4/Fig 8 ensemble):\n'
-            f'    {", ".join(DEFAULT_TOOLS)}\n'
-            f'  Experimental (explicit opt-in): {", ".join(EXPERIMENTAL_TOOLS)}\n'
+            f'  Default ({len(default_tools)} tools):\n'
+            f'    {", ".join(default_tools)}\n'
+            f'  Optional ({len(optional_tools)} tools, installed only when named):\n'
+            f'    {", ".join(optional_tools)}\n'
+            '  Tools required by a named tool (e.g. sundials for summa) are\n'
+            '  added automatically. --paper-repro installs the Paper 3 set.\n'
             '\n'
             '  JAX re-implementations (HBV*, SACSMA*, XAJ*, HECHMS*, TOPMODEL*,\n'
             '  SUMMA+MOD) arrive automatically with "pip install symfluence"\n'
@@ -481,13 +501,17 @@ For more help on a specific command:
                                       'SYMFLUENCE subsurface-GW physics).'
                                   ))
         install_parser.add_argument('--force', action='store_true',
-                                  help='Force reinstall even if already installed')
+                                  help='Force reinstall of the named tools even if already '
+                                       'installed (auto-added dependencies are only rebuilt '
+                                       'when they fail verification)')
         install_parser.add_argument('--patched', action='store_true',
                                   help='Apply SYMFLUENCE patches (currently: RHESSys GW recharge + NaN guards; GSFLOW glacier conservation; mHM non-hourly time step; SUMMA glacier diagnostics/snow routing)')
         install_parser.add_argument('--branch', type=str, default=None,
-                                  help='Override the default git branch for the tool(s) being installed')
+                                  help='Override the default git branch for the named tool(s) '
+                                       '(not applied to auto-added dependencies)')
         install_parser.add_argument('--git-hash', type=str, default=None,
-                                  help='Checkout a specific git commit hash after cloning')
+                                  help='Checkout a specific git commit hash after cloning the '
+                                       'named tool(s) (not applied to auto-added dependencies)')
         install_parser.set_defaults(func=BinaryCommands.install)
 
         # binary validate
@@ -519,8 +543,11 @@ For more help on a specific command:
             '--tool', type=str, default=None,
             help='Install deps for a specific tool only (e.g. summa, fuse)'
         )
+        # SUPPRESS: a plain store_true default (False) would overwrite a
+        # global ``--dry-run`` given before the category and run for real.
         install_sysdeps_parser.add_argument(
-            '--dry-run', action='store_true',
+            '--dry-run', action='store_true', dest='dry_run',
+            default=argparse.SUPPRESS,
             help='Show install commands without executing them'
         )
         install_sysdeps_parser.set_defaults(func=BinaryCommands.install_sysdeps)
@@ -633,14 +660,19 @@ For more help on a specific command:
                                   help='Account to charge')
         submit_parser.add_argument('--partition', dest='job_partition', type=str,
                                   help='Partition/queue name')
-        submit_parser.add_argument('--modules', dest='job_modules', type=str, default='symfluence_modules',
-                                  help='Module to restore (default: symfluence_modules)')
-        submit_parser.add_argument('--conda-env', dest='conda_env', type=str, default='symfluence',
-                                  help='Conda environment (default: symfluence)')
+        submit_parser.add_argument('--modules', dest='job_modules', type=str, default=None,
+                                  help='Saved module collection to "module restore" in the job '
+                                       '(default: none; the job inherits the submitting environment)')
+        submit_parser.add_argument('--conda-env', dest='conda_env', type=str, default=None,
+                                  help='Conda environment to activate in the job (default: none)')
         submit_parser.add_argument('--wait', dest='submit_and_wait', action='store_true',
-                                  help='Submit and monitor job until completion')
+                                  help='Submit and monitor the job until it ends; exits non-zero '
+                                       'unless the job finishes in state COMPLETED')
         submit_parser.add_argument('--template', dest='slurm_template', type=str,
-                                  help='Custom SLURM template file')
+                                  help='Batch script to use instead of the generated #SBATCH header '
+                                       'and environment setup. The SYMFLUENCE command block replaces '
+                                       'the placeholder {{SYMFLUENCE_COMMAND}}, or is appended when '
+                                       'the template has none.')
         submit_parser.add_argument('workflow_args', nargs=argparse.REMAINDER,
                                   help='Workflow command and arguments to submit')
         submit_parser.set_defaults(func=JobCommands.submit)
@@ -817,7 +849,13 @@ For more help on a specific command:
         launch_parser.add_argument('--address', type=str, default='127.0.0.1', metavar='HOST',
                                    help='Interface to bind (default: 127.0.0.1, local only). '
                                         'A non-loopback value such as 0.0.0.0 exposes the GUI '
-                                        'on the network.')
+                                        'on the network (no authentication) and requires '
+                                        '--allow-origin.')
+        launch_parser.add_argument('--allow-origin', dest='allow_origin', action='append',
+                                   default=None, metavar='HOST:PORT',
+                                   help='Websocket origin to accept (the host:port browsers use '
+                                        'to reach the GUI). Repeatable. Required when --address '
+                                        'is not loopback.')
         launch_parser.add_argument('--no-browser', action='store_true', dest='no_browser',
                                    help='Do not auto-open a browser tab')
         launch_parser.add_argument('--demo', type=str, default=None, metavar='NAME',
@@ -936,7 +974,9 @@ For more help on a specific command:
         fews_parser = subparsers.add_parser(
             'fews',
             help='Delft-FEWS adapter operations',
-            description='Run FEWS General Adapter pre/post processing and launch openFEWS'
+            description='Run FEWS General Adapter pre/post processing and launch an '
+                        'existing Delft-FEWS installation (FEWS itself is obtained '
+                        'from Deltares, not installed by SYMFLUENCE)'
         )
         fews_subparsers = fews_parser.add_subparsers(
             dest='action',
@@ -978,7 +1018,7 @@ For more help on a specific command:
         # fews run
         run_parser = fews_subparsers.add_parser(
             'run',
-            help='Run full FEWS adapter cycle (pre -> model -> post)',
+            help='Run full FEWS adapter cycle (pre -> model -> post); requires --config',
             parents=[self.common_parser]
         )
         run_parser.add_argument('--run-info', dest='run_info', type=str, required=True,
@@ -993,13 +1033,15 @@ For more help on a specific command:
         # fews launch
         launch_parser = fews_subparsers.add_parser(
             'launch',
-            help='Launch openFEWS with SYMFLUENCE adapter support',
+            help='Launch an existing Delft-FEWS installation (FEWS_HOME) with '
+                 'SYMFLUENCE adapter support',
             parents=[self.common_parser]
         )
         launch_parser.add_argument('--port', type=int, default=8080,
-                                   help='Server port for openFEWS (default: 8080)')
+                                   help='Accepted for compatibility; ignored (Delft-FEWS is '
+                                        'a desktop application)')
         launch_parser.add_argument('--no-browser', action='store_true', dest='no_browser',
-                                   help='Do not auto-open a browser')
+                                   help='Accepted for compatibility; ignored')
         launch_parser.set_defaults(func=FEWSCommands.launch)
 
     def parse_args(self, args: Optional[List[str]] = None) -> argparse.Namespace:

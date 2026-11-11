@@ -20,6 +20,7 @@ from .base import (
     BaseCommand,
     cli_exception_handler,
     cli_exception_handler_with_profiling,
+    supports_dry_run,
 )
 
 
@@ -47,6 +48,109 @@ def _force_rerun_overrides(args: Namespace) -> dict:
     return {}
 
 
+class _PreviewManagers:
+    """Stand-in for the manager registry while previewing a workflow.
+
+    ``WorkflowOrchestrator.define_workflow_steps`` binds each step to a manager
+    method. Building the real managers creates project directories and log
+    files, which a ``--dry-run`` must not do, so the preview hands the
+    orchestrator this stub instead: every lookup returns an object whose
+    attributes are inert callables. Only the steps' read-only completion
+    checks are ever evaluated.
+    """
+
+    class _Inert:
+        def __getattr__(self, name: str):
+            def _never_called(*_args, **_kwargs):
+                raise RuntimeError(
+                    f"workflow preview must not execute manager method '{name}'"
+                )
+            return _never_called
+
+    _inert = _Inert()
+
+    def __getitem__(self, key: str):
+        return self._inert
+
+    def get(self, key: str, default=None):
+        return self._inert
+
+    def __contains__(self, key: object) -> bool:
+        return True
+
+
+def _preview_workflow(args: Namespace, what: str, step_names=None,
+                      always_run: bool = False) -> int:
+    """``--dry-run`` for the workflow commands: list steps and what would happen.
+
+    Loads and validates the configuration, then evaluates the same completion
+    checks the orchestrator uses (output present + stage marker current) --
+    without constructing ``SYMFLUENCE``, so no directory, log file or marker is
+    created or changed.
+
+    Args:
+        what: Label for the heading (e.g. ``"workflow run"``).
+        step_names: Restrict the preview to these steps, in this order.
+            ``None`` previews the full workflow (scoped by ``WORKFLOW_STEPS``).
+        always_run: The command re-executes its steps regardless of completion
+            (``workflow step/steps/resume``).
+    """
+    import logging
+
+    from symfluence.project.workflow_orchestrator import WorkflowOrchestrator
+
+    console = BaseCommand._console
+    config_path = BaseCommand.get_config_path(args)
+    force = bool(BaseCommand.get_arg(args, 'force_rerun', False))
+    config = BaseCommand.load_typed_config(
+        config_path, required=True, overrides=_force_rerun_overrides(args) or None
+    )
+    if config is None:
+        return ExitCode.CONFIG_ERROR
+
+    preview_logger = logging.getLogger('symfluence.cli.dry_run')
+    orchestrator = WorkflowOrchestrator(_PreviewManagers(), config, preview_logger)
+    details = orchestrator.get_workflow_status()['step_details']
+
+    if step_names is None:
+        scoped = orchestrator._get_scoped_step_names()
+        if scoped is not None:
+            details = [d for d in details if d['cli_name'] in scoped]
+        force = force or bool(getattr(config.system, 'force_run_all_steps', False))
+    else:
+        by_name = {d['cli_name']: d for d in details}
+        unknown = [name for name in step_names if name not in by_name]
+        if unknown:
+            console.error(f"Unknown step(s): {', '.join(unknown)}")
+            return ExitCode.USAGE_ERROR
+        details = [by_name[name] for name in step_names]
+
+    console.info(f"[DRY RUN] {what} -- nothing will be executed or written")
+    console.indent(f"Config:  {config_path}")
+    console.indent(f"Project: {orchestrator.project_dir}")
+    would_run = 0
+    for index, detail in enumerate(details, 1):
+        if detail['complete']:
+            state = 'complete'
+        elif detail['config_stale']:
+            state = 'outputs present, stage marker missing or stale'
+        else:
+            state = 'not done'
+        if always_run or force:
+            action = 'would run'
+        elif detail['complete']:
+            action = 'would skip'
+        else:
+            action = 'would run'
+        would_run += action == 'would run'
+        console.indent(f"{index:2}. {detail['cli_name']:32s} {action:10s} ({state})")
+    console.info(
+        f"[DRY RUN] {would_run} of {len(details)} step(s) would run"
+        + (" (forced)" if force and not always_run else "")
+    )
+    return ExitCode.SUCCESS
+
+
 class WorkflowCommands(BaseCommand):
     """Handlers for workflow category commands."""
 
@@ -54,6 +158,7 @@ class WorkflowCommands(BaseCommand):
     WORKFLOW_STEPS = dict(WORKFLOW_STEP_DESCRIPTION_MAP)
 
     @staticmethod
+    @supports_dry_run
     @cli_exception_handler_with_profiling
     def run(args: Namespace) -> int:
         """
@@ -72,6 +177,9 @@ class WorkflowCommands(BaseCommand):
         # Validate config exists
         if not BaseCommand.validate_config(config_path, required=True):
             return ExitCode.CONFIG_ERROR
+
+        if BaseCommand.get_arg(args, 'dry_run', False):
+            return _preview_workflow(args, "workflow run")
 
         # Initialize SYMFLUENCE instance
         BaseCommand._console.info("Starting full workflow execution...")
@@ -100,6 +208,7 @@ class WorkflowCommands(BaseCommand):
         return exit_code
 
     @staticmethod
+    @supports_dry_run
     @cli_exception_handler_with_profiling
     def run_step(args: Namespace) -> int:
         """
@@ -117,6 +226,12 @@ class WorkflowCommands(BaseCommand):
 
         if not BaseCommand.validate_config(config_path, required=True):
             return ExitCode.CONFIG_ERROR
+
+        if BaseCommand.get_arg(args, 'dry_run', False):
+            return _preview_workflow(
+                args, f"workflow step {args.step_name}",
+                step_names=[args.step_name], always_run=True,
+            )
 
         BaseCommand._console.info(f"Executing step: {args.step_name}")
         BaseCommand._console.indent(WorkflowCommands.WORKFLOW_STEPS.get(args.step_name, ''))
@@ -139,6 +254,7 @@ class WorkflowCommands(BaseCommand):
         return exit_code
 
     @staticmethod
+    @supports_dry_run
     @cli_exception_handler_with_profiling
     def run_steps(args: Namespace) -> int:
         """
@@ -158,6 +274,11 @@ class WorkflowCommands(BaseCommand):
             return ExitCode.CONFIG_ERROR
 
         BaseCommand._console.info(f"Executing {len(args.step_names)} steps:")
+        if BaseCommand.get_arg(args, 'dry_run', False):
+            return _preview_workflow(
+                args, "workflow steps",
+                step_names=list(args.step_names), always_run=True,
+            )
         for step_name in args.step_names:
             BaseCommand._console.indent(f"{step_name}: {WorkflowCommands.WORKFLOW_STEPS.get(step_name, '')}")
 
@@ -179,6 +300,7 @@ class WorkflowCommands(BaseCommand):
         return exit_code
 
     @staticmethod
+    @supports_dry_run
     @cli_exception_handler
     def status(args: Namespace) -> int:
         """
@@ -196,6 +318,11 @@ class WorkflowCommands(BaseCommand):
 
         if not BaseCommand.validate_config(config_path, required=True):
             return ExitCode.CONFIG_ERROR
+
+        # Constructing SYMFLUENCE creates the project log directory; under
+        # --dry-run report the same completion checks without it.
+        if BaseCommand.get_arg(args, 'dry_run', False):
+            return _preview_workflow(args, "workflow status")
 
         symfluence = SYMFLUENCE(
             config_path,
@@ -215,6 +342,7 @@ class WorkflowCommands(BaseCommand):
         return ExitCode.SUCCESS
 
     @staticmethod
+    @supports_dry_run
     @cli_exception_handler
     def validate(args: Namespace) -> int:
         """
@@ -237,6 +365,7 @@ class WorkflowCommands(BaseCommand):
         return ExitCode.SUCCESS
 
     @staticmethod
+    @supports_dry_run
     def list_steps(args: Namespace) -> int:
         """
         Execute: symfluence workflow list-steps
@@ -259,6 +388,7 @@ class WorkflowCommands(BaseCommand):
         return ExitCode.SUCCESS
 
     @staticmethod
+    @supports_dry_run
     @cli_exception_handler
     def resume(args: Namespace) -> int:
         """
@@ -286,6 +416,12 @@ class WorkflowCommands(BaseCommand):
         resume_index = step_list.index(args.step_name)
         steps_to_run = step_list[resume_index:]
 
+        if BaseCommand.get_arg(args, 'dry_run', False):
+            return _preview_workflow(
+                args, f"workflow resume {args.step_name}",
+                step_names=steps_to_run, always_run=True,
+            )
+
         BaseCommand._console.info(f"Resuming workflow from: {args.step_name}")
         BaseCommand._console.indent(f"Will execute {len(steps_to_run)} steps:")
         for step in steps_to_run:
@@ -311,6 +447,7 @@ class WorkflowCommands(BaseCommand):
         return exit_code
 
     @staticmethod
+    @supports_dry_run
     @cli_exception_handler
     def clean(args: Namespace) -> int:
         """
@@ -344,11 +481,15 @@ class WorkflowCommands(BaseCommand):
         if dry_run:
             BaseCommand._console.indent("(DRY RUN - no files will be deleted)")
 
-        symfluence = SYMFLUENCE(config_path,
-                                debug_mode=BaseCommand.get_arg(args, 'debug', False),
-                                quiet_mode=BaseCommand.get_arg(args, 'quiet', False))
+        # Constructing SYMFLUENCE creates the project log directory, so a
+        # dry run only does it when there is a cleaner to ask for a preview.
+        symfluence = None
+        if not dry_run or hasattr(SYMFLUENCE, 'clean_workflow_files'):
+            symfluence = SYMFLUENCE(config_path,
+                                    debug_mode=BaseCommand.get_arg(args, 'debug', False),
+                                    quiet_mode=BaseCommand.get_arg(args, 'quiet', False))
 
-        if hasattr(symfluence, 'clean_workflow_files'):
+        if symfluence is not None and hasattr(symfluence, 'clean_workflow_files'):
             symfluence.clean_workflow_files(level=level, dry_run=dry_run)
         else:
             # Feature in development - provide helpful guidance

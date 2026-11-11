@@ -130,3 +130,27 @@ class TestEnKFLinearSystem:
         X_a = enkf.analyze(X_f, y_obs, H, R)
 
         assert X_a.shape == (n_members, n_state)
+
+
+class TestStochasticReproducibility:
+    """Observation perturbations come from the filter's own generator."""
+
+    def _analyze(self, seed):
+        rng = np.random.default_rng(11)
+        X_f = rng.normal(5.0, 1.0, size=(20, 3))
+        H = np.array([[1.0, 0.0, 0.0]])
+        enkf = EnKFAlgorithm(rng=np.random.default_rng(seed))
+        return enkf.analyze(X_f, np.array([6.0]), H, np.array([[0.25]]), 'stochastic')
+
+    def test_same_seed_same_analysis(self):
+        np.testing.assert_array_equal(self._analyze(3), self._analyze(3))
+
+    def test_independent_of_global_numpy_state(self):
+        np.random.seed(0)
+        first = self._analyze(3)
+        np.random.seed(999)
+        second = self._analyze(3)
+        np.testing.assert_array_equal(first, second)
+
+    def test_different_seed_differs(self):
+        assert not np.array_equal(self._analyze(3), self._analyze(4))

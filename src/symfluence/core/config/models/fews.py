@@ -35,6 +35,15 @@ class IDMapEntry(BaseModel):
     symfluence_unit: Optional[str] = Field(default=None, description='Unit in SYMFLUENCE (e.g., "kg m-2 s-1")')
     conversion_factor: float = Field(default=1.0, description='Multiplicative factor: symfluence = fews * factor')
     conversion_offset: float = Field(default=0.0, description='Additive offset: symfluence = fews * factor + offset')
+    direction: Literal['import', 'export', 'both'] = Field(
+        default='both',
+        description=(
+            'Which way the entry applies: "import" (FEWS -> SYMFLUENCE, e.g. P.obs -> pptrate), '
+            '"export" (SYMFLUENCE -> FEWS, e.g. discharge -> Q.sim) or "both". '
+            'Several import entries may share a symfluence_id; an exported variable '
+            'needs exactly one export entry.'
+        ),
+    )
 
 
 class FEWSConfig(BaseModel):

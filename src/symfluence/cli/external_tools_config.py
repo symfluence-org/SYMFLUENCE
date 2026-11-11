@@ -170,12 +170,14 @@ chmod +x extract-dataset.sh
     })
 
 def _register_openfews() -> None:
-    """Register openFEWS build instructions."""
+    """Register the Delft-FEWS adapter-configuration "install"."""
     # ================================================================
-    # openFEWS - Delft-FEWS Flood Early Warning System
+    # Delft-FEWS General Adapter configuration. FEWS itself is obtained
+    # from Deltares; nothing is downloaded.
     # ================================================================
     R.build_instructions.add('openfews', {
-        'description': 'openFEWS - Delft Flood Early Warning System (open-source distribution)',
+        'description': 'Delft-FEWS General Adapter configuration for SYMFLUENCE '
+                       '(does NOT install Delft-FEWS; obtain it from Deltares)',
         'config_path_key': 'OPENFEWS_INSTALL_PATH',
         'config_exe_key': 'OPENFEWS_EXE',
         'default_path_suffix': 'installs/openfews',

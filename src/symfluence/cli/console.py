@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import Any, Generator, List, Optional, TextIO
 
 from rich.console import Console as RichConsole
+from rich.markup import escape
 from rich.panel import Panel
 from rich.progress import (
     BarColumn,
@@ -26,6 +27,19 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 from rich.table import Table
+
+
+def _plain(message: Any) -> Any:
+    """Escape Rich markup in a message body so it prints literally.
+
+    Message text routinely contains square brackets that are not markup --
+    ``pip install "symfluence[tui]"``, ``[DRY RUN]``, paths, list reprs -- and
+    Rich would otherwise swallow anything that looks like a tag. Only the
+    level prefix added by the Console itself is styled; callers that want
+    markup use :meth:`Console.print` (or :meth:`Console.indent`).
+    Non-string renderables (tables, dicts) pass through unchanged.
+    """
+    return escape(message) if isinstance(message, str) else message
 
 
 @dataclass
@@ -99,7 +113,7 @@ class Console:
             message: Message to print
         """
         if not self._config.quiet:
-            self._console.print(message)
+            self._console.print(_plain(message))
 
     def success(self, message: str) -> None:
         """
@@ -109,7 +123,7 @@ class Console:
             message: Success message to print
         """
         if not self._config.quiet:
-            self._console.print(f"[green][OK][/green] {message}")
+            self._console.print(f"[green]\\[OK][/green] {_plain(message)}")
 
     def warning(self, message: str) -> None:
         """
@@ -119,7 +133,7 @@ class Console:
             message: Warning message to print
         """
         if not self._config.quiet:
-            self._console.print(f"[yellow][WARN][/yellow] {message}")
+            self._console.print(f"[yellow]\\[WARN][/yellow] {_plain(message)}")
 
     def error(self, message: str) -> None:
         """
@@ -128,7 +142,7 @@ class Console:
         Args:
             message: Error message to print
         """
-        self._error_console.print(f"[red][ERROR][/red] {message}")
+        self._error_console.print(f"[red]\\[ERROR][/red] {_plain(message)}")
 
     def debug(self, message: str) -> None:
         """
@@ -138,7 +152,7 @@ class Console:
             message: Debug message to print
         """
         if not self._config.quiet:
-            self._console.print(f"[dim][DEBUG] {message}[/dim]")
+            self._console.print(f"[dim]\\[DEBUG] {_plain(message)}[/dim]")
 
     def print(self, message: Any, style: Optional[str] = None) -> None:
         """

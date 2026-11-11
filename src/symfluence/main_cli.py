@@ -134,7 +134,9 @@ def main():
 
         # Execute the command handler
         if hasattr(args, 'func'):
-            return args.func(args)
+            # dispatch_command refuses handlers that cannot honour --dry-run.
+            from symfluence.cli.commands.base import dispatch_command
+            return dispatch_command(args)
         else:
             # No command specified - should not happen due to required=True on subparsers
             parser.parser.print_help()

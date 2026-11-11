@@ -14,7 +14,7 @@ from argparse import Namespace
 from pathlib import Path
 
 from ..exit_codes import ExitCode
-from .base import BaseCommand, cli_exception_handler
+from .base import BaseCommand, cli_exception_handler, supports_dry_run
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +55,7 @@ class DataCommands(BaseCommand):
     """Handlers for standalone data acquisition commands."""
 
     @staticmethod
+    @supports_dry_run
     @cli_exception_handler
     def download(args: Namespace) -> int:
         """
@@ -158,6 +159,18 @@ class DataCommands(BaseCommand):
         BaseCommand._console.indent(f"Period: {config_dict.get('EXPERIMENT_TIME_START', '?')} to {config_dict.get('EXPERIMENT_TIME_END', '?')}")
         BaseCommand._console.indent(f"Output: {output_dir}")
 
+        if BaseCommand.get_arg(args, 'dry_run', False):
+            if not AcquisitionRegistry.is_registered(dataset_name):
+                available = ', '.join(AcquisitionRegistry.list_datasets())
+                BaseCommand._console.error(
+                    f"Unknown dataset: '{dataset_name}'. Available: {available}"
+                )
+                return ExitCode.VALIDATION_ERROR
+            BaseCommand._console.info(
+                "[DRY RUN] Nothing was downloaded and no files were written"
+            )
+            return ExitCode.SUCCESS
+
         handler = AcquisitionRegistry.get_handler(dataset_name, config_dict, logger)
         result_path = handler.download(output_dir)
 
@@ -165,6 +178,7 @@ class DataCommands(BaseCommand):
         return ExitCode.SUCCESS
 
     @staticmethod
+    @supports_dry_run
     @cli_exception_handler
     def list_datasets(args: Namespace) -> int:
         """
@@ -200,6 +214,7 @@ class DataCommands(BaseCommand):
         return ExitCode.SUCCESS
 
     @staticmethod
+    @supports_dry_run
     @cli_exception_handler
     def info(args: Namespace) -> int:
         """

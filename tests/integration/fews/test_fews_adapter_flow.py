@@ -3,7 +3,7 @@
 Synthetic pipeline:
   1. Create run_info.xml + forcing data in toModel/
   2. Run pre-adapter (import forcing, map variables)
-  3. Skip actual model execution (create synthetic output)
+  3. Skip actual model execution (write the workflow's standardized results)
   4. Run post-adapter (map back, export to toFews/)
   5. Verify toFews/ contains valid output + diagnostics
 """
@@ -66,6 +66,25 @@ def forcing_netcdf(fews_work_dir):
     return path
 
 
+def _write_model_results(tmp_path, times, values):
+    """What the workflow's postprocess_results step leaves behind, plus a
+    config stub pointing at it (the post-adapter exports only this)."""
+    from types import SimpleNamespace
+
+    import pandas as pd
+
+    data_dir = tmp_path / "symfluence_data"
+    results_dir = data_dir / "domain_integration_test" / "results"
+    results_dir.mkdir(parents=True)
+    frame = pd.DataFrame({"GR_discharge_cms": values}, index=pd.DatetimeIndex(times))
+    frame.index.name = "datetime"
+    frame.to_csv(results_dir / "run_1_results.csv")
+    return SimpleNamespace(
+        system=SimpleNamespace(data_dir=str(data_dir)),
+        domain=SimpleNamespace(name="integration_test", experiment_id="run_1"),
+    )
+
+
 class TestFEWSAdapterFlow:
     def test_end_to_end_netcdf(self, run_info_xml, forcing_netcdf, fews_work_dir):
         """Full pre -> (skip model) -> post flow with NetCDF-CF format."""
@@ -75,6 +94,7 @@ class TestFEWSAdapterFlow:
             id_map=[
                 IDMapEntry(fews_id="P.obs", symfluence_id="pptrate"),
                 IDMapEntry(fews_id="T.obs", symfluence_id="airtemp"),
+                IDMapEntry(fews_id="Q.sim", symfluence_id="discharge", direction="export"),
             ],
             auto_id_map=False,
         )
@@ -89,22 +109,18 @@ class TestFEWSAdapterFlow:
         config, run_info = pre.run(diag=diag)
 
         # Verify forcing was processed
-        assert (fews_work_dir / "toModel" / "forcing.nc").exists()
+        assert pre.forcing_path.exists()
 
         # --- SIMULATE MODEL OUTPUT ---
         times = np.arange("2023-06-01", "2023-06-10", dtype="datetime64[h]")
-        output_ds = xr.Dataset(
-            {
-                "discharge": ("time", np.random.rand(len(times)) * 50.0),
-            },
-            coords={"time": times},
-        )
-        output_ds.to_netcdf(fews_work_dir / "output.nc")
+        config = _write_model_results(
+            fews_work_dir, times, np.random.rand(len(times)) * 50.0)
 
         # --- POST-ADAPTER ---
         post = FEWSPostAdapter(
             run_info_path=run_info_xml,
             fews_config=fews_cfg,
+            config=config,
         )
         output_dir = post.run(diag=diag)
 
@@ -119,7 +135,7 @@ class TestFEWSAdapterFlow:
 
         # Read back the output
         result = xr.open_dataset(output_dir / "output.nc")
-        assert "discharge" in result.data_vars
+        assert list(result.data_vars) == ["Q.sim"]
         assert result.attrs["Conventions"] == "CF-1.6"
         result.close()
 
@@ -136,7 +152,7 @@ class TestFEWSAdapterFlow:
                         <locationId>loc1</locationId>
                         <parameterId>P.obs</parameterId>
                         <missVal>-999.0</missVal>
-                        <units>mm/h</units>
+                        <units>mm/s</units>
                     </header>
                     <event date="2023-06-01" time="00:00:00" value="1.0"/>
                     <event date="2023-06-01" time="01:00:00" value="2.0"/>
@@ -150,6 +166,9 @@ class TestFEWSAdapterFlow:
             work_dir=str(fews_work_dir),
             data_format="pi-xml",
             auto_id_map=True,
+            id_map=[
+                IDMapEntry(fews_id="Q.sim", symfluence_id="discharge", direction="export"),
+            ],
         )
         diag = DiagnosticsCollector(fews_work_dir / "toFews" / "diag.xml")
 
@@ -159,14 +178,11 @@ class TestFEWSAdapterFlow:
 
         # Synthetic output
         times = np.arange("2023-06-01", "2023-06-01T03:00:00", dtype="datetime64[h]")
-        output_ds = xr.Dataset(
-            {"discharge": ("time", [10.0, 20.0, 30.0])},
-            coords={"time": times},
-        )
-        output_ds.to_netcdf(fews_work_dir / "output.nc")
+        model_config = _write_model_results(fews_work_dir, times, [10.0, 20.0, 30.0])
 
         # Post-adapter (writes PI-XML)
-        post = FEWSPostAdapter(run_info_path=run_info_xml, fews_config=fews_cfg)
+        post = FEWSPostAdapter(run_info_path=run_info_xml, fews_config=fews_cfg,
+                               config=model_config)
         output_dir = post.run(diag=diag)
 
         assert (output_dir / "timeseries.xml").exists()
