@@ -14,7 +14,7 @@ from pathlib import Path
 
 from ..exit_codes import ExitCode
 from ..validators import validate_bounding_box, validate_coordinates, validate_date_range
-from .base import BaseCommand, cli_exception_handler
+from .base import BaseCommand, cli_exception_handler, supports_dry_run
 
 
 class ProjectCommands(BaseCommand):
@@ -150,6 +150,7 @@ class ProjectCommands(BaseCommand):
         return ExitCode.SUCCESS
 
     @staticmethod
+    @supports_dry_run
     @cli_exception_handler
     def list_presets(args: Namespace) -> int:
         """
@@ -171,6 +172,7 @@ class ProjectCommands(BaseCommand):
         return ExitCode.SUCCESS
 
     @staticmethod
+    @supports_dry_run
     @cli_exception_handler
     def show_preset(args: Namespace) -> int:
         """

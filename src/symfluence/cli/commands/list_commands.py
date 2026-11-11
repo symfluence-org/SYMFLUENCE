@@ -12,7 +12,7 @@ from __future__ import annotations
 from argparse import Namespace
 
 from ..exit_codes import ExitCode
-from .base import BaseCommand, cli_exception_handler
+from .base import BaseCommand, cli_exception_handler, supports_dry_run
 
 # Catalog kinds, in display order. Values are the CLI tokens.
 LIST_KINDS = [
@@ -54,6 +54,7 @@ class ListCommands(BaseCommand):
     """Handler for `symfluence list [KIND]`."""
 
     @staticmethod
+    @supports_dry_run
     @cli_exception_handler
     def list_items(args: Namespace) -> int:
         """

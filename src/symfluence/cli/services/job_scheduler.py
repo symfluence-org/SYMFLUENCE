@@ -9,16 +9,43 @@ Handles job script generation, submission, and monitoring.
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import shutil
 import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from ..console import Console
 from .base import BaseService
+
+# Placeholder a ``--template`` file may contain to position the SYMFLUENCE
+# command block; without it the block is appended to the template.
+TEMPLATE_COMMAND_PLACEHOLDER = "{{SYMFLUENCE_COMMAND}}"
+
+# ``#SBATCH`` lines are parsed by sbatch, not by the shell, so quoting does
+# not protect them. Values are restricted to characters that cannot end the
+# directive or start a new line.
+_SBATCH_VALUE_RE = re.compile(r"^[A-Za-z0-9_.,:+@%=/-]+$")
+_JOB_NAME_RE = re.compile(r"^[A-Za-z0-9_.+@%=-]+$")
+
+# How often / how long to ask sacct for a finished job's state before giving
+# up (accounting records can lag the queue by a few seconds).
+_SACCT_ATTEMPTS = 6
+_SACCT_RETRY_S = 5.0
+
+
+def _sbatch_value(option: str, value: Any, pattern: "re.Pattern[str]" = _SBATCH_VALUE_RE) -> str:
+    """Validate a value destined for an ``#SBATCH`` directive."""
+    text = str(value)
+    if not pattern.match(text):
+        raise ValueError(
+            f"Invalid value for SLURM option {option}: {text!r} "
+            "(allowed: letters, digits and _ . , : + @ % = / -)"
+        )
+    return text
 
 
 class JobSchedulerService(BaseService):
@@ -40,6 +67,10 @@ class JobSchedulerService(BaseService):
             console: Console instance for output. If None, uses global console.
         """
         super().__init__(console=console)
+        # Result dict of the most recent submit_slurm_job call (job id, final
+        # state when --wait was used); lets the CLI tell a submission failure
+        # from a job that was submitted and then failed.
+        self.last_result: Dict[str, Any] = {}
 
     def handle_slurm_job_submission(
         self,
@@ -64,11 +95,14 @@ class JobSchedulerService(BaseService):
                     "No SLURM account specified. This may be required on your system."
                 )
                 self._console.indent(
-                    "Use --job_account to specify an account if job submission fails."
+                    "Use --account to specify an account if job submission fails."
                 )
 
             result = self.submit_slurm_job(execution_plan, symfluence_instance)
 
+            self.last_result = result
+            if result.get("dry_run", False):
+                return True
             if result.get("success", False):
                 self._console.newline()
                 self._console.success("SLURM job submission successful!")
@@ -77,6 +111,13 @@ class JobSchedulerService(BaseService):
                     self._console.indent(f"squeue -j {result['job_id']}")
                     self._console.indent(f"tail -f SYMFLUENCE_*_{result['job_id']}.out")
                 return True
+            elif result.get("job_id") and result.get("final_state"):
+                self._console.error(
+                    f"SLURM job {result['job_id']} did not complete successfully "
+                    f"(state: {result['final_state']}, exit code: "
+                    f"{result.get('job_exit_code') or 'unknown'})"
+                )
+                return False
             else:
                 self._console.error("Job submission failed")
                 return False
@@ -103,7 +144,7 @@ class JobSchedulerService(BaseService):
         """
         self._console.panel("Preparing SLURM Job Submission", style="blue")
 
-        if not self._check_slurm_available():
+        if not execution_plan.get("dry_run", False) and not self._check_slurm_available():
             raise RuntimeError("SLURM commands (sbatch) not available on this system")
 
         slurm_options = execution_plan.get("slurm_options", {})
@@ -134,6 +175,20 @@ class JobSchedulerService(BaseService):
         script_content = self._create_symfluence_slurm_script(
             execution_plan, slurm_options, config_file
         )
+
+        if execution_plan.get("dry_run", False):
+            self._console.info("[DRY RUN] SLURM script that would be submitted:")
+            self._console.rule()
+            for line in script_content.splitlines():
+                self._console.info(line)
+            self._console.rule()
+            self._console.info("[DRY RUN] No script was written and no job was submitted")
+            return {
+                "success": True,
+                "dry_run": True,
+                "job_id": None,
+                "job_name": slurm_options["job_name"],
+            }
 
         script_path = Path(f"SYMFLUENCE_{slurm_options['job_name']}.sh")
         with open(script_path, "w", encoding="utf-8") as f:
@@ -170,7 +225,12 @@ class JobSchedulerService(BaseService):
             if slurm_options.get("submit_and_wait", False):
                 self._console.newline()
                 self._console.info(f"Waiting for job {job_id} to complete...")
-                self._monitor_slurm_job(job_id)
+                state, job_exit_code = self._monitor_slurm_job(job_id)
+                submission_result["final_state"] = state
+                submission_result["job_exit_code"] = job_exit_code
+                # Leaving the queue is not success: FAILED, TIMEOUT,
+                # CANCELLED, OUT_OF_MEMORY, ... all leave it too.
+                submission_result["success"] = state == "COMPLETED"
 
             return submission_result
 
@@ -244,56 +304,20 @@ class JobSchedulerService(BaseService):
         if settings.get("debug", False) and "--debug" not in symfluence_cmd:
             symfluence_cmd += " --debug"
 
-        script = f"""#!/bin/bash
-#SBATCH --job-name={slurm_options['job_name']}
-#SBATCH --output=SYMFLUENCE_{slurm_options['job_name']}_%j.out
-#SBATCH --error=SYMFLUENCE_{slurm_options['job_name']}_%j.err
-#SBATCH --time={slurm_options['job_time']}
-#SBATCH --ntasks={slurm_options['job_ntasks']}
-#SBATCH --mem={slurm_options['job_memory']} """
+        job_name = _sbatch_value("--name", slurm_options["job_name"], _JOB_NAME_RE)
 
-        if slurm_options.get("job_account"):
-            script += f"\n#SBATCH --account={slurm_options['job_account']}"
-        if slurm_options.get("job_partition"):
-            script += f"\n#SBATCH --partition={slurm_options['job_partition']}"
-        if slurm_options.get("job_nodes") and slurm_options["job_nodes"] > 1:
-            script += f"\n#SBATCH --nodes={slurm_options['job_nodes']}"
-
-        script += f"""
-
-# Job information
-echo "=========================================="
-echo "SYMFLUENCE SLURM Job Started"
-echo "Job ID: $SLURM_JOB_ID"
-echo "Job Name: {slurm_options['job_name']}"
-echo "Node: $HOSTNAME"
-echo "Started: $(date)"
-echo "Working Directory: $(pwd)"
-echo "=========================================="
-
-# Load modules and environment
-echo "Loading environment..."
-"""
-
-        if slurm_options.get("job_modules"):
-            script += f"module restore {slurm_options['job_modules']}\n"
-
-        if slurm_options.get("conda_env"):
-            script += f"conda activate {slurm_options['conda_env']}\n"
-
-        script += f"""
+        command_block = f"""
 echo "Python environment: $(which python)"
 echo "SYMFLUENCE directory: $(pwd)"
 echo ""
 
 # Run SYMFLUENCE workflow
 echo "Starting SYMFLUENCE workflow..."
-echo "Command: {symfluence_cmd}"
+echo "Command:" {shlex.quote(symfluence_cmd)}
 echo ""
 
-{symfluence_cmd}
-
-exit_code=$?
+exit_code=0
+{symfluence_cmd} || exit_code=$?
 
 echo ""
 echo "=========================================="
@@ -304,14 +328,80 @@ echo "=========================================="
 
 exit $exit_code
 """
+
+        template_path = slurm_options.get("slurm_template")
+        if template_path:
+            # --template: the user's own batch header and environment setup
+            # (#SBATCH directives, module loads, activation). Only the
+            # SYMFLUENCE command block is generated.
+            template_file = Path(template_path)
+            if not template_file.is_file():
+                raise FileNotFoundError(f"SLURM template not found: {template_path}")
+            template = template_file.read_text(encoding="utf-8")
+            if TEMPLATE_COMMAND_PLACEHOLDER in template:
+                return template.replace(TEMPLATE_COMMAND_PLACEHOLDER, command_block)
+            return template.rstrip("\n") + "\n" + command_block
+
+        script = f"""#!/bin/bash
+#SBATCH --job-name={job_name}
+#SBATCH --output=SYMFLUENCE_{job_name}_%j.out
+#SBATCH --error=SYMFLUENCE_{job_name}_%j.err
+#SBATCH --time={_sbatch_value("--time", slurm_options['job_time'])}
+#SBATCH --ntasks={_sbatch_value("--tasks", slurm_options['job_ntasks'])}
+#SBATCH --mem={_sbatch_value("--memory", slurm_options['job_memory'])}"""
+
+        if slurm_options.get("job_account"):
+            script += f"\n#SBATCH --account={_sbatch_value('--account', slurm_options['job_account'])}"
+        if slurm_options.get("job_partition"):
+            script += f"\n#SBATCH --partition={_sbatch_value('--partition', slurm_options['job_partition'])}"
+        if slurm_options.get("job_nodes") and slurm_options["job_nodes"] > 1:
+            script += f"\n#SBATCH --nodes={_sbatch_value('--nodes', slurm_options['job_nodes'])}"
+
+        script += f"""
+
+# Job information
+echo "=========================================="
+echo "SYMFLUENCE SLURM Job Started"
+echo "Job ID: $SLURM_JOB_ID"
+echo "Job Name:" {shlex.quote(job_name)}
+echo "Node: $HOSTNAME"
+echo "Started: $(date)"
+echo "Working Directory: $(pwd)"
+echo "=========================================="
+"""
+
+        # Environment activation is emitted only when asked for; otherwise the
+        # job inherits the submitting shell's environment (sbatch's default).
+        modules = slurm_options.get("job_modules")
+        conda_env = slurm_options.get("conda_env")
+        if modules or conda_env:
+            script += '\n# Load modules and environment\necho "Loading environment..."\n'
+        if modules:
+            script += f"module restore {shlex.quote(str(modules))}\n"
+        if conda_env:
+            # Batch shells are non-interactive: `conda activate` needs the
+            # shell hook that an interactive shell gets from `conda init`.
+            script += 'eval "$(conda shell.bash hook)"\n'
+            script += f"conda activate {shlex.quote(str(conda_env))}\n"
+
+        # Strict mode only from here on: module/conda activation scripts
+        # routinely reference unset variables and would trip `set -u`.
+        script += "\nset -euo pipefail\n"
+        script += command_block
         return script
 
     def _check_slurm_available(self) -> bool:
         """Check if SLURM commands are available."""
         return shutil.which("sbatch") is not None
 
-    def _monitor_slurm_job(self, job_id: str) -> None:
-        """Monitor SLURM job until completion."""
+    def _monitor_slurm_job(self, job_id: str, poll_interval: float = 60.0) -> Tuple[str, str]:
+        """Wait for a SLURM job to leave the queue, then report how it ended.
+
+        Returns:
+            ``(state, exit_code)`` from accounting, e.g. ``("COMPLETED", "0:0")``
+            or ``("FAILED", "1:0")``. The state is ``"UNKNOWN"`` when sacct
+            has no record of the job.
+        """
         self._console.info(f"Monitoring job {job_id}...")
         while True:
             try:
@@ -321,18 +411,55 @@ exit $exit_code
                     text=True,
                 )
                 if not result.stdout.strip():
-                    self._console.success(f"Job {job_id} completed!")
                     break
-                else:
-                    lines = result.stdout.strip().split("\n")
-                    if lines:
-                        status_info = lines[0].split()
-                        if len(status_info) >= 5:
-                            status = status_info[4]
-                            self._console.info(f"Job status: {status}")
+                lines = result.stdout.strip().split("\n")
+                if lines:
+                    status_info = lines[0].split()
+                    if len(status_info) >= 5:
+                        status = status_info[4]
+                        self._console.info(f"Job status: {status}")
             except subprocess.SubprocessError as e:
                 self._console.warning(f"Error checking job status: {e}")
-            time.sleep(60)
+            time.sleep(poll_interval)
+
+        # An empty queue only says the job is no longer pending or running.
+        state, exit_code = self._final_job_state(job_id)
+        if state == "COMPLETED":
+            self._console.success(f"Job {job_id} completed (exit code {exit_code})")
+        else:
+            self._console.error(
+                f"Job {job_id} ended in state {state} (exit code {exit_code or 'unknown'})"
+            )
+        return state, exit_code
+
+    def _final_job_state(self, job_id: str) -> Tuple[str, str]:
+        """Ask ``sacct`` for a finished job's state and exit code.
+
+        Retries briefly while accounting has no record yet. States such as
+        ``CANCELLED by 1234`` are reduced to their first word.
+        """
+        for attempt in range(_SACCT_ATTEMPTS):
+            try:
+                result = subprocess.run(
+                    ["sacct", "-j", job_id, "-X", "-o", "State,ExitCode",
+                     "--parsable2", "-n"],
+                    capture_output=True,
+                    text=True,
+                )
+                lines = [ln for ln in (result.stdout or "").splitlines() if ln.strip()]
+            except (subprocess.SubprocessError, OSError) as e:
+                self._console.warning(f"Error querying sacct for job {job_id}: {e}")
+                lines = []
+            if lines:
+                state_field, _, exit_code = lines[0].partition("|")
+                state = state_field.strip().split(" ")[0].rstrip("+").upper()
+                if state and state not in ("PENDING", "RUNNING", "COMPLETING",
+                                           "CONFIGURING", "REQUEUED", "RESIZING",
+                                           "SUSPENDED"):
+                    return state, exit_code.strip()
+            if attempt < _SACCT_ATTEMPTS - 1:
+                time.sleep(_SACCT_RETRY_S)
+        return "UNKNOWN", ""
 
     def detect_environment(self) -> str:
         """

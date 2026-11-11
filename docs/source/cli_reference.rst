@@ -52,8 +52,11 @@ that affect only supported operations are explicitly identified below.
    * - ``--diagnostic``
      - Enable diagnostic plots during workflow execution
    * - ``--dry-run``
-     - Preview supported operations without making changes (currently workflow
-       cleaning and binary system-dependency installation)
+     - Preview without making changes. Supported by ``workflow run/step/steps/resume/status/clean``
+       (lists the steps and their completion state), ``binary install`` and
+       ``binary install-sysdeps``, ``data download`` and ``job submit``; read-only
+       commands run as usual. Every other command refuses to run under ``--dry-run``
+       (exit code 2) instead of executing for real.
    * - ``--profile``
      - Enable I/O profiling for workflow execution
    * - ``--profile-output PATH``
@@ -321,7 +324,14 @@ Install external tools.
 
    symfluence binary install [TOOL1 TOOL2 ...] [--force]
 
-**Available Tools:**
+Without tool names the *default* tools are installed (those registered without
+``optional``); optional tools are installed only when named. ``symfluence binary
+install --help`` prints both lists for the installed model packages. Tools required
+by a named tool (e.g. ``sundials`` for ``summa``) are added automatically;
+``--force``, ``--branch`` and ``--git-hash`` apply to the named tools only. An
+unknown tool name, or any tool that fails, gives a non-zero exit code.
+
+**Commonly used tools:**
 
 - ``summa`` - SUMMA hydrological model
 - ``mizuroute`` - mizuRoute routing model
@@ -464,10 +474,14 @@ Submit workflow as SLURM job.
 - ``--memory MEM``: Memory requirement (default: 50G)
 - ``--account ACCOUNT``: Account to charge
 - ``--partition PARTITION``: Partition/queue name
-- ``--modules MODULES``: Module to restore (default: symfluence_modules)
-- ``--conda-env ENV``: Conda environment (default: symfluence)
-- ``--wait``: Monitor job until completion
-- ``--template PATH``: Custom SLURM template
+- ``--modules MODULES``: Saved module collection to ``module restore`` in the job
+  (default: none; the job inherits the submitting environment)
+- ``--conda-env ENV``: Conda environment to activate in the job (default: none)
+- ``--wait``: Monitor the job until it ends; exits non-zero unless the job finishes
+  in state ``COMPLETED`` (checked with ``sacct``)
+- ``--template PATH``: Batch script used instead of the generated ``#SBATCH`` header
+  and environment setup; the SYMFLUENCE command block replaces the placeholder
+  ``{{SYMFLUENCE_COMMAND}}`` or is appended when the template has none
 
 **Examples:**
 
@@ -617,11 +631,15 @@ Start the SYMFLUENCE web interface.
 
 .. code-block:: bash
 
-   symfluence gui launch [--port PORT] [--no-browser] [--demo NAME] [--config CONFIG]
+   symfluence gui launch [--port PORT] [--address HOST] [--allow-origin HOST:PORT] [--no-browser] [--demo NAME] [--config CONFIG]
 
 **Options:**
 
 - ``--port PORT``: Server port (default: 5006)
+- ``--address HOST``: Interface to bind (default: 127.0.0.1, local only). The GUI has
+  no authentication; a non-loopback bind exposes it to the network.
+- ``--allow-origin HOST:PORT``: Origin browsers use to reach the GUI (repeatable);
+  required when ``--address`` is not loopback
 - ``--no-browser``: Do not auto-open a browser tab
 - ``--demo NAME``: Load a built-in demo (e.g., "bow" for Bow at Banff)
 
@@ -765,8 +783,10 @@ scoped to installed binaries).
 FEWS Commands
 =============
 
-Delft-FEWS General Adapter operations — run pre/post processing and launch
-openFEWS with SYMFLUENCE adapter support.
+Delft-FEWS General Adapter operations — run pre/post processing and launch an
+existing Delft-FEWS installation. Delft-FEWS itself is obtained from Deltares;
+``symfluence binary install openfews`` only generates the General Adapter
+configuration template.
 
 fews pre
 --------
@@ -789,20 +809,28 @@ Run the FEWS post-adapter (export results, write diagnostics).
 fews run
 --------
 
-Run the full FEWS adapter cycle (pre -> model -> post).
+Run the full FEWS adapter cycle (pre -> model -> post). ``--config`` is required:
+the workflow is run with the run file's period (and ``DOMAIN_NAME`` /
+``EXPERIMENT_ID`` / ``HYDROLOGICAL_MODEL`` properties) applied on top of it, and the
+post-adapter exports the workflow's results (``results/<experiment_id>_results.csv``).
+Exported variables need an explicit ID-map entry (for example ``fews_id: Q.sim``,
+``symfluence_id: discharge``, ``direction: export``). The forcing FEWS supplies is
+translated but not injected into the model run, which uses the forcing of the
+SYMFLUENCE configuration.
 
 .. code-block:: bash
 
-   symfluence fews run --run-info run_info.xml [--format {pi-xml,netcdf-cf}] [--id-map PATH] [--config CONFIG]
+   symfluence fews run --run-info run_info.xml --config CONFIG [--format {pi-xml,netcdf-cf}] [--id-map PATH]
 
 fews launch
 -----------
 
-Launch openFEWS with SYMFLUENCE adapter support.
+Launch an existing Delft-FEWS installation (``FEWS_HOME``) with SYMFLUENCE on its
+environment. Fails when no Delft-FEWS installation is found.
 
 .. code-block:: bash
 
-   symfluence fews launch [--port PORT] [--no-browser] [--config CONFIG]
+   symfluence fews launch [--config CONFIG]
 
 **Options (pre/post/run):**
 

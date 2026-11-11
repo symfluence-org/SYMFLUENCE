@@ -18,13 +18,14 @@ from importlib.metadata import PackageNotFoundError
 from pathlib import Path
 
 from ..exit_codes import ExitCode
-from .base import BaseCommand, cli_exception_handler
+from .base import BaseCommand, cli_exception_handler, supports_dry_run
 
 
 class DoctorCommands(BaseCommand):
     """Handlers for the top-level doctor command."""
 
     @staticmethod
+    @supports_dry_run
     @cli_exception_handler
     def doctor(args: Namespace) -> int:
         """

@@ -16,13 +16,14 @@ from pathlib import Path
 from typing import List, Optional
 
 from ..exit_codes import ExitCode
-from .base import BaseCommand, cli_exception_handler
+from .base import BaseCommand, cli_exception_handler, supports_dry_run
 
 
 class BinaryCommands(BaseCommand):
     """Handlers for binary/tool management commands."""
 
     @staticmethod
+    @supports_dry_run
     @cli_exception_handler
     def install(args: Namespace) -> int:
         """
@@ -56,11 +57,24 @@ class BinaryCommands(BaseCommand):
             patched = True
         branch_override = getattr(args, 'branch', None)
         git_hash = getattr(args, 'git_hash', None)
+        dry_run = bool(BaseCommand.get_arg(args, 'dry_run', False))
+
+        if (branch_override or git_hash) and not args.tools:
+            # A branch or commit belongs to one repository; applying it to a
+            # whole tool set (or to auto-added dependencies) cannot be right.
+            BaseCommand._console.error(
+                "--branch/--git-hash apply to the tools named on the command line; "
+                "name the tool(s) to install."
+            )
+            return ExitCode.USAGE_ERROR
 
         if tools:
             BaseCommand._console.info(f"Installing tools: {', '.join(tools)}")
         else:
-            BaseCommand._console.info("Installing all available tools...")
+            BaseCommand._console.info(
+                "Installing the default tools (optional tools are installed "
+                "only when named; see 'symfluence binary install --help')..."
+            )
 
         if force:
             BaseCommand._console.indent("(Force reinstall mode)")
@@ -79,6 +93,7 @@ class BinaryCommands(BaseCommand):
             results = binary_manager.get_executables(
                 specific_tools=tools,
                 force=force,
+                dry_run=dry_run,
                 patched=patched,
                 branch_override=branch_override,
                 git_hash=git_hash,
@@ -99,6 +114,9 @@ class BinaryCommands(BaseCommand):
                     f"Tool installation failed for: {', '.join(failed)}"
                 )
                 return ExitCode.BINARY_ERROR
+            elif dry_run:
+                BaseCommand._console.success("Dry run complete; nothing was installed")
+                return ExitCode.SUCCESS
             elif successful or skipped:
                 BaseCommand._console.success("Tool installation completed successfully")
                 return ExitCode.SUCCESS
@@ -113,6 +131,7 @@ class BinaryCommands(BaseCommand):
             return ExitCode.BINARY_ERROR
 
     @staticmethod
+    @supports_dry_run
     @cli_exception_handler
     def validate(args: Namespace) -> int:
         """
@@ -167,6 +186,7 @@ class BinaryCommands(BaseCommand):
         return ExitCode.BINARY_ERROR
 
     @staticmethod
+    @supports_dry_run
     @cli_exception_handler
     def doctor(args: Namespace) -> int:
         """
@@ -200,6 +220,7 @@ class BinaryCommands(BaseCommand):
             return ExitCode.DEPENDENCY_ERROR
 
     @staticmethod
+    @supports_dry_run
     @cli_exception_handler
     def install_sysdeps(args: Namespace) -> int:
         """
@@ -321,6 +342,7 @@ class BinaryCommands(BaseCommand):
             return ExitCode.GENERAL_ERROR
 
     @staticmethod
+    @supports_dry_run
     @cli_exception_handler
     def info(args: Namespace) -> int:
         """
