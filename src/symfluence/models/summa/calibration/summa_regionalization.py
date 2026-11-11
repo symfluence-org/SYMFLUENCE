@@ -71,20 +71,31 @@ def load_hru_attributes(
     The returned DataFrame is indexed by HRU order (0-based) and contains
     columns such as ``elev_m``, ``precip_mm_yr``, ``aridity``, etc.
 
+    Supplementary tables are joined to the HRUs on their ``hru_id`` column
+    (matched to ``hruId`` in ``attributes.nc``), never on row position.
+
     Args:
         attributes_nc_path: Path to SUMMA ``attributes.nc``.
         csv_path: Optional path to a CSV with additional per-HRU attributes.
-                  Must contain a column that can be matched to HRU order or ID.
+                  Joined on its ``hru_id`` column when present; without
+                  one its rows must be in ``attributes.nc`` HRU order.
         logger: Logger instance.
 
     Returns:
         DataFrame with one row per HRU and attribute columns.
+
+    Raises:
+        ValidationError: if an auto-discovered attribute CSV predates the
+            ``hru_id`` column and has too many rows to be matched safely.
     """
+    from symfluence.data.model_ready.hru_tables import align_table_to_hru_ids, read_hru_table
+
     logger = logger or logging.getLogger(__name__)
 
     # --- Read from attributes.nc -------------------------------------------
     with xr.open_dataset(attributes_nc_path) as ds:
         data: Dict[str, np.ndarray] = {}
+        hru_ids = ds['hruId'].values.tolist() if 'hruId' in ds.variables else None
 
         # Standard SUMMA attribute → regionalization column mapping
         attr_map = {
@@ -103,15 +114,26 @@ def load_hru_attributes(
     if csv_path is not None:
         csv_path = Path(csv_path)
         if csv_path.exists():
-            csv_df = pd.read_csv(csv_path)
-            if len(csv_df) == len(df):
+            csv_raw = read_hru_table(csv_path)
+            if hru_ids is None and 'hru_id' in csv_raw.columns:
+                # No hruId in attributes.nc to join on
+                csv_df = None
+            else:
+                csv_df = align_table_to_hru_ids(
+                    csv_raw,
+                    hru_ids if hru_ids is not None else list(range(len(df))),
+                    csv_path,
+                    legacy_order='positional',
+                    logger=logger,
+                )
+            if csv_df is not None:
                 for col in csv_df.columns:
                     if col not in df.columns:
                         df[col] = csv_df[col].values
             else:
                 logger.warning(
-                    f"CSV attribute file has {len(csv_df)} rows but "
-                    f"attributes.nc has {len(df)} HRUs — skipping CSV merge"
+                    f"CSV attribute file {csv_path} could not be matched to the "
+                    f"{len(df)} HRUs of attributes.nc — skipping CSV merge"
                 )
         else:
             logger.warning(f"Transfer function attributes CSV not found: {csv_path}")
@@ -133,24 +155,31 @@ def load_hru_attributes(
             if not profile_csv.exists():
                 continue
             try:
-                profile_df = pd.read_csv(profile_csv)
-                if len(profile_df) != len(df):
-                    logger.debug(
-                        f"Skipping {profile_name} attributes: "
-                        f"{len(profile_df)} rows vs {len(df)} HRUs"
-                    )
-                    continue
-                added = []
-                for col in profile_df.columns:
-                    if col not in df.columns:
-                        df[col] = profile_df[col].values
-                        added.append(col)
-                if added:
-                    logger.info(
-                        f"Merged {len(added)} {profile_name} profile attributes"
-                    )
-            except Exception:  # noqa: BLE001
-                logger.debug(f"Could not read {profile_name} attributes: {profile_csv}")
+                profile_raw = read_hru_table(profile_csv)
+            except (OSError, ValueError) as exc:
+                logger.warning(f"Could not read {profile_name} attributes {profile_csv}: {exc}")
+                continue
+            if hru_ids is None:
+                logger.warning(
+                    f"attributes.nc has no hruId variable; cannot join {profile_name} "
+                    f"attributes ({profile_csv}) to HRUs — skipping"
+                )
+                continue
+            # Raises for a pre-hru_id table that cannot be matched safely.
+            profile_df = align_table_to_hru_ids(
+                profile_raw, hru_ids, profile_csv, logger=logger
+            )
+            if profile_df is None:
+                continue
+            added = []
+            for col in profile_df.columns:
+                if col not in df.columns:
+                    df[col] = profile_df[col].values
+                    added.append(col)
+            if added:
+                logger.info(
+                    f"Merged {len(added)} {profile_name} profile attributes"
+                )
 
     # --- Derive synthetic attributes if missing ----------------------------
     if 'precip_mm_yr' not in df.columns:

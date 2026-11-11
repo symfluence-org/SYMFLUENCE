@@ -65,8 +65,20 @@ class BaseAttributeProcessor(ConfigMixin):
         """
         Get the path to the catchment shapefile.
 
+        Uses the same convention as the rest of the framework
+        (``PathManager`` / ``GeospatialStatistics``): the file is
+        ``{domain}_HRUs_{discretization}.shp`` with "," replaced by "_" for
+        combined discretizations, under
+        ``shapefiles/catchment/{definition_method}/{experiment_id}/`` or the
+        legacy flat ``shapefiles/catchment/`` directory.
+
         Returns:
             Path to catchment shapefile
+
+        Raises:
+            FileNotFoundError: when the shapefile does not exist. No other HRU
+                shapefile is substituted: attributes computed for another
+                discretization would be attached to the wrong HRUs.
         """
         catchment_path = self._get_config_value(
             lambda: self.config.paths.catchment_path,
@@ -80,36 +92,60 @@ class BaseAttributeProcessor(ConfigMixin):
         )
         self.logger.info(f'catchment name: {catchment_name}')
 
-        if catchment_path == 'default':
+        if catchment_path in (None, 'default'):
             catchment_path = self.project_dir / 'shapefiles' / 'catchment'
         else:
             catchment_path = Path(catchment_path)
 
-        if catchment_name == 'default':
-            discretization = self._get_config_value(
+        if catchment_name in (None, 'default'):
+            discretization = str(self._get_config_value(
                 lambda: self.config.domain.discretization,
+                default='',
                 dict_key='SUB_GRID_DISCRETIZATION'
-            )
+            )).replace(',', '_')
             catchment_file = f"{self.domain_name}_HRUs_{discretization}.shp"
         else:
             catchment_file = catchment_name
 
-        # Direct path first
+        # Flat (legacy) location first, as PathManager.get_catchment_dir does
         direct = catchment_path / catchment_file
         if direct.exists():
             return direct
 
-        # Search subdirectories (discretize_domain writes to {method}/{experiment_id}/)
-        matches = list(catchment_path.rglob(catchment_file))
-        if matches:
+        # Organized location: {definition_method}/{experiment_id}/
+        definition_method = self._get_config_value(
+            lambda: self.config.domain.definition_method,
+            default=None,
+            dict_key='DOMAIN_DEFINITION_METHOD'
+        )
+        experiment_id = self._get_config_value(
+            lambda: self.config.domain.experiment_id,
+            default=None,
+            dict_key='EXPERIMENT_ID'
+        )
+        if definition_method and experiment_id:
+            nested = catchment_path / str(definition_method) / str(experiment_id) / catchment_file
+            if nested.exists():
+                return nested
+
+        # The same file name under another subdirectory (e.g. a different
+        # experiment id) — only when that is unambiguous.
+        matches = sorted(catchment_path.rglob(catchment_file)) if catchment_path.exists() else []
+        if len(matches) == 1:
+            self.logger.info(f'Using catchment shapefile found at {matches[0]}')
             return matches[0]
+        if len(matches) > 1:
+            raise FileNotFoundError(
+                f"Catchment shapefile '{catchment_file}' was not found at {direct} or in "
+                f"the configured experiment directory, and {len(matches)} files with that "
+                f"name exist under {catchment_path} ({', '.join(str(m) for m in matches[:5])}). "
+                "Set CATCHMENT_PATH / CATCHMENT_SHP_NAME to select one."
+            )
 
-        # Fallback: any HRU shapefile
-        fallback = list(catchment_path.rglob(f"{self.domain_name}_HRUs_*.shp"))
-        if fallback:
-            return fallback[0]
-
-        return direct
+        raise FileNotFoundError(
+            f"Catchment shapefile '{catchment_file}' not found under {catchment_path}. "
+            "Run domain discretization first, or set CATCHMENT_PATH / CATCHMENT_SHP_NAME."
+        )
 
     def _get_data_path(self, config_key: str, default_subfolder: str) -> Path:
         """
@@ -189,6 +225,10 @@ class BaseAttributeProcessor(ConfigMixin):
         domains (results keyed as ``HRU_{id}_var.name``), reshapes into
         one row per HRU with columns matching the variable names — this
         is the format expected by transfer-function regionalization.
+
+        Per-HRU tables carry the HRU id in an ``hru_id`` column and are
+        ordered numerically (catchment order for non-numeric ids).  Readers
+        must join on that column, never on row position.
         """
         if not results:
             return None
@@ -220,10 +260,23 @@ class BaseAttributeProcessor(ConfigMixin):
                 else:
                     basin_data[k] = v
             if hru_data:
+                from symfluence.data.model_ready.hru_tables import (
+                    HRU_ID_COLUMN,
+                    normalize_hru_id,
+                    order_hru_ids,
+                )
+
                 df = pd.DataFrame.from_dict(hru_data, orient='index')
-                df = df.sort_index()
+                df.index = pd.Index([normalize_hru_id(i) for i in df.index])
+                try:
+                    catchment_order = self._get_hru_ids()
+                except (OSError, KeyError, ValueError, RuntimeError) as exc:
+                    self.logger.debug(f"Could not read catchment HRU order: {exc}")
+                    catchment_order = None
+                df = df.reindex(order_hru_ids(df.index, catchment_order))
                 for col, val in basin_data.items():
                     df[col] = val
+                df.insert(0, HRU_ID_COLUMN, list(df.index))
                 df.to_csv(out_path, index=False)
                 self.logger.info(
                     f"Wrote {len(df.columns)} attributes x {len(df)} HRUs to {out_path}"
