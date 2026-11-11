@@ -453,8 +453,6 @@ src/symfluence/data/preprocessing/resampling/weight_generator.py:RemappingWeight
 src/symfluence/data/preprocessing/resampling/weight_generator.py:RemappingWeightGenerator._move_output_files:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/resampling/weight_generator.py:_run_easmore_with_suppressed_output:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/data_assimilation/da_manager.py:DataAssimilationManager.run_data_assimilation:except Exception as e:  # noqa: BLE001 — must-not-raise contract
-src/symfluence/data_assimilation/enkf/ensemble_manager.py:SubprocessEnsembleManager.extract_predictions:except Exception:  # noqa: BLE001 — must-not-raise contract
-src/symfluence/data_assimilation/enkf/ensemble_manager.py:SubprocessEnsembleManager.forecast_step:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/evaluation/analysis_manager.py:AnalysisManager.run_sensitivity_analysis:except Exception as exc:  # noqa: BLE001 — aggregate per-model failures for the post-loop decision
 src/symfluence/evaluation/benchmarking.py:Benchmarker._save_results:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/evaluation/benchmarking.py:Benchmarker.run_benchmarking:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error

@@ -66,30 +66,3 @@ class StreamflowObservationOperator(ObservationOperator):
         for i in range(self.n_obs):
             H[i, n_state - self.n_obs + i] = 1.0
         return H
-
-
-class SWEObservationOperator(ObservationOperator):
-    """Maps HRU-level SWE state to observation points.
-
-    Args:
-        swe_indices: Indices into the state vector where SWE variables are.
-        weights: Optional area-weighting for spatial averaging.
-    """
-
-    def __init__(
-        self,
-        swe_indices: np.ndarray,
-        weights: np.ndarray = None,
-    ):
-        self.swe_indices = np.asarray(swe_indices)
-        self.weights = weights if weights is not None else np.ones(len(swe_indices))
-        self.weights = self.weights / self.weights.sum()
-
-    def apply(self, state_vector: np.ndarray) -> np.ndarray:
-        swe_values = state_vector[self.swe_indices]
-        return np.array([np.dot(self.weights, swe_values)])
-
-    def get_matrix(self, n_state: int) -> np.ndarray:
-        H = np.zeros((1, n_state))
-        H[0, self.swe_indices] = self.weights
-        return H

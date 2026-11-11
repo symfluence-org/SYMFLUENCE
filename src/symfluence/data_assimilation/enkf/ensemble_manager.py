@@ -5,14 +5,12 @@
 Ensemble manager.
 
 Manages the lifecycle and execution of ensemble members for the EnKF.
-Provides base class and model-specific implementations for HBV
-(in-memory) and subprocess-based models (SUMMA, etc.).
+Provides the base class and the in-memory HBV implementation.
 """
 from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -238,132 +236,3 @@ class HBVEnsembleManager(EnsembleManager):
 
     def extract_predictions(self, variable: str = 'streamflow') -> np.ndarray:
         return np.array(self.member_predictions)
-
-
-class SubprocessEnsembleManager(EnsembleManager):
-    """Ensemble manager for subprocess-based models (SUMMA, etc.).
-
-    Creates per-member directories and runs the model as subprocesses,
-    using the StateCapableMixin interface for state I/O.
-
-    Args:
-        n_members: Number of ensemble members.
-        model_runner_factory: Callable that creates a model runner for a member.
-        work_dir: Root working directory for ensemble members.
-        perturbation: Perturbation strategy.
-    """
-
-    def __init__(
-        self,
-        n_members: int,
-        model_runner_factory: Any,
-        work_dir: Path,
-        perturbation: Optional[PerturbationStrategy] = None,
-    ):
-        super().__init__(n_members, perturbation)
-        self.model_runner_factory = model_runner_factory
-        self.work_dir = Path(work_dir)
-        self.member_dirs: List[Path] = []
-        self.member_runners: List[Any] = []
-
-    def initialize_members(self, **kwargs) -> None:
-        """Create per-member directory layout and runners."""
-        self.member_dirs = []
-        self.member_runners = []
-
-        for i in range(self.n_members):
-            member_dir = self.work_dir / f"member_{i:03d}"
-            member_dir.mkdir(parents=True, exist_ok=True)
-            (member_dir / 'settings').mkdir(exist_ok=True)
-            (member_dir / 'output').mkdir(exist_ok=True)
-            (member_dir / 'state').mkdir(exist_ok=True)
-
-            runner = self.model_runner_factory(member_dir, i)
-            self.member_dirs.append(member_dir)
-            self.member_runners.append(runner)
-
-        logger.info("Initialized %d subprocess ensemble members in %s", self.n_members, self.work_dir)
-
-    def forecast_step(self, t_start: Any, t_end: Any) -> None:
-        """Run all members for the given time window.
-
-        Each runner must implement a method that accepts time bounds.
-        """
-        for i, runner in enumerate(self.member_runners):
-            try:
-                runner.run_forecast_window(t_start, t_end)
-            except Exception as e:  # noqa: BLE001 — must-not-raise contract
-                logger.error("Member %d forecast failed: %s", i, e)
-
-    def extract_states(self) -> np.ndarray:
-        """Extract states from all member runners via StateCapableMixin."""
-        from symfluence.core.modeling.state import StateCapableMixin
-
-        all_states = []
-        for runner in self.member_runners:
-            if isinstance(runner, StateCapableMixin):
-                state = runner.save_state(
-                    runner.get_state_directory() or self.work_dir / 'state',
-                    timestamp='',
-                )
-                # Flatten arrays to 1-D vector
-                arrays = list(state.arrays.values())
-                if arrays:
-                    all_states.append(np.concatenate([np.atleast_1d(a) for a in arrays]))
-
-        return np.array(all_states) if all_states else np.array([])
-
-    def inject_states(self, updated_states: np.ndarray) -> None:
-        """Inject updated states back into member runners."""
-        from symfluence.core.modeling.state import ModelState, StateCapableMixin, StateMetadata
-
-        for i, runner in enumerate(self.member_runners):
-            if not isinstance(runner, StateCapableMixin):
-                continue
-
-            # Reconstruct state dict from flat vector
-            variables = runner.get_state_variables()
-            # Simple: assume each variable is a scalar except the last which gets remaining
-            sv = updated_states[i]
-            arrays = {}
-            offset = 0
-            for j, var in enumerate(variables):
-                if j < len(variables) - 1:
-                    arrays[var] = sv[offset:offset + 1]
-                    offset += 1
-                else:
-                    arrays[var] = sv[offset:]
-
-            model_name = runner._get_model_name() if hasattr(runner, '_get_model_name') else 'unknown'
-            metadata = StateMetadata(
-                model_name=model_name,
-                timestamp='',
-                format=runner.get_state_format(),
-                variables=variables,
-                ensemble_member=i,
-            )
-            state = ModelState(metadata=metadata, arrays=arrays)
-            runner.load_state(state)
-
-    def extract_predictions(self, variable: str = 'streamflow') -> np.ndarray:
-        """Extract predictions from member outputs (model-specific)."""
-        predictions = []
-        for runner in self.member_runners:
-            # Default: try to read from output file
-            try:
-                import xarray as xr
-                output_dir = getattr(runner, 'output_dir', None)
-                if output_dir:
-                    nc_files = sorted(Path(output_dir).glob('*output*.nc'))
-                    if nc_files:
-                        ds = xr.open_dataset(nc_files[-1])
-                        if variable in ds:
-                            predictions.append(float(ds[variable].values[-1]))
-                            ds.close()
-                            continue
-                        ds.close()
-                predictions.append(np.nan)
-            except Exception:  # noqa: BLE001 — must-not-raise contract
-                predictions.append(np.nan)
-
-        return np.array(predictions)
