@@ -673,7 +673,6 @@ src/symfluence/models/fuse/calibration/worker.py:FUSEWorker._calculate_multi_gau
 src/symfluence/models/fuse/calibration/worker.py:FUSEWorker._calculate_multi_gauge_metrics:except Exception as exc:  # noqa: BLE001 — let the existence check below surface the real failure
 src/symfluence/models/fuse/forcing_processor.py:FuseForcingProcessor._calculate_distributed_pet:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/fuse/forcing_processor.py:FuseForcingProcessor._prepare_lumped_forcing:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/fuse/forcing_processor.py:FuseForcingProcessor.prepare_forcing_data:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/fuse/plotter.py:FUSEPlotter.plot_streamflow:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/fuse/postprocessor.py:FUSEPostProcessor._get_netcdf_selections:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/fuse/preprocessor.py:FUSEPreProcessor._save_fuse_forcing:except Exception as e:  # noqa: BLE001 — model execution resilience
