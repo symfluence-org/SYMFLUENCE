@@ -323,7 +323,8 @@ class SWATPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         with ds.attrs['timestep_seconds'] set, so the forcing generator never
         re-parses raw variable names.
         """
-        forcing_files = list(self.forcing_basin_path.glob("*.nc"))
+        # Only the forcing remapped onto this run's HRUs (issue #339).
+        forcing_files = self._select_run_forcing(sorted(self.forcing_basin_path.glob("*.nc")))
 
         if not forcing_files:
             merged_path = self.project_forcing_dir / 'merged_path'
@@ -333,12 +334,11 @@ class SWATPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         if not forcing_files:
             raise FileNotFoundError(f"No forcing data found in {self.forcing_basin_path}")
 
-        # The basin-averaged store is domain-shared and can hold several remaps
-        # (e.g. a 1-HRU lumped basin average beside a 12-band elevation split).
-        # open_canonical_forcing refuses to merge mixed spatial shapes and raises
-        # ("hru {1, 12}"), which the forcing generator would otherwise swallow and
-        # replace with FABRICATED synthetic weather -- silently calibrating on
-        # random precipitation. Pick the single spatially-compatible remap first
+        # A legacy untokened store can still mix remaps (a 1-HRU lumped basin
+        # average beside a 12-band elevation split). open_canonical_forcing
+        # refuses to merge mixed spatial shapes and raises ("hru {1, 12}"), which
+        # the forcing generator would otherwise swallow and replace with
+        # FABRICATED synthetic weather. Pick one spatially-compatible remap
         # (mirrors mHM/RHESSys #376).
         forcing_files = self._select_forcing_files(forcing_files)
 
@@ -351,11 +351,13 @@ class SWATPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
     def _select_forcing_files(self, forcing_files: List[Path]) -> List[Path]:
         """Deterministically choose the spatially-compatible forcing file(s).
 
-        SWAT basin-averages its forcing to a single gage, so the single-HRU
-        (1 spatial point) remap is always the correct representation. When the
-        shared store also holds a multi-HRU remap (a different discretization),
-        prefer the canonical ``{domain}_{dataset}_remapped_*`` name, then drop
-        multi-point candidates so ``open_canonical_forcing`` is handed one shape.
+        Runs after ``_select_run_forcing`` has narrowed the basin store to the
+        files remapped onto this run's HRU set (issue #339). What remains to
+        resolve is several forcing datasets under one token and legacy
+        untokened stores: prefer the canonical ``{domain}_{dataset}_remapped_*``
+        name, then, since SWAT basin-averages its forcing to a single gage,
+        drop multi-point candidates when a single-point one is present so
+        ``open_canonical_forcing`` is handed one shape.
 
         Raises:
             FileOperationError: if incompatibly-shaped candidates remain.

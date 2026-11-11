@@ -165,7 +165,8 @@ class WATFLOODPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         if not forcing_path.exists():
             raise FileNotFoundError(f"Forcing not found: {forcing_path}")
 
-        forcing_files = sorted(forcing_path.glob("*.nc"))
+        # Only the forcing remapped onto this run's HRUs (issue #339).
+        forcing_files = self._select_run_forcing(sorted(forcing_path.glob("*.nc")))
         if not forcing_files:
             raise FileNotFoundError(f"No NetCDF files in {forcing_path}")
 

@@ -387,7 +387,8 @@ class SummaConfigManager(PathResolverMixin):
         self.logger.info("Creating initial conditions (cold state) file")
 
         # Find a forcing file to use as a template for hruId order
-        forcing_files = list(self.forcing_summa_path.glob('*.nc'))
+        # SUMMA_input is shared by every experiment on the domain (#339).
+        forcing_files = self._select_run_forcing(sorted(self.forcing_summa_path.glob('*.nc')))
         if not forcing_files:
             self.logger.error("No forcing files found in the SUMMA input directory")
             return
@@ -508,7 +509,8 @@ class SummaConfigManager(PathResolverMixin):
         self.logger.info("Creating trial parameters file")
 
         # Find a forcing file to use as a template for hruId order
-        forcing_files = list(self.forcing_summa_path.glob('*.nc'))
+        # SUMMA_input is shared by every experiment on the domain (#339).
+        forcing_files = self._select_run_forcing(sorted(self.forcing_summa_path.glob('*.nc')))
         if not forcing_files:
             self.logger.error("No forcing files found in the SUMMA input directory")
             return

@@ -131,7 +131,7 @@ class CLMParFlowPreProcessor(BaseModelPreProcessor):
         forcing_dir = self._get_forcing_dir()
         if forcing_dir:
             import xarray as xr
-            nc_files = sorted(forcing_dir.glob('*.nc'))
+            nc_files = self._select_run_forcing(sorted(forcing_dir.glob('*.nc')))
             if nc_files:
                 with xr.open_dataset(nc_files[0]) as ds:
                     if 'latitude' in ds and 'longitude' in ds:
@@ -286,12 +286,15 @@ class CLMParFlowPreProcessor(BaseModelPreProcessor):
             )
             return None
 
+        # Only the forcing remapped onto this run's HRUs (issue #339).
+        run_files = self._select_run_forcing(sorted(forcing_dir.glob('*.nc')))
+
         try:
             from symfluence.core.modeling.model_ready.forcing_reader import (
                 open_canonical_forcing,
                 resample_canonical_forcing,
             )
-            nc_files = sorted(forcing_dir.glob('*.nc'))
+            nc_files = run_files
             era5 = [f for f in nc_files if 'ERA5' in f.name or 'remapped' in f.name]
             if era5:
                 nc_files = era5
