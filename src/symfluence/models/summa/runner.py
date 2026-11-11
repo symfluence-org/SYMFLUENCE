@@ -373,7 +373,8 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
             wait=self._get_config_value(
                 lambda: self.config.model.summa.monitor_slurm_job, default=True
             ),
-            max_wait_time=3600
+            # No fixed hour here: the monitor never counts queue time and
+            # takes its backstop from the job's own --time limit.
         )
 
         if result.success and not self.slurm_job_finished(result):

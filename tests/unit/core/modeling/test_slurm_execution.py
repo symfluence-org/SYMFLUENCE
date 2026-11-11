@@ -96,13 +96,96 @@ def test_scontrol_is_used_when_sacct_has_no_record(monkeypatch):
     assert result.metadata['slurm_status'] == 'OUT_OF_MEMORY'
 
 
-def test_monitor_timeout_cancels_the_job(monkeypatch):
-    calls = _fake_slurm(monkeypatch, [''], squeue='4242 R\n')
-    clock = iter(range(0, 10_000, 30))
-    monkeypatch.setattr(se.time, 'time', lambda: next(clock))
-    result = _Runner().monitor_slurm_job('4242', poll_interval=0, max_wait_time=100)
+def _clock(monkeypatch, step=600):
+    """Each poll (time.sleep) advances the clock by *step* seconds."""
+    now = {'t': 0.0}
+    monkeypatch.setattr(se.time, 'time', lambda: now['t'])
+    monkeypatch.setattr(se.time, 'sleep', lambda _s: now.__setitem__('t', now['t'] + step))
+    return now
+
+
+def _queue_script(monkeypatch, states):
+    """squeue answers with successive entries of *states* ('' = left the queue)."""
+    calls = []
+    remaining = list(states)
+
+    def _run(cmd, **kwargs):
+        calls.append(list(cmd))
+        out = ''
+        if cmd[0] == 'squeue':
+            out = remaining.pop(0) if len(remaining) > 1 else remaining[0]
+        elif cmd[0] == 'sacct':
+            out = 'COMPLETED\n'
+        return SimpleNamespace(stdout=out, stderr='', returncode=0)
+
+    monkeypatch.setattr(se, 'run_subprocess', _run)
+    return calls
+
+
+def test_time_in_the_queue_never_triggers_a_cancel(monkeypatch):
+    """10 h PENDING, then a normal 2 h run under a 3 h limit: no scancel."""
+    _clock(monkeypatch, step=600)
+    states = ['PENDING|3:00:00\n'] * 60 + ['RUNNING|3:00:00\n'] * 12 + ['']
+    calls = _queue_script(monkeypatch, states)
+    result = _Runner().monitor_slurm_job('4242', poll_interval=60, max_wait_time=3600)
+    assert result.success is True
+    assert not any(c[0] == 'scancel' for c in calls)
+
+
+def test_running_job_is_not_cancelled_before_its_own_time_limit(monkeypatch):
+    """max_wait_time=3600 must not cut short a job allowed 3 h."""
+    now = _clock(monkeypatch, step=600)
+    calls = _queue_script(monkeypatch, ['RUNNING|3:00:00\n'])
+    result = _Runner().monitor_slurm_job('4242', poll_interval=60, max_wait_time=3600)
     assert result.success is False
     assert ['scancel', '4242'] in calls
+    # cancelled only after limit + margin of run time, not after the fixed hour
+    assert now['t'] >= 3 * 3600 + se.SLURM_TIME_LIMIT_MARGIN_S
+
+
+def test_array_with_tasks_still_pending_is_not_cancelled(monkeypatch):
+    """While any task waits, the backstop clock does not run."""
+    _clock(monkeypatch, step=3600)
+    mixed = 'RUNNING|1:00:00\nPENDING|1:00:00\n'
+    calls = _queue_script(monkeypatch, [mixed] * 30 + [''])
+    result = _Runner().monitor_slurm_job('4242', poll_interval=60, max_wait_time=60)
+    assert result.success is True
+    assert not any(c[0] == 'scancel' for c in calls)
+
+
+def test_script_time_limit_is_used_until_squeue_reports_one(monkeypatch, tmp_path):
+    now = _clock(monkeypatch, step=600)
+    script = tmp_path / 'x.sh'
+    script.write_text('#!/bin/bash\n#SBATCH --job-name=j\n#SBATCH --time=02:00:00\n', encoding='utf-8')
+    assert _Runner._script_time_limit(script) == '02:00:00'
+
+    calls = []
+
+    def _run(cmd, **kwargs):
+        calls.append(list(cmd))
+        out = {'sbatch': 'Submitted batch job 4242\n', 'squeue': 'RUNNING\n'}.get(cmd[0], '')
+        return SimpleNamespace(stdout=out, stderr='', returncode=0)
+
+    monkeypatch.setattr(se, 'run_subprocess', _run)
+    result = _Runner().submit_slurm_job(script, wait=True, poll_interval=60, max_wait_time=60)
+    assert result.success is False
+    assert ['scancel', '4242'] in calls
+    assert now['t'] >= 2 * 3600 + se.SLURM_TIME_LIMIT_MARGIN_S
+
+
+@pytest.mark.parametrize('spec,seconds', [
+    ('03:00:00', 10800), ('3:00:00', 10800), ('30', 1800), ('30:15', 1815),
+    ('1-00:00:00', 86400), ('2-12', 216000), ('1-01:30', 91800),
+    ('UNLIMITED', None), ('NOT_SET', None), ('Partition_Limit', None), ('', None), (None, None),
+])
+def test_parse_slurm_time_limit(spec, seconds):
+    assert se.parse_slurm_time_limit(spec) == seconds
+
+
+def test_summa_does_not_pass_a_fixed_monitor_timeout():
+    root = Path(se.__file__).resolve().parents[3]
+    text = (root / 'models/summa/runner.py').read_text(encoding='utf-8')
+    assert 'max_wait_time=3600' not in text
 
 
 def test_unmonitored_submit_is_not_a_finished_job(monkeypatch, tmp_path):

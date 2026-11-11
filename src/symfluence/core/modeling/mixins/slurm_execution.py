@@ -31,6 +31,48 @@ _SLURM_UNSETTLED_STATES = frozenset({
     "STAGE_OUT", "SIGNALING",
 })
 
+#: Queued, not yet running: time in these states never counts towards the
+#: monitor's backstop.
+_SLURM_QUEUED_STATES = frozenset({
+    "PENDING", "CONFIGURING", "REQUEUED", "REQUEUE_HOLD", "REQUEUE_FED",
+    "RESV_DEL_HOLD", "SPECIAL_EXIT", "SUSPENDED",
+})
+
+#: Slack beyond the job's own time limit before the monitor cancels it.
+SLURM_TIME_LIMIT_MARGIN_S = 600.0
+
+
+def parse_slurm_time_limit(value: Optional[str]) -> Optional[float]:
+    """Seconds for a SLURM time spec, or None if unset/unlimited/unparseable.
+
+    Accepts ``minutes``, ``minutes:seconds``, ``hours:minutes:seconds``,
+    ``days-hours``, ``days-hours:minutes`` and ``days-hours:minutes:seconds``.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or not text[0].isdigit():
+        return None  # UNLIMITED, NOT_SET, Partition_Limit, INVALID, ...
+    try:
+        days = 0
+        if '-' in text:
+            day_part, text = text.split('-', 1)
+            days = int(day_part)
+            parts = [int(p) for p in text.split(':')]
+            hours, minutes, seconds = (parts + [0, 0])[:3]
+        else:
+            parts = [int(p) for p in text.split(':')]
+            if len(parts) == 1:
+                hours, minutes, seconds = 0, parts[0], 0
+            elif len(parts) == 2:
+                hours, minutes, seconds = 0, parts[0], parts[1]
+            else:
+                hours, minutes, seconds = parts[:3]
+    except ValueError:
+        return None
+    return float(days * 86400 + hours * 3600 + minutes * 60 + seconds)
+
+
 #: How many extra polls to give accounting to settle before giving up.
 SLURM_STATUS_RETRIES = 10
 
@@ -133,7 +175,8 @@ class SlurmExecutionMixin:
             script_path: Path to SLURM batch script
             wait: If True, monitor job until completion
             poll_interval: Seconds between status checks
-            max_wait_time: Maximum seconds to wait before returning
+            max_wait_time: Lower bound on the run time (not queue time) after
+                which the monitor cancels the job; see monitor_slurm_job
 
         Returns:
             ExecutionResult with job_id and completion status
@@ -171,7 +214,8 @@ class SlurmExecutionMixin:
             return self.monitor_slurm_job(
                 job_id=job_id,
                 poll_interval=poll_interval,
-                max_wait_time=max_wait_time
+                max_wait_time=max_wait_time,
+                time_limit=self._script_time_limit(script_path),
             )
 
         except subprocess.CalledProcessError as e:
@@ -198,15 +242,22 @@ class SlurmExecutionMixin:
         job_id: str,
         poll_interval: int = 60,
         max_wait_time: int = 3600,
-        on_status_change: Optional[Callable[[str, str], None]] = None
+        on_status_change: Optional[Callable[[str, str], None]] = None,
+        time_limit: Optional[str] = None,
     ) -> ExecutionResult:
         """Monitor a SLURM job until completion or timeout.
 
         Args:
             job_id: SLURM job ID to monitor
             poll_interval: Seconds between status checks
-            max_wait_time: Maximum seconds to wait
+            max_wait_time: Lower bound (seconds) on how long the job may *run*
+                before the monitor cancels it. Queue time never counts, and
+                the effective limit is never below the job's own time limit
+                plus a margin — SLURM enforces that limit itself, so the
+                monitor's cancel is only a backstop for a job that outlives it.
             on_status_change: Callback(job_id, new_status) on status change
+            time_limit: The job's requested time limit (``--time`` spelling),
+                used until squeue reports the limit SLURM actually applied.
 
         Returns:
             ExecutionResult with final job status
@@ -214,14 +265,26 @@ class SlurmExecutionMixin:
         start_time = time.time()
         last_status = None
         unsettled_checks = 0
+        # The clock for the backstop starts when nothing is waiting in the
+        # queue any more: every task still running then must end within the
+        # job's time limit.
+        all_started_at: Optional[float] = None
+        job_limit_s = parse_slurm_time_limit(time_limit)
+        run_limit = float(max_wait_time)
 
         self.logger.info(f"Monitoring SLURM job {job_id}")
 
-        while (time.time() - start_time) < max_wait_time:
+        while True:
+            if all_started_at is not None:
+                run_limit = float(max_wait_time)
+                if job_limit_s is not None:
+                    run_limit = max(run_limit, job_limit_s + SLURM_TIME_LIMIT_MARGIN_S)
+                if time.time() - all_started_at >= run_limit:
+                    break
             try:
-                # Check if job is still in queue
+                # Check if job is still in queue (state and time limit per task)
                 queue_result = run_subprocess(
-                    ["squeue", "-j", job_id, "-h"],
+                    ["squeue", "-j", job_id, "-h", "-o", "%T|%l"],
                     capture_output=True,
                     text=True
                 )
@@ -277,9 +340,29 @@ class SlurmExecutionMixin:
                         metadata={'slurm_status': status}
                     )
                 else:
-                    # Job still running - parse status
+                    # Job still queued or running - parse status
                     unsettled_checks = 0
                     current_status = self._parse_squeue_output(queue_result.stdout)
+                    queue_lines = [
+                        line for line in queue_result.stdout.splitlines() if line.strip()
+                    ]
+                    reported = [
+                        parse_slurm_time_limit(line.split('|')[1])
+                        for line in queue_lines if '|' in line
+                    ]
+                    known = [limit for limit in reported if limit is not None]
+                    if known:
+                        job_limit_s = max(known)
+                    waiting = any(
+                        self._normalise_slurm_state(line.split('|')[0]) in _SLURM_QUEUED_STATES
+                        or ' PD ' in f" {line} "
+                        for line in queue_lines
+                    )
+                    if waiting:
+                        # Never cancel a job for waiting in the queue.
+                        all_started_at = None
+                    elif all_started_at is None:
+                        all_started_at = time.time()
 
                     if current_status != last_status:
                         self.logger.info(f"Job {job_id}: {current_status}")
@@ -296,7 +379,8 @@ class SlurmExecutionMixin:
         # into an output directory the caller has already reported as failed
         # (and may reuse).
         self.logger.warning(
-            f"Timeout after {max_wait_time}s waiting for job {job_id}; cancelling it"
+            f"Job {job_id} is still running {run_limit:.0f}s after its last task "
+            f"left the queue (beyond its own time limit); cancelling it"
         )
         self._cancel_slurm_job(job_id)
         return ExecutionResult(
@@ -304,9 +388,24 @@ class SlurmExecutionMixin:
             return_code=-1,
             job_id=job_id,
             duration_seconds=time.time() - start_time,
-            error_message=f"Timeout after {max_wait_time}s (job cancelled)",
+            error_message=f"Timeout after {run_limit:.0f}s of run time (job cancelled)",
             metadata={'slurm_status': 'MONITOR_TIMEOUT'}
         )
+
+    @staticmethod
+    def _script_time_limit(script_path: Path) -> Optional[str]:
+        """The ``#SBATCH --time`` value of a batch script, if it has one."""
+        try:
+            text = Path(script_path).read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            return None
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith('#SBATCH'):
+                for flag in ('--time=', '--time ', '-t '):
+                    if flag in stripped:
+                        return stripped.split(flag, 1)[1].split()[0]
+        return None
 
     def _cancel_slurm_job(self, job_id: str) -> None:
         """Best-effort ``scancel`` of a job (all array tasks)."""
