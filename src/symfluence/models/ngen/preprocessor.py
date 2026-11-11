@@ -14,7 +14,7 @@ import logging
 import sys
 from pathlib import Path
 from shutil import copyfile
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import geopandas as gpd
 import numpy as np
@@ -740,50 +740,12 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             start_time = pd.to_datetime(self.time_start)
             end_time = pd.to_datetime(self.time_end)
 
-        time_values = pd.to_datetime(forcing_data.time.values)
-        inferred_step_seconds = None
-        if len(time_values) > 1:
-            time_deltas = np.diff(time_values).astype('timedelta64[s]').astype(int)
-            inferred_step_seconds = int(np.median(time_deltas))
+        forcing_data, inferred_step_seconds = self._resample_forcing_to_hourly(forcing_data)
 
-        if inferred_step_seconds and inferred_step_seconds != 3600:
-            self.logger.info(
-                f"Resampling forcing data from {inferred_step_seconds} seconds to hourly for NGEN"
-            )
-            # Use mass-conserving resampling: sum for fluxes, mean for state variables
-            # Convert precipitation rate to depth for resampling, then back to rate
-            if 'precipitation_flux' in forcing_data:
-                # Convert mm/s to mm for the source timestep
-                forcing_data['pptrate_depth'] = forcing_data['precipitation_flux'] * inferred_step_seconds
-
-            # Define resampling strategy for each variable
-            resample_dict = {}
-            for var in map(str, forcing_data.data_vars):
-                if var in ['precipitation_flux', 'pptrate_depth']:
-                    continue  # Handle precipitation separately
-                elif var in ['surface_downwelling_shortwave_flux', 'surface_downwelling_longwave_flux']:
-                    # Radiation: use mean (could also use interpolation, but mean is safer)
-                    resample_dict[var] = 'mean'
-                else:
-                    # State variables (temp, pressure, humidity): use mean
-                    resample_dict[var] = 'mean'
-
-            # Resample
-            forcing_data_resampled = forcing_data.resample(time='1h').mean()
-
-            # Handle precipitation separately with mass conservation
-            if 'pptrate_depth' in forcing_data:
-                # Sum the precipitation depth over the resampled period
-                precip_depth_hourly = forcing_data['pptrate_depth'].resample(time='1h').sum()
-                # Convert back to rate (mm/h → mm/s)
-                forcing_data_resampled['precipitation_flux'] = precip_depth_hourly / 3600.0
-                # Remove temporary depth variable
-                if 'pptrate_depth' in forcing_data_resampled:
-                    forcing_data_resampled = forcing_data_resampled.drop_vars('pptrate_depth')
-
-            forcing_data = forcing_data_resampled
-            self._forcing_time_step_size_override = 3600
-            self.logger.debug("Used mass-conserving resampling: sum for precipitation, mean for other variables")
+        # Match forcing HRUs to catchments by id (before the padding below, which
+        # would give the id variable a time dimension); the writers then index
+        # the spatial axis in catchment order.
+        forcing_data = self._align_forcing_to_catchments(forcing_data, catchment_ids)
 
         # NGEN requires forcing data beyond the configured end_time to complete the simulation
         # Extend end_time by 4 forcing timesteps to provide necessary lookahead data
@@ -840,6 +802,104 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         ngen_ds.to_netcdf(output_file, format='NETCDF4')
         self._write_csv_forcing_files(forcing_data, catchment_ids)
         return output_file
+
+    def _resample_forcing_to_hourly(self, forcing_data: xr.Dataset) -> Tuple[xr.Dataset, Optional[int]]:
+        """Bring CF-named forcing to the hourly step NGEN is configured for.
+
+        Returns the (possibly resampled) dataset and the source step in seconds
+        (None when it cannot be inferred from fewer than two timesteps).
+
+        Uses the shared ``resample_canonical_forcing`` (as RHESSys/ParFlow do).
+        Coarser sources are upsampled by holding the precipitation rate constant
+        over each source interval (which conserves the total) and interpolating
+        the other variables; sub-hourly sources are interval-averaged, which
+        conserves a mean rate. A plain ``resample('1h').mean()/.sum()`` is only
+        valid for sub-hourly input: on a 3-hourly source it leaves two NaN hours
+        in three and puts the whole 3 h depth into the first. An irregular time
+        axis raises rather than being resampled.
+        """
+        time_values = pd.to_datetime(forcing_data.time.values)
+        if len(time_values) < 2:
+            return forcing_data, None
+        time_deltas = np.diff(time_values).astype('timedelta64[s]').astype(int)
+        inferred_step_seconds = int(np.median(time_deltas))
+        if inferred_step_seconds == 3600:
+            return forcing_data, inferred_step_seconds
+
+        self.logger.info(
+            f"Resampling forcing data from {inferred_step_seconds} seconds to hourly for NGEN"
+        )
+        from symfluence.core.modeling.model_ready.forcing_reader import (
+            resample_canonical_forcing,
+        )
+        forcing_data = resample_canonical_forcing(forcing_data, 3600.0)
+        self._forcing_time_step_size_override = 3600
+        return forcing_data, inferred_step_seconds
+
+    @staticmethod
+    def _normalise_hru_id(value: Any) -> str:
+        """Comparable form of an HRU id: '7', 7, 7.0 and 'cat-7' all give '7'."""
+        text = str(value).strip()
+        if text.startswith('cat-'):
+            text = text[4:]
+        try:
+            number = float(text)
+        except ValueError:
+            return text
+        return str(int(number)) if number.is_integer() else text
+
+    def _align_forcing_to_catchments(self, forcing_data: xr.Dataset, catchment_ids: List[str]) -> xr.Dataset:
+        """Order the forcing's spatial axis to match *catchment_ids*, by HRU id.
+
+        The forcing store and the catchment shapefile need not list HRUs in the
+        same order, so each catchment's series is selected by id (``hruId`` /
+        ``hru_id``, or the ``hru`` coordinate), not by position. A single-HRU
+        forcing applies to every catchment. Raises when a catchment has no
+        matching forcing HRU, or when the forcing carries no ids and its HRU
+        count differs from the catchment count.
+        """
+        spatial_dims = [str(d) for d in forcing_data.dims if d != 'time']
+        if not spatial_dims:
+            return forcing_data
+        if len(spatial_dims) > 1:
+            raise ModelExecutionError(
+                f"NGEN forcing must have one spatial dimension besides 'time'; found {spatial_dims}"
+            )
+        dim = spatial_dims[0]
+        n_forcing = forcing_data.sizes[dim]
+        if n_forcing == 1:
+            return forcing_data
+
+        ids = None
+        for name in ('hruId', 'hru_id', dim):
+            if name in forcing_data.variables and forcing_data[name].dims == (dim,):
+                ids = [self._normalise_hru_id(v) for v in forcing_data[name].values]
+                break
+        if ids is None:
+            if n_forcing != len(catchment_ids):
+                raise ModelExecutionError(
+                    f"NGEN forcing has {n_forcing} HRUs but there are {len(catchment_ids)} "
+                    "catchments, and the forcing carries no HRU ids ('hruId') to match them by."
+                )
+            self.logger.warning(
+                "NGEN forcing carries no HRU ids ('hruId'); assigning forcing to catchments "
+                "by position, which is only correct if both are in the same order."
+            )
+            return forcing_data
+
+        position = {hru_id: i for i, hru_id in enumerate(ids)}
+        if len(position) != len(ids):
+            raise ModelExecutionError("NGEN forcing has duplicate HRU ids; cannot match catchments by id")
+        wanted = [self._normalise_hru_id(c) for c in catchment_ids]
+        unmatched = [c for c, w in zip(catchment_ids, wanted) if w not in position]
+        if unmatched:
+            raise ModelExecutionError(
+                f"No forcing HRU matches catchment(s) {unmatched[:10]}"
+                f"{' ...' if len(unmatched) > 10 else ''} "
+                f"({len(unmatched)} of {len(catchment_ids)}); forcing HRU ids: {ids[:10]}"
+                f"{' ...' if len(ids) > 10 else ''}"
+            )
+        return forcing_data.isel({dim: [position[w] for w in wanted]})
 
     def _decompose_wind_speed(self, forcing_data: xr.Dataset) -> xr.Dataset:
         """
@@ -938,8 +998,12 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             cols = {'time': time_values}
             for e_v, n_v in var_mapping.items():
                 if e_v in forcing_data:
-                    arr = forcing_data[e_v].values
-                    cols[n_v] = arr[:, idx] if arr.ndim > 1 else arr
+                    # (time, hru), already ordered like catchment_ids by
+                    # _align_forcing_to_catchments; one HRU serves all catchments.
+                    arr = forcing_data[e_v].transpose('time', ...).values
+                    if arr.ndim > 1:
+                        arr = arr[:, idx if arr.shape[1] > 1 else 0]
+                    cols[n_v] = arr
 
             df = pd.DataFrame(cols)
 
@@ -992,7 +1056,7 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         var_mapping = {'precipitation_flux': 'precip_rate', 'air_temperature': 'TMP_2maboveground', 'specific_humidity': 'SPFH_2maboveground', 'surface_air_pressure': 'PRES_surface', 'surface_downwelling_shortwave_flux': 'DSWRF_surface', 'surface_downwelling_longwave_flux': 'DLWRF_surface'}
         for e_v, n_v in var_mapping.items():
             if e_v in forcing_data:
-                data = forcing_data[e_v].values.T
+                data = forcing_data[e_v].transpose('time', ...).values.T
                 if data.shape[0] == 1 and n_cats > 1: data = np.tile(data, (n_cats, 1))
                 ngen_ds[n_v] = xr.DataArray(data.astype(np.float32), dims=['catchment-id', 'time'])
         return ngen_ds
