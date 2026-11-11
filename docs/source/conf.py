@@ -15,7 +15,6 @@ autodoc_mock_imports = [
     'scipy',
     'xarray',
     'pint_xarray',
-    'distributed',
     'pyviscous',
     # Machine learning
     'torch',
@@ -54,7 +53,6 @@ autodoc_mock_imports = [
     'tqdm',
     'yaml',
     'requests',
-    'numexpr',
     'bottleneck',
     'networkx',
     # AI/LLM
