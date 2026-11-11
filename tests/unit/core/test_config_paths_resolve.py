@@ -67,6 +67,31 @@ def _attr_chain(node: ast.AST) -> list[str]:
     return parts[::-1]
 
 
+def _config_paths(body: ast.AST) -> list[list[str]]:
+    """Every ``config.a.b`` path read anywhere in a lambda body.
+
+    Looking only at the body itself missed guarded reads such as
+    ``lambda: self.config.model.troute.topology if self.config.model else None``
+    (an ``IfExp``, not an ``Attribute``), which is how a non-existent
+    ``troute.topology`` went unnoticed.
+    """
+    inner = {
+        id(node.value) for node in ast.walk(body) if isinstance(node, ast.Attribute)
+    }
+    paths = []
+    for node in ast.walk(body):
+        # outermost attribute of each chain only (a.b.c, not its prefix a.b)
+        if not isinstance(node, ast.Attribute) or id(node) in inner:
+            continue
+        chain = _attr_chain(node)
+        if "config" not in chain:
+            continue
+        cfg_path = chain[chain.index("config") + 1:]
+        if cfg_path and cfg_path not in paths:
+            paths.append(cfg_path)
+    return paths
+
+
 def _unresolvable_paths() -> list[str]:
     bad = []
     for path in sorted(SRC.rglob("*.py")):
@@ -82,20 +107,35 @@ def _unresolvable_paths() -> list[str]:
             lam = next((a for a in call.args[:2] if isinstance(a, ast.Lambda)), None)
             if lam is None:
                 continue
-            chain = _attr_chain(lam.body)
-            if "config" not in chain:
-                continue
-            cfg_path = chain[chain.index("config") + 1:]
-            if not cfg_path:
-                continue
             rel = path.relative_to(SRC.parent)
-            if not _resolves(SymfluenceConfig, cfg_path):
-                bad.append(f"{rel}:{call.lineno}: config.{'.'.join(cfg_path)}")
+            for cfg_path in _config_paths(lam.body):
+                if not _resolves(SymfluenceConfig, cfg_path):
+                    bad.append(f"{rel}:{call.lineno}: config.{'.'.join(cfg_path)}")
     return bad
 
 
+# Guarded reads (``... if self.config.model else None``) that the checker did
+# not look inside until it learnt to. Each names an option with no schema field,
+# so the setting is ignored on typed configs. Fix the read (add the field or use
+# a flat ``dict_key``) and delete the entry; do not add to this list.
+_KNOWN_UNRESOLVED = {
+    "symfluence/models/fuse/calibration/optimizer.py: config.model.fuse.forcing_elevation",
+    "symfluence/models/gnn/runner.py: config.model.gnn.checkpoint_interval",
+    "symfluence/models/hype/preprocessor.py: config.model.hype.timeshift",
+    "symfluence/models/hype/preprocessor.py: config.model.hype.frac_threshold",
+}
+
+
+def _without_line(entry: str) -> str:
+    location, cfg_path = entry.rsplit(": ", 1)
+    return f"{Path(location.rsplit(':', 1)[0]).as_posix()}: {cfg_path}"
+
+
 def test_typed_config_paths_resolve():
-    bad = _unresolvable_paths()
+    found = _unresolvable_paths()
+    bad = [entry for entry in found if _without_line(entry) not in _KNOWN_UNRESOLVED]
+    stale = _KNOWN_UNRESOLVED - {_without_line(entry) for entry in found}
+    assert not stale, f"Fixed -- remove from _KNOWN_UNRESOLVED: {sorted(stale)}"
     assert not bad, (
         "Typed config paths that don't exist on SymfluenceConfig (they silently "
         "return the default). Fix the path, or use `lambda: None` with a "
@@ -106,6 +146,19 @@ def test_typed_config_paths_resolve():
 def test_checker_catches_a_bad_path():
     assert not _resolves(SymfluenceConfig, ["paths", "pour_point_shp_path"])
     assert _resolves(SymfluenceConfig, ["paths", "pour_point_path"])
+
+
+def test_checker_sees_paths_inside_guarded_lambdas():
+    lam = ast.parse(
+        "lambda: self.config.model.troute.topology "
+        "if self.config.model and self.config.model.troute else None"
+    ).body[0].value
+    assert _config_paths(lam.body) == [
+        ["model", "troute", "topology"], ["model"], ["model", "troute"],
+    ]
+    plain = ast.parse("lambda: self.config.domain.name").body[0].value
+    assert _config_paths(plain.body) == [["domain", "name"]]
+    assert _config_paths(ast.parse("lambda: None").body[0].value.body) == []
 
 
 def test_checker_resolves_model_sections_through_the_schema_registry():
