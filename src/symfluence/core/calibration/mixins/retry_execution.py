@@ -10,7 +10,6 @@ Handles transient failures like stale file handles and I/O errors.
 from __future__ import annotations
 
 import logging
-import os
 import random
 import signal
 import time
@@ -60,7 +59,7 @@ class RetryExecutionMixin(ConfigMixin):
     Provides:
     - Retry logic with exponential backoff
     - Signal handling for clean termination
-    - Process isolation (thread limits, file locking)
+    - Staggered worker starts
     """
 
     # =========================================================================
@@ -258,36 +257,8 @@ class RetryExecutionMixin(ConfigMixin):
             raise KeyboardInterrupt("Shutdown requested")
 
     # =========================================================================
-    # Process isolation
+    # Worker start staggering
     # =========================================================================
-
-    def setup_worker_isolation(self) -> None:
-        """
-        Setup process isolation for worker.
-
-        Sets environment variables to prevent thread contention
-        and file locking issues.
-        """
-        # Limit thread counts to prevent resource contention
-        thread_vars = {
-            'OMP_NUM_THREADS': '1',
-            'MKL_NUM_THREADS': '1',
-            'OPENBLAS_NUM_THREADS': '1',
-            'VECLIB_MAXIMUM_THREADS': '1',
-            'NUMEXPR_NUM_THREADS': '1',
-        }
-
-        # Disable file locking for HDF5/NetCDF
-        file_locking_vars = {
-            'NETCDF_DISABLE_LOCKING': '1',
-            'HDF5_USE_FILE_LOCKING': 'FALSE',
-            'HDF5_DISABLE_VERSION_CHECK': '1',
-        }
-
-        for key, value in {**thread_vars, **file_locking_vars}.items():
-            os.environ[key] = value
-
-        self.logger.debug("Worker isolation environment configured")
 
     def add_initial_delay(self, max_delay: float = 1.0) -> None:
         """

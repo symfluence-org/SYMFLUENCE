@@ -21,7 +21,6 @@ Architecture:
     2. Helper Classes (Facade):
        - DirectoryManager: Creates/manages process-specific directories to avoid file conflicts
        - ConfigurationUpdater: Updates model config files (fileManager, mizRoute control) for each process
-       - TaskDistributor: Assigns tasks to processes and updates task dictionaries with directory info
        - WorkerEnvironmentConfig: Sets environment variables (GDAL, Python paths) for worker processes
 
     3. Parallel Directory Scheme:
@@ -40,13 +39,6 @@ Architecture:
            3. Update outputPath, outFilePrefix for process isolation
            4. Update mizRoute control: <input_dir>, <output_dir> → process dirs
            5. Update simulation times to calibration period
-
-    5. Task Distribution:
-       Tasks distributed round-robin across processes:
-           Task 0 → Process 0, Task 4 → Process 0 (if 4 processes)
-           Task 1 → Process 1, Task 5 → Process 1
-           etc.
-       Each task updated with parallel_dirs[process_id] for worker access
 
 Execution Modes:
 
@@ -86,15 +78,11 @@ Workflow Integration:
        optimizer.update_mizuroute_controls(parallel_dirs, model, exp_id)
        → Updates paths in fileManager.txt, mizRoute.control for process isolation
 
-    4. Task Distribution:
-       optimizer.distribute_tasks(task_list, parallel_dirs)
-       → Assigns tasks to processes, adds directory info to each task
-
-    5. Batch Execution:
+    4. Batch Execution:
        optimizer.execute_batch(tasks, worker_func, max_workers)
        → Selects strategy (Sequential/ProcessPool/MPI) and executes tasks
 
-    6. Cleanup:
+    5. Cleanup:
        optimizer.cleanup_parallel_processing(parallel_dirs)
        → Optional cleanup of parallel directories after run
 
@@ -107,7 +95,6 @@ Key Features:
     - Error Handling: Comprehensive error reporting from all parallel processes
     - Environment Setup: Coordinates worker environment variables (GDAL, Python, etc.)
     - Lazy Initialization: Helper classes created on-demand (properties)
-    - Backward Compatibility: Legacy _create_mpi_worker_script() method preserved
 
 Configuration Parameters:
     NUM_PROCESSES: int (default 1)
@@ -138,7 +125,6 @@ Example Workflows:
     >>> parallel_dirs = optimizer.setup_parallel_processing(base, 'SUMMA', 'exp1')
     >>> optimizer.copy_base_settings(settings_src, parallel_dirs, 'SUMMA')
     >>> optimizer.update_file_managers(parallel_dirs, 'SUMMA', 'exp1')
-    >>> tasks = optimizer.distribute_tasks(all_tasks, parallel_dirs)
     >>> results = optimizer.execute_batch(tasks, worker_func)
     # ProcessPool creates 8 worker processes on local machine
 
@@ -150,7 +136,6 @@ Example Workflows:
     ...     parallel_dirs = optimizer.setup_parallel_processing(base, 'SUMMA', 'exp1')
     ...     optimizer.copy_base_settings(settings_src, parallel_dirs, 'SUMMA')
     ...     optimizer.update_file_managers(parallel_dirs, 'SUMMA', 'exp1')
-    ...     tasks = optimizer.distribute_tasks(all_tasks, parallel_dirs)
     ...     results = optimizer.execute_batch(tasks, worker_func)
     # MPI master distributes tasks to worker ranks
 
@@ -171,7 +156,6 @@ References:
 See Also:
     - DirectoryManager: Process directory creation and management
     - ConfigurationUpdater: Model config file updates for process isolation
-    - TaskDistributor: Task-to-process assignment and metadata injection
     - WorkerEnvironmentConfig: Worker process environment variable setup
     - SequentialExecutionStrategy: Single-process execution implementation
     - ProcessPoolExecutionStrategy: Multiprocessing.Pool implementation
@@ -194,7 +178,6 @@ from .parallel import (
     PersistentMPIExecutionStrategy,
     ProcessPoolExecutionStrategy,
     SequentialExecutionStrategy,
-    TaskDistributor,
     WorkerEnvironmentConfig,
 )
 
@@ -234,12 +217,7 @@ class ParallelExecutionMixin(ConfigMixin):
            - Synchronizes configuration across all process directories
            - Handles calibration period time settings
 
-        4. Task Distribution:
-           - Round-robin assignment of tasks to processes
-           - Injects process-specific directory paths into task dictionaries
-           - Maintains task order for result collection
-
-        5. Worker Environment Setup:
+        4. Worker Environment Setup:
            - Configures worker process environment variables
            - Handles GDAL configuration, Python paths, library paths
            - Applies environment settings across execution strategies
@@ -253,7 +231,6 @@ class ParallelExecutionMixin(ConfigMixin):
         Lazy-initialized properties (created on-demand):
         - _directory_manager: DirectoryManager instance
         - _config_updater: ConfigurationUpdater instance
-        - _task_distributor: TaskDistributor instance
         - _worker_env_config: WorkerEnvironmentConfig instance
 
     Properties:
@@ -293,17 +270,9 @@ class ParallelExecutionMixin(ConfigMixin):
             Updates MizuRoute control file with process-specific paths.
             Updates <input_dir>, <output_dir>, <ancil_dir>, <fname_qsim>.
 
-        distribute_tasks(tasks, parallel_dirs):
-            Assigns tasks to processes round-robin.
-            Returns tasks with process_id and directory info added.
-
         execute_batch(tasks, worker_func, max_workers):
             Main execution method. Selects strategy and executes tasks.
             Returns: List of result dictionaries with scores and errors.
-
-        execute_batch_ordered(tasks, worker_func, max_workers):
-            Execution with guaranteed result ordering (uses ProcessPool).
-            Returns: Results in same order as input tasks.
 
         cleanup_parallel_processing(parallel_dirs):
             Optional cleanup of parallel directories.
@@ -364,8 +333,7 @@ class ParallelExecutionMixin(ConfigMixin):
         ...             for i, params_set_i in enumerate(parameter_sets)
         ...         ]
         ...
-        ...         # Distribute and execute
-        ...         tasks = self.distribute_tasks(tasks, parallel_dirs)
+        ...         # Execute
         ...         results = self.execute_batch(tasks, self.evaluate_single_task)
         ...
         ...         # Cleanup
@@ -420,7 +388,6 @@ class ParallelExecutionMixin(ConfigMixin):
 
         - DirectoryManager: Low-level parallel directory management
         - ConfigurationUpdater: Model configuration file updates
-        - TaskDistributor: Task-to-process distribution logic
         - BaseModelOptimizer: Example of class using this mixin
         - SequentialExecutionStrategy: Single-process execution implementation
         - ProcessPoolExecutionStrategy: Multiprocessing implementation
@@ -444,13 +411,6 @@ class ParallelExecutionMixin(ConfigMixin):
         if getattr(self, '_cached_config_updater', None) is None:
             self._cached_config_updater = ConfigurationUpdater(self.config, self.logger)
         return self._cached_config_updater
-
-    @property
-    def _task_distributor(self) -> TaskDistributor:
-        """Get or create task distributor."""
-        if getattr(self, '_cached_task_distributor', None) is None:
-            self._cached_task_distributor = TaskDistributor(self.num_processes)
-        return self._cached_task_distributor
 
     @property
     def _worker_env_config(self) -> WorkerEnvironmentConfig:
@@ -592,30 +552,6 @@ class ParallelExecutionMixin(ConfigMixin):
         )
 
     # =========================================================================
-    # Task distribution (delegates to TaskDistributor)
-    # =========================================================================
-
-    def distribute_tasks(
-        self,
-        tasks: List[Dict[str, Any]],
-        parallel_dirs: Optional[Dict[int, Dict[str, Path]]] = None
-    ) -> List[Dict[str, Any]]:
-        """
-        Distribute tasks across processes.
-
-        Assigns each task to a process and updates the task with
-        process-specific directory paths.
-
-        Args:
-            tasks: List of task dictionaries
-            parallel_dirs: Optional process-specific directories
-
-        Returns:
-            List of tasks with process assignments
-        """
-        return self._task_distributor.distribute(tasks, parallel_dirs)
-
-    # =========================================================================
     # Batch execution (uses execution strategies)
     # =========================================================================
 
@@ -747,29 +683,6 @@ class ParallelExecutionMixin(ConfigMixin):
             strategy = SequentialExecutionStrategy(self.logger)
             return strategy.execute(tasks, worker_func, max_workers)
 
-    def execute_batch_ordered(
-        self,
-        tasks: List[Dict[str, Any]],
-        worker_func: Callable,
-        max_workers: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
-        """
-        Execute a batch of tasks and return results in the same order as input.
-
-        Args:
-            tasks: List of task dictionaries
-            worker_func: Function to call for each task
-            max_workers: Maximum number of worker processes
-
-        Returns:
-            List of results in the same order as input tasks
-        """
-        if max_workers is None:
-            max_workers = self.max_workers
-
-        strategy = ProcessPoolExecutionStrategy(self.logger)
-        return strategy.execute(tasks, worker_func, max_workers)
-
     # =========================================================================
     # Environment setup (delegates to WorkerEnvironmentConfig)
     # =========================================================================
@@ -786,28 +699,3 @@ class ParallelExecutionMixin(ConfigMixin):
     def apply_worker_environment(self) -> None:
         """Apply worker environment variables to current process."""
         self._worker_env_config.apply_to_current_process()
-
-    # =========================================================================
-    # Legacy method for backward compatibility
-    # =========================================================================
-
-    def _create_mpi_worker_script(
-        self,
-        script_path: Path,
-        tasks_file: Path,
-        results_file: Path,
-        worker_module: str,
-        worker_function: str
-    ) -> None:
-        """
-        Create the MPI worker script file.
-
-        Note: This method is kept for backward compatibility.
-        New code should use MPIExecutionStrategy directly.
-        """
-        strategy = MPIExecutionStrategy(
-            self.project_dir, self.num_processes, self.logger
-        )
-        strategy._create_worker_script(
-            script_path, tasks_file, results_file, worker_module, worker_function
-        )

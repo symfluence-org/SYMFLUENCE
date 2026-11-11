@@ -753,5 +753,4 @@ def test_parallel_helpers_are_built_once():
     host = Host()
     assert host._directory_manager is host._directory_manager
     assert host._config_updater is host._config_updater
-    assert host._task_distributor is host._task_distributor
     assert host._worker_env_config is host._worker_env_config
