@@ -13,8 +13,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Optional
 
 import rasterio
-import rasterstats
 from pyproj import CRS
+
+from symfluence.geospatial.zonal import fill_empty_zones, zonal_stats_covered
 
 if TYPE_CHECKING:
     from ..core import DomainDiscretizer
@@ -88,15 +89,27 @@ def discretize(discretizer: "DomainDiscretizer") -> Optional[object]:
             dem_transform = src.transform
             dem_nodata = src.nodata
 
-        zs = rasterstats.zonal_stats(
+        # GRUs smaller than a DEM pixel are retried with every touched pixel
+        # and, failing that, filled from the nearest GRU (never silently -9999).
+        zs, empty = zonal_stats_covered(
             gru_gdf_projected.geometry,
             dem_array,
             affine=dem_transform,
             stats=["mean"],
             nodata=dem_nodata if dem_nodata is not None else -9999,
+            logger=discretizer.logger,
+            label="GRU mean elevation",
+        )
+        fill_empty_zones(
+            zs,
+            empty,
+            gru_gdf_projected.geometry,
+            zone_ids=gru_gdf["GRU_ID"].tolist() if "GRU_ID" in gru_gdf.columns else None,
+            logger=discretizer.logger,
+            label="GRU mean elevation",
         )
         gru_gdf["elev_mean"] = [
-            item["mean"] if item["mean"] is not None else -9999 for item in zs
+            item["mean"] if item.get("mean") is not None else -9999 for item in zs
         ]
         discretizer.logger.debug(
             f"Successfully calculated elevation statistics for {len(gru_gdf)} HRUs"

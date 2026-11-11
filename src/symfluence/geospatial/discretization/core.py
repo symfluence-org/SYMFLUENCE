@@ -16,18 +16,23 @@ from typing import Any, Dict, Optional, Tuple, Union
 import geopandas as gpd
 import numpy as np
 import rasterio
-import rasterstats
 from pyproj import CRS
-from rasterio.mask import mask
 from shapely.geometry import MultiPolygon, Polygon, shape
 from shapely.validation import make_valid
 
 from symfluence.core.exceptions import ShapefileError
 from symfluence.core.geometry_utils import clean_geometry
 from symfluence.core.path_resolver import PathResolverMixin
-from symfluence.geospatial.raster_utils import analyze_raster_values, valid_pixel_mask
+from symfluence.geospatial.raster_utils import analyze_raster_values
+from symfluence.geospatial.zonal import fill_empty_zones, zonal_stats_covered
 
 from .artifacts import DiscretizationArtifacts
+from .hru_utils import (
+    check_area_conservation,
+    fill_nodata_from_nearest,
+    merge_small_hrus,
+    read_zone_window,
+)
 from .attributes import aspect, combined, elevation, grus, landclass, radiation, soilclass
 
 
@@ -226,7 +231,9 @@ class DomainDiscretizer(PathResolverMixin):
 
         Note:
             - HRUs can be MultiPolygons (spatially disconnected areas with same attributes)
-            - Minimum HRU size controlled by MIN_HRU_SIZE config parameter
+            - Minimum HRU size controlled by MIN_HRU_SIZE config parameter (km²):
+              raster-derived HRUs below it are dissolved into the neighbouring
+              HRU of the same GRU sharing the longest boundary (0 = off)
             - Output shapefile includes: geometry, GRU_ID, HRU_ID, area, and attribute values
             - Files saved to: {project_dir}/shapefiles/catchment/{domain_name}_HRUs_{method}.shp
 
@@ -378,26 +385,30 @@ class DomainDiscretizer(PathResolverMixin):
 
                 # Extract raster data within this GRU
                 try:
-                    # Mask the raster to this GRU's geometry
-                    out_image, out_transform = mask(
-                        src,
-                        [gru_geometry],
-                        crop=True,
-                        all_touched=True,
-                        filled=False,
+                    out_image, inside_mask, valid_mask, out_transform = read_zone_window(
+                        src, gru_geometry, all_touched=True
                     )
-                    out_image = out_image[0]
                 except (rasterio.RasterioIOError, ValueError, RuntimeError) as e:
                     self.logger.warning(
                         f"Could not extract raster data for GRU {gru_id}: {str(e)}"
                     )
                     continue
 
-                valid_mask = valid_pixel_mask(out_image, nodata_value)
-
                 if not np.any(valid_mask):
                     self.logger.warning(f"No valid pixels found in GRU {gru_id}")
                     continue
+
+                # Nodata holes inside the GRU would be left out of every HRU
+                # (lost area); give them the nearest valid pixel's value.
+                out_image, n_filled = fill_nodata_from_nearest(out_image, valid_mask, inside_mask)
+                if n_filled:
+                    self.logger.warning(
+                        f"GRU {gru_id}: {n_filled} of {int(inside_mask.sum())} raster pixels "
+                        f"({100.0 * n_filled / inside_mask.sum():.1f}%) have no {attribute_name} "
+                        f"data (nodata={nodata_value}); assigned the nearest valid pixel's value "
+                        "so the HRUs cover the whole GRU."
+                    )
+                    valid_mask = inside_mask
 
                 # Find unique values within this GRU
                 valid_values = out_image[valid_mask]
@@ -698,9 +709,14 @@ class DomainDiscretizer(PathResolverMixin):
             )
             return None
 
-    def _clean_and_prepare_hru_gdf(self, hru_gdf):
+    def _clean_and_prepare_hru_gdf(self, hru_gdf, gru_gdf=None):
         """
         Clean and prepare the HRU GeoDataFrame for output.
+
+        Validates geometries, merges HRUs below ``MIN_HRU_SIZE`` (km²) into a
+        neighbouring HRU of the same GRU, computes area / centroid / mean
+        elevation, renumbers ``HRU_ID`` and — when *gru_gdf* is given — warns
+        if the HRUs of a GRU do not add up to the GRU's area.
         """
         # Ensure all geometries are valid
         hru_gdf["geometry"] = hru_gdf["geometry"].apply(lambda g: clean_geometry(g, self.logger))
@@ -728,6 +744,18 @@ class DomainDiscretizer(PathResolverMixin):
         hru_gdf = gpd.GeoDataFrame(valid_rows, crs=hru_gdf.crs)
 
         self.logger.info(f"Retained {len(hru_gdf)} HRUs after geometry validation")
+
+        # Merge undersized HRUs (MIN_HRU_SIZE, km²) before any per-HRU statistic
+        min_hru_size = float(self._get_config_value(
+            lambda: self.config.domain.min_hru_size,
+            default=0.0,
+            dict_key='MIN_HRU_SIZE'
+        ) or 0.0)
+        if min_hru_size > 0:
+            hru_gdf = merge_small_hrus(hru_gdf, min_hru_size, self.logger)
+
+        if gru_gdf is not None:
+            check_area_conservation(hru_gdf, gru_gdf, self.logger)
 
         # Calculate areas and centroids
         self.logger.info("Calculating HRU areas and centroids")
@@ -768,16 +796,29 @@ class DomainDiscretizer(PathResolverMixin):
             else:
                 hru_gdf_projected = hru_gdf.copy()
 
-            # Use rasterstats with the raster array and transform
-            zs = rasterstats.zonal_stats(
+            # Zonal mean; HRUs smaller than a DEM pixel are retried with every
+            # touched pixel and, failing that, filled from the nearest HRU of
+            # the same GRU (never silently -9999).
+            zs, empty = zonal_stats_covered(
                 hru_gdf_projected.geometry,
                 dem_array,
                 affine=dem_transform,
                 stats=["mean"],
                 nodata=dem_nodata if dem_nodata is not None else -9999,
+                logger=self.logger,
+                label="HRU mean elevation",
+            )
+            fill_empty_zones(
+                zs,
+                empty,
+                hru_gdf_projected.geometry,
+                group_ids=hru_gdf["GRU_ID"].tolist() if "GRU_ID" in hru_gdf.columns else None,
+                zone_ids=hru_gdf["HRU_ID"].tolist() if "HRU_ID" in hru_gdf.columns else None,
+                logger=self.logger,
+                label="HRU mean elevation",
             )
             hru_gdf["elev_mean"] = [
-                item["mean"] if item["mean"] is not None else -9999 for item in zs
+                item["mean"] if item.get("mean") is not None else -9999 for item in zs
             ]
 
         except (rasterio.RasterioIOError, ValueError, KeyError, RuntimeError) as e:

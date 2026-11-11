@@ -69,7 +69,7 @@ def discretize(discretizer: "DomainDiscretizer") -> Optional[object]:
     )
 
     if hru_gdf is not None and not hru_gdf.empty:
-        hru_gdf = discretizer._clean_and_prepare_hru_gdf(hru_gdf)
+        hru_gdf = discretizer._clean_and_prepare_hru_gdf(hru_gdf, gru_gdf)
         # Suppress shapefile column name truncation warning (known limitation)
         with warnings.catch_warnings():
             warnings.filterwarnings('ignore', message='.*Column names longer than 10.*')

@@ -54,7 +54,7 @@ def discretize(discretizer: "DomainDiscretizer") -> Optional[object]:
     )
 
     if hru_gdf is not None and not hru_gdf.empty:
-        hru_gdf = discretizer._clean_and_prepare_hru_gdf(hru_gdf)
+        hru_gdf = discretizer._clean_and_prepare_hru_gdf(hru_gdf, gru_gdf)
         hru_gdf.to_file(output_shapefile)
         discretizer.logger.info(
             f"Soil-based HRU Shapefile created with {len(hru_gdf)} HRUs and saved to {output_shapefile}"
