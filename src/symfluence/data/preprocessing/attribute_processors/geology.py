@@ -20,6 +20,8 @@ from typing import Any, Dict
 import geopandas as gpd
 import numpy as np
 
+from symfluence.core.geometry_utils import feature_areas_m2
+
 from .base import BaseAttributeProcessor
 
 
@@ -132,8 +134,8 @@ class GeologyProcessor(BaseAttributeProcessor):
             catchment['geometry'] = catchment.geometry.simplify(simplify_tolerance)
 
             # Calculate area in equal area projection for weighting
-            equal_area_crs = 'ESRI:102008'  # North America Albers Equal Area Conic
-            glhymps['New_area_m2'] = glhymps.to_crs(equal_area_crs).area
+            # (local equal-area projection: valid anywhere, not only North America)
+            glhymps['New_area_m2'] = feature_areas_m2(glhymps)
 
             # Check if we're dealing with lumped or distributed catchment
             is_lumped = self._is_lumped()
@@ -431,11 +433,11 @@ class GeologyProcessor(BaseAttributeProcessor):
 
                 if not intersection.empty:
                     # Convert to equal area for proper area calculation
-                    equal_area_crs = 'ESRI:102008'  # North America Albers Equal Area Conic
-                    intersection_equal_area = intersection.to_crs(equal_area_crs)
+                    # (local equal-area projection: valid anywhere, not only North America)
+                    intersection_equal_area = intersection.copy()
 
                     # Calculate area for each lithology class
-                    intersection_equal_area['area_km2'] = intersection_equal_area.geometry.area / 10**6  # m² to km²
+                    intersection_equal_area['area_km2'] = feature_areas_m2(intersection) / 10**6  # m² to km²
 
                     # Calculate lithology class distribution
                     litho_areas = intersection_equal_area.groupby(litho_column)['area_km2'].sum()
@@ -512,11 +514,11 @@ class GeologyProcessor(BaseAttributeProcessor):
 
                         if not intersection.empty:
                             # Convert to equal area for proper area calculation
-                            equal_area_crs = 'ESRI:102008'  # North America Albers Equal Area Conic
-                            intersection_equal_area = intersection.to_crs(equal_area_crs)
+                            # (local equal-area projection: valid anywhere, not only North America)
+                            intersection_equal_area = intersection.copy()
 
                             # Calculate area for each lithology class
-                            intersection_equal_area['area_km2'] = intersection_equal_area.geometry.area / 10**6  # m² to km²
+                            intersection_equal_area['area_km2'] = feature_areas_m2(intersection) / 10**6  # m² to km²
 
                             # Calculate lithology class distribution
                             litho_areas = intersection_equal_area.groupby(litho_column)['area_km2'].sum()

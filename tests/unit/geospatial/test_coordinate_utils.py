@@ -232,3 +232,23 @@ class TestGridCoordinates:
         )
 
         assert cell_bounds == (8.375, 46.375, 8.625, 46.625)
+
+
+class TestGlobalBoundingBox:
+    """A box spanning 360 degrees is the globe, not an empty box."""
+
+    @pytest.mark.parametrize("lon_min,lon_max", [(-180.0, 180.0), (0.0, 360.0)])
+    def test_full_circle_normalises_to_global(self, lon_min, lon_max):
+        from symfluence.geospatial.coordinate_utils import BoundingBox
+
+        bbox = BoundingBox(-60.0, 60.0, lon_min, lon_max)
+        as_360 = bbox.normalize_longitude('0-360')
+        assert (as_360.lon_min, as_360.lon_max) == (0.0, 360.0)
+        as_180 = bbox.normalize_longitude('-180-180')
+        assert (as_180.lon_min, as_180.lon_max) == (-180.0, 180.0)
+
+    def test_partial_box_still_normalised(self):
+        from symfluence.geospatial.coordinate_utils import BoundingBox
+
+        out = BoundingBox(60.0, 66.0, -25.0, -13.0).normalize_longitude('0-360')
+        assert (out.lon_min, out.lon_max) == (335.0, 347.0)
