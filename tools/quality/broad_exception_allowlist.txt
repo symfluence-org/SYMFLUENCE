@@ -1066,7 +1066,6 @@ src/symfluence/models/summa/calibration/worker.py:SUMMAWorker.run_model:except E
 src/symfluence/models/summa/config_manager.py:SummaConfigManager.copy_base_settings:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/summa/config_manager.py:SummaConfigManager.create_file_manager:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/summa/config_manager.py:SummaConfigManager.create_trial_parameters:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/summa/forcing_processor.py:SummaForcingProcessor._check_already_corrected:except Exception:  # noqa: BLE001
 src/symfluence/models/summa/forcing_processor.py:SummaForcingProcessor._determine_batch_size:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/summa/forcing_processor.py:SummaForcingProcessor._filter_forcing_hru_ids:except Exception as exc:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/summa/forcing_processor.py:SummaForcingProcessor._find_intersection_file:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
