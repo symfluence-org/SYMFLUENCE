@@ -376,6 +376,16 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
             max_wait_time=3600
         )
 
+        if result.success and not self.slurm_job_finished(result):
+            # A bare sbatch is not a finished run: merging now would stitch
+            # together whatever chunk files a previous run left behind.
+            self.logger.warning(
+                f"SLURM job {result.job_id} was submitted without monitoring "
+                f"(MONITOR_SLURM_JOB is off); it has not finished, so outputs "
+                f"are not merged. Re-run this step once the job has completed."
+            )
+            return None
+
         if result.success:
             return self._merge_parallel_outputs()
         else:

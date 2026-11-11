@@ -105,6 +105,59 @@ def wait(proc: subprocess.Popen, timeout: Optional[float] = None) -> int:
                 raise
 
 
+def kill_process_group(pid: int, sig: Optional[int] = None) -> None:
+    """Signal the process group led by ``pid`` (SIGKILL by default).
+
+    POSIX only; falls back to signalling the single pid when the group is
+    already gone or is not ours to signal. No-op on Windows.
+    """
+    if IS_WINDOWS:
+        return
+    import os
+    import signal
+
+    signum = signal.SIGKILL if sig is None else sig
+    try:
+        os.killpg(os.getpgid(pid), signum)
+    except (ProcessLookupError, PermissionError, OSError):
+        try:
+            os.kill(pid, signum)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+
+
+def _run_in_own_group(*popenargs: Any,
+                      timeout: Optional[float],
+                      check: bool,
+                      capture_output: bool,
+                      **kwargs: Any) -> subprocess.CompletedProcess:
+    """``subprocess.run`` with the child as session leader; kills the group."""
+    if capture_output:
+        if kwargs.get('stdout') is not None or kwargs.get('stderr') is not None:
+            raise ValueError('stdout and stderr arguments may not be used '
+                             'with capture_output.')
+        kwargs['stdout'] = subprocess.PIPE
+        kwargs['stderr'] = subprocess.PIPE
+    kwargs['start_new_session'] = True
+
+    with subprocess.Popen(*popenargs, **kwargs) as proc:
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+        except BaseException:
+            # Timeout, KeyboardInterrupt, ...: the child no longer shares our
+            # terminal's process group, so nothing else will stop it or its
+            # descendants.
+            kill_process_group(proc.pid)
+            proc.kill()
+            proc.wait()
+            raise
+        returncode = proc.poll()
+    if check and returncode:
+        raise subprocess.CalledProcessError(returncode, proc.args,
+                                            output=stdout, stderr=stderr)
+    return subprocess.CompletedProcess(proc.args, returncode, stdout, stderr)
+
+
 def _reader(pipe: Any, sink: List[Any]) -> None:
     try:
         sink.append(pipe.read())
@@ -120,13 +173,23 @@ def run(*popenargs: Any,
         check: bool = False,
         capture_output: bool = False,
         input: Optional[Any] = None,  # mirrors subprocess.run
+        kill_group: bool = False,
         **kwargs: Any) -> subprocess.CompletedProcess:
     """Drop-in for ``subprocess.run`` that tolerates unsignaled exits.
+
+    ``kill_group=True`` (POSIX only; ignored on Windows) starts the child in
+    its own session and, on timeout or interruption, kills the whole process
+    group rather than only the direct child — ``subprocess.run`` leaves the
+    grandchildren of ``mpirun`` or of a shell wrapper running.
 
     Delegates verbatim to ``subprocess.run`` off Windows, and when ``input`` is
     supplied (no model runner uses it, and stdin handling is not worth
     duplicating).
     """
+    if kill_group and not IS_WINDOWS and input is None:
+        return _run_in_own_group(*popenargs, timeout=timeout, check=check,
+                                 capture_output=capture_output, **kwargs)
+
     if not IS_WINDOWS or input is not None:
         return subprocess.run(*popenargs, timeout=timeout, check=check,  # check forwarded
                               capture_output=capture_output, input=input, **kwargs)
