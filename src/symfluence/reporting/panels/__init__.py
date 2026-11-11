@@ -17,7 +17,6 @@ Available Panels:
     - MultiScatterPanel: Multiple scatter plots
     - MonthlyBoxplotPanel: Monthly distribution boxplots
     - ResidualAnalysisPanel: Monthly bias bar plot
-    - ResidualHistogramPanel: Residual distribution histogram
 
 Example:
     >>> from symfluence.reporting.panels import TimeSeriesPanel, FDCPanel
@@ -36,7 +35,6 @@ from symfluence.reporting.panels.metrics_table_panel import MetricsTablePanel
 from symfluence.reporting.panels.monthly_boxplot_panel import MonthlyBoxplotPanel
 from symfluence.reporting.panels.residual_analysis_panel import (
     ResidualAnalysisPanel,
-    ResidualHistogramPanel,
 )
 from symfluence.reporting.panels.scatter_panel import MultiScatterPanel, ScatterPanel
 from symfluence.reporting.panels.timeseries_panel import TimeSeriesPanel
@@ -52,5 +50,4 @@ __all__ = [
     'MultiScatterPanel',
     'MonthlyBoxplotPanel',
     'ResidualAnalysisPanel',
-    'ResidualHistogramPanel',
 ]

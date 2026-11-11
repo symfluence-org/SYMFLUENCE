@@ -9,7 +9,7 @@ Provides reusable decorators for common patterns in visualization methods.
 from __future__ import annotations
 
 from functools import wraps
-from typing import Any, Callable, Dict, List, Optional, TypeVar, Union, get_type_hints
+from typing import Any, Callable, Dict, List, TypeVar, Union, get_type_hints
 
 # Type variable for the return type
 T = TypeVar('T')
@@ -189,61 +189,5 @@ def skip_if_not_diagnostic(default: Any = None, *, auto_infer: bool = True):
                 return return_default
             return func(self, *args, **kwargs)
 
-        return wrapper
-    return decorator
-
-
-def requires_plotter(plotter_attr: str):
-    """
-    Decorator that ensures a specific plotter is available before executing.
-
-    Args:
-        plotter_attr: Name of the plotter attribute (e.g., 'domain_plotter')
-
-    Returns:
-        Decorated function that checks plotter availability
-
-    Usage:
-        @requires_plotter('domain_plotter')
-        def visualize_domain(self):
-            return self.domain_plotter.plot_domain()
-    """
-    def decorator(func: Callable[..., T]) -> Callable[..., Optional[T]]:
-        @wraps(func)
-        def wrapper(self, *args, **kwargs) -> Optional[T]:
-            plotter = getattr(self, plotter_attr, None)
-            if plotter is None:
-                if hasattr(self, 'logger'):
-                    self.logger.warning(
-                        f"Plotter '{plotter_attr}' not available for {func.__name__}"
-                    )
-                return None
-            return func(self, *args, **kwargs)
-        return wrapper
-    return decorator
-
-
-def log_visualization(message_template: str):
-    """
-    Decorator that logs a message before executing a visualization method.
-
-    Args:
-        message_template: Message to log. Can include {method_name} placeholder.
-
-    Returns:
-        Decorated function that logs before execution
-
-    Usage:
-        @log_visualization("Creating {method_name} visualization...")
-        def visualize_domain(self):
-            return self.domain_plotter.plot_domain()
-    """
-    def decorator(func: Callable[..., T]) -> Callable[..., T]:
-        @wraps(func)
-        def wrapper(self, *args, **kwargs) -> T:
-            if hasattr(self, 'logger'):
-                msg = message_template.format(method_name=func.__name__)
-                self.logger.info(msg)
-            return func(self, *args, **kwargs)
         return wrapper
     return decorator
