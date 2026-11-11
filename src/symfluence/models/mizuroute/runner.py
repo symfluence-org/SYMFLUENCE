@@ -91,6 +91,34 @@ class MizuRouteRunner(BaseModelRunner):  # type: ignore[misc]
             return None
         return freq
 
+    def _times_misaligned(self, stamps) -> bool:
+        """Whether ANY timestamp is off the rounding grid.
+
+        SUMMA writes times computed from Julian days, so later steps can carry
+        microsecond jitter even when the first is exact. mizuRoute derives the
+        runoff step from the first two times and then needs the last step to
+        end exactly at <sim_end>; a 3599.99998 s step fails there with
+        "index of idxFront lower than idxEnd".
+        """
+        freq = self._get_time_rounding_freq()
+        if not freq:
+            return False
+        stamps = pd.DatetimeIndex(stamps)
+        return bool((stamps != self._round_stamps(stamps, freq)).any())
+
+    def _round_stamps(self, stamps, freq):
+        """Round *stamps* to *freq*, or to whole seconds if that would merge steps.
+
+        Rounding sub-hourly output to the hour would give duplicate times; the
+        jitter this fixes is far below a second, so seconds suffice there.
+        """
+        stamps = pd.DatetimeIndex(stamps)
+        rounded = stamps.round(freq)
+        if rounded.has_duplicates and not stamps.has_duplicates:
+            self.logger.debug(f"Rounding times to '{freq}' would merge steps; rounding to seconds")
+            rounded = stamps.round('s')
+        return rounded
+
     def fix_time_precision(self) -> Optional[Path]:
         """
         Fix model output time precision by rounding to configurable frequency.
@@ -224,9 +252,8 @@ class MizuRouteRunner(BaseModelRunner):  # type: ignore[misc]
                 if 'since 1990-01-01' in units_str:
                     # SUMMA-style format: seconds since 1990-01-01
                     time_format_detected = 'summa_seconds_1990'
-                    first_time = pd.to_datetime(time_values[0], unit='s', origin='1990-01-01')
-                    rounded_time = first_time.round('h')
-                    needs_fix = (first_time != rounded_time)
+                    needs_fix = self._times_misaligned(
+                        pd.to_datetime(time_values, unit='s', origin='1990-01-01'))
 
                 elif 'since' in units_str:
                     # Other reference time format - extract the reference
@@ -237,22 +264,15 @@ class MizuRouteRunner(BaseModelRunner):  # type: ignore[misc]
                         time_format_detected = f'generic_since_{ref_time_str}'
 
                         # Determine the unit (seconds, hours, days)
-                        if 'second' in units_str:
-                            first_time = pd.to_datetime(time_values[0], unit='s', origin=ref_time_str)
-                            time_unit = 's'
-                        elif 'hour' in units_str:
-                            first_time = pd.Timestamp(ref_time_str) + pd.Timedelta(hours=float(time_values[0]))
+                        if 'hour' in units_str:
                             time_unit = 'h'
                         elif 'day' in units_str:
-                            first_time = pd.to_datetime(time_values[0], unit='D', origin=ref_time_str)
                             time_unit = 'D'
-                        else:
-                            # Default to seconds
-                            first_time = pd.to_datetime(time_values[0], unit='s', origin=ref_time_str)
+                        else:  # seconds, and the default
                             time_unit = 's'
-
-                        rounded_time = first_time.round('h')
-                        needs_fix = (first_time != rounded_time)
+                        offsets = pd.to_timedelta(
+                            np.asarray(time_values, dtype=float), unit=time_unit)  # type: ignore[call-overload]
+                        needs_fix = self._times_misaligned(pd.Timestamp(ref_time_str) + offsets)
 
                 else:
                     # No 'since' found, might be already in datetime format
@@ -260,9 +280,7 @@ class MizuRouteRunner(BaseModelRunner):  # type: ignore[misc]
                     try:
                         # Try to interpret as datetime directly
                         ds_decoded = xr.open_dataset(runoff_filepath, decode_times=True)
-                        first_time = pd.Timestamp(ds_decoded.time.values[0])
-                        rounded_time = first_time.round('h')
-                        needs_fix = (first_time != rounded_time)
+                        needs_fix = self._times_misaligned(pd.to_datetime(ds_decoded.time.values))
                         ds_decoded.close()
                         time_format_detected = 'datetime64'
                     except (ValueError, TypeError, KeyError) as e:
@@ -273,9 +291,7 @@ class MizuRouteRunner(BaseModelRunner):  # type: ignore[misc]
                 # No units attribute - try to decode directly
                 try:
                     ds_decoded = xr.open_dataset(runoff_filepath, decode_times=True)
-                    first_time = pd.Timestamp(ds_decoded.time.values[0])
-                    rounded_time = first_time.round('h')
-                    needs_fix = (first_time != rounded_time)
+                    needs_fix = self._times_misaligned(pd.to_datetime(ds_decoded.time.values))
                     ds_decoded.close()
                     time_format_detected = 'datetime64'
                 except (ValueError, TypeError, KeyError) as e:
@@ -313,7 +329,7 @@ class MizuRouteRunner(BaseModelRunner):  # type: ignore[misc]
                 self.logger.info(f"Applying SUMMA-style time precision fix (rounding to '{rounding_freq}')")
                 time_stamps = pd.to_datetime(time_values, unit='s', origin='1990-01-01')
                 if rounding_freq:
-                    rounded_stamps = time_stamps.round(rounding_freq)
+                    rounded_stamps = self._round_stamps(time_stamps, rounding_freq)
                     max_shift = np.abs(rounded_stamps - time_stamps).max()
                     if max_shift > pd.Timedelta(minutes=5):
                         self.logger.info(f"Time rounding applied, max shift: {max_shift}")
@@ -345,7 +361,7 @@ class MizuRouteRunner(BaseModelRunner):  # type: ignore[misc]
                 else:
                     time_stamps = reference + pd.to_timedelta(time_values, unit='s')
                 if rounding_freq:
-                    rounded_stamps = time_stamps.round(rounding_freq)
+                    rounded_stamps = self._round_stamps(time_stamps, rounding_freq)
                     max_shift = np.abs(rounded_stamps - time_stamps).max()
                     if max_shift > pd.Timedelta(minutes=5):
                         self.logger.info(f"Time rounding applied, max shift: {max_shift}")
@@ -376,7 +392,7 @@ class MizuRouteRunner(BaseModelRunner):  # type: ignore[misc]
                 ds_decoded = xr.open_dataset(runoff_filepath, decode_times=True)
                 time_stamps = pd.to_datetime(ds_decoded.time.values)
                 if rounding_freq:
-                    rounded_stamps = time_stamps.round(rounding_freq)
+                    rounded_stamps = self._round_stamps(time_stamps, rounding_freq)
                     max_shift = np.abs(rounded_stamps - time_stamps).max()
                     if max_shift > pd.Timedelta(minutes=5):
                         self.logger.info(f"Time rounding applied, max shift: {max_shift}")

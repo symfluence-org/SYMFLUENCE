@@ -17,17 +17,12 @@ from symfluence import SYMFLUENCE
 
 pytestmark = [pytest.mark.e2e, pytest.mark.ci_quick]
 
-def _prune_raw_forcing(project_dir: Path, keep_glob: str) -> None:
+def _prune_raw_forcing(project_dir: Path) -> None:
     raw_dir = project_dir / "forcing" / "raw_data"
     if not raw_dir.exists():
         return
-    candidates = sorted(raw_dir.glob(keep_glob))
-    if not candidates:
-        return
-    keep = candidates[0]
-    for path in raw_dir.glob("*.nc"):
-        if path != keep:
-            path.unlink()
+    from test_helpers.helpers import keep_single_raw_forcing
+    keep_single_raw_forcing(raw_dir)
 
     basin_avg_dir = project_dir / "forcing" / "basin_averaged_data"
     if basin_avg_dir.exists():
@@ -432,7 +427,7 @@ def test_quick_workflow_summa_only(
     dst_forcing = project_dir / "forcing" / "raw_data"
     if src_forcing.exists():
         _copy_with_name_adaptation(src_forcing, dst_forcing, src_domain_name, dst_domain_name)
-    _prune_raw_forcing(project_dir, "domain_*_ERA5_merged_200401.nc")
+    _prune_raw_forcing(project_dir)
 
     # Copy attributes (DEM, landclass, soilclass)
     for attr_type in ["elevation", "landclass", "soilclass"]:
@@ -665,7 +660,7 @@ def test_calibration_workflow(tmp_path, symfluence_code_dir, symfluence_data_roo
     dst_forcing = project_dir / "forcing" / "raw_data"
     if src_forcing.exists():
         _copy_with_name_adaptation(src_forcing, dst_forcing, src_domain_name, dst_domain_name)
-    _prune_raw_forcing(project_dir, "domain_*_ERA5_merged_200401.nc")
+    _prune_raw_forcing(project_dir)
 
     # Copy attributes (DEM, landclass, soilclass)
     for attr_type in ["elevation", "landclass", "soilclass"]:

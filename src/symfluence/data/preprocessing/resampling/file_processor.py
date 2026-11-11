@@ -153,6 +153,28 @@ class FileProcessor(ConfigMixin):
                 return None
         return None
 
+    def assert_unique_outputs(self, forcing_files: List[Path]) -> None:
+        """Refuse input sets where two files would write the same output.
+
+        Output names carry the date tag of the input, so two raw files for the
+        same period (e.g. a full month and a short sample of it) map to one
+        remapped file and the one processed last silently replaces the other.
+
+        Raises:
+            FileOperationError: naming every colliding input.
+        """
+        from symfluence.core.exceptions import FileOperationError
+
+        targets: dict = {}
+        for file in forcing_files:
+            targets.setdefault(self.determine_output_filename(file).name, []).append(Path(file).name)
+        clashes = {out: names for out, names in targets.items() if len(names) > 1}
+        if clashes:
+            detail = '; '.join(f"{', '.join(names)} -> {out}" for out, names in sorted(clashes.items()))
+            raise FileOperationError(
+                f"Several forcing files would be remapped to the same output: {detail}. "
+                "They cover the same period; keep one of them in the raw forcing folder.")
+
     def filter_processed_files(self, forcing_files: List[Path]) -> List[Path]:
         """
         Filter out already processed and valid files.

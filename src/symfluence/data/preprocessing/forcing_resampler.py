@@ -623,6 +623,7 @@ class ForcingResampler(PathResolverMixin):
         if not forcing_files:
             self.logger.warning("No forcing files found to process")
             return
+        self.file_processor.assert_unique_outputs(forcing_files)
 
         # Use backward-compatible catchment path resolution
         catchment_file_path = self._get_catchment_file_path(self.catchment_name)
@@ -651,6 +652,7 @@ class ForcingResampler(PathResolverMixin):
         if not forcing_files:
             self.logger.warning("No forcing files found to process")
             return
+        self.file_processor.assert_unique_outputs(forcing_files)
 
         self.logger.debug(f"Found {len(forcing_files)} forcing files to process")
 
