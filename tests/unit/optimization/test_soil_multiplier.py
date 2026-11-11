@@ -157,10 +157,8 @@ def _layers(settings):
     {'shape_factor': 3.0},
 ])
 def test_every_soil_depth_path_gives_identical_layers(tmp_path, depth_params):
-    from symfluence.models.summa.calibration.parameter_files import (
-        calculate_soil_depths,
-        depth_multipliers,
-    )
+    from symfluence.core.calibration.parameters.soil_depth import calculate_soil_depths, depth_multipliers
+    from symfluence.models.summa.calibration import parameter_files
     from symfluence.models.summa.calibration.parameter_manager import SUMMAParameterManager
     from symfluence.models.summa.calibration.worker_impl import _apply_parameters_worker
 
@@ -191,19 +189,15 @@ def test_every_soil_depth_path_gives_identical_layers(tmp_path, depth_params):
         np.testing.assert_array_equal(heights, reference[1])
     np.testing.assert_array_equal(
         transformer._calculate_new_depths(_DEPTHS, *depth_multipliers(depth_params)), expected)
+    # one function object behind every entry point
+    assert parameter_files.calculate_soil_depths is calculate_soil_depths
+    assert parameter_files.update_soil_depths.__module__ == 'symfluence.core.calibration.parameters.soil_depth'
 
 
-def test_transformer_module_does_not_import_models_at_import_time():
-    """optimization.core must stay importable without the models layer."""
-    import ast
+def test_transformer_module_does_not_import_models():
+    """optimization may not import the models layer (scripts/check_core_layering.py)."""
     from pathlib import Path
 
     import symfluence.optimization.core.transformers as module
 
-    tree = ast.parse(Path(module.__file__).read_text(encoding='utf-8'))
-    top_level = [
-        node.module if isinstance(node, ast.ImportFrom) else alias.name
-        for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom))
-        for alias in (node.names if isinstance(node, ast.Import) else [None])
-    ]
-    assert not [name for name in top_level if name and name.startswith('symfluence.models')]
+    assert 'symfluence.models' not in Path(module.__file__).read_text(encoding='utf-8')

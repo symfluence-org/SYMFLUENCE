@@ -10,7 +10,10 @@ writing ``trialParams.nc``, rescaling the soil layers in ``coldState.nc`` and
 editing mizuRoute's ``param.nml.default``. They used to carry their own copies
 of that logic and the copies drifted (different pseudo-parameter filtering,
 different handling of ``total_soil_depth_multiplier``, hard-coded file names in
-one of them). Everything that touches those files lives here, once.
+one of them). Everything that touches those files lives here, once -- except
+the soil-depth rescaling, which ``optimization.core.transformers`` needs too
+and therefore sits in ``core.calibration.parameters.soil_depth`` (re-exported
+here).
 """
 from __future__ import annotations
 
@@ -19,12 +22,24 @@ import random
 import re
 import time
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, NamedTuple, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, NamedTuple, Optional, Tuple
 
 import netCDF4 as nc
 import numpy as np
 import xarray as xr
 
+from symfluence.core.calibration.parameters.soil_depth import (  # noqa: F401 - re-exported
+    DEPTH_MULTIPLIER_PARAM,
+    DEPTH_PSEUDO_PARAMS,
+    DEPTH_SHAPE_PARAM,
+    LEGACY_DEPTH_MULTIPLIER_PARAM,
+    calculate_soil_depths,
+    depth_multipliers,
+    has_depth_params,
+    record_error,
+    record_file,
+    update_soil_depths,
+)
 from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.profiling import get_profiler
 
@@ -33,15 +48,6 @@ from .forcing_scaling import FORCING_PARAMS
 DEFAULT_ATTRIBUTES_FILE = 'attributes.nc'
 DEFAULT_COLDSTATE_FILE = 'coldState.nc'
 DEFAULT_TRIALPARAMS_FILE = 'trialParams.nc'
-
-# Soil-depth pseudo-parameters: they rescale coldState layers, SUMMA has no
-# parameter of that name.
-DEPTH_MULTIPLIER_PARAM = 'total_soil_depth_multiplier'
-LEGACY_DEPTH_MULTIPLIER_PARAM = 'total_mult'
-DEPTH_SHAPE_PARAM = 'shape_factor'
-DEPTH_PSEUDO_PARAMS: Tuple[str, ...] = (
-    DEPTH_MULTIPLIER_PARAM, LEGACY_DEPTH_MULTIPLIER_PARAM, DEPTH_SHAPE_PARAM,
-)
 
 # Parameters SUMMA reads on the gru dimension (everything in basinParamInfo.txt).
 GRU_LEVEL_PARAMS: Tuple[str, ...] = (
@@ -135,17 +141,6 @@ def resolve_settings_file_names(config: Any, settings_dir: Optional[Path] = None
     return configured._replace(**from_file_manager)
 
 
-def _record_error(message: str, logger, debug_info: Optional[Dict]) -> None:
-    logger.error(message)
-    if debug_info is not None:
-        debug_info.setdefault('errors', []).append(message)
-
-
-def _record_file(entry: str, debug_info: Optional[Dict]) -> None:
-    if debug_info is not None:
-        debug_info.setdefault('files_checked', []).append(entry)
-
-
 # ----------------------------------------------------------------------------
 # Splitting a trial parameter set by destination
 # ----------------------------------------------------------------------------
@@ -159,102 +154,6 @@ def select_trial_params(params: Dict[str, Any], mizuroute_params: Iterable[str] 
     """
     excluded = set(DEPTH_PSEUDO_PARAMS) | set(FORCING_PARAMS) | set(mizuroute_params) | set(MIZUROUTE_PARAMS)
     return {name: value for name, value in params.items() if name not in excluded}
-
-
-def has_depth_params(params: Dict[str, Any]) -> bool:
-    """Whether ``params`` carries any soil-depth pseudo-parameter."""
-    return any(name in params for name in DEPTH_PSEUDO_PARAMS)
-
-
-# ----------------------------------------------------------------------------
-# Soil depths (coldState)
-# ----------------------------------------------------------------------------
-
-def _first(value: Any) -> Any:
-    return value[0] if isinstance(value, np.ndarray) else value
-
-
-def depth_multipliers(params: Dict[str, Any]) -> Tuple[float, float]:
-    """Return ``(total_mult, shape_factor)`` from a trial parameter set.
-
-    ``total_soil_depth_multiplier`` is the current name of the total-depth
-    multiplier and ``total_mult`` the legacy one; either is accepted, and a
-    missing multiplier or shape factor is neutral (1.0).
-    """
-    total_mult = params.get(DEPTH_MULTIPLIER_PARAM)
-    if total_mult is None:
-        total_mult = params.get(LEGACY_DEPTH_MULTIPLIER_PARAM, 1.0)
-    shape_factor = params.get(DEPTH_SHAPE_PARAM, 1.0)
-    return _first(total_mult), _first(shape_factor)
-
-
-def calculate_soil_depths(original_depths: np.ndarray, total_mult: float, shape_factor: float) -> np.ndarray:
-    """Rescale soil layer depths.
-
-    ``shape_factor`` redistributes thickness exponentially over the layers
-    (>1 thickens the deep layers, <1 the shallow ones) with weights that
-    average 1; ``total_mult`` then scales every layer.
-    """
-    arr = np.asarray(original_depths).copy()
-    n = len(arr)
-    idx = np.arange(n)
-
-    if shape_factor > 1:
-        w = np.exp(idx / (n - 1) * np.log(shape_factor))
-    elif shape_factor < 1:
-        w = np.exp((n - 1 - idx) / (n - 1) * np.log(1 / shape_factor))
-    else:
-        w = np.ones(n)
-
-    w /= w.mean()
-    return arr * w * total_mult
-
-
-def update_soil_depths(
-    coldstate_path: Path,
-    original_depths: Sequence[float],
-    params: Dict[str, Any],
-    logger,
-    debug_info: Optional[Dict] = None,
-    component: str = 'summa_worker',
-) -> bool:
-    """Write rescaled ``mLayerDepth`` / ``iLayerHeight`` into the coldState file."""
-    try:
-        total_mult, shape_factor = depth_multipliers(params)
-        logger.debug(f"Updating soil depths: total_mult={total_mult:.3f}, shape_factor={shape_factor:.3f}")
-
-        new_depths = calculate_soil_depths(np.array(original_depths), total_mult, shape_factor)
-
-        heights = np.zeros(len(new_depths) + 1)
-        for i in range(len(new_depths)):
-            heights[i + 1] = heights[i] + new_depths[i]
-
-        coldstate_path = Path(coldstate_path)
-        if not coldstate_path.exists():
-            _record_error(f"{coldstate_path.name} not found: {coldstate_path}", logger, debug_info)
-            return False
-
-        _record_file(f"{coldstate_path.name}: {coldstate_path}", debug_info)
-
-        # Track coldState write (secondary IOPS bottleneck)
-        with get_profiler().track_netcdf_write(str(coldstate_path), component=component):
-            with nc.Dataset(coldstate_path, 'r+') as ds:
-                if 'mLayerDepth' not in ds.variables or 'iLayerHeight' not in ds.variables:
-                    _record_error(
-                        f"Required depth variables not found in {coldstate_path.name}", logger, debug_info)
-                    return False
-
-                num_hrus = ds.dimensions['hru'].size
-                for h in range(num_hrus):
-                    ds.variables['mLayerDepth'][:, h] = new_depths
-                    ds.variables['iLayerHeight'][:, h] = heights
-
-        logger.debug("Soil depths updated successfully")
-        return True
-
-    except (FileNotFoundError, IOError, ValueError) as e:
-        _record_error(f"Error updating soil depths: {str(e)}", logger, debug_info)
-        return False
 
 
 # ----------------------------------------------------------------------------
@@ -277,7 +176,7 @@ def update_mizuroute_params(
             logger.warning(f"mizuRoute param file not found: {param_file}")
             return True
 
-        _record_file(f"mizuRoute param file: {param_file}", debug_info)
+        record_file(f"mizuRoute param file: {param_file}", debug_info)
 
         with profiler.track_file_read(str(param_file), component=component):
             with open(param_file, 'r', encoding='utf-8') as f:
@@ -305,7 +204,7 @@ def update_mizuroute_params(
         return True
 
     except (FileNotFoundError, IOError, ValueError) as e:
-        _record_error(f"Error updating mizuRoute params: {str(e)}", logger, debug_info)
+        record_error(f"Error updating mizuRoute params: {str(e)}", logger, debug_info)
         return False
 
 
@@ -408,10 +307,10 @@ def write_trial_params(
             return True
 
         if not attr_file_path.exists():
-            _record_error(f"Attributes file not found: {attr_file_path}", logger, debug_info)
+            record_error(f"Attributes file not found: {attr_file_path}", logger, debug_info)
             return False
 
-        _record_file(f"{attr_file_path.name}: {attr_file_path}", debug_info)
+        record_file(f"{attr_file_path.name}: {attr_file_path}", debug_info)
 
         if _can_update_inplace(trial_params_path, params, logger):
             return _update_trial_params_inplace(
@@ -490,7 +389,7 @@ def write_trial_params(
                         os.chmod(temp_path, 0o664)  # nosec B103
                     temp_path.replace(trial_params_path)
                     logger.debug(f"Trial parameters file created successfully: {trial_params_path}")
-                    _record_file(f"{trial_params_path.name} (created): {trial_params_path}", debug_info)
+                    record_file(f"{trial_params_path.name} (created): {trial_params_path}", debug_info)
                     return True
                 except (FileNotFoundError, IOError, ValueError) as move_error:
                     if temp_path.exists():
@@ -511,7 +410,7 @@ def write_trial_params(
                     delay = base_delay * (2 ** attempt) + random.uniform(0, 0.1)
                     time.sleep(delay)
                 else:
-                    _record_error(
+                    record_error(
                         f"Failed to generate trial params after {max_retries} attempts: {str(e)}",
                         logger, debug_info)
                     return False
@@ -519,5 +418,5 @@ def write_trial_params(
         return False
 
     except (FileNotFoundError, IOError, ValueError) as e:
-        _record_error(f"Error generating trial params: {str(e)}", logger, debug_info)
+        record_error(f"Error generating trial params: {str(e)}", logger, debug_info)
         return False
