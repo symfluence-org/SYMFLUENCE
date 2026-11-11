@@ -61,7 +61,14 @@ class ParameterTransformer(ConfigMixin, ABC):
         """
 
 class SoilDepthTransformer(ParameterTransformer):
-    """Handles transformation of soil depth parameters."""
+    """Handles transformation of soil depth parameters.
+
+    The arithmetic and the coldState update are SUMMA's shared calibration
+    routines (``symfluence.models.summa.calibration.parameter_files``), the same
+    ones the SUMMA parameter manager and worker use; this class only finds the
+    file and remembers the original layer depths. The import is deferred to
+    :meth:`apply` so this package still imports without the models layer.
+    """
 
     SPECIAL_PARAMS = ['total_soil_depth_multiplier', 'total_mult', 'shape_factor']
 
@@ -70,7 +77,7 @@ class SoilDepthTransformer(ParameterTransformer):
         self.original_depths = None
 
     def apply(self, params: Dict[str, Any], settings_dir: Path) -> bool:
-        """Apply soil depth multiplier transformations to SUMMA coldState.nc.
+        """Apply soil depth multiplier transformations to SUMMA's coldState file.
 
         Modifies mLayerDepth and iLayerHeight variables in the NetCDF file
         based on total_soil_depth_multiplier and shape_factor parameters.
@@ -79,20 +86,27 @@ class SoilDepthTransformer(ParameterTransformer):
         Args:
             params: Parameter dict, may contain 'total_soil_depth_multiplier',
                 'total_mult', and/or 'shape_factor' keys.
-            settings_dir: Path containing coldState.nc file.
+            settings_dir: Path containing the coldState file (the one the file
+                manager there names, else ``SETTINGS_SUMMA_COLDSTATE``).
 
         Returns:
             True if transformation succeeded or no special params present,
-            False if coldState.nc missing or NetCDF update failed.
+            False if the coldState file is missing or the NetCDF update failed.
         """
         # Check if any special parameters are present
         if not any(p in params for p in self.SPECIAL_PARAMS):
             return True
 
+        from symfluence.models.summa.calibration.parameter_files import (
+            resolve_settings_file_names,
+            update_soil_depths,
+        )
+
         try:
-            coldstate_path = settings_dir / self._get_config_value(lambda: self.config.model.summa.coldstate, default='coldState.nc', dict_key='SETTINGS_SUMMA_COLDSTATE')
+            settings_dir = Path(settings_dir)
+            coldstate_path = settings_dir / resolve_settings_file_names(self.config, settings_dir).coldstate
             if not coldstate_path.exists():
-                self.logger.error(f"coldState.nc not found at {coldstate_path}")
+                self.logger.error(f"{coldstate_path.name} not found at {coldstate_path}")
                 return False
 
             # Load original depths if not already loaded
@@ -102,36 +116,9 @@ class SoilDepthTransformer(ParameterTransformer):
             if self.original_depths is None:
                 return False
 
-            # Extract multipliers
-            total_mult = params.get('total_soil_depth_multiplier')
-            if total_mult is None:
-                total_mult = params.get('total_mult', 1.0)
-
-            shape_factor = params.get('shape_factor', 1.0)
-
-            if isinstance(total_mult, np.ndarray): total_mult = total_mult[0]
-            if isinstance(shape_factor, np.ndarray): shape_factor = shape_factor[0]
-
-            # Calculate new depths
-            new_depths = self._calculate_new_depths(self.original_depths, total_mult, shape_factor)
-
-            # Calculate layer heights (cumulative sum)
-            heights = np.zeros(len(new_depths) + 1)
-            for i in range(len(new_depths)):
-                heights[i + 1] = heights[i] + new_depths[i]
-
-            # Update NetCDF
-            with nc.Dataset(coldstate_path, 'r+') as ds:
-                if 'mLayerDepth' in ds.variables and 'iLayerHeight' in ds.variables:
-                    num_hrus = ds.dimensions['hru'].size
-                    for h in range(num_hrus):
-                        ds.variables['mLayerDepth'][:, h] = new_depths
-                        ds.variables['iLayerHeight'][:, h] = heights
-                else:
-                    self.logger.error("Required variables not found in coldState.nc")
-                    return False
-
-            return True
+            return update_soil_depths(
+                coldstate_path, self.original_depths, params, self.logger,
+                component='soil_depth_transformer')
 
         except (OSError, IOError, KeyError, ValueError) as e:
             self.logger.error(f"Error in SoilDepthTransformer: {str(e)}")
@@ -146,22 +133,10 @@ class SoilDepthTransformer(ParameterTransformer):
             return None
 
     def _calculate_new_depths(self, original: np.ndarray, total_mult: float, shape_factor: float) -> np.ndarray:
-        n = len(original)
-        idx = np.arange(n)
+        """Rescaled layer depths (SUMMA's shared ``calculate_soil_depths``)."""
+        from symfluence.models.summa.calibration.parameter_files import calculate_soil_depths
 
-        # Calculate shape weights (exponential stretching)
-        if shape_factor > 1:
-            w = np.exp(idx / (n - 1) * np.log(shape_factor))
-        elif shape_factor < 1:
-            w = np.exp((n - 1 - idx) / (n - 1) * np.log(1 / shape_factor))
-        else:
-            w = np.ones(n)
-
-        # Normalize weights so they average to 1.0
-        w /= w.mean()
-
-        # Apply multipliers
-        return original * w * total_mult
+        return calculate_soil_depths(original, total_mult, shape_factor)
 
 class TransformationManager(ConfigMixin):
     """Orchestrates all parameter transformations."""

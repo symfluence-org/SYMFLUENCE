@@ -114,3 +114,96 @@ def test_transformation_manager(tmp_path):
         assert ds.variables['mLayerDepth'][0, 0] == 2.0
 
         assert ds.variables['mLayerDepth'][1, 0] == 4.0
+
+
+# ---------------------------------------------------------------------------
+# One soil-depth routine: transformer, SUMMA parameter manager and SUMMA
+# worker must rescale the layers identically (they used to be three copies).
+# ---------------------------------------------------------------------------
+
+_DEPTHS = np.array([0.025, 0.075, 0.15, 0.25, 0.5, 1.0])
+
+
+def _summa_settings(root):
+    settings = root / 'settings' / 'SUMMA'
+    settings.mkdir(parents=True)
+    with nc.Dataset(settings / 'attributes.nc', 'w') as ds:
+        ds.createDimension('hru', 2)
+        ds.createDimension('gru', 1)
+        ds.createVariable('hruId', 'i4', ('hru',))[:] = [1, 2]
+        ds.createVariable('gruId', 'i4', ('gru',))[:] = [1]
+    with nc.Dataset(settings / 'coldState.nc', 'w') as ds:
+        ds.createDimension('hru', 2)
+        ds.createDimension('midToto', len(_DEPTHS))
+        ds.createDimension('ifcToto', len(_DEPTHS) + 1)
+        ds.createVariable('mLayerDepth', 'f8', ('midToto', 'hru'))[:] = np.tile(_DEPTHS[:, None], (1, 2))
+        ds.createVariable('iLayerHeight', 'f8', ('ifcToto', 'hru'))[:] = np.tile(
+            np.r_[0, _DEPTHS.cumsum()][:, None], (1, 2))
+    (settings / 'localParamInfo.txt').write_text("k_soil | 1.0d-5 | 1.0d-7 | 1.0d-3\n")
+    (settings / 'basinParamInfo.txt').write_text("routingGammaShape | 2.5 | 2.0 | 3.0\n")
+    return settings
+
+
+def _layers(settings):
+    with nc.Dataset(settings / 'coldState.nc') as ds:
+        return np.asarray(ds['mLayerDepth'][:]).copy(), np.asarray(ds['iLayerHeight'][:]).copy()
+
+
+@pytest.mark.parametrize('depth_params', [
+    {'total_mult': np.array([1.3]), 'shape_factor': np.array([1.7])},
+    {'total_mult': 0.6, 'shape_factor': 0.4},
+    {'total_soil_depth_multiplier': np.array([2.2])},
+    {'total_soil_depth_multiplier': 1.5, 'total_mult': 9.0, 'shape_factor': 2.5},
+    {'shape_factor': 3.0},
+])
+def test_every_soil_depth_path_gives_identical_layers(tmp_path, depth_params):
+    from symfluence.models.summa.calibration.parameter_files import (
+        calculate_soil_depths,
+        depth_multipliers,
+    )
+    from symfluence.models.summa.calibration.parameter_manager import SUMMAParameterManager
+    from symfluence.models.summa.calibration.worker_impl import _apply_parameters_worker
+
+    log = logging.getLogger('test')
+    flat = {'PARAMS_TO_CALIBRATE': 'k_soil,total_soil_depth_multiplier', 'BASIN_PARAMS_TO_CALIBRATE': '',
+            'CALIBRATE_DEPTH': True}
+
+    via_transformer = _summa_settings(tmp_path / 'transformer')
+    transformer = SoilDepthTransformer(_make_full_config(tmp_path), log)
+    assert transformer.apply(dict(depth_params), via_transformer) is True
+
+    via_manager = _summa_settings(tmp_path / 'manager')
+    assert SUMMAParameterManager(flat, log, via_manager).update_model_files(dict(depth_params))
+
+    via_worker = _summa_settings(tmp_path / 'worker')
+    debug = {'files_checked': [], 'errors': []}
+    assert _apply_parameters_worker(
+        dict(depth_params), {'config': flat, 'original_depths': _DEPTHS.tolist()}, via_worker, log, debug), debug
+
+    expected = calculate_soil_depths(_DEPTHS, *depth_multipliers(depth_params))
+    reference = _layers(via_transformer)
+    np.testing.assert_array_equal(reference[0][:, 0], expected)
+    np.testing.assert_array_equal(reference[0][:, 1], expected)
+    np.testing.assert_allclose(reference[1][-1], expected.sum())
+    for other in (via_manager, via_worker):
+        depths, heights = _layers(other)
+        np.testing.assert_array_equal(depths, reference[0])
+        np.testing.assert_array_equal(heights, reference[1])
+    np.testing.assert_array_equal(
+        transformer._calculate_new_depths(_DEPTHS, *depth_multipliers(depth_params)), expected)
+
+
+def test_transformer_module_does_not_import_models_at_import_time():
+    """optimization.core must stay importable without the models layer."""
+    import ast
+    from pathlib import Path
+
+    import symfluence.optimization.core.transformers as module
+
+    tree = ast.parse(Path(module.__file__).read_text(encoding='utf-8'))
+    top_level = [
+        node.module if isinstance(node, ast.ImportFrom) else alias.name
+        for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom))
+        for alias in (node.names if isinstance(node, ast.Import) else [None])
+    ]
+    assert not [name for name in top_level if name and name.startswith('symfluence.models')]
