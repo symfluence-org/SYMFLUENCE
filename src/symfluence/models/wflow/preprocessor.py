@@ -402,5 +402,15 @@ header = "Q"
 parameter = "{'soil_surface_water__net_runoff_volume_flux' if self.spatial_mode == 'lumped' else 'river_water__volume_flow_rate'}"
 reducer = "mean"
 '''
+        if self.spatial_mode == 'lumped':
+            # Net runoff is only the land-fraction runoff. The river-fraction
+            # runoff and the lateral subsurface flow also leave the single
+            # cell; lumped_discharge sums the three (see that module).
+            from .lumped_discharge import LUMPED_OUTFLOW_COLUMNS
+            for header, (parameter, _) in LUMPED_OUTFLOW_COLUMNS.items():
+                toml_content += (
+                    f'\n[[output.csv.column]]\nheader = "{header}"\n'
+                    f'parameter = "{parameter}"\nreducer = "mean"\n'
+                )
         (self.settings_dir / config_file).write_text(toml_content)
         self.logger.info(f"Written TOML config to {self.settings_dir / config_file}")

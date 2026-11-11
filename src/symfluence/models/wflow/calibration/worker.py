@@ -221,16 +221,19 @@ class WflowWorker(BaseWorker):
     def _load_simulated_streamflow(self, output_dir: Path, config: dict = None, routing_params: dict = None):
         """Load Q from Wflow CSV or netCDF output.
 
-        For lumped models using soil_surface_water__net_runoff_volume_flux,
-        converts from mm/dt to m³/s using basin area and the TOML's model
-        step, then applies linear reservoir routing to smooth the
-        instantaneous flux (see ``lumped_discharge``).
+        For lumped models (``Q`` = soil_surface_water__net_runoff_volume_flux)
+        the discharge is the full outflow of the cell: net runoff plus the
+        river-fraction runoff and lateral subsurface flow columns, converted
+        from mm/dt to m³/s using basin area and the TOML's model step, then
+        the linear reservoir routing (see ``lumped_discharge``).
         """
         q = None
+        table = None
         # Try CSV first (primary format from [output.csv] TOML section)
         csv_matches = list(output_dir.glob('output*.csv'))
         if csv_matches:
             df = pd.read_csv(csv_matches[0], parse_dates=[0], index_col=0, on_bad_lines='skip')
+            table = df
             for col in ['Q', 'Q_av', 'q_av']:
                 if col in df.columns:
                     q = df[col]
@@ -255,7 +258,11 @@ class WflowWorker(BaseWorker):
         # routing; the postprocessor goes through the same function.
         toml_path = self._find_run_toml(output_dir, config)
         if toml_path is not None and is_runoff_flux_output(toml_path) and config:
-            q = lumped_discharge_cms(q, toml_path, self._staticmaps_path(config), routing_params)
+            # The whole table when there is one: the lumped outflow is the sum
+            # of several columns (net runoff, river fraction, subsurface).
+            q = lumped_discharge_cms(
+                table if table is not None and q.name in table.columns else q,
+                toml_path, self._staticmaps_path(config), routing_params)
         from symfluence.models.wflow.extractor import is_distributed_wflow, to_period_start_labels
         if q is not None and is_distributed_wflow(config):
             q = to_period_start_labels(q)

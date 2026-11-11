@@ -89,19 +89,36 @@ class MESHParameterManager(BaseParameterManager):
     N_CANOPY_CATEGORIES = 4
 
     # Default multipliers for landcover-specific parameter scaling (opt-in via
-    # MESH_USE_LANDCOVER_MULTIPLIERS). Keys are NALCMS 2020 class ids — the
-    # classification the MESH preprocessor labels GRUs with
-    # (MESHConfigDefaults.LANDCOVER_CLASSES) — and are matched against the
-    # class id each CLASS block carries on its own MID record. A block whose
-    # class is not listed (or that carries no land-cover label) gets 1.0.
-    # For any other classification supply MESH_LANDCOVER_MULTIPLIERS.
-    DEFAULT_LANDCOVER_MULTIPLIERS = {
+    # MESH_USE_LANDCOVER_MULTIPLIERS), one table per land-cover classification
+    # the MESH preprocessor can label GRUs with (MESHConfigDefaults). The keys
+    # are class ids of that classification and are matched against the class
+    # id each CLASS block carries on its own MID record. A block whose class
+    # is not listed (or that carries no land-cover label) gets 1.0. Which
+    # table applies follows the land-cover statistics the setup was built
+    # from (MESHConfigDefaults.detect_landcover_classification). For any other
+    # classification supply MESH_LANDCOVER_MULTIPLIERS.
+    DEFAULT_LANDCOVER_MULTIPLIERS = {  # NALCMS 2020
         1: {'KSAT': 0.8, 'SDEP': 1.2, 'MANN_CLASS': 1.5},   # Temperate/sub-polar needleleaf forest: slower infiltration, deeper soil, rougher
         5: {'KSAT': 0.9, 'SDEP': 1.1, 'MANN_CLASS': 1.3},   # Temperate/sub-polar broadleaf deciduous forest: similar to needleleaf
         8: {'KSAT': 1.0, 'SDEP': 1.0, 'MANN_CLASS': 1.2},   # Temperate/sub-polar shrubland: moderate
         10: {'KSAT': 1.2, 'SDEP': 0.9, 'MANN_CLASS': 0.8},  # Temperate/sub-polar grassland: faster infiltration, shallower, smoother
         16: {'KSAT': 1.5, 'SDEP': 0.5, 'MANN_CLASS': 0.6},  # Barren lands: fast infiltration (fractured rock), shallow soil
         19: {'KSAT': 0.5, 'SDEP': 0.3, 'MANN_CLASS': 0.5},  # Snow and ice: very low infiltration, minimal soil
+    }
+    # The same six land covers under their IGBP (MODIS MCD12Q1) ids.
+    IGBP_LANDCOVER_MULTIPLIERS = {
+        1: DEFAULT_LANDCOVER_MULTIPLIERS[1],    # Evergreen needleleaf forest
+        3: DEFAULT_LANDCOVER_MULTIPLIERS[1],    # Deciduous needleleaf forest
+        4: DEFAULT_LANDCOVER_MULTIPLIERS[5],    # Deciduous broadleaf forest
+        6: DEFAULT_LANDCOVER_MULTIPLIERS[8],    # Closed shrubland
+        7: DEFAULT_LANDCOVER_MULTIPLIERS[8],    # Open shrubland
+        10: DEFAULT_LANDCOVER_MULTIPLIERS[10],  # Grassland
+        16: DEFAULT_LANDCOVER_MULTIPLIERS[16],  # Barren or sparsely vegetated
+        15: DEFAULT_LANDCOVER_MULTIPLIERS[19],  # Permanent snow and ice
+    }
+    LANDCOVER_MULTIPLIER_TABLES = {
+        'nalcms': DEFAULT_LANDCOVER_MULTIPLIERS,
+        'igbp': IGBP_LANDCOVER_MULTIPLIERS,
     }
 
     # Parameters written as one value per river class in
@@ -224,12 +241,45 @@ class MESHParameterManager(BaseParameterManager):
         custom_multipliers = self._get_config_value(
             lambda: None, default=None, dict_key='MESH_LANDCOVER_MULTIPLIERS'
         )
-        self.landcover_multipliers = self._normalise_multipliers(
-            custom_multipliers if custom_multipliers is not None else self.DEFAULT_LANDCOVER_MULTIPLIERS
-        )
+        if custom_multipliers is not None:
+            self.landcover_multipliers = self._normalise_multipliers(custom_multipliers)
+        elif self.use_landcover_multipliers:
+            self.landcover_multipliers = self._normalise_multipliers(self._default_multiplier_table())
+        else:
+            self.landcover_multipliers = {}
 
         # Detect all GRU blocks in CLASS.ini for multi-GRU parameter distribution
         self.all_gru_blocks = self._detect_all_gru_blocks()
+
+    def _default_multiplier_table(self) -> Dict[int, Dict[str, float]]:
+        """Built-in multiplier table for the classification of this setup's class ids.
+
+        The ids on the MID records are those of the land-cover statistics the
+        setup was built from, so the classification is detected from that file
+        exactly as the preprocessor does. It is an error when it cannot be
+        determined: NALCMS and IGBP share the ids 1..17 with different meanings.
+        """
+        from symfluence.core.mixins.project import resolve_data_subdir
+        from symfluence.models.mesh.preprocessing.config_defaults import MESHConfigDefaults
+
+        def _get(key: str, default: Any) -> Any:
+            value = self._get_config_value(lambda: None, default=None, dict_key=key)
+            return default if value is None or value == 'default' else value
+
+        attributes_dir = resolve_data_subdir(self.project_dir, 'attributes') if self.project_dir else None
+        classification = MESHConfigDefaults.detect_landcover_classification(
+            MESHConfigDefaults.find_landcover_stats(_get, attributes_dir),
+            self._get_config_value(
+                lambda: self.config.model.mesh.landcover_classification,
+                default='default', dict_key='MESH_LANDCOVER_CLASSIFICATION'),
+            self._get_config_value(
+                lambda: self.config.domain.land_class_source,
+                default='modis', dict_key='LAND_CLASS_SOURCE'),
+        )
+        self.logger.info(
+            f"Land-cover multipliers: built-in {classification.upper()} table "
+            f"(class ids on the CLASS blocks are read as {classification.upper()})")
+        return self.LANDCOVER_MULTIPLIER_TABLES[classification]
 
     @staticmethod
     def _normalise_multipliers(table: Dict[Any, Dict[str, float]]) -> Dict[int, Dict[str, float]]:
@@ -901,12 +951,12 @@ class MESHParameterManager(BaseParameterManager):
                 # Land-cover class of this block, read from its own MID record.
                 # (Block position says nothing about the class: blocks of
                 # removed GRUs are gone and meshflow does not sort them.)
-                nalcms_class_id = block.get('class_id')
+                landcover_class_id = block.get('class_id')
 
                 # Get multipliers for this landcover class
                 multipliers = {}
-                if self.use_landcover_multipliers and nalcms_class_id is not None:
-                    multipliers = self.landcover_multipliers.get(nalcms_class_id, {})
+                if self.use_landcover_multipliers and landcover_class_id is not None:
+                    multipliers = self.landcover_multipliers.get(landcover_class_id, {})
 
                 # First pass: compute multiplied values and validate as a set
                 multiplied_params = {}
@@ -1025,7 +1075,7 @@ class MESHParameterManager(BaseParameterManager):
                     if block_idx == 0 or multiplier != 1.0:
                         mult_info = f" (x{multiplier:.2f})" if multiplier != 1.0 else ""
                         self.logger.debug(
-                            f"Block {block_idx} (land-cover class {nalcms_class_id}): "
+                            f"Block {block_idx} (land-cover class {landcover_class_id}): "
                             f"{param_name}: {old_val} -> {new_val_str}{mult_info}"
                         )
 
