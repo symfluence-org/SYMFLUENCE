@@ -68,6 +68,11 @@ class PRMSConfig(BaseModel):
         default=None, alias='PRMS_HRU_FORCING_PATH',
         description='Directory of canonical forcing NetCDF with an hru dimension (climate_hru mode).'
     )
+    hru_forcing_discretization: str | None = Field(
+        default=None, alias='PRMS_HRU_FORCING_DISCRETIZATION',
+        description='Discretization of the forcing to read from PRMS_HRU_FORCING_PATH when it holds '
+                    'forcing for more than one HRU set (e.g. elevation).'
+    )
     hru_forcing_map: list[int] | None = Field(
         default=None, alias='PRMS_HRU_FORCING_MAP',
         description='Source hruId for each PRMS HRU, in PRMS order (e.g. split land/glacier '

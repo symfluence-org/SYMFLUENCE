@@ -94,6 +94,10 @@ class GSFLOWConfig(BaseModel):
     forcing_mode: Literal['station', 'climate_hru'] = Field(default='station', alias='GSFLOW_FORCING_MODE')
     hru_forcing_path: str | None = Field(default=None, alias='GSFLOW_HRU_FORCING_PATH',
                                          description='Canonical forcing NetCDF with an hru dimension.')
+    hru_forcing_discretization: str | None = Field(
+        default=None, alias='GSFLOW_HRU_FORCING_DISCRETIZATION',
+        description='Discretization of the forcing to read from GSFLOW_HRU_FORCING_PATH when it holds '
+                    'forcing for more than one HRU set (e.g. elevation).')
     hru_forcing_band_ids: dict[int, int] | None = Field(
         default=None, alias='GSFLOW_HRU_FORCING_BAND_IDS',
         description='Elevation-band lower bound (m) -> source hruId; each HRU uses its band (nearest band '

@@ -194,7 +194,7 @@ class CLMParFlowRunner(BaseModelRunner):
     def _run_basin(self, output_dir: Path) -> Path:
         """Basin mode: run (or resume) the spin-up and production chain; writes the daily outlet discharge."""
         from .basin import BasinGrid, run_chain
-        from .basin.settings import basin_inputs, basin_parameters, chain_settings
+        from .basin.settings import basin_forcing_files, basin_inputs, basin_parameters, chain_settings
         from .basin.settings import grid_dir as basin_grid_dir
 
         cfg = self.config.model.clmparflow
@@ -220,7 +220,8 @@ class CLMParFlowRunner(BaseModelRunner):
         settings.timeout = timeout if timeout > 7200 else None
         logger.info(f"CLMParFlow basin mode: spin-up WY{settings.spinup_years}, production "
                     f"WY{settings.production_years[0]}-{settings.production_years[-1]} on {settings.P} rank(s)")
-        q = run_chain(output_dir / 'basin_runs', grid, params, Path(pf_dir), inputs.forcing, settings,
+        forcing = basin_forcing_files(inputs, self.config.domain.discretization)
+        q = run_chain(output_dir / 'basin_runs', grid, params, Path(pf_dir), forcing, settings,
                       log=logger.info)
         q.rename_axis('date').to_csv(output_dir / 'clmparflow_basin_outlet.csv')
         return output_dir

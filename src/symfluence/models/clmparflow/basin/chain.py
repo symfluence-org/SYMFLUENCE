@@ -22,7 +22,7 @@ import pandas as pd
 from symfluence.core.exceptions import ConfigurationError, ModelExecutionError
 
 from . import pfio
-from .case import BasinParameters, run_segment
+from .case import BasinParameters, ForcingSource, run_segment
 from .grid import BasinGrid
 
 
@@ -89,7 +89,7 @@ def summarise_segment(run: Path, grid: BasinGrid) -> Dict:
     return out
 
 
-def basin_precipitation(grid: BasinGrid, forcing_file: Path, start: str, end: str, precip_name: str,
+def basin_precipitation(grid: BasinGrid, forcing_file: ForcingSource, start: str, end: str, precip_name: str,
                         unit_variable: str, precip_scale: float) -> float:
     """Basin precipitation volume (m3) over [start, end); each active cell takes its unit's column (mm/s)."""
     from .case import open_forcing
@@ -119,7 +119,7 @@ class ChainSettings:
     timeout: Optional[int] = None
 
 
-def run_chain(runs: Path, grid: BasinGrid, params: BasinParameters, parflow_dir: Path, forcing_file: Path,
+def run_chain(runs: Path, grid: BasinGrid, params: BasinParameters, parflow_dir: Path, forcing_file: ForcingSource,
               settings: ChainSettings, log: Callable[[str], None] = print) -> pd.Series:
     """Run (or resume) the chain; returns the daily outlet discharge of the production years."""
     from .case import DEFAULT_FORCING_NAMES

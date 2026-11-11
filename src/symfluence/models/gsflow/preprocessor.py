@@ -212,7 +212,8 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             if not cfg.hru_forcing_path:
                 raise ConfigurationError('GSFLOW climate_hru forcing requires GSFLOW_HRU_FORCING_PATH')
             ids = hru_source_ids(h.elev, cfg.hru_band_size_m, cfg.hru_forcing_band_ids or {})
-            cbh = write_cbh(self.forcing_dir, load_hru_forcing(Path(cfg.hru_forcing_path), ids, start_date, end_date))
+            cbh = write_cbh(self.forcing_dir, load_hru_forcing(Path(cfg.hru_forcing_path), ids, start_date, end_date,
+                                                             cfg.hru_forcing_discretization))
         write_parameters(self.setup_dir / 'params.dat', geo, cfg, cfg.parameter_overrides)
         relief = None
         if cfg.aquifer_thickness_m is None:

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Optional, Union
 
 import pandas as pd
 
@@ -74,6 +74,23 @@ def basin_inputs(cfg, project_dir: Path, domain_name: str) -> BasinInputs:
                        rotation=float(cfg.basin_grid_rotation or 0.0),
                        k_zone=Path(cfg.basin_k_zone) if cfg.basin_k_zone else None,
                        lake=Path(cfg.basin_lake) if cfg.basin_lake else None)
+
+
+def basin_forcing_files(inputs: BasinInputs, discretization: object) -> Union[Path, List[Path]]:
+    """The forcing to read: an explicit file as given, or this run's files from a forcing directory.
+
+    The default basin-averaged store can hold forcing for several HRU sets of the domain (issue #339). The
+    units are this run's HRUs, so the files remapped onto them are selected; when the store holds only other
+    HRU sets, or several and none matches, this raises instead of reading the wrong forcing.
+    """
+    if not inputs.forcing.is_dir():
+        return inputs.forcing
+    from symfluence.core.modeling.forcing_naming import resolve_forcing_files
+
+    files = resolve_forcing_files(inputs.forcing, discretization, inputs.units, inputs.unit_field)
+    if not files:
+        raise FileOperationError(f'CLMParFlow basin mode: no NetCDF forcing in {inputs.forcing}')
+    return files
 
 
 def grid_dir(cfg, project_dir: Path) -> Path:

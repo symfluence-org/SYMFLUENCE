@@ -181,7 +181,10 @@ class PRMSPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         prms = self.config.model.prms
         if not prms.hru_forcing_path:
             raise ConfigurationError('PRMS climate_hru forcing requires PRMS_HRU_FORCING_PATH')
-        files = sorted(Path(prms.hru_forcing_path).glob('*.nc'))
+        from symfluence.core.modeling.forcing_naming import select_hru_forcing_folder
+        files = select_hru_forcing_folder(
+            sorted(Path(prms.hru_forcing_path).glob('*.nc')), prms.hru_forcing_discretization,
+            'PRMS_HRU_FORCING_DISCRETIZATION')
         if not files:
             raise ConfigurationError(f'No per-HRU forcing NetCDF in {prms.hru_forcing_path}')
         source_ids = prms.hru_forcing_map or list(range(1, prms.nhru + 1))

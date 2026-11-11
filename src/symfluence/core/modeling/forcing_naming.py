@@ -274,6 +274,31 @@ def _log_selection(matched: List[Path], files: List[Path], token: str) -> List[P
     return matched
 
 
+def select_hru_forcing_folder(
+    files: List[Path],
+    discretization: object = None,
+    setting: str = 'the forcing discretization',
+) -> List[Path]:
+    """Select from a per-HRU forcing folder the user pointed at explicitly.
+
+    Readers that map their own HRUs onto forcing hruIds through an explicit
+    table (PRMS/GSFLOW ``climate_hru``) cannot check the catchment geometry:
+    their HRUs differ from the forcing's by design. With *discretization* set,
+    the files are selected by it; without it, a folder holding forcing for
+    more than one HRU set raises, naming *setting*, instead of merging
+    overlapping hruIds from different sets.
+    """
+    files = [Path(f) for f in files]
+    if discretization:
+        return select_forcing_files(files, discretization)
+    groups = sorted({discretization_key_from_name(f.name) or 'untokened' for f in files})
+    if len(groups) > 1:
+        raise FileOperationError(
+            f"The per-HRU forcing folder holds forcing for several HRU sets ({', '.join(groups)}); "
+            f"set {setting} to choose one.")
+    return files
+
+
 def resolve_forcing_files(
     forcing_files: Union[str, Path, List[Path]],
     discretization: object = None,
