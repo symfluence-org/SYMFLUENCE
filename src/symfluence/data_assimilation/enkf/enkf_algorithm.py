@@ -18,6 +18,7 @@ References:
 from __future__ import annotations
 
 import logging
+from typing import Optional
 
 import numpy as np
 
@@ -32,15 +33,20 @@ class EnKFAlgorithm:
     Args:
         inflation_factor: Covariance inflation multiplier (>=1.0, 1.0=none).
         enforce_nonnegative: Clip negative state values to zero after update.
+        rng: Random generator for the stochastic variant's observation
+            perturbations. Pass a seeded generator for reproducible runs;
+            a fresh unseeded one is created otherwise.
     """
 
     def __init__(
         self,
         inflation_factor: float = 1.0,
         enforce_nonnegative: bool = True,
+        rng: Optional[np.random.Generator] = None,
     ):
         self.inflation_factor = inflation_factor
         self.enforce_nonnegative = enforce_nonnegative
+        self.rng = rng if rng is not None else np.random.default_rng()
 
     def analyze(
         self,
@@ -118,7 +124,8 @@ class EnKFAlgorithm:
         n_obs = y_obs.shape[0]
 
         # Perturb observations: D = y_obs + N(0, R) per member
-        obs_noise = np.random.multivariate_normal(
+        # (own generator, not the global numpy state: reproducible when seeded)
+        obs_noise = self.rng.multivariate_normal(
             np.zeros(n_obs), R, size=n_members
         )  # (n_members, n_obs)
         D = y_obs + obs_noise  # (n_members, n_obs)
@@ -160,23 +167,3 @@ class EnKFAlgorithm:
         X_a = x_bar_a + A_a
 
         return X_a
-
-    def effective_ensemble_size(self, X: np.ndarray) -> float:
-        """Compute effective ensemble size as a filter health metric.
-
-        Uses the normalized weights interpretation. For equally-weighted
-        ensembles this equals N (ensemble size).
-
-        Args:
-            X: Ensemble matrix, shape (n_members, n_state).
-
-        Returns:
-            Effective ensemble size (closer to n_members is healthier).
-        """
-        n_members = X.shape[0]
-        x_bar = X.mean(axis=0)
-        diffs = X - x_bar
-        variances = np.var(diffs, axis=0)
-        if np.all(variances < 1e-12):
-            return 1.0
-        return float(n_members)

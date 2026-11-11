@@ -75,3 +75,17 @@ class TestGaussianPerturbation:
         p2 = pert.perturb_parameters(base, bounds, 1)
 
         assert p1['k1'] != p2['k1'], "Different members should get different perturbations"
+
+    @pytest.mark.parametrize("variable,sigma", [("precip", 0.3), ("pet", 0.15)])
+    def test_multiplicative_perturbation_is_unbiased(self, variable, sigma):
+        """lognormal(mean=0, sigma) has mean exp(sigma^2/2) -- a 4.6 % wet bias
+        at sigma=0.3. The multiplier must average 1."""
+        rng = np.random.default_rng(42)
+        pert = GaussianPerturbation(precip_std=0.3, rng=rng)
+
+        data = np.full(400_000, 10.0)
+        perturbed = pert.perturb_forcing(data, member_id=0, variable=variable)
+
+        assert perturbed.mean() == pytest.approx(10.0, rel=2e-3)
+        # the spread is still the requested lognormal sigma
+        assert np.log(perturbed / 10.0).std() == pytest.approx(sigma, rel=1e-2)

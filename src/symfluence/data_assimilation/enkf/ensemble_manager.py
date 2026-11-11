@@ -102,6 +102,9 @@ class HBVEnsembleManager(EnsembleManager):
         self.use_jax = use_jax
         self.timestep_hours = timestep_hours
         self.warmup_days = warmup_days
+        # Catchment area used to convert observed discharge (m3/s) into this
+        # model's prediction units (mm/timestep); set by the DA manager.
+        self.catchment_area_m2: Optional[float] = None
 
         # Per-member state
         self.member_params: List[Dict[str, float]] = []
