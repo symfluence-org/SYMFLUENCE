@@ -27,13 +27,13 @@ from symfluence.geospatial.raster_utils import analyze_raster_values
 from symfluence.geospatial.zonal import fill_empty_zones, zonal_stats_covered
 
 from .artifacts import DiscretizationArtifacts
+from .attributes import aspect, combined, elevation, grus, landclass, radiation, soilclass
 from .hru_utils import (
     check_area_conservation,
     fill_nodata_from_nearest,
     merge_small_hrus,
     read_zone_window,
 )
-from .attributes import aspect, combined, elevation, grus, landclass, radiation, soilclass
 
 
 class DomainDiscretizer(PathResolverMixin):

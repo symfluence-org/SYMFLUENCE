@@ -153,7 +153,7 @@ class GeologyProcessor(BaseAttributeProcessor):
 
                     if not intersection.empty:
                         # Convert to equal area for proper area calculation
-                        intersection['New_area_m2'] = intersection.to_crs(equal_area_crs).area
+                        intersection['New_area_m2'] = feature_areas_m2(intersection)
                         total_area = intersection['New_area_m2'].sum()
 
                         if total_area > 0:
@@ -255,7 +255,7 @@ class GeologyProcessor(BaseAttributeProcessor):
 
                             if not intersection.empty:
                                 # Convert to equal area for proper area calculation
-                                intersection['New_area_m2'] = intersection.to_crs(equal_area_crs).area
+                                intersection['New_area_m2'] = feature_areas_m2(intersection)
                                 total_area = intersection['New_area_m2'].sum()
 
                                 if total_area > 0:

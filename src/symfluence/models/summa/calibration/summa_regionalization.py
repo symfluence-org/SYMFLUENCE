@@ -88,7 +88,7 @@ def load_hru_attributes(
         ValidationError: if an auto-discovered attribute CSV predates the
             ``hru_id`` column and has too many rows to be matched safely.
     """
-    from symfluence.data.model_ready.hru_tables import align_table_to_hru_ids, read_hru_table
+    from symfluence.core.modeling.model_ready.hru_tables import align_table_to_hru_ids, read_hru_table
 
     logger = logger or logging.getLogger(__name__)
 

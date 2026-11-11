@@ -18,8 +18,8 @@ xr = pytest.importorskip('xarray')
 from shapely.geometry import box
 
 from symfluence.core.exceptions import ValidationError
+from symfluence.core.modeling.model_ready.hru_tables import align_table_to_hru_ids, normalize_hru_id, order_hru_ids
 from symfluence.data.model_ready.attributes_builder import AttributesNetCDFBuilder
-from symfluence.data.model_ready.hru_tables import align_table_to_hru_ids, normalize_hru_id, order_hru_ids
 from symfluence.data.preprocessing.attribute_processors.base import BaseAttributeProcessor
 from symfluence.models.summa.calibration.summa_regionalization import load_hru_attributes
 

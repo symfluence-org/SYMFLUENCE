@@ -456,7 +456,7 @@ class AttributesNetCDFBuilder:
         """
         import pandas as pd
 
-        from .hru_tables import (
+        from symfluence.core.modeling.model_ready.hru_tables import (
             HRU_ID_COLUMN,
             LEGACY_POSITIONAL_MAX_ROWS,
             PROCESSOR_CSV_NAMES,
@@ -531,7 +531,7 @@ class AttributesNetCDFBuilder:
     def _catchment_hru_ids(self):
         """Normalized HRU ids in catchment-shapefile order, or None."""
         if not self._catchment_hru_ids_loaded:
-            from .hru_tables import normalize_hru_id
+            from symfluence.core.modeling.model_ready.hru_tables import normalize_hru_id
 
             ids = None
             gdf = self._find_catchment_shapefile()

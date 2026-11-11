@@ -260,7 +260,7 @@ class BaseAttributeProcessor(ConfigMixin):
                 else:
                     basin_data[k] = v
             if hru_data:
-                from symfluence.data.model_ready.hru_tables import (
+                from symfluence.core.modeling.model_ready.hru_tables import (
                     HRU_ID_COLUMN,
                     normalize_hru_id,
                     order_hru_ids,
