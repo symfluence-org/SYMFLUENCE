@@ -87,13 +87,39 @@ def test_clean_file_is_not_rewritten(tmp_path):
     assert not path.with_suffix('.tmp.nc').exists()
 
 
-def test_rounding_that_would_merge_stamps_is_refused(tmp_path):
-    """Irregular sub-hourly stamps cannot be snapped without collisions."""
+def test_summa_microsecond_jitter_after_an_exact_first_step_is_removed(tmp_path):
+    """~13 us jitter from step 2 on (first stamp exact) must still be fixed."""
+    path = tmp_path / 'j.nc'
+    s0 = (pd.Timestamp('2004-01-01') - REF).total_seconds()
+    values = s0 + 3600.0 * np.arange(72)
+    values[1:] += 13e-6
+    _write(path, 'seconds since 1990-01-01 00:00:00', values)
+
+    fix_time_precision(path)
+
+    with nc4.Dataset(path) as ds:
+        steps = np.diff(np.asarray(ds['time'][:]))
+    assert (steps == 3600.0).all()
+
+
+def test_irregular_sub_hourly_stamps_fall_back_to_whole_seconds(tmp_path):
+    """Hourly rounding would merge 02:00 and 02:10; seconds rounding keeps both."""
     path = tmp_path / 'e.nc'
     s0 = (pd.Timestamp('2010-10-01') - REF).total_seconds()
-    # hourly on the whole, with two stamps 10 minutes apart
-    _write(path, 'seconds since 1990-01-01 00:00:00',
-           s0 + np.array([0.0, 3600.0, 7200.0, 7800.0, 10800.0, 14400.0]))
+    offsets = np.array([0.0, 3600.0, 7200.0, 7800.0, 10800.0, 14400.0])
+    _write(path, 'seconds since 1990-01-01 00:00:00', s0 + offsets + 2e-5)
+
+    fix_time_precision(path, rounding_freq='h')
+
+    with nc4.Dataset(path) as ds:
+        np.testing.assert_array_equal(np.asarray(ds['time'][:]), s0 + offsets)
+
+
+def test_rounding_that_would_merge_stamps_is_refused(tmp_path):
+    """Sub-second steps collide even at whole seconds: refuse, do not rewrite."""
+    path = tmp_path / 'g.nc'
+    s0 = (pd.Timestamp('2010-10-01') - REF).total_seconds()
+    _write(path, 'seconds since 1990-01-01 00:00:00', s0 + 0.2 * np.arange(6))
     before = path.read_bytes()
 
     with pytest.raises(ModelExecutionError, match='duplicates'):

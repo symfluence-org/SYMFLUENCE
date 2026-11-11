@@ -14,12 +14,15 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import pandas as pd
+
 from symfluence.core.exceptions import ModelExecutionError, symfluence_error_handler
 from symfluence.core.modeling.base import BaseModelRunner
 from symfluence.core.modeling.utilities.runoff_loader import (
     MODEL_CONFIGS,
     normalize_cf_time_units,
     resolve_runoff_file,
+    round_time_stamps,
 )
 from symfluence.core.modeling.utilities.runoff_loader import (
     fix_time_precision as shared_fix_time_precision,
@@ -102,6 +105,29 @@ class MizuRouteRunner(BaseModelRunner):  # type: ignore[misc]
         if freq and freq.lower() == 'none':
             return None
         return freq
+
+    def _times_misaligned(self, stamps) -> bool:
+        """Whether ANY timestamp is off the rounding grid.
+
+        SUMMA writes times computed from Julian days, so later steps can carry
+        microsecond jitter even when the first is exact. mizuRoute derives the
+        runoff step from the first two times and then needs the last step to
+        end exactly at <sim_end>; a 3599.99998 s step fails there with
+        "index of idxFront lower than idxEnd".
+        """
+        freq = self._get_time_rounding_freq()
+        if not freq:
+            return False
+        stamps = pd.DatetimeIndex(stamps)
+        return bool((stamps != self._round_stamps(stamps, freq)).any())
+
+    def _round_stamps(self, stamps, freq):
+        """Round *stamps* to *freq*, or to whole seconds if that would merge steps.
+
+        Thin wrapper: the rule lives in runoff_loader.round_time_stamps, the
+        one implementation every routing model uses.
+        """
+        return round_time_stamps(pd.DatetimeIndex(stamps), freq)
 
     def fix_time_precision(self) -> Optional[Path]:
         """

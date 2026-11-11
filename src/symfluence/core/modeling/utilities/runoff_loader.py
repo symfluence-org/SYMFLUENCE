@@ -262,35 +262,25 @@ def normalize_cf_time_units(units: str) -> str:
     return f"{parts[0]} since {reference.isoformat(sep=' ')}"
 
 
-def _round_time_stamps(stamps: Any, rounding_freq: str) -> Any:
-    """Round *stamps* to *rounding_freq*, or to their own step if that is finer.
+def round_time_stamps(stamps: Any, rounding_freq: str) -> Any:
+    """Round *stamps* to *rounding_freq*, or to whole seconds if that would merge steps.
 
-    Rounding sub-hourly output to the hour would merge neighbouring stamps, so
-    when the axis' own step (median spacing, to the second) is shorter than
-    the requested frequency the stamps are snapped to that step instead,
-    anchored on the first stamp so an off-grid phase (00:30, 01:30, ...) is
-    preserved.
+    The noise this removes (e.g. SUMMA's ~13 microsecond jitter from
+    Julian-day arithmetic) is far below a second. Rounding sub-hourly output
+    to the hour would give duplicate times, so when the requested frequency
+    would merge distinct stamps, whole seconds are used instead: that removes
+    the jitter without moving any stamp onto another. The result may still
+    contain duplicates when even whole seconds merge stamps (sub-second
+    steps); callers must check.
     """
-    import numpy as np
     import pandas as pd
-    from pandas.tseries.frequencies import to_offset
 
-    anchor = pd.Timestamp('2000-01-01')
-    freq_td = (anchor + to_offset(rounding_freq)) - anchor
-
-    step = None
-    if len(stamps) > 1:
-        median_step = pd.Timedelta(np.median(np.diff(stamps.values))).round('s')
-        if median_step > pd.Timedelta(0):
-            step = median_step
-
-    if step is None or step >= freq_td:
-        return stamps.round(rounding_freq)
-
-    origin = stamps[0].round('s')
-    step_seconds = int(step / pd.Timedelta(seconds=1))
-    n_steps = np.rint(np.asarray((stamps - origin) / step, dtype='float64')).astype('int64')
-    return pd.DatetimeIndex(origin + pd.to_timedelta(n_steps * step_seconds, unit='s'))
+    stamps = pd.DatetimeIndex(stamps)
+    rounded = stamps.round(rounding_freq)
+    if rounded.has_duplicates and not stamps.has_duplicates:
+        logger.debug(f"Rounding times to '{rounding_freq}' would merge steps; rounding to seconds")
+        rounded = stamps.round('s')
+    return rounded
 
 
 def fix_time_precision(
@@ -304,8 +294,8 @@ def fix_time_precision(
     The single implementation behind every routing model's "time precision
     fix". The axis is decoded from its CF ``units`` (seconds, minutes, hours
     or days since any reference), **every** stamp is rounded to
-    *rounding_freq* — or to the axis' own step when that is finer — and the
-    result is written back in the file's original unit and epoch.
+    *rounding_freq* — or to whole seconds when that frequency would merge
+    distinct stamps (sub-hourly output) — and the result is written back in the file's original unit and epoch.
 
     The file is only rewritten (temp file, then atomic replace) when a value
     or the units string actually changes; an already-clean file is untouched.
@@ -389,12 +379,12 @@ def fix_time_precision(
                     f"Non-finite values on the time axis of {runoff_filepath}"
                 )
             stamps = pd.DatetimeIndex(reference + pd.to_timedelta(time_values, unit=time_unit))
-            rounded = _round_time_stamps(stamps, rounding_freq)
+            rounded = round_time_stamps(stamps, rounding_freq)
 
             if rounded.has_duplicates and not stamps.has_duplicates:
                 raise ModelExecutionError(
                     f"Rounding the time axis of {runoff_filepath} to "
-                    f"'{rounding_freq}' would merge distinct time stamps into "
+                    f"'{rounding_freq}' (or to whole seconds) would merge distinct time stamps into "
                     f"duplicates (step ~{pd.Timedelta(np.median(np.diff(stamps.values)))}). "
                     f"Refusing to rewrite the file; use a finer rounding "
                     f"frequency or 'none'."

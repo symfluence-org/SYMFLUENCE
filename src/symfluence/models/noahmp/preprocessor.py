@@ -90,11 +90,13 @@ class NoahMPPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         ``YYYY MM DD HH MM  windspd airtemp spechum airpres SWRad LWRad pptrate RH``
         using a Fortran format of ``(I4.4, 4(1x,I2.2), 8(F17.10))``.
         """
+        # Only the forcing remapped onto this run's HRUs (issue #339).
+        run_files = self._select_run_forcing(sorted(self.forcing_basin_path.glob('*.nc')))
         try:
             self.noahmp_forcing_dir.mkdir(parents=True, exist_ok=True)
 
             # Locate forcing NetCDF
-            forcing_files = sorted(self.forcing_basin_path.glob('*.nc'))
+            forcing_files = run_files
             if not forcing_files:
                 logger.error(f"No forcing NetCDF found in {self.forcing_basin_path}")
                 return

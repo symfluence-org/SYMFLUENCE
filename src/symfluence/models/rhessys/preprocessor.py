@@ -295,7 +295,8 @@ class RHESSysPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             config=self.config_dict,
             project_dir=self.project_dir,
             domain_name=self.domain_name,
-            logger=self.logger
+            logger=self.logger,
+            forcing_selector=self._select_run_forcing,
         )
 
         catchment_path = self.get_catchment_path() if hasattr(self, 'get_catchment_path') else None

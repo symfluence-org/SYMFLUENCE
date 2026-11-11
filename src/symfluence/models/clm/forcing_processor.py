@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Callable, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -53,6 +53,7 @@ class CLMForcingProcessor:
         lon: float,
         start_date: str,
         end_date: str,
+        forcing_selector: Optional[Callable[[List[Path]], List[Path]]] = None,
     ) -> Path:
         """
         Convert basin-averaged forcing to CLM DATM format.
@@ -64,6 +65,8 @@ class CLMForcingProcessor:
             lon: Catchment centroid longitude
             start_date: Simulation start date (YYYY-MM-DD)
             end_date: Simulation end date (YYYY-MM-DD)
+            forcing_selector: Narrows the NetCDF forcing to this run's HRU set
+                (the preprocessor's ``_select_run_forcing``, issue #339)
 
         Returns:
             Path to output directory with forcing files
@@ -75,7 +78,7 @@ class CLMForcingProcessor:
         if not basin_avg_dir.exists():
             basin_avg_dir = forcing_data_dir
 
-        forcing_ds = self._load_basin_averaged_forcing(basin_avg_dir)
+        forcing_ds = self._load_basin_averaged_forcing(basin_avg_dir, forcing_selector)
         if forcing_ds is None:
             raise FileNotFoundError(
                 f"No basin-averaged forcing data found in {basin_avg_dir}"
@@ -114,11 +117,13 @@ class CLMForcingProcessor:
         return output_dir
 
     def _load_basin_averaged_forcing(
-        self, data_dir: Path
+        self, data_dir: Path, forcing_selector: Optional[Callable[[List[Path]], List[Path]]] = None,
     ) -> Optional[xr.Dataset]:
         """Load basin-averaged forcing from NetCDF or CSV files."""
         # Try NetCDF first
-        nc_files = list(data_dir.glob('*.nc'))
+        nc_files = sorted(data_dir.glob('*.nc'))
+        if forcing_selector is not None:
+            nc_files = forcing_selector(nc_files)
         if nc_files:
             ds = xr.open_mfdataset(nc_files, combine='by_coords')
             return ds
