@@ -130,6 +130,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every parallel or async Wflow DDS run failed with "Subclasses must implement" and calibration ran
   serially. Final streamflow scoring of distributed Wflow reads the native outlet `output.csv` instead of
   the cryosphere state NetCDF.
+- **Remapped forcing names carry the HRU geometry (#339)**: basin-averaged forcing is now named
+  `{domain}_{forcing}_remapped_{method}-h{count}-{digest8}_{date}.nc`, where the digest hashes the target
+  catchment's CRS, HRU IDs and geometries. Lumped vs delineated GRUs, 200 m vs 400 m elevation bands and a
+  re-delineated domain no longer share names, so they no longer overwrite each other in the shared store.
+  Every model reader selects through one helper (`PathResolverMixin._select_run_forcing` /
+  `resolve_forcing_files`) and fails loudly when the store only holds forcing for other HRU sets. On the next
+  remap, existing outputs that are still current for the run's catchment are renamed in place instead of being
+  remapped again; older names are still read when no geometry-named files exist. External caches keyed on the
+  old filenames need re-keying.
 
 ### Removed
 - **73 unused back-compat shim modules** (ADR-0011): every shim that neither

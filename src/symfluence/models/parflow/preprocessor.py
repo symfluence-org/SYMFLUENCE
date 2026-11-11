@@ -106,7 +106,7 @@ class ParFlowPreProcessor(BaseModelPreProcessor):
         if forcing_dir:
             try:
                 import xarray as xr
-                nc_files = sorted(forcing_dir.glob('*.nc'))
+                nc_files = self._select_run_forcing(sorted(forcing_dir.glob('*.nc')))
                 if nc_files:
                     ds = xr.open_dataset(nc_files[0])
                     if 'latitude' in ds:
@@ -276,6 +276,9 @@ class ParFlowPreProcessor(BaseModelPreProcessor):
             )
             return None
 
+        # Only the forcing remapped onto this run's HRUs (issue #339).
+        run_files = self._select_run_forcing(sorted(forcing_dir.glob('*.nc')))
+
         try:
             import pandas as pd
 
@@ -283,7 +286,7 @@ class ParFlowPreProcessor(BaseModelPreProcessor):
                 open_canonical_forcing,
                 resample_canonical_forcing,
             )
-            nc_files = sorted(forcing_dir.glob('*.nc'))
+            nc_files = run_files
             era5 = [f for f in nc_files if 'ERA5' in f.name or 'remapped' in f.name]
             if era5:
                 nc_files = era5

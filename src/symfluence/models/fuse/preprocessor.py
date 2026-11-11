@@ -145,7 +145,8 @@ class FUSEPreProcessor(BaseModelPreProcessor, PETCalculatorMixin, GeospatialUtil
             calculate_pet_callback=self._calculate_pet,
             calculate_catchment_centroid_callback=self.calculate_catchment_centroid,
             get_simulation_time_window_callback=self.get_simulation_time_window,
-            subset_to_simulation_time_callback=self.subset_to_simulation_time
+            subset_to_simulation_time_callback=self.subset_to_simulation_time,
+            forcing_selector=self._select_run_forcing,
         )
 
         # Initialize elevation band manager
@@ -369,7 +370,8 @@ class FUSEPreProcessor(BaseModelPreProcessor, PETCalculatorMixin, GeospatialUtil
         """Open forcing files, apply variable handler, and subset to sim time."""
         self.logger.debug(f"Using {ts_config['time_label']} timestep (resample freq: {ts_config['resample_freq']})")
 
-        forcing_files = sorted(self.forcing_basin_path.glob('*.nc'))
+        # Only the forcing remapped onto this run's HRUs (issue #339).
+        forcing_files = self._select_run_forcing(sorted(self.forcing_basin_path.glob('*.nc')))
         if not forcing_files:
             raise FileOperationError("No forcing files found in basin-averaged data directory")
 

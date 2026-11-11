@@ -16,7 +16,7 @@ import yaml
 from symfluence import SYMFLUENCE
 from symfluence.core.config.models import SymfluenceConfig
 from symfluence.core.exceptions import DataAcquisitionError
-from test_helpers.helpers import write_config
+from test_helpers.helpers import keep_single_raw_forcing, write_config
 
 pytestmark = [pytest.mark.integration, pytest.mark.domain, pytest.mark.requires_data, pytest.mark.slow]
 
@@ -132,25 +132,11 @@ def setup_installs_symlink(tmp_path, symfluence_data_root):
     return installs_dst
 
 
-def _prune_raw_forcing(project_dir: Path, keep_glob: str) -> None:
+def _prune_raw_forcing(project_dir: Path) -> None:
     raw_dir = project_dir / "data" / "forcing" / "raw_data"
     if not raw_dir.exists():
         return
-
-    # Try multiple globs to support both old and new names
-    candidates = sorted(raw_dir.glob(keep_glob))
-    if not candidates:
-        # Try a more generic pattern if the specific one fails
-        if "ERA5" in keep_glob:
-            candidates = sorted(raw_dir.glob("*ERA5*1month*.nc"))
-
-    if not candidates:
-        return
-
-    keep = candidates[0]
-    for path in raw_dir.glob("*.nc"):
-        if path != keep:
-            path.unlink()
+    keep_single_raw_forcing(raw_dir)
 
     basin_avg_dir = project_dir / "data" / "forcing" / "basin_averaged_data"
     if basin_avg_dir.exists():
@@ -263,7 +249,7 @@ def test_lumped_basin_workflow(config_path, model, symfluence_data_root, setup_i
         assert Path(pour_point_path).exists(), "Pour point shapefile should be created"
 
     # Prune forcing to single month for speed
-    _prune_raw_forcing(project_dir, "domain_*_ERA5_merged_200401.nc")
+    _prune_raw_forcing(project_dir)
 
     # Step 4: Define domain (watershed delineation) - creates shapefiles from raw DEM data
     watershed_path, delineation_artifacts = symfluence.managers['domain'].define_domain()

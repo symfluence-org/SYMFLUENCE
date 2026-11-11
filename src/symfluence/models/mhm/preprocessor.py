@@ -552,7 +552,8 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
     def _load_forcing_data(self) -> xr.Dataset:
         """Load basin-averaged forcing data."""
-        forcing_files = list(self.forcing_basin_path.glob("*.nc"))
+        # Only the forcing remapped onto this run's HRUs (issue #339).
+        forcing_files = self._select_run_forcing(sorted(self.forcing_basin_path.glob("*.nc")))
 
         if not forcing_files:
             merged_path = self.project_forcing_dir / 'merged_path'
@@ -562,11 +563,10 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         if not forcing_files:
             raise FileNotFoundError(f"No forcing data found in {self.forcing_basin_path}")
 
-        # The basin forcing store is shared across every model in a domain and
-        # may hold more than one .nc. Choose deterministically by (active forcing
-        # dataset, spatial mode) instead of merging whatever globs -- merging a
-        # stray remap crashes on hru alignment ({1, 12}) and once triggered a
-        # silent synthetic-forcing fallback.
+        # The store may still hold other forcing datasets or legacy untokened
+        # remaps; narrow by (active forcing dataset, spatial mode) instead of
+        # merging whatever remains -- a stray remap crashes on hru alignment
+        # ({1, 12}) and once triggered a silent synthetic-forcing fallback.
         forcing_files = self._select_forcing_files(forcing_files)
         logger.info(f"Loading forcing from {len(forcing_files)} file(s)")
 
@@ -591,16 +591,21 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         crashes on dimension alignment (the ``{1, 12}`` hru mismatch that once
         made mHM fall back to fabricated weather).
 
-        Selection reuses the framework's established remap naming convention
-        ``{domain}_{forcing_dataset}_remapped_*`` (see
-        ``resampling.file_processor.determine_output_filename`` and SUMMA's
-        ``startswith(domain)`` file discovery) and the domain's spatial mode.
+        ``_load_forcing_data`` first narrows the basin store to the files
+        remapped onto this run's HRU set (``_select_run_forcing``, issue #339);
+        that settles the discretization for geometry-tokened stores. This
+        method then handles what token selection does not: several forcing
+        datasets under one token, and legacy untokened stores. It uses the
+        remap naming convention ``{domain}_{forcing_dataset}_remapped_*`` (see
+        ``resampling.file_processor.determine_output_filename``) and the
+        domain's spatial mode.
         Genuine multi-file forcing of one shape (e.g. per-period time chunks) is
         still merged; genuinely ambiguous, incompatibly-shaped candidates raise a
         clear error listing them rather than being merged blindly.
 
         Args:
-            forcing_files: every ``*.nc`` discovered in the forcing store.
+            forcing_files: the run's token-selected basin forcing (or the
+                merged-forcing fallback).
 
         Returns:
             The spatially-compatible subset to hand to ``open_canonical_forcing``.

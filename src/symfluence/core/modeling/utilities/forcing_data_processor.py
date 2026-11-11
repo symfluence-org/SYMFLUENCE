@@ -19,7 +19,7 @@ import pandas as pd
 import xarray as xr
 
 from symfluence.core.mixins.logging import _class_logger_name
-from symfluence.core.modeling.forcing_naming import select_forcing_files
+from symfluence.core.modeling.forcing_naming import resolve_forcing_files
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,8 @@ class ForcingDataProcessor:
         forcing_path: Path,
         pattern: str = '*.nc',
         concat_dim: str = 'time',
-        data_vars: str = 'all'
+        data_vars: str = 'all',
+        catchment_path: Optional[Path] = None,
     ) -> xr.Dataset:
         """
         Load forcing data from NetCDF files.
@@ -91,6 +92,8 @@ class ForcingDataProcessor:
             pattern: Glob pattern for files
             concat_dim: Dimension to concatenate along
             data_vars: How to handle data variables ('all', 'minimal', 'different')
+            catchment_path: The run's catchment shapefile; when it exists, files
+                are selected by its HRU geometry as well as the discretization
 
         Returns:
             xr.Dataset with forcing data
@@ -105,7 +108,9 @@ class ForcingDataProcessor:
         # merge below (issue #339). A no-op when the discretization is unknown or
         # the store's names predate namespacing, so single-discretization and
         # legacy stores never regress.
-        forcing_files = list(select_forcing_files(forcing_files, self._get_discretization()))
+        forcing_files = resolve_forcing_files(
+            forcing_files, self._get_discretization(), catchment_path,
+            self._get_hru_id_field())
 
         self.logger.info(f"Loading {len(forcing_files)} forcing files from {forcing_path}")
 
@@ -462,7 +467,8 @@ class ForcingDataProcessor:
         unit_conversions: Optional[Dict[str, str]] = None,
         missing_data_strategy: Optional[str] = None,
         max_gap_hours: Optional[int] = None,
-        expected_freq_seconds: Optional[int] = None
+        expected_freq_seconds: Optional[int] = None,
+        catchment_path: Optional[Path] = None,
     ) -> xr.Dataset:
         """
         Complete forcing preparation pipeline.
@@ -482,12 +488,13 @@ class ForcingDataProcessor:
             max_gap_hours: Maximum gap before forced error. Falls back to
                 config then 24.
             expected_freq_seconds: Expected timestep. If None, inferred.
+            catchment_path: The run's catchment shapefile (see load_forcing_data).
 
         Returns:
             Prepared forcing dataset
         """
         # Load
-        ds = self.load_forcing_data(forcing_path)
+        ds = self.load_forcing_data(forcing_path, catchment_path=catchment_path)
 
         # Subset
         ds = self.subset_to_time_window(ds, start_time, end_time)
@@ -538,6 +545,14 @@ class ForcingDataProcessor:
         if callable(getter):
             return cfg.get('SUB_GRID_DISCRETIZATION') or cfg.get('DOMAIN_DISCRETIZATION')
         return None
+
+    def _get_hru_id_field(self) -> str:
+        """The catchment HRU id column (``CATCHMENT_SHP_HRUID``), default ``HRU_ID``."""
+        from symfluence.core.mixins.config import resolve_config_value
+
+        cfg = self.config
+        return str(resolve_config_value(
+            cfg, lambda: cfg.paths.catchment_hruid, 'HRU_ID', 'CATCHMENT_SHP_HRUID') or 'HRU_ID')
 
     def _get_config_str(self, key: str, default: str) -> str:
         """Extract a string config value from config dict or typed config."""
