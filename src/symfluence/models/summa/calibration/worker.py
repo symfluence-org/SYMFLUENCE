@@ -13,6 +13,8 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import numpy as np
+
 from symfluence.core.calibration.workers.base_worker import BaseWorker, WorkerTask
 from symfluence.core.logging_utils import get_worker_logger
 from symfluence.core.metrics import StreamflowMetrics
@@ -94,6 +96,11 @@ class SUMMAWorker(BaseWorker):
                 if not hasattr(self, '_cached_pm') or self._cached_pm is None:  # type: ignore[has-type]
                     from symfluence.models.summa.calibration.parameter_manager import SUMMAParameterManager
                     self._cached_pm = SUMMAParameterManager(config, self.logger, settings_dir)
+                # The task carries the layer depths read before any trial rescaled
+                # them; the copy in this worker's coldState may already be scaled.
+                task_depths = (kwargs.get('task_data') or kwargs).get('original_depths')
+                if task_depths is not None and self._cached_pm.depth_params:
+                    self._cached_pm.original_depths = np.asarray(task_depths)
                 return self._cached_pm.update_model_files(params)
 
             # No coefficients — use standard worker path
