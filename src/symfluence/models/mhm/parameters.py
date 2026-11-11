@@ -161,7 +161,7 @@ MHM_PARAMETER_NML_SPEC: List[Tuple[str, List[Tuple[str, float, float, float, int
         ('PTF_Ks_sand',                        0.006,   0.026,   0.0125,  1, 1),
         ('PTF_Ks_clay',                        0.003,   0.013,   0.0063,  1, 1),
         ('PTF_Ks_curveSlope',                 60.96,   60.96,   60.96,    0, 1),
-        ('rootFractionCoefficient_forest',     0.90,    0.999,   0.97,    1, 1),
+        ('rootFractionCoefficient_forest',     0.80,    0.999,   0.97,    1, 1),
         ('rootFractionCoefficient_impervious', 0.90,    0.95,    0.93,    1, 1),
         ('rootFractionCoefficient_pervious',   0.001,   0.09,    0.02,    1, 1),
         ('infiltrationShapeFactor',            1.0,     4.0,     1.75,    1, 1),
