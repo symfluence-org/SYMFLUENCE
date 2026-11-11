@@ -41,7 +41,7 @@ from symfluence.core.exceptions import OptimizationError, require_not_none
 from ..mixins import GradientOptimizationMixin, ParallelExecutionMixin, ResultsTrackingMixin, RetryExecutionMixin
 from ..mixins.parallel.local_scratch_manager import LocalScratchManager
 from ..workers.base_worker import BaseWorker
-from .algorithms import ALGORITHM_REGISTRY, get_algorithm
+from .algorithms import ALGORITHM_REGISTRY, algorithm_slug, get_algorithm
 from .component_factory import OptimizerComponentFactory
 from .evaluators import PopulationEvaluator, TaskBuilder
 from .final_evaluation import FinalEvaluationOrchestrator, FinalResultsSaver
@@ -275,9 +275,13 @@ class BaseModelOptimizer(
             calibration_variable = self._get_config_value(
                 lambda: self.config.optimization.calibration_variable, default='streamflow'
             )
+            # Plots go into this run's results directory. They used to go to
+            # ``<display name>_<experiment>`` next to it, a sibling directory
+            # whenever the algorithm's display name differs from the
+            # configured spelling (e.g. 'asyncdds_x' beside 'async_dds_x').
             self.reporting_manager.visualize_optimization_progress(
                 self._iteration_history,
-                self.results_dir.parent / f"{algorithm.lower()}_{self.experiment_id}", # Matches results_dir logic or pass results_dir
+                self.results_dir,
                 calibration_variable,
                 self.target_metric
             )
@@ -288,7 +292,7 @@ class BaseModelOptimizer(
             if calibrate_depth:
                 self.reporting_manager.visualize_optimization_depth_parameters(
                     self._iteration_history,
-                    self.results_dir.parent / f"{algorithm.lower()}_{self.experiment_id}"
+                    self.results_dir
                 )
 
     # =========================================================================
@@ -551,6 +555,28 @@ class BaseModelOptimizer(
         )
         return [str(primary_metric).upper(), str(secondary_metric).upper()]
 
+    def _nsga2_objective_setup(self) -> Tuple[List[str], bool]:
+        """Objective names and whether NSGA-II evaluates them as objectives.
+
+        ``NSGA2_MULTI_TARGET`` means two calibration *targets* (e.g.
+        streamflow + groundwater depth). Two different *metrics* on the single
+        OPTIMIZATION_TARGET are also a genuine two-objective problem and are
+        evaluated as such. With neither, only the OPTIMIZATION_METRIC score
+        exists: NSGA-II then runs (and reports itself as) single-objective on
+        that metric instead of copying the score into an ``obj2_*`` column.
+
+        Returns:
+            (objective_names, multiobjective)
+        """
+        multi_target = bool(self._get_config_value(
+            lambda: self.config.optimization.nsga2.multi_target, default=False,
+            dict_key='NSGA2_MULTI_TARGET'
+        ))
+        objective_names = self._get_nsga2_objective_names()
+        if multi_target or len(set(objective_names)) > 1:
+            return objective_names, True
+        return [str(self.target_metric).upper()], False
+
     def _get_moead_objective_names(self) -> List[str]:
         """Resolve MOEA/D objective metric names in priority order."""
         primary_metric = self._get_config_value(
@@ -599,6 +625,45 @@ class BaseModelOptimizer(
             )
 
         return dict(initial_guess)
+
+    def _complete_initial_guess(self, initial_guess: Dict[str, Any]) -> Dict[str, Any]:
+        """Overlay a (possibly partial) INITIAL_GUESS on the model defaults.
+
+        Parameters the guess does not list start from the model's default /
+        initial value (``param_manager.get_initial_parameters()``), exactly as
+        they would without an INITIAL_GUESS. They used to be put at the middle
+        of their bounds, so naming one parameter silently moved all the
+        others. Only parameters with neither a guess nor a default start at
+        mid-range, and those are named in the log.
+        """
+        all_names = list(self.param_manager.all_param_names)
+        unlisted = [name for name in all_names if name not in initial_guess]
+        if not unlisted:
+            return dict(initial_guess)
+
+        defaults: Dict[str, Any] = {}
+        try:
+            defaults = dict(self.param_manager.get_initial_parameters() or {})
+        except (KeyError, AttributeError, ValueError, OSError) as e:
+            self.logger.warning(
+                f"Could not read model default parameters to complete INITIAL_GUESS: {e}"
+            )
+
+        merged = {name: defaults[name] for name in unlisted if name in defaults}
+        merged.update(initial_guess)
+        from_defaults = [name for name in unlisted if name in defaults]
+        no_default = [name for name in unlisted if name not in defaults]
+        if from_defaults:
+            self.logger.info(
+                f"INITIAL_GUESS lists {len(initial_guess)} of {len(all_names)} parameters; "
+                f"using model defaults for: {', '.join(from_defaults)}"
+            )
+        if no_default:
+            self.logger.info(
+                "No INITIAL_GUESS value and no model default for: "
+                f"{', '.join(no_default)} - starting these at the middle of their bounds"
+            )
+        return merged
 
     def _log_calibration_alignment(self) -> None:
         """Log basic calibration alignment info before optimization starts."""
@@ -1196,15 +1261,23 @@ class BaseModelOptimizer(
         self.logger.info(f"Starting {algorithm_name.upper()} optimization for {self._get_model_name()}")
         self._log_calibration_alignment()
 
+        # One canonical slug names every result file of this run (checkpoints,
+        # best params, Pareto front, final evaluation) -- see algorithm_slug.
+        file_slug = algorithm_slug(algorithm_name)
+
+        # A restarted run must not overwrite the previous run's results at
+        # its first checkpoint: move them aside first.
+        self.rotate_previous_results()
+
         n_params = len(self.param_manager.all_param_names)
         if n_params == 0:
-            return self._run_default_only(algorithm_name)
+            return self._run_default_only(file_slug)
 
         # Get algorithm instance from registry
         algorithm = get_algorithm(algorithm_name, self.config, self.logger)
 
         # Build callbacks and kwargs for the algorithm
-        callbacks, kwargs = self._build_algorithm_callbacks(algorithm.name)
+        callbacks, kwargs = self._build_algorithm_callbacks(file_slug)
 
         # Seed optimization using INITIAL_GUESS, previous best parameters, then defaults.
         # Warm-starting from previous runs is opt-in (SKIP_WARM_START defaults to true):
@@ -1220,6 +1293,7 @@ class BaseModelOptimizer(
                 self.logger.info(
                     "Using config-specified INITIAL_GUESS for optimization seeding"
                 )
+                initial_params_dict = self._complete_initial_guess(initial_params_dict)
             elif skip_warm_start:
                 self.logger.info(
                     "Warm-start disabled (default) — starting from model default initial "
@@ -1257,10 +1331,7 @@ class BaseModelOptimizer(
         # For NSGA-II, add multi-objective support
         if algorithm_name.lower() in ['nsga2', 'nsga-ii']:
             kwargs['evaluate_population_objectives'] = self._evaluate_population_objectives
-            kwargs['objective_names'] = self._get_nsga2_objective_names()
-            kwargs['multiobjective'] = bool(self._get_config_value(
-                lambda: self.config.optimization.nsga2.multi_target, default=False
-            ))
+            kwargs['objective_names'], kwargs['multiobjective'] = self._nsga2_objective_setup()
 
         # For MOEA/D, add multi-objective support only when explicitly enabled
         if algorithm_name.lower() in ['moead', 'moea-d', 'moea_d']:
@@ -1313,13 +1384,13 @@ class BaseModelOptimizer(
         )
 
         # Save results
-        results_path = self.save_results(algorithm.name, standard_filename=True)
-        self.save_best_params(algorithm.name)
-        self._visualize_progress(algorithm.name)
+        results_path = self.save_results(file_slug, standard_filename=True)
+        self.save_best_params(file_slug)
+        self._visualize_progress(file_slug)
 
         # Save Pareto front for multi-objective algorithms
         if result.get('pareto_objectives') is not None and result.get('pareto_front') is not None:
-            self._save_pareto_front(result, algorithm.name)
+            self._save_pareto_front(result, file_slug)
 
         self.logger.info(f"{algorithm.name} completed in {self.format_elapsed_time()}")
 
@@ -1327,7 +1398,7 @@ class BaseModelOptimizer(
         if result.get('best_params'):
             final_result = self.run_final_evaluation(result['best_params'])
             if final_result:
-                self._save_final_evaluation_results(final_result, algorithm.name)
+                self._save_final_evaluation_results(final_result, file_slug)
 
         return results_path  # type: ignore[return-value]
 
