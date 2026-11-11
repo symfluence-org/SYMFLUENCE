@@ -50,7 +50,7 @@ def hamon_pet(temp_c, day_length_h, coefficient: float = HAMON_LU_COEFFICIENT):
     At 15 degC and a 12 h day this gives 2.12 mm/day.
 
     Sub-zero temperatures are NOT cut off: the formula stays positive and
-    decays smoothly (about 0.5 mm/day at -5 degC with a 12 h day), which is
+    decays smoothly (about 0.56 mm/day at -5 degC with a 12 h day), which is
     what every earlier copy in this code base did. Callers that want the
     "PET = 0 for T <= 0 degC" convention apply it themselves. NaN temperature
     gives NaN PET.
