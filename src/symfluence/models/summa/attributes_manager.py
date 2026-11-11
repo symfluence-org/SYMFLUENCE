@@ -32,6 +32,58 @@ from symfluence.core.exceptions import ModelExecutionError
 if TYPE_CHECKING:
     from symfluence.core.config.models import SymfluenceConfig
 
+# Written to every HRU; no contour length is computed from the HRU geometry.
+DEFAULT_CONTOUR_LENGTH_M = 100
+
+# Aspect written for an HRU without a defined slope direction (all cells flat
+# or no DEM cells). With tan_slope at its floor SUMMA's radiation geometry is
+# that of a level surface, so the value has no effect there.
+FLAT_ASPECT_DEG = 180.0
+
+# Below this mean gradient (m/m) an HRU has no meaningful slope direction.
+_FLAT_GRADIENT = 1e-8
+
+# Index of the LOAM row in each soil-category table SUMMA can select with the
+# ``soilCatTbl`` decision (see TBL_SOILPARM.TBL). Used when the table file in
+# the settings directory cannot be read.
+_LOAM_CLASS_BY_TABLE = {'ROSETTA': 3, 'STAS': 6, 'STAS-RUC': 6}
+_DEFAULT_SOIL_TABLE = 'ROSETTA'  # shipped base_settings/modelDecisions.txt
+
+
+def downslope_components(
+    dem: np.ndarray,
+    cell_size_x: float,
+    cell_size_y: float,
+    rows_southward: bool = True,
+    cols_eastward: bool = True,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """East and north components of the downslope direction of a DEM.
+
+    The vector at each cell points the way the terrain falls (the way the
+    slope faces) and its length is the gradient magnitude (tan of the slope
+    angle). ``np.gradient`` differentiates along the row index first, which
+    increases southward in a north-up raster, hence the sign handling.
+
+    Returns:
+        ``(east, north)`` arrays; NaN where the DEM (or a neighbour) is NaN.
+    """
+    dz_drow, dz_dcol = np.gradient(np.asarray(dem, dtype=np.float64), cell_size_y, cell_size_x)
+    dz_dnorth = -dz_drow if rows_southward else dz_drow
+    dz_deast = dz_dcol if cols_eastward else -dz_dcol
+    return np.asarray(-dz_deast), np.asarray(-dz_dnorth)
+
+
+def aspect_from_components(east: float, north: float) -> Optional[float]:
+    """Compass bearing (degrees clockwise from north, 0-360) of a direction.
+
+    This is SUMMA's ``aspect`` convention ("mean azimuth of HRU in degrees
+    East of North"): 0 faces north, 90 east, 180 south, 270 west. Returns
+    ``None`` when the direction is undefined (flat).
+    """
+    if not (np.isfinite(east) and np.isfinite(north)) or np.hypot(east, north) < _FLAT_GRADIENT:
+        return None
+    return float(np.degrees(np.arctan2(east, north)) % 360.0)
+
 
 class SummaAttributesManager(ConfigurableMixin):
     """
@@ -206,9 +258,12 @@ class SummaAttributesManager(ConfigurableMixin):
                 att['longitude'][idx] = shp.iloc[idx][catchment_lon]
                 att['hru2gruId'][idx] = shp.iloc[idx][catchment_gruid]
 
-                # Set slope and contour length (will be updated later)
+                # tan_slope is a placeholder that insert_tan_slope() replaces with
+                # the DEM-derived value. contourLength is NOT derived anywhere:
+                # every HRU keeps this fixed 100 m (it only matters for lateral
+                # flow between connected HRUs).
                 att['tan_slope'][idx] = 0.1
-                att['contourLength'][idx] = 100
+                att['contourLength'][idx] = DEFAULT_CONTOUR_LENGTH_M
 
                 att['slopeTypeIndex'][idx] = 1
                 att['mHeight'][idx] = self.forcing_measurement_height
@@ -333,7 +388,8 @@ class SummaAttributesManager(ConfigurableMixin):
         Calculate and insert aspect data into the attributes file.
 
         Aspect is calculated from the DEM using gradient analysis and represents
-        the compass direction that the slope faces (in degrees from North).
+        the compass direction that the slope faces (downslope direction, in
+        degrees clockwise from North).
 
         Args:
             attribute_file (str): Path to the SUMMA attributes NetCDF file
@@ -433,6 +489,13 @@ class SummaAttributesManager(ConfigurableMixin):
         """
         Calculate mean aspect for each HRU from the DEM.
 
+        The aspect is the compass bearing of the downslope direction (the
+        direction the slope faces), in degrees clockwise from north, which is
+        what SUMMA's radiation geometry expects (``clrsky_rad``: 0 = north-
+        facing, 90 = east-facing). It is aggregated over the HRU as a
+        gradient-weighted circular mean; an HRU with no net slope direction
+        gets ``FLAT_ASPECT_DEG``.
+
         Args:
             shp (gpd.GeoDataFrame): GeoDataFrame containing HRU polygons
 
@@ -445,7 +508,8 @@ class SummaAttributesManager(ConfigurableMixin):
 
         try:
             with rasterio.open(self.dem_path) as src:
-                dem = src.read(1)
+                # Read as masked array so nodata does not contaminate gradients.
+                dem = src.read(1, masked=True).astype(np.float64).filled(np.nan)
                 transform = src.transform
 
                 # Get cell sizes
@@ -453,7 +517,7 @@ class SummaAttributesManager(ConfigurableMixin):
                 cell_size_y = abs(transform[4])  # dy
 
                 # Convert cell sizes from degrees to meters if CRS is geographic
-                if src.crs.is_geographic:
+                if src.crs is not None and src.crs.is_geographic:
                     # Get center latitude for conversion
                     bounds = src.bounds
                     center_lat = (bounds.bottom + bounds.top) / 2
@@ -465,28 +529,39 @@ class SummaAttributesManager(ConfigurableMixin):
                     cell_size_x = cell_size_x * meters_per_degree_lon
                     cell_size_y = cell_size_y * meters_per_degree_lat
 
-                # Calculate gradients
-                dy, dx = np.gradient(dem.astype(np.float64), cell_size_y, cell_size_x)
-
-                # Calculate aspect in radians (-π to π)
-                aspect_rad = np.arctan2(-dy, dx)  # Note: -dy because aspect is measured from North
-
-                # Convert to degrees (0 to 360, where 0/360 = North, 90 = East, 180 = South, 270 = West)
-                aspect_deg = np.degrees(aspect_rad)
-                aspect_deg = (90 - aspect_deg) % 360  # Convert from math convention to compass bearing
-
-                # Handle flat areas (where both dx and dy are near zero)
-                flat_mask = (np.abs(dx) < 1e-8) & (np.abs(dy) < 1e-8)
-                aspect_deg[flat_mask] = -1  # Special value for flat areas
-
-                # Use zonal_stats to get mean aspect for all HRUs at once
-                mean_aspects = rasterstats.zonal_stats(
-                    shp.geometry,
-                    aspect_deg,
-                    affine=transform,
-                    stats=['mean'],
-                    nodata=src.nodata
+                # Downslope direction per cell: the direction the slope faces.
+                east, north = downslope_components(
+                    dem, cell_size_x, cell_size_y,
+                    rows_southward=transform[4] < 0,
+                    cols_eastward=transform[0] > 0,
                 )
+
+                # Same guard as tan_slope: cap gradients beyond 80 degrees
+                # (DEM artifacts) so a single spike cannot set the HRU mean.
+                max_tan_slope = float(np.tan(np.radians(80.0)))
+                magnitude = np.hypot(east, north)
+                with np.errstate(invalid='ignore', divide='ignore'):
+                    scale = np.where(magnitude > max_tan_slope, max_tan_slope / magnitude, 1.0)
+                east, north = east * scale, north * scale
+
+                # Aspect is an angle, so it is averaged as a vector: the zonal
+                # means of the east and north components give the HRU's mean
+                # downslope direction. Each cell weighs in with its gradient
+                # (steeper cells count more, flat cells not at all), which is
+                # the aspect of the HRU's mean surface plane. An arithmetic
+                # mean of degrees is wrong across the 0/360 wrap.
+                component_nodata = -9999.0
+                valid = np.isfinite(east) & np.isfinite(north)
+                zonal_means = []
+                for component in (east, north):
+                    zonal_means.append(rasterstats.zonal_stats(
+                        shp.geometry,
+                        np.where(valid, component, component_nodata),
+                        affine=transform,
+                        stats=['mean'],
+                        nodata=component_nodata
+                    ))
+                mean_east, mean_north = zonal_means
 
             # Create results dictionary
             hru_id_col = self._get_config_value(lambda: self.config.paths.catchment_hruid)
@@ -498,16 +573,17 @@ class SummaAttributesManager(ConfigurableMixin):
                 else:
                     hru_id = int(hru_id_raw)  # Already a scalar
 
-                mean_aspect = mean_aspects[idx]['mean']
+                hru_east = mean_east[idx]['mean']
+                hru_north = mean_north[idx]['mean']
 
-                if mean_aspect is None or np.isnan(mean_aspect):
+                if hru_east is None or hru_north is None or np.isnan(hru_east) or np.isnan(hru_north):
                     self.logger.warning(f"No valid aspect data found for HRU {hru_id}")
-                    results[hru_id] = 180.0  # Default to south-facing
-                elif mean_aspect == -1:
-                    # Flat area
-                    results[hru_id] = 180.0  # Default to south-facing for flat areas
-                else:
-                    results[hru_id] = float(mean_aspect)
+                    results[hru_id] = FLAT_ASPECT_DEG
+                    continue
+
+                aspect = aspect_from_components(hru_east, hru_north)
+                # No net slope direction (flat HRU): defined placeholder value
+                results[hru_id] = FLAT_ASPECT_DEG if aspect is None else aspect
 
         except Exception as e:  # noqa: BLE001 — model execution resilience
             self.logger.error(f"Error calculating aspect from DEM: {str(e)}", exc_info=True)
@@ -647,6 +723,9 @@ class SummaAttributesManager(ConfigurableMixin):
             intersect_name = 'catchment_with_soilclass.shp'
         intersect_hruId_var = self._get_config_value(lambda: self.config.paths.catchment_hruid)
 
+        loam_class, soil_table = self._loam_soil_class()
+        fallback_hrus: List[int] = []
+
         try:
             # Prefer the model-ready attributes store (/soil/ fractions keyed by
             # hru_id); fall back to the SoilGrids intersection shapefile.
@@ -668,8 +747,9 @@ class SummaAttributesManager(ConfigurableMixin):
                     if store_frac is not None:
                         hist = store_frac.get(int(attribute_hru))
                         if hist is None:
-                            self.logger.warning(f"No soil class data found for HRU {attribute_hru}, using default class")
-                            att['soilTypeIndex'][idx] = 6  # Use a default value (6 = loam)
+                            self.logger.debug(f"No soil class data found for HRU {attribute_hru}")
+                            att['soilTypeIndex'][idx] = loam_class
+                            fallback_hrus.append(int(attribute_hru))
                             continue
                         tmp_hist = [hist.get(j, 0.0) for j in range(13)]
                         tmp_hist[0] = -1  # Set USGS_0 to -1 to avoid selecting it
@@ -680,8 +760,9 @@ class SummaAttributesManager(ConfigurableMixin):
 
                         # Check if there are any matching rows for this HRU
                         if not any(shp_mask):
-                            self.logger.warning(f"No soil class data found for HRU {attribute_hru}, using default class")
-                            att['soilTypeIndex'][idx] = 6  # Use a default value (6 = loam)
+                            self.logger.debug(f"No soil class data found for HRU {attribute_hru}")
+                            att['soilTypeIndex'][idx] = loam_class
+                            fallback_hrus.append(int(attribute_hru))
                             continue
 
                         tmp_hist = []
@@ -693,22 +774,83 @@ class SummaAttributesManager(ConfigurableMixin):
                         tmp_sc = np.argmax(np.asarray(tmp_hist))
 
                         if shp[f'USGS_{tmp_sc}'][shp_mask].values[0] != tmp_hist[tmp_sc]:
-                            self.logger.warning(f'Index and mode soil class do not match at hru_id {attribute_hru}')
-                            tmp_sc = 6  # Use a default value (6 = loam) instead of -999
+                            self.logger.debug(f'Index and mode soil class do not match at hru_id {attribute_hru}')
+                            tmp_sc = 0  # handled as an invalid class below
 
                     # Ensure soil type index is positive (SUMMA requires this)
                     if tmp_sc <= 0:
-                        self.logger.warning(f"Invalid soil class {tmp_sc} for HRU {attribute_hru}, using default class")
-                        tmp_sc = 6  # Use a default value (6 = loam)
+                        self.logger.debug(f"Invalid soil class {tmp_sc} for HRU {attribute_hru}")
+                        tmp_sc = loam_class
+                        fallback_hrus.append(int(attribute_hru))
 
                     att['soilTypeIndex'][idx] = tmp_sc
+
+                n_hru = len(att['hruId'])
+
+            if fallback_hrus:
+                self.logger.warning(
+                    "No usable soil class for %d of %d HRUs; assigned the fallback class %d "
+                    "(LOAM in soil table %s). HRU ids (first 10): %s",
+                    len(fallback_hrus), n_hru, loam_class, soil_table, fallback_hrus[:10],
+                )
 
         except Exception as e:  # noqa: BLE001 — model execution resilience
             self.logger.error(f"Error inserting soil class: {str(e)}", exc_info=True)
             # If the process fails, set all soil types to a default value
             with nc4.Dataset(attribute_file, "r+") as att:
-                self.logger.warning("Setting all soil types to default value (6 = loam)")
-                att['soilTypeIndex'][:] = 6  # Set all to loam as fallback
+                att['soilTypeIndex'][:] = loam_class
+                self.logger.warning(
+                    "Soil class insertion failed; assigned the fallback class %d (LOAM in soil "
+                    "table %s) to ALL %d HRUs",
+                    loam_class, soil_table, len(att['hruId']),
+                )
+
+    def _loam_soil_class(self) -> Tuple[int, str]:
+        """Index of LOAM in the soil-category table the settings select.
+
+        The fallback soil class has to be looked up in the table SUMMA will
+        actually read: ``soilCatTbl`` in modelDecisions.txt picks the section
+        of TBL_SOILPARM.TBL, and LOAM is row 3 under ROSETTA but row 6 under
+        STAS / STAS-RUC (where row 6 of ROSETTA is SANDY CLAY).
+
+        Returns:
+            ``(class_index, table_name)``
+        """
+        table = _DEFAULT_SOIL_TABLE
+        decisions_path = Path(self.setup_dir) / 'modelDecisions.txt'
+        if decisions_path.exists():
+            for line in decisions_path.read_text(encoding='utf-8').splitlines():
+                parts = line.split('!')[0].split()
+                if len(parts) >= 2 and parts[0] == 'soilCatTbl':
+                    table = parts[1]
+                    break
+        else:
+            self.logger.debug(
+                f"{decisions_path} not found; assuming soilCatTbl {_DEFAULT_SOIL_TABLE} for the fallback soil class")
+
+        # Prefer the table file SUMMA will read; rows look like "3  ...  'LOAM'".
+        table_path = Path(self.setup_dir) / 'TBL_SOILPARM.TBL'
+        if table_path.exists():
+            lines = table_path.read_text(encoding='utf-8', errors='replace').splitlines()
+            for start, line in enumerate(lines):
+                if line.strip() != table:
+                    continue
+                for row in lines[start + 2:]:
+                    if row.strip() == 'Soil Parameters':
+                        break
+                    if row.rstrip().rstrip("'").rstrip().upper().endswith("'LOAM"):
+                        try:
+                            return int(row.replace(',', ' ').split()[0]), table
+                        except (ValueError, IndexError):
+                            break
+                break
+
+        if table not in _LOAM_CLASS_BY_TABLE:
+            raise ModelExecutionError(
+                f"Cannot determine the LOAM soil class for soilCatTbl '{table}' "
+                f"(not found in {table_path}); known tables: {sorted(_LOAM_CLASS_BY_TABLE)}"
+            )
+        return _LOAM_CLASS_BY_TABLE[table], table
 
     def insert_land_class(self, attribute_file):
         """Insert land class data into the attributes file."""
@@ -821,6 +963,7 @@ class SummaAttributesManager(ConfigurableMixin):
 
         with nc4.Dataset(attribute_file, "r+") as att:
             gru_data: Dict[int, List[Tuple[Any, float]]] = {}
+            missing_elevation: List[int] = []
             for idx in range(len(att['hruId'])):
                 hru_id = att['hruId'][idx]
                 gru_id = att['hru2gruId'][idx]
@@ -833,12 +976,22 @@ class SummaAttributesManager(ConfigurableMixin):
                     if any(shp_mask):
                         elevation = float(shp[elev_column][shp_mask].values[0])
 
-                if elevation is not None:
+                if elevation is not None and np.isfinite(elevation):
                     att['elevation'][idx] = elevation
                     if do_downHRUindex:
                         gru_data.setdefault(gru_id, []).append((hru_id, elevation))
                 else:
-                    self.logger.warning(f"No elevation data found for HRU {hru_id}")
+                    missing_elevation.append(int(hru_id))
+
+            if missing_elevation:
+                # Leaving the -999 placeholder would hand SUMMA a nonsense
+                # elevation (air pressure, lapse rates) without any error.
+                raise ModelExecutionError(
+                    f"No elevation found for {len(missing_elevation)} of {len(att['hruId'])} HRUs "
+                    f"(first 10: {missing_elevation[:10]}) in the attributes store or "
+                    f"{intersect_path / intersect_name}. Re-run the DEM intersection for the "
+                    "current catchment shapefile."
+                )
 
             if do_downHRUindex:
                 self._set_downHRUindex(att, gru_data)

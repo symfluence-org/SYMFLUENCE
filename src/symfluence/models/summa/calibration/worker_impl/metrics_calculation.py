@@ -39,6 +39,8 @@ from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.mixins.project import resolve_data_subdir
 from symfluence.core.modeling.utilities.periods import parse_period
 
+from ..parameter_files import resolve_settings_file_names
+
 
 def resample_to_timestep(data: pd.Series, target_timestep: str, logger) -> pd.Series:
     """
@@ -122,7 +124,7 @@ def _get_catchment_area_worker(config: Dict, logger) -> float:
         project_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, None, 'SYMFLUENCE_DATA_DIR')) / f"domain_{domain_name}"
 
         # Priority 1: Try SUMMA attributes file first (most reliable)
-        attrs_file = project_dir / 'settings' / 'SUMMA' / 'attributes.nc'
+        attrs_file = project_dir / 'settings' / 'SUMMA' / resolve_settings_file_names(config).attributes
         if attrs_file.exists():
             try:
                 import xarray as xr
@@ -540,9 +542,10 @@ def _try_inline_area_weighted_aggregation(
         return None
 
     try:
+        attributes_name = resolve_settings_file_names(config).attributes
         possible_attr_paths = [
-            summa_dir.parent.parent.parent / 'settings' / 'SUMMA' / 'attributes.nc',
-            Path(resolve_config_value(config, lambda: config.system.data_dir, None, 'SYMFLUENCE_DATA_DIR')) / f"domain_{resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')}" / 'settings' / 'SUMMA' / 'attributes.nc'
+            summa_dir.parent.parent.parent / 'settings' / 'SUMMA' / attributes_name,
+            Path(resolve_config_value(config, lambda: config.system.data_dir, None, 'SYMFLUENCE_DATA_DIR')) / f"domain_{resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')}" / 'settings' / 'SUMMA' / attributes_name
         ]
         attrs_file = next((path for path in possible_attr_paths if path.exists()), None)
         if attrs_file is None:

@@ -23,6 +23,13 @@ from symfluence.core.calibration.optimizers.lifecycle import adjust_end_time_for
 from symfluence.core.exceptions import FileOperationError
 from symfluence.core.modeling.utilities.periods import split_period
 
+from .parameter_files import (
+    DEFAULT_ATTRIBUTES_FILE,
+    DEFAULT_COLDSTATE_FILE,
+    DEFAULT_TRIALPARAMS_FILE,
+    SummaSettingsFiles,
+)
+
 if TYPE_CHECKING:
     pass
 
@@ -149,16 +156,24 @@ class SUMMAOptimizerMixin:
             required_files.append('fileManager.txt')
 
         # Add attributes and coldState files based on glacier mode
+        # File names come from config (SETTINGS_SUMMA_ATTRIBUTES / _COLDSTATE /
+        # _TRIALPARAMS): these are the files the file manager points SUMMA at
+        # and the ones the calibration writers update.
+        names = SummaSettingsFiles(
+            attributes=self._get_config_value_safe('SETTINGS_SUMMA_ATTRIBUTES', DEFAULT_ATTRIBUTES_FILE),
+            coldstate=self._get_config_value_safe('SETTINGS_SUMMA_COLDSTATE', DEFAULT_COLDSTATE_FILE),
+            trialparams=self._get_config_value_safe('SETTINGS_SUMMA_TRIALPARAMS', DEFAULT_TRIALPARAMS_FILE),
+        )
         if glacier_mode:
-            attr_files = ['attributes_glac.nc', 'attributes.nc']
-            cold_files = ['coldState_glac.nc', 'coldState.nc']
+            attr_files = ['attributes_glac.nc', names.attributes]
+            cold_files = ['coldState_glac.nc', names.coldstate]
         else:
-            attr_files = ['attributes.nc']
-            cold_files = ['coldState.nc']
+            attr_files = [names.attributes]
+            cold_files = [names.coldstate]
 
         optional_files = [
             'TBL_GENPARM.TBL', 'TBL_MPTABLE.TBL', 'TBL_SOILPARM.TBL', 'TBL_VEGPARM.TBL',
-            'trialParams.nc', 'forcingFileList.txt',
+            names.trialparams, 'forcingFileList.txt',
         ]
 
         # Copy required files
@@ -196,7 +211,7 @@ class SUMMAOptimizerMixin:
                 cold_copied = True
                 break
         if not cold_copied:
-            self.logger.warning("coldState.nc not found, depth calibration may fail if enabled.")
+            self.logger.warning(f"{names.coldstate} not found, depth calibration may fail if enabled.")
 
         # Copy optional files
         for file_name in optional_files:
@@ -319,6 +334,9 @@ class SUMMAOptimizerMixin:
         'EXPERIMENT_TIME_START': lambda c: str(c.domain.time_start) if c.domain.time_start else None,
         'EXPERIMENT_TIME_END': lambda c: str(c.domain.time_end) if c.domain.time_end else None,
         'SETTINGS_SUMMA_FILEMANAGER': lambda c: c.model.summa.filemanager,
+        'SETTINGS_SUMMA_ATTRIBUTES': lambda c: c.model.summa.attributes,
+        'SETTINGS_SUMMA_COLDSTATE': lambda c: c.model.summa.coldstate,
+        'SETTINGS_SUMMA_TRIALPARAMS': lambda c: c.model.summa.trialparams,
     }
 
     def _get_config_value_safe(self, key: str, default: Any) -> Any:

@@ -31,6 +31,8 @@ from typing import Any, Dict, Optional
 
 from symfluence.core.mixins.config import resolve_config_value
 
+from ..parameter_files import resolve_settings_file_names
+
 
 class ErrorLogger:
     """Centralized error logging for calibration runs.
@@ -131,7 +133,7 @@ class ErrorLogger:
         self.logger.warning(f"Logging failure artifacts to: {failure_dir}")
 
         # 1. Copy trialParams.nc if it exists
-        trial_params_src = settings_dir / 'trialParams.nc'
+        trial_params_src = settings_dir / resolve_settings_file_names(self.config).trialparams
         if trial_params_src.exists():
             try:
                 trial_params_dst = failure_dir / f"trialParams_{failure_id}.nc"
@@ -187,7 +189,7 @@ class ErrorLogger:
             self.logger.warning(f"Failed to save debug info: {e}")
 
         # 5. Copy coldState.nc if it exists (for soil depth debugging)
-        coldstate_src = settings_dir / 'coldState.nc'
+        coldstate_src = settings_dir / resolve_settings_file_names(self.config).coldstate
         if coldstate_src.exists():
             try:
                 coldstate_dst = failure_dir / f"coldState_{failure_id}.nc"
@@ -225,7 +227,7 @@ class ErrorLogger:
         success_dir.mkdir(parents=True, exist_ok=True)
 
         # Copy trialParams.nc
-        trial_params_src = settings_dir / 'trialParams.nc'
+        trial_params_src = settings_dir / resolve_settings_file_names(self.config).trialparams
         if trial_params_src.exists():
             try:
                 trial_params_dst = success_dir / f"trialParams_{success_id}.nc"

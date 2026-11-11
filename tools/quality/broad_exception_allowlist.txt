@@ -1049,13 +1049,10 @@ src/symfluence/models/summa/calibration/optimizer_mixin.py:SUMMAOptimizerMixin._
 src/symfluence/models/summa/calibration/optimizer_mixin.py:SUMMAOptimizerMixin._restore_model_decisions_for_optimization:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/summa/calibration/optimizer_mixin.py:SUMMAOptimizerMixin._update_model_decisions_for_final_run:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/summa/calibration/parameter_manager.py:SUMMAParameterManager._expand_defaults_to_hru_count:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/summa/calibration/parameter_manager.py:SUMMAParameterManager._generate_trial_params_file:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/summa/calibration/parameter_manager.py:SUMMAParameterManager._init_regionalization:except Exception:  # noqa: BLE001
 src/symfluence/models/summa/calibration/parameter_manager.py:SUMMAParameterManager._load_original_depths:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/summa/calibration/parameter_manager.py:SUMMAParameterManager._parse_defaults_from_file:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/summa/calibration/parameter_manager.py:SUMMAParameterManager._parse_param_info_file:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/summa/calibration/parameter_manager.py:SUMMAParameterManager._update_mizuroute_parameters:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/summa/calibration/parameter_manager.py:SUMMAParameterManager._update_soil_depths:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/summa/calibration/summa_regionalization.py:load_hru_attributes:except Exception:  # noqa: BLE001
 src/symfluence/models/summa/calibration/worker.py:SUMMAWorker._apply_parameters_direct:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/summa/calibration/worker.py:SUMMAWorker._calculate_metrics_direct:except Exception as e:  # noqa: BLE001 — calibration resilience
@@ -1069,7 +1066,6 @@ src/symfluence/models/summa/calibration/worker.py:SUMMAWorker.run_model:except E
 src/symfluence/models/summa/config_manager.py:SummaConfigManager.copy_base_settings:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/summa/config_manager.py:SummaConfigManager.create_file_manager:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/summa/config_manager.py:SummaConfigManager.create_trial_parameters:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/summa/forcing_processor.py:SummaForcingProcessor._check_already_corrected:except Exception:  # noqa: BLE001
 src/symfluence/models/summa/forcing_processor.py:SummaForcingProcessor._determine_batch_size:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/summa/forcing_processor.py:SummaForcingProcessor._filter_forcing_hru_ids:except Exception as exc:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/summa/forcing_processor.py:SummaForcingProcessor._find_intersection_file:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
@@ -1077,14 +1073,11 @@ src/symfluence/models/summa/forcing_processor.py:SummaForcingProcessor._fix_time
 src/symfluence/models/summa/forcing_processor.py:SummaForcingProcessor._insert_noleap_leap_days:except Exception as exc:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/summa/forcing_processor.py:SummaForcingProcessor._load_topology_data:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/summa/forcing_processor.py:SummaForcingProcessor._process_forcing_batches:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
-src/symfluence/models/summa/glacier_manager.py:GlacierAttributesManager.process_glacier_attributes:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/summa/parallel_gru_execution.py:_run_single_gru_split:except Exception as e:  # noqa: BLE001
 src/symfluence/models/summa/parallel_gru_execution.py:merge_split_outputs:except Exception as e:  # noqa: BLE001
 src/symfluence/models/summa/plotter.py:SUMMAPlotter.plot_outputs:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/summa/postprocessor.py:SUMMAPostProcessor._extract_native_summa_streamflow:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/summa/preprocessor.py:SummaPreProcessor._get_forcing_times:except Exception as exc:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/summa/preprocessor.py:SummaPreProcessor.glacier_manager:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/summa/preprocessor.py:SummaPreProcessor.run_glacier_preprocessing:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/summa/runner.py:SummaRunner._count_grus:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/summa/runner.py:SummaRunner._merge_files:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/summa/runner.py:SummaRunner._merge_parallel_outputs:except Exception as e:  # noqa: BLE001 — model execution resilience

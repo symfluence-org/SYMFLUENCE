@@ -33,6 +33,11 @@ from symfluence.models.summa.forcing_time import infer_forcing_step_from_filenam
 # SUMMA stores file paths in Fortran character(len=256) variables.
 SUMMA_PATH_MAX = 256
 
+# Calendars whose time axis is already the one SUMMA uses.
+_STANDARD_CALENDARS = ('standard', 'gregorian', 'proleptic_gregorian')
+# Calendars that differ from it only by having no Feb 29.
+_NOLEAP_CALENDARS = ('noleap', '365_day')
+
 
 class SummaForcingProcessor(BaseForcingProcessor):
     """
@@ -136,12 +141,10 @@ class SummaForcingProcessor(BaseForcingProcessor):
         Orchestrates file discovery, topology loading, lapse-rate
         pre-calculation, and batch processing of forcing files.
 
-        If the model-agnostic :class:`ElevationCorrectionProcessor` has
-        already corrected the basin-averaged files (indicated by the
-        ``elevation_corrected`` NetCDF attribute), the expensive topology
-        loading and lapse pre-calculation are skipped.  Files are still
-        processed through ``_process_forcing_batches`` for SUMMA-specific
-        fixes (time coordinate format, NaN interpolation, data validation).
+        A basin-averaged file that carries the ``elevation_corrected``
+        NetCDF attribute is not lapsed again (see ``_process_single_file``);
+        it still goes through the SUMMA-specific fixes (time coordinate
+        format, NaN interpolation, data validation).
         """
         self.logger.info("Starting memory-efficient temperature lapse rate and data step application")
 
@@ -158,41 +161,26 @@ class SummaForcingProcessor(BaseForcingProcessor):
             )
             return
 
-        # Check if model-agnostic elevation correction already applied
-        already_corrected = self._check_already_corrected()
-
-        if already_corrected:
-            self.logger.info(
-                "Basin-averaged files already elevation-corrected — "
-                "skipping topology loading and lapse pre-calculation"
-            )
-            forcing_files = self._get_forcing_files()
-            self._prepare_forcing_output_dir()
-            # Pass zero lapse values so SUMMA-specific processing still runs
-            lapse_values = pd.DataFrame({'lapse_values': []})
-            lapse_values.index.name = f'S_1_{self.hruId}'
-            self._process_forcing_batches(forcing_files, lapse_values, 0.0)
-        else:
-            from symfluence.data.preprocessing.resampling.grid_identity import ATTRIBUTE
-            forcing_files = self._get_forcing_files()
-            self._prepare_forcing_output_dir()
-            groups: dict[str | None, list] = {}
-            for file in forcing_files:
-                with xr.open_dataset(self.forcing_basin_path / file) as ds:
-                    signature = ds.attrs.get(ATTRIBUTE)
-                groups.setdefault(signature, []).append(file)
-            for signature, files in groups.items():
-                directory = self.intersect_path / signature if signature else self.intersect_path
-                intersect_csv = self._find_intersection_file(directory)
-                topo_data = self._load_topology_data(intersect_csv)
-                lapse_values, lapse_rate = self._precalculate_lapse_corrections(topo_data)
-                del topo_data
-                self._process_forcing_batches(files, lapse_values, lapse_rate)
+        from symfluence.data.preprocessing.resampling.grid_identity import ATTRIBUTE
+        forcing_files = self._get_forcing_files()
+        self._prepare_forcing_output_dir()
+        groups: dict[str | None, list] = {}
+        for file in forcing_files:
+            with xr.open_dataset(self.forcing_basin_path / file) as ds:
+                signature = ds.attrs.get(ATTRIBUTE)
+            groups.setdefault(signature, []).append(file)
+        for signature, files in groups.items():
+            directory = self.intersect_path / signature if signature else self.intersect_path
+            intersect_csv = self._find_intersection_file(directory)
+            topo_data = self._load_topology_data(intersect_csv)
+            lapse_values, lapse_rate = self._precalculate_lapse_corrections(topo_data)
+            del topo_data
+            self._process_forcing_batches(files, lapse_values, lapse_rate)
 
         del lapse_values
         gc.collect()
 
-        if self._source_calendar in ('noleap', '365_day'):
+        if self._source_calendar in _NOLEAP_CALENDARS:
             self._insert_noleap_leap_days()
 
         # Only now that every replacement is in place is it safe to drop
@@ -207,18 +195,6 @@ class SummaForcingProcessor(BaseForcingProcessor):
     # ------------------------------------------------------------------
     # Helpers for apply_datastep_and_lapse_rate
     # ------------------------------------------------------------------
-
-    def _check_already_corrected(self) -> bool:
-        """Check whether basin-averaged files carry the ``elevation_corrected`` attribute."""
-        # Read this run's forcing: another HRU set's file may differ (issue #339).
-        nc_files = self._select_run_files(sorted(self.forcing_basin_path.glob("*.nc")))
-        if not nc_files:
-            return False
-        try:
-            with xr.open_dataset(nc_files[0]) as ds:
-                return bool(ds.attrs.get('elevation_corrected', False))
-        except Exception:  # noqa: BLE001
-            return False
 
     def _find_intersection_file(self, directory=None):
         """Locate the intersection CSV (or shapefile) for topology weighting."""
@@ -727,16 +703,17 @@ class SummaForcingProcessor(BaseForcingProcessor):
 
         For every leap year found in the processed forcing date range the
         method:
-        1. Locates the processed files that contain the last hour of Feb 28
-           and the first hour of Mar 1.
+        1. Locates the processed files that contain the last step of Feb 28
+           and the first step of Mar 1.
         2. Extracts those two boundary time-steps.
-        3. Linearly interpolates 24 hourly time-steps for Feb 29
-           (00:00 – 23:00).
+        3. Linearly interpolates the missing day at the forcing data step
+           (24 steps for hourly data, 8 for 3-hourly, ...).
         4. Writes a new NetCDF file with the same encoding / compression as
            the existing files.
 
         The resulting files are named
-        ``{domain}_{dataset}_leapday_{year}-02-29-00-00-00.nc`` and are
+        ``{domain}_{dataset}[_remapped_{token}]_leapday_{year}-02-29-00-00-00.nc``
+        (with the HRU-set token of the source files, when they carry one) and are
         automatically picked up by ``create_forcing_file_list`` because they
         share the expected prefix.
         """
@@ -749,10 +726,20 @@ class SummaForcingProcessor(BaseForcingProcessor):
         # 1. Discover the date range from existing processed files
         # ------------------------------------------------------------------
         prefix = f"{self.domain_name}_{self.forcing_dataset}".lower()
+        # Leap-day files from an earlier run are rebuilt below, not read: they
+        # must not be mistaken for source data already covering Feb 29.
         processed_files = sorted(
             f for f in os.listdir(self.forcing_summa_path)
-            if f.lower().startswith(prefix) and f.endswith('.nc')
+            if f.lower().startswith(prefix) and f.endswith('.nc') and '_leapday_' not in f
         )
+        # The directory is shared by every experiment on the domain, which may
+        # run on other HRU sets (issue #339): read only this run's files.
+        written = getattr(self, '_written_forcing_names', None)
+        if written:
+            processed_files = [f for f in processed_files if f in written]
+        else:
+            processed_files = [p.name for p in self._select_run_files(
+                [self.forcing_summa_path / f for f in processed_files])]
 
         if not processed_files:
             self.logger.warning("No processed forcing files found – skipping leap-day insertion")
@@ -777,68 +764,92 @@ class SummaForcingProcessor(BaseForcingProcessor):
         reference_date = pd.Timestamp('1990-01-01 00:00:00')
         inserted = 0
 
-        for year in leap_years:
-            # Target times: Feb 28 23:00 and Mar 1 00:00
-            feb28_23 = pd.Timestamp(f'{year}-02-28 23:00:00')
-            mar01_00 = pd.Timestamp(f'{year}-03-01 00:00:00')
+        # The forcing step sets how many steps the missing day holds.
+        step = float(self.data_step)
+        seconds_per_day = 86400.0
+        steps_per_day = int(round(seconds_per_day / step)) if step > 0 else 0
+        if steps_per_day < 1 or abs(steps_per_day * step - seconds_per_day) > 1.0:
+            raise ModelExecutionError(
+                f"Cannot insert leap days into {self._source_calendar} forcing: the data step "
+                f"({self.data_step} s) does not divide a day"
+            )
 
-            feb28_23_sec = (feb28_23 - reference_date).total_seconds()
-            mar01_00_sec = (mar01_00 - reference_date).total_seconds()
+        for year in leap_years:
+            # The gap left by the source calendar: the last step before
+            # Feb 29 00:00 and the first step from Mar 1 00:00.
+            feb28_00_sec = (pd.Timestamp(f'{year}-02-28 00:00:00') - reference_date).total_seconds()
+            feb29_00_sec = feb28_00_sec + seconds_per_day
+            mar01_00_sec = feb29_00_sec + seconds_per_day
+            mar02_00_sec = mar01_00_sec + seconds_per_day
 
             # ------------------------------------------------------------------
             # 2. Find the file(s) containing these boundary time-steps
             # ------------------------------------------------------------------
-            boundary_ds = {}  # key: 'feb28' or 'mar01', value: xr.Dataset single-time slice
+            boundary_ds = {}    # key: 'feb28' or 'mar01', value: xr.Dataset single-time slice
+            boundary_sec: dict[str, float] = {}   # same keys, value: time of that slice (seconds since reference)
+            has_feb29 = False
+            feb28_source = ''
 
             for fname in processed_files:
                 fpath = self.forcing_summa_path / fname
                 try:
                     with xr.open_dataset(fpath, decode_times=False) as ds:
-                        time_vals = ds['time'].values
-                        # Check for feb28_23
-                        if 'feb28' not in boundary_ds:
-                            mask = np.abs(time_vals - feb28_23_sec) < 1.0
-                            if np.any(mask):
-                                idx = int(np.argmax(mask))
+                        time_vals = np.asarray(ds['time'].values, dtype=np.float64)
+                        if np.any((time_vals >= feb29_00_sec) & (time_vals < mar01_00_sec)):
+                            has_feb29 = True
+                            break
+                        # Last step of Feb 28
+                        candidates = np.flatnonzero((time_vals >= feb28_00_sec) & (time_vals < feb29_00_sec))
+                        if candidates.size:
+                            idx = int(candidates[np.argmax(time_vals[candidates])])
+                            if 'feb28' not in boundary_sec or time_vals[idx] > boundary_sec['feb28']:
                                 boundary_ds['feb28'] = ds.isel(time=idx).load()
-                        # Check for mar01_00
-                        if 'mar01' not in boundary_ds:
-                            mask = np.abs(time_vals - mar01_00_sec) < 1.0
-                            if np.any(mask):
-                                idx = int(np.argmax(mask))
+                                feb28_source = fname
+                                boundary_sec['feb28'] = float(time_vals[idx])
+                        # First step of Mar 1
+                        candidates = np.flatnonzero((time_vals >= mar01_00_sec) & (time_vals < mar02_00_sec))
+                        if candidates.size:
+                            idx = int(candidates[np.argmin(time_vals[candidates])])
+                            if 'mar01' not in boundary_sec or time_vals[idx] < boundary_sec['mar01']:
                                 boundary_ds['mar01'] = ds.isel(time=idx).load()
+                                boundary_sec['mar01'] = float(time_vals[idx])
                 except Exception as exc:  # noqa: BLE001 — model execution resilience
                     self.logger.debug("Could not read %s while scanning for leap-day boundaries: %s", fname, exc, exc_info=True)
                     continue
 
-                if len(boundary_ds) == 2:
-                    break  # Found both boundaries
+            if has_feb29:
+                self.logger.info("Forcing already covers Feb 29 %d – no leap day to insert", year)
+                continue
 
             if len(boundary_ds) < 2:
                 self.logger.warning(
-                    "Could not find Feb 28 23:00 and/or Mar 1 00:00 boundary data for %d – "
+                    "Could not find the last Feb 28 step and/or the first Mar 1 step for %d – "
                     "skipping leap-day insertion for this year (found: %s)",
                     year, list(boundary_ds.keys())
                 )
                 continue
 
+            # The two boundary steps must be exactly one day plus one step apart.
+            gap = boundary_sec['mar01'] - boundary_sec['feb28']
+            if abs(gap - (seconds_per_day + step)) > 1.0:
+                raise ModelExecutionError(
+                    f"Cannot insert the {year} leap day: Feb 28 and Mar 1 forcing are {gap:.0f} s apart, "
+                    f"expected one day plus one {self.data_step} s step. The forcing has other gaps "
+                    "around the leap day."
+                )
+
             # ------------------------------------------------------------------
-            # 3. Interpolate 24 hourly time-steps for Feb 29 00:00–23:00
+            # 3. Interpolate the missing day at the forcing step
             # ------------------------------------------------------------------
-            feb29_hours = pd.date_range(f'{year}-02-29 00:00', periods=24, freq='h')
-            feb29_secs = np.array(
-                [(t - reference_date).total_seconds() for t in feb29_hours],
-                dtype=np.float64,
-            )
+            feb29_secs = boundary_sec['feb28'] + step * np.arange(1, steps_per_day + 1, dtype=np.float64)
 
             ds_feb28 = boundary_ds['feb28']
             ds_mar01 = boundary_ds['mar01']
 
-            # Total gap = 25 hours (Feb 28 23:00 → Mar 1 00:00 next day = 25h)
-            # Weights for linear interpolation: Feb 29 00:00 is 1h after feb28_23,
-            # Feb 29 23:00 is 24h after feb28_23.  Mar 1 00:00 is 25h after feb28_23.
-            # weight_mar = hours_since_feb28_23 / 25
-            weights = np.arange(1, 25, dtype=np.float64) / 25.0  # [1/25 .. 24/25]
+            # Linear interpolation between the two boundary steps, which are
+            # steps_per_day + 1 steps apart: inserted step k (1-based) takes
+            # weight k / (steps_per_day + 1) from the Mar 1 step.
+            weights = np.arange(1, steps_per_day + 1, dtype=np.float64) / (steps_per_day + 1.0)
 
             # Build a new dataset
             # Start from the structure of the feb28 slice (has all vars, coords, attrs)
@@ -856,7 +867,7 @@ class SummaForcingProcessor(BaseForcingProcessor):
 
                 # v28 and v01 are 1-D (hru,)
                 nhru = len(v28)
-                interp: np.ndarray = np.zeros((24, nhru), dtype=np.float64)
+                interp: np.ndarray = np.zeros((steps_per_day, nhru), dtype=np.float64)
                 for h_idx, w in enumerate(weights):
                     interp[h_idx, :] = (1.0 - w) * v28 + w * v01
 
@@ -902,7 +913,12 @@ class SummaForcingProcessor(BaseForcingProcessor):
             # ------------------------------------------------------------------
             # 4. Write the leap-day file
             # ------------------------------------------------------------------
-            out_name = f"{self.domain_name}_{self.forcing_dataset}_leapday_{year}-02-29-00-00-00.nc"
+            # Carry the HRU-set token of the files the day was built from, so
+            # readers and the stale sweep treat it as part of the same set.
+            from symfluence.core.modeling.forcing_naming import discretization_key_from_name
+            token = discretization_key_from_name(feb28_source)
+            marker = f"remapped_{token}_leapday" if token else "leapday"
+            out_name = f"{self.domain_name}_{self.forcing_dataset}_{marker}_{year}-02-29-00-00-00.nc"
             out_path = self.forcing_summa_path / out_name
 
             encoding: dict[str, dict] = {
@@ -927,6 +943,28 @@ class SummaForcingProcessor(BaseForcingProcessor):
             self.logger.debug("Inserted leap-day forcing file: %s", out_name)
 
         self.logger.info("Leap-day insertion complete: inserted %d leap-day file(s)", inserted)
+
+    @staticmethod
+    def _calendar_dates_to_standard(times, calendar: str) -> pd.DatetimeIndex:
+        """Map calendar-aware (cftime) dates onto the standard calendar by date label.
+
+        A ``noleap`` / ``365_day`` date exists unchanged in the standard
+        calendar; the result simply has no Feb 29, which
+        ``_insert_noleap_leap_days`` fills afterwards. Calendars whose dates
+        do not map one-to-one (``360_day``, ``julian``, ...) are rejected.
+        """
+        if calendar not in _STANDARD_CALENDARS + _NOLEAP_CALENDARS:
+            raise ModelExecutionError(
+                f"Forcing time axis uses the '{calendar}' calendar, whose dates cannot be mapped "
+                "date-for-date onto the standard calendar SUMMA uses. Convert the forcing to a "
+                "standard calendar first."
+            )
+        try:
+            return pd.DatetimeIndex(pd.to_datetime([t.isoformat() for t in times]))
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise ModelExecutionError(
+                f"Could not express '{calendar}' forcing dates in the standard calendar: {exc}"
+            ) from exc
 
     def _fix_time_coordinate_comprehensive(self, dataset: xr.Dataset, filename: str) -> xr.Dataset:
         """
@@ -963,12 +1001,28 @@ class SummaForcingProcessor(BaseForcingProcessor):
             # (noleap, 360_day, etc.) to standard Gregorian with explicit
             # calendar=standard encoding, so trust the detected calendar here.
 
+            source_calendar = str(source_calendar).lower()
             self._source_calendar = source_calendar
             self.logger.debug(f"File {filename}: Detected source calendar: {source_calendar}")
+
+            is_cftime = time_coord.dtype == object and hasattr(time_coord.values[0], 'calendar')
+            numeric_units = (
+                time_coord.attrs.get('units', '')
+                if np.issubdtype(time_coord.dtype, np.number) else ''
+            )
 
             # Convert any time format to pandas datetime first
             if time_coord.dtype.kind == 'M':  # datetime64
                 pd_times = pd.to_datetime(time_coord.values)
+            elif is_cftime:
+                pd_times = self._calendar_dates_to_standard(time_coord.values, source_calendar)
+            elif 'since' in numeric_units and source_calendar not in _STANDARD_CALENDARS:
+                # Undecoded offsets in a non-standard calendar: decode them in
+                # that calendar. Counting them in the standard calendar would
+                # shift every date after the first leap day.
+                import cftime
+                decoded = cftime.num2date(time_coord.values, numeric_units, calendar=source_calendar)
+                pd_times = self._calendar_dates_to_standard(np.atleast_1d(decoded), source_calendar)
             elif np.issubdtype(time_coord.dtype, np.number):
                 if 'units' in time_coord.attrs and 'since' in time_coord.attrs['units']:
                     # Parse existing time units to understand the reference and time unit
@@ -1004,7 +1058,6 @@ class SummaForcingProcessor(BaseForcingProcessor):
 
             # Get time step from config
             time_step_seconds = int(self._get_config_value(lambda: self.config.forcing.time_step_size, default=3600))
-            len(pd_times)
 
             # Convert to SUMMA's expected format: seconds since 1990-01-01 00:00:00
             reference_date = pd.Timestamp('1990-01-01 00:00:00')
@@ -1019,10 +1072,13 @@ class SummaForcingProcessor(BaseForcingProcessor):
             # Ensure time is monotonic
             dataset = dataset.sortby('time')
 
-            # Set proper attributes for SUMMA
+            # Set proper attributes for SUMMA. The axis above is in the
+            # standard calendar whatever the source used, and must say so: a
+            # source label such as 'noleap' would make any reader decode
+            # these seconds into shifted dates.
             dataset.time.attrs = {
                 'units': 'seconds since 1990-01-01 00:00:00',
-                'calendar': source_calendar,
+                'calendar': 'standard',
                 'long_name': 'time',
                 'axis': 'T'
             }
