@@ -54,6 +54,8 @@ class TRouteTopologyGenerator(BaseTopologyGenerator):
             self._write_var(ncid, 'to_node', 'i4', 'link', topology_data.down_seg_ids, 'Downstream segment ID')
             self._write_var(ncid, 'length', 'f8', 'link', topology_data.lengths, 'Segment length', 'meters')
             self._write_var(ncid, 'slope', 'f8', 'link', topology_data.slopes, 'Segment slope', 'm/m')
+            # HRU ids, so the runner can match runoff columns by id, not position.
+            self._write_var(ncid, 'hruId', 'i8', 'nhru', topology_data.hru_ids, 'Unique HRU ID')
             self._write_var(ncid, 'link_id_hru', 'i4', 'nhru', topology_data.hru_to_seg_ids, 'Segment ID for HRU discharge')
             self._write_var(ncid, 'hru_area_m2', 'f8', 'nhru', topology_data.hru_areas, 'HRU area', 'm^2')
 
@@ -108,12 +110,8 @@ class TRouteTopologyGenerator(BaseTopologyGenerator):
             return
 
         try:
-            if domain_type == 'grid':
-                grid_path = (
-                    self.pp.project_dir / 'shapefiles' / 'river_basins'
-                    / f"{self.pp.domain_name}_riverBasins_distribute.shp"
-                )
-                shp_river = gpd.read_file(grid_path)
+            if topology_data.domain_type == 'grid':
+                shp_river = gpd.read_file(self.find_grid_basins_path())
             else:
                 routing_suffix = 'delineate' if domain_type == 'lumped_to_distributed' else self._get_method_suffix()
                 river_network_path = self.pp.project_dir / 'shapefiles/river_network'
@@ -138,6 +136,8 @@ class TRouteTopologyGenerator(BaseTopologyGenerator):
             self._write_var(ncid, 'to_node', 'i4', 'link', topology_data.down_seg_ids, 'Downstream segment ID')
             self._write_var(ncid, 'length', 'f8', 'link', topology_data.lengths, 'Segment length', 'meters')
             self._write_var(ncid, 'slope', 'f8', 'link', topology_data.slopes, 'Segment slope', 'm/m')
+            # HRU ids, so the runner can match runoff columns by id, not position.
+            self._write_var(ncid, 'hruId', 'i8', 'nhru', topology_data.hru_ids, 'Unique HRU ID')
             self._write_var(ncid, 'link_id_hru', 'i4', 'nhru', topology_data.hru_to_seg_ids, 'Segment ID for HRU discharge')
             self._write_var(ncid, 'hru_area_m2', 'f8', 'nhru', topology_data.hru_areas, 'HRU area', 'm^2')
 

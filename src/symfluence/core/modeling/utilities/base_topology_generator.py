@@ -20,10 +20,22 @@ from typing import TYPE_CHECKING, Any, List, Optional, Protocol, Set, Tuple
 
 import numpy as np
 
+from symfluence.core.exceptions import ValidationError
+
 if TYPE_CHECKING:
     import geopandas as gpd
 
 logger = logging.getLogger(__name__)
+
+#: Definition methods that mean "regular grid of cells" (legacy + normalised).
+GRID_DEFINITION_METHODS = ('distribute', 'distributed')
+
+#: downSegId values that mean "no downstream segment".
+OUTLET_MARKERS = (0, -9999)
+
+#: Columns the grid delineator may store the D8 downstream cell id under
+#: (shapefiles truncate ``downstream_id`` to 10 characters).
+GRID_DOWNSTREAM_COLUMNS = ('downstream_id', 'downstream', 'DSLINKNO')
 
 
 class TopologyPreprocessorProtocol(Protocol):
@@ -114,7 +126,9 @@ class BaseTopologyGenerator(ABC):
     def detect_domain_type(self) -> str:
         """Detect the domain type from configuration."""
         method = self.pp.domain_definition_method
-        if method == 'distribute':
+        # The typed config normalises the legacy 'distribute' to 'distributed';
+        # flat-dict configs may still carry either spelling.
+        if method in GRID_DEFINITION_METHODS:
             return 'grid'
         if method == 'point':
             return 'point'
@@ -141,7 +155,17 @@ class BaseTopologyGenerator(ABC):
         domain_type = self.detect_domain_type()
 
         if domain_type == 'grid':
-            return self._build_grid_topology()
+            grid_path = self.find_grid_basins_path()
+            if grid_path is not None:
+                return self._build_grid_topology(grid_path)
+            # A 'distributed' domain supplied as ordinary river-network and
+            # basin shapefiles (no grid-cell schema) is a network topology.
+            self.pp.logger.info(
+                "Domain method is grid-based but no grid-cell basins shapefile "
+                "(GRU_ID + D8 downstream column) was found; building topology "
+                "from the river network and basin shapefiles"
+            )
+            return self._build_distributed_topology()
         if domain_type == 'point':
             return self._build_point_topology()
         if domain_type == 'lumped_to_distributed':
@@ -198,6 +222,7 @@ class BaseTopologyGenerator(ABC):
 
         seg_ids = shp_river[self.pp.river_segid_col].values.astype(int)
         down_seg_ids = shp_river[self.pp.river_downsegid_col].values.astype(int)
+        self.raise_on_routing_cycles(seg_ids, down_seg_ids)
         slopes = shp_river[self.pp.river_slope_col].values.astype(float)
         lengths = shp_river[self.pp.river_length_col].values.astype(float)
 
@@ -257,6 +282,7 @@ class BaseTopologyGenerator(ABC):
 
         seg_ids = shp_river[self.pp.river_segid_col].values.astype(int)
         down_seg_ids = shp_river[self.pp.river_downsegid_col].values.astype(int)
+        self.raise_on_routing_cycles(seg_ids, down_seg_ids)
         slopes = shp_river[self.pp.river_slope_col].values.astype(float)
         lengths = shp_river[self.pp.river_length_col].values.astype(float)
 
@@ -277,16 +303,46 @@ class BaseTopologyGenerator(ABC):
             subcatchment_gru_ids=subcatchment_gru_ids,
         )
 
-    def _build_grid_topology(self) -> TopologyData:
+    def grid_basins_candidates(self) -> List[Path]:
+        """Where the grid delineator writes its cell polygons, newest naming first.
+
+        ``{domain}_riverBasins_{method_suffix}.shp`` (e.g.
+        ``distributed_1000m``) is what the grid delineator writes;
+        ``_riverBasins_distribute.shp`` is the pre-rename spelling.
+        """
+        basins_dir = self.pp.project_dir / 'shapefiles' / 'river_basins'
+        names = [
+            f"{self.pp.domain_name}_riverBasins_{self._get_method_suffix()}.shp",
+            f"{self.pp.domain_name}_riverBasins_distribute.shp",
+        ]
+        return [basins_dir / name for name in dict.fromkeys(names)]
+
+    def find_grid_basins_path(self) -> Optional[Path]:
+        """First existing grid-cell basins shapefile with the grid schema, else None."""
+        for candidate in self.grid_basins_candidates():
+            if candidate.exists() and self._has_grid_schema(candidate):
+                return candidate
+        return None
+
+    @staticmethod
+    def _has_grid_schema(path: Path) -> bool:
+        """True when *path* has GRU_ID plus a D8 downstream column."""
+        import geopandas as gpd
+
+        columns = set(gpd.read_file(path, rows=1).columns)
+        return 'GRU_ID' in columns and bool(columns & set(GRID_DOWNSTREAM_COLUMNS))
+
+    def _build_grid_topology(self, grid_path: Optional[Path] = None) -> TopologyData:
         """Build topology from grid-based distributed domain."""
         import geopandas as gpd
 
-        grid_path = (
-            self.pp.project_dir / 'shapefiles' / 'river_basins'
-            / f"{self.pp.domain_name}_riverBasins_distribute.shp"
-        )
-        if not grid_path.exists():
-            raise FileNotFoundError(f"Grid basins shapefile not found: {grid_path}")
+        if grid_path is None:
+            grid_path = self.find_grid_basins_path()
+        if grid_path is None:
+            raise FileNotFoundError(
+                "Grid basins shapefile not found; looked for: "
+                + ", ".join(str(c) for c in self.grid_basins_candidates())
+            )
 
         grid_gdf = gpd.read_file(grid_path)
         num_cells = len(grid_gdf)
@@ -410,7 +466,17 @@ class BaseTopologyGenerator(ABC):
         return shp_river, shp_basin
 
     def _get_method_suffix(self) -> str:
-        """Get the shapefile method suffix from config."""
+        """Get the shapefile method suffix from config.
+
+        Prefers the preprocessor's own resolver (the one the delineators name
+        their output with: ``distributed_1000m``, ``lumped_subset_merit``, ...)
+        over the bare definition method.
+        """
+        resolver = getattr(self.pp, '_get_method_suffix', None)
+        if callable(resolver):
+            suffix = resolver()
+            if isinstance(suffix, str) and suffix:
+                return 'lumped' if suffix == 'point' else suffix
         method = self.pp.domain_definition_method
         if method in ('lumped', 'point'):
             return 'lumped'
@@ -604,6 +670,61 @@ class BaseTopologyGenerator(ABC):
 
         return fixed_down_ids
 
+    @staticmethod
+    def find_routing_cycles(seg_ids: np.ndarray, down_seg_ids: np.ndarray) -> List[List[int]]:
+        """Return every cycle in the routing graph as a list of segment ids.
+
+        Each segment has at most one downstream segment, so a single walk per
+        unvisited segment finds all cycles in O(n). A segment draining to
+        itself is a cycle of length one — except a segment whose own id is an
+        outlet marker (0 or -9999): "segment 0 drains to 0" is how an outlet
+        reads when the network numbers its segments from zero.
+        """
+        ids = [int(sid) for sid in seg_ids]
+        id_to_idx = {sid: i for i, sid in enumerate(ids)}
+        downstream = [
+            -1 if (int(d) == sid and sid in OUTLET_MARKERS) else id_to_idx.get(int(d), -1)
+            for sid, d in zip(ids, down_seg_ids)
+        ]
+
+        state = [0] * len(ids)  # 0 unvisited, 1 on the current walk, 2 finished
+        cycles: List[List[int]] = []
+        for start in range(len(ids)):
+            if state[start]:
+                continue
+            path: List[int] = []
+            node = start
+            while node != -1 and state[node] == 0:
+                state[node] = 1
+                path.append(node)
+                node = downstream[node]
+            if node != -1 and state[node] == 1:
+                cycles.append([ids[i] for i in path[path.index(node):]])
+            for i in path:
+                state[i] = 2
+        return cycles
+
+    @classmethod
+    def raise_on_routing_cycles(cls, seg_ids: np.ndarray, down_seg_ids: np.ndarray) -> None:
+        """Refuse a river network that contains a cycle.
+
+        Grid topologies break cycles at the lowest cell
+        (:meth:`fix_routing_cycles`); a vector river network carries no
+        elevation to choose an outlet by, and a routing model fed a cycle
+        hangs or silently recirculates water, so this is an error.
+        """
+        cycles = cls.find_routing_cycles(seg_ids, down_seg_ids)
+        if cycles:
+            preview = "; ".join(
+                " -> ".join(str(sid) for sid in cycle[:10]) + (" ..." if len(cycle) > 10 else "")
+                for cycle in cycles[:5]
+            )
+            raise ValidationError(
+                f"River network contains {len(cycles)} routing cycle(s) "
+                f"(segments draining back into themselves): {preview}. "
+                f"Fix the downstream ids in the river network shapefile."
+            )
+
     # =========================================================================
     # Topological sort
     # =========================================================================
@@ -716,16 +837,30 @@ class BaseTopologyGenerator(ABC):
         hru_to_seg_ids: np.ndarray,
         shp_river: 'gpd.GeoDataFrame',
     ) -> np.ndarray:
-        """Fix invalid HRU-to-segment references."""
+        """Require every HRU to drain to a segment that exists in the network.
+
+        This used to rewire an HRU with an unknown segment to the segment
+        whose *id number* was closest — an arbitrary reach, possibly in
+        another sub-basin — with only a warning.
+        """
         valid_seg_ids = set(shp_river[self.pp.river_segid_col].values.astype(int))
-        fixed = hru_to_seg_ids.copy()
+        check_hru_to_seg_refs(hru_ids, hru_to_seg_ids, valid_seg_ids)
+        return hru_to_seg_ids.copy()
 
-        for i, hru_to_seg in enumerate(fixed):
-            if hru_to_seg not in valid_seg_ids:
-                closest_seg = min(valid_seg_ids, key=lambda x: abs(x - hru_to_seg))
-                fixed[i] = closest_seg
-                self.pp.logger.warning(
-                    f"HRU {hru_ids[i]} had invalid segment ref {hru_to_seg} -> set to {closest_seg}"
-                )
 
-        return fixed
+def check_hru_to_seg_refs(hru_ids: Any, hru_to_seg_ids: Any, valid_seg_ids: Set[int]) -> None:
+    """Raise ValidationError if any HRU drains to a segment not in the network."""
+    missing = [
+        (int(hru_id), int(seg_id))
+        for hru_id, seg_id in zip(hru_ids, hru_to_seg_ids)
+        if int(seg_id) not in valid_seg_ids
+    ]
+    if missing:
+        preview = ", ".join(f"HRU {hru} -> segment {seg}" for hru, seg in missing[:10])
+        more = f" (and {len(missing) - 10} more)" if len(missing) > 10 else ""
+        raise ValidationError(
+            f"{len(missing)} HRU(s) drain to a segment id that is not in the "
+            f"river network: {preview}{more}. Fix the HRU-to-segment column of "
+            f"the basin shapefile (or the river network) rather than routing "
+            f"this runoff into an arbitrary reach."
+        )
