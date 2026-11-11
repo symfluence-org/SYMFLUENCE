@@ -67,6 +67,11 @@ def _evaluate_parameters_worker_safe(task_data: Dict, skip_profile_export: bool 
         skip_profile_export: If True, skip exporting profile data (used when
             called from DDS worker which handles its own export)
     """
+    # Seeds this process's global RNGs, which the worker only uses for retry
+    # jitter and temp-file suffixes. The task builder issues a distinct seed
+    # per evaluation; optimization algorithms draw from their own per-run
+    # Generator, so an in-process worker (pool fallback) reseeding here cannot
+    # rewind the search.
     worker_seed = task_data.get('random_seed')
     if worker_seed is not None:
         random.seed(worker_seed)

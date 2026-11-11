@@ -114,6 +114,26 @@ class PopulationEvaluator:
                 f"Task {idx} worker error (repeat #{count} of identical message): {truncated}"
             )
 
+    def _result_index(self, result: Any, n_individuals: int) -> Optional[int]:
+        """Index of the individual a batch result belongs to, or None.
+
+        A result that does not say which individual it is for (no
+        ``individual_id``, or one outside the population) cannot be attributed:
+        it is logged and skipped, and the individual it was meant for keeps
+        the penalty score it was initialised with. Defaulting the id to 0 --
+        the old behaviour -- overwrote individual 0's real score instead.
+        """
+        idx = result.get('individual_id') if isinstance(result, dict) else None
+        if isinstance(idx, (int, np.integer)) and not isinstance(idx, bool) and 0 <= idx < n_individuals:
+            return int(idx)
+        error = result.get('error') if isinstance(result, dict) else None
+        self.logger.warning(
+            f"Ignoring batch result with unusable individual_id={idx!r} "
+            f"(population of {n_individuals})"
+            + (f"; it reported error: {str(error)[:500]}" if error else "")
+        )
+        return None
+
     def _log_all_penalty_batch(self, n_results: int, kind: str) -> None:
         """
         Emit one actionable ERROR when an entire batch returned only penalty
@@ -179,7 +199,9 @@ class PopulationEvaluator:
         valid_count = 0
 
         for result in results:
-            idx = result.get('individual_id', 0)
+            idx = self._result_index(result, n_individuals)
+            if idx is None:
+                continue
             score = result.get('score')
             error = result.get('error')
 
@@ -267,7 +289,9 @@ class PopulationEvaluator:
         valid_count = 0
 
         for result in results:
-            idx = result.get('individual_id', 0)
+            idx = self._result_index(result, n_individuals)
+            if idx is None:
+                continue
             obj = result.get('objectives')
             error = result.get('error')
 
@@ -407,9 +431,13 @@ class PopulationEvaluator:
             results = self.execute_batch(tasks, worker_func)
             fitness = self._extract_scores(results, n_individuals)
         else:
-            # Sequential evaluation
+            # Sequential evaluation. Report the outcomes to the metrics
+            # tracker here: the parallel path does it in _extract_scores, and
+            # without it a population algorithm at NUM_PROCESSES=1 reports
+            # "Crashes: 0/0" however many individuals crashed.
             for i, params_normalized in enumerate(population):
                 fitness[i] = self.evaluate_solution(params_normalized, proc_id=0)
+            self._track_batch(fitness)
 
         return fitness
 
@@ -486,7 +514,10 @@ class PopulationEvaluator:
             results = self.execute_batch(tasks, worker_func)
 
             for result in results:
-                idx = result.get('individual_id', 0)
+                idx = result.get('individual_id') if isinstance(result, dict) else None
+                if idx is None:
+                    self.logger.warning("Ignoring trial result without individual_id")
+                    continue
                 score = result.get('score')
                 error = result.get('error')
 

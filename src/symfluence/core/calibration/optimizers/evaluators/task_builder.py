@@ -214,7 +214,17 @@ class TaskBuilder(ConfigMixin):
             fallback_target = self._cfg('OPTIMIZATION_TARGET', 'streamflow')
             fallback_metric = self._cfg('OPTIMIZATION_METRIC', 'KGE')
 
-            task_dict['multi_target_mode'] = True
+            # multi_target_mode = two calibration *targets* (the active
+            # algorithm's *_MULTI_TARGET flag). Without it the worker scores
+            # the objective metrics on the single OPTIMIZATION_TARGET
+            # (multi-metric). Callers that are neither NSGA-II nor MOEA/D keep
+            # the historical multi-target behaviour.
+            if is_nsga2:
+                task_dict['multi_target_mode'] = bool(self._cfg('NSGA2_MULTI_TARGET', False))
+            elif is_moead:
+                task_dict['multi_target_mode'] = bool(self._cfg('MOEAD_MULTI_TARGET', False))
+            else:
+                task_dict['multi_target_mode'] = True
 
             if is_moead:
                 task_dict['primary_target_type'] = self._cfg(
@@ -261,6 +271,24 @@ class TaskBuilder(ConfigMixin):
 
         return task_dict
 
+    def _next_task_seed(self, base_random_seed: Optional[Any]) -> Optional[int]:
+        """Worker seed for the next task of this run, or None when unseeded.
+
+        Workers (SUMMA) reseed their process-global RNGs from this value. It
+        used to be ``base + individual_index + 1000``, identical in every
+        generation, so each worker replayed the same random stream for the
+        whole run -- and a worker running in-process (pool fallback) reset the
+        optimizer process's global stream to the same state each generation.
+        A running per-run task counter makes every evaluation's seed distinct
+        while staying reproducible for a given RANDOM_SEED; the first batch
+        keeps the old values.
+        """
+        if base_random_seed in (None, 'None', ''):
+            return None
+        counter = getattr(self, '_task_seed_counter', 0)
+        self._task_seed_counter = counter + 1
+        return int(base_random_seed) + 1000 + counter
+
     def build_population_tasks(
         self,
         population: np.ndarray,
@@ -288,10 +316,8 @@ class TaskBuilder(ConfigMixin):
             params = self.param_manager.denormalize_parameters(params_normalized)
             proc_id = i % self.num_processes
 
-            # Calculate individual random seed
-            random_seed = None
-            if base_random_seed is not None:
-                random_seed = base_random_seed + i + 1000
+            # Per-evaluation worker seed (distinct across generations)
+            random_seed = self._next_task_seed(base_random_seed)
 
             task = self.build_task(
                 individual_id=i,
@@ -331,9 +357,7 @@ class TaskBuilder(ConfigMixin):
             params = self.param_manager.denormalize_parameters(trial)
             proc_id = idx % self.num_processes
 
-            random_seed = None
-            if base_random_seed is not None:
-                random_seed = base_random_seed + idx + 1000
+            random_seed = self._next_task_seed(base_random_seed)
 
             task = self.build_task(
                 individual_id=idx,
