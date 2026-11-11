@@ -7,10 +7,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
-
 from symfluence.core.modeling.base import StandardModelPostProcessor
 from symfluence.core.registries import R
+
+from .lumped_discharge import is_runoff_flux_output, load_routing_params, lumped_discharge_cms
 
 
 @R.postprocessors.add('WFLOW')
@@ -39,46 +39,35 @@ class WflowPostProcessor(StandardModelPostProcessor):
     def _get_output_dir(self) -> Path:
         return self.get_simulation_dir('WFLOW')
 
-    def _needs_unit_conversion(self) -> bool:
-        """Check if the TOML output uses net_runoff_volume_flux (mm/dt units)."""
+    def _toml_path(self) -> Path:
         config_file = self._get_config_value(
             lambda: None, 'wflow_sbm.toml', 'WFLOW_CONFIG_FILE',
         )
-        settings_dir = self.project_dir / 'settings' / 'WFLOW'
-        toml_path = settings_dir / config_file
-        if toml_path.exists():
-            content = toml_path.read_text()
-            return 'net_runoff_volume_flux' in content
-        return False
+        return self.project_dir / 'settings' / 'WFLOW' / config_file
+
+    def _needs_unit_conversion(self) -> bool:
+        """Check if the TOML's discharge column is net_runoff_volume_flux (mm/dt)."""
+        toml_path = self._toml_path()
+        return toml_path.exists() and is_runoff_flux_output(toml_path)
 
     def _convert_mm_dt_to_cms(self, series):
-        """Convert mm per timestep to m³/s using basin area from staticmaps."""
-        import xarray as xr
+        """Lumped runoff (mm per model step) -> routed discharge in m³/s.
+
+        Same function as the calibration worker: unit conversion with the
+        TOML's own step, then the ROUTE_* post-hoc routing recorded beside the
+        staticmaps by the parameter manager, so the saved series is the one
+        that was scored.
+        """
         staticmaps_name = self._get_config_value(
             lambda: None, 'wflow_staticmaps.nc', 'WFLOW_STATICMAPS_FILE',
         )
-        staticmaps_path = self.project_dir / 'settings' / 'WFLOW' / staticmaps_name
-        area = 0.0
-        dt = 3600  # default hourly
-        if staticmaps_path.exists():
-            ds = xr.open_dataset(staticmaps_path)
-            if 'wflow_cellarea' in ds:
-                area = float(np.nansum(ds['wflow_cellarea'].values))
-            ds.close()
-        config_file = self._get_config_value(
-            lambda: None, 'wflow_sbm.toml', 'WFLOW_CONFIG_FILE',
-        )
-        toml_path = self.project_dir / 'settings' / 'WFLOW' / config_file
-        if toml_path.exists():
-            import re
-            content = toml_path.read_text()
-            m = re.search(r'timestepsecs\s*=\s*(\d+)', content)
-            if m:
-                dt = int(m.group(1))
-        if area > 0:
-            self.logger.info(f"Converting Wflow output from mm/dt to m³/s (area={area:.0f} m², dt={dt}s)")
-            return series * area / (dt * 1000.0)
-        return series
+        settings_dir = self.project_dir / 'settings' / 'WFLOW'
+        routing_params = load_routing_params(settings_dir)
+        if routing_params:
+            self.logger.info(f"Applying lumped Wflow post-hoc routing: {routing_params}")
+        self.logger.info("Converting Wflow output from mm/dt to m³/s")
+        return lumped_discharge_cms(
+            series, self._toml_path(), settings_dir / staticmaps_name, routing_params)
 
     def _align_time_labels(self, streamflow):
         """Shift distributed end-of-day labels back one day (same as the worker)."""

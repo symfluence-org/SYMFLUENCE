@@ -4,7 +4,6 @@
 """Wflow Model Preprocessor."""
 from __future__ import annotations
 
-import math
 from pathlib import Path
 from typing import Dict
 
@@ -258,30 +257,17 @@ class WflowPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         if isinstance(timestep_hours, (int, float)) and timestep_hours > 100:
             timestep_hours = timestep_hours / 3600
 
+        doy = np.array([t.timetuple().tm_yday for t in times])
         if pet_method == 'oudin':
-            doy = np.array([t.timetuple().tm_yday for t in times])
             pet_mm_day = PETCalculatorMixin.oudin_pet_numpy(temp_c, doy, lat_deg)
             self.logger.info(f"Oudin PET: annual mean = {pet_mm_day.mean() * 365.25:.0f} mm/yr")
             return pet_mm_day * (timestep_hours / 24.0)
 
+        # Shared Hamon (Lu et al. 2005 form). The private copy that lived here
+        # fed kPa into a formula that takes hPa and returned a tenth of this.
         self.logger.info(f"Using Hamon PET (method={pet_method})")
-        return self._estimate_pet_hamon(temp_c, times, lat_deg)
-
-    def _estimate_pet_hamon(self, temp_c, times, lat_deg):
-        doy = np.array([t.timetuple().tm_yday for t in times])
-        lat_rad = math.radians(lat_deg)
-        decl = 0.4093 * np.sin(2 * np.pi / 365 * doy - 1.405)
-        cos_omega = np.clip(-np.tan(lat_rad) * np.tan(decl), -1, 1)
-        day_length = 24 / np.pi * np.arccos(cos_omega)
-        es = 0.6108 * np.exp(17.27 * temp_c / (temp_c + 237.3))
-        pet_daily = np.maximum(0.1651 * (day_length / 12.0) * es * 216.7 / (temp_c + 273.3), 0.0)
-        timestep_hours = self._get_config_value(
-            lambda: self.config.forcing.time_step_size,
-            default=3600, dict_key='FORCING_TIME_STEP_SIZE'
-        )
-        if isinstance(timestep_hours, (int, float)) and timestep_hours > 100:
-            timestep_hours = timestep_hours / 3600
-        return pet_daily * (timestep_hours / 24.0)
+        pet_mm_day = PETCalculatorMixin.hamon_pet_numpy(temp_c, doy, lat_deg)
+        return pet_mm_day * (timestep_hours / 24.0)
 
     def _get_forcing_path(self) -> Path:
         forcing_path = self._get_config_value(
