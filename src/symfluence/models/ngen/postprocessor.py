@@ -405,7 +405,8 @@ class NgenPostProcessor(StandardModelPostProcessor):
                 if id_col and area_col:
                     for _, row in gdf.iterrows():
                         area_val = float(row[area_col])
-                        if area_val > 1e6:
+                        # HRU_area is always m²; AREA is m² when implausibly large as km²
+                        if area_col == 'HRU_area' or area_val > 1e6:
                             area_val /= 1e6
                         areas[str(row[id_col])] = area_val
                 return areas

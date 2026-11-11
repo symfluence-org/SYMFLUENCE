@@ -557,4 +557,4 @@ class MOEADAlgorithm(OptimizationAlgorithm):
             # Trim archive if too large
             if len(archive) > max_size:
                 # Remove most crowded solution
-                archive.pop(self._rng.randint(len(archive)))
+                archive.pop(self._rng.integers(len(archive)))

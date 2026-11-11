@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
@@ -29,6 +29,7 @@ class DAOutputManager:
         observed_values: np.ndarray,
         analysis_times: Optional[List[int]] = None,
         time_index: Optional[np.ndarray] = None,
+        global_attrs: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Write DA results to a NetCDF file.
 
@@ -40,6 +41,8 @@ class DAOutputManager:
             observed_values: Observations (n_timesteps,).
             analysis_times: Timestep indices of analysis steps.
             time_index: Optional datetime index.
+            global_attrs: Extra global attributes (e.g. catchment area and
+                timestep used for the observation unit conversion).
         """
         import xarray as xr
 
@@ -81,14 +84,6 @@ class DAOutputManager:
                     analysis_mask[t] = True
         data_vars['analysis_performed'] = (['time'], analysis_mask)
 
-        # Effective ensemble size (simple: based on spread)
-        eff_size = np.where(
-            ensemble_stds > 1e-12,
-            float(n_members),
-            1.0,
-        )
-        data_vars['effective_ensemble_size'] = (['time'], eff_size)
-
         ds = xr.Dataset(data_vars=data_vars, coords=coords)
 
         # CF-1.6 attributes
@@ -99,6 +94,8 @@ class DAOutputManager:
             'n_members': n_members,
             'n_analyses': len(analysis_times) if analysis_times else 0,
         })
+        if global_attrs:
+            ds.attrs.update(global_attrs)
 
         ds['ensemble_mean_streamflow'].attrs = {
             'units': 'mm/timestep',
@@ -116,11 +113,6 @@ class DAOutputManager:
             'units': 'mm/timestep',
             'long_name': 'Innovation (observation minus predicted mean)',
         }
-        ds['effective_ensemble_size'].attrs = {
-            'units': '-',
-            'long_name': 'Effective ensemble size',
-        }
-
         if 'ensemble_streamflow' in ds:
             ds['ensemble_streamflow'].attrs = {
                 'units': 'mm/timestep',

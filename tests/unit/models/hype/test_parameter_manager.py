@@ -117,3 +117,15 @@ class TestHYPEParameterManager:
 
         # Should fail gracefully
         assert result is False
+
+
+def test_update_par_file_keeps_small_values(hype_config, logger, temp_dir):
+    """Regression: '.6f' wrote 1.4e-5 as 0.000014 and 4e-7 as 0.000000."""
+    manager = HYPEParameterManager(hype_config, logger, temp_dir)
+    manager.par_file_path.parent.mkdir(parents=True, exist_ok=True)
+    manager.par_file_path.write_text("!! par\nrcgrw\t0.1\nrrcs1\t0.2\t0.3\t!! per soil\nlp\t0.5\n")
+    assert manager.update_par_file({'rcgrw': 1.4e-5, 'rrcs1': 4e-7, 'lp': [0.123456789, 2.5e-8]})
+    rows = {ln.split()[0]: ln.split('!!')[0].split()[1:] for ln in manager.par_file_path.read_text().splitlines()[1:]}
+    assert [float(v) for v in rows['rcgrw']] == [1.4e-5]
+    assert [float(v) for v in rows['rrcs1']] == [4e-7, 4e-7]
+    assert [float(v) for v in rows['lp']] == [0.123456789, 2.5e-8]

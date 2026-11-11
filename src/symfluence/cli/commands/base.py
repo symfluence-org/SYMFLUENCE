@@ -266,6 +266,42 @@ def _finalize_profiling(args: Namespace, profilers):
             traceback.print_exc()
 
 
+def supports_dry_run(func: Callable[..., int]) -> Callable[..., int]:
+    """Mark a command handler as safe to run under the global ``--dry-run``.
+
+    A handler earns the mark in one of two ways: it reads ``args.dry_run`` and
+    only *previews* what it would do, or it is read-only by nature (listing,
+    validating, reporting). Handlers without the mark are never invoked under
+    ``--dry-run`` -- :func:`dispatch_command` refuses them -- so a new command
+    cannot silently execute for real when the user asked for a preview.
+    """
+    func.supports_dry_run = True  # type: ignore[attr-defined]
+    return func
+
+
+def _command_label(args: Namespace) -> str:
+    parts = [getattr(args, 'category', None), getattr(args, 'action', None)]
+    label = ' '.join(str(p) for p in parts if p)
+    return label or getattr(getattr(args, 'func', None), '__qualname__', 'this command')
+
+
+def dispatch_command(args: Namespace) -> int:
+    """Run the parsed command's handler, honouring the global ``--dry-run``.
+
+    ``--dry-run`` promises "no changes". A handler that has not declared
+    :func:`supports_dry_run` is refused with a usage error instead of being
+    run for real.
+    """
+    func = args.func
+    if getattr(args, 'dry_run', False) and getattr(func, 'supports_dry_run', False) is not True:
+        BaseCommand._console.error(
+            f"dry-run is not supported for '{_command_label(args)}'; nothing was run. "
+            "Re-run without --dry-run to execute it."
+        )
+        return ExitCode.USAGE_ERROR
+    return func(args)
+
+
 @contextmanager
 def profiling_context(args: Namespace):
     """

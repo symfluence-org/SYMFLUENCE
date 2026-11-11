@@ -12,7 +12,7 @@ from argparse import Namespace
 from pathlib import Path
 
 from ..exit_codes import ExitCode
-from .base import BaseCommand, cli_exception_handler
+from .base import BaseCommand, cli_exception_handler, supports_dry_run
 
 
 class ExampleCommands(BaseCommand):
@@ -58,6 +58,7 @@ class ExampleCommands(BaseCommand):
             return ExitCode.GENERAL_ERROR
 
     @staticmethod
+    @supports_dry_run
     @cli_exception_handler
     def list_examples(args: Namespace) -> int:
         """

@@ -7,11 +7,9 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
-import tomllib
 from pathlib import Path
 from typing import Any, Dict
 
-import numpy as np
 import pandas as pd
 import xarray as xr
 
@@ -27,6 +25,7 @@ from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.path_resolver import resolve_install_dir
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
+from symfluence.models.wflow.lumped_discharge import is_runoff_flux_output, lumped_discharge_cms
 
 
 @R.workers.add('WFLOW')
@@ -41,10 +40,10 @@ class WflowWorker(BaseWorker):
 
     def apply_parameters(self, params, settings_dir, **kwargs):
         try:
-            # Extract routing params (not written to staticmaps, applied post-hoc)
+            # Routing params are applied post-hoc to the lumped runoff series.
+            # They still go to the parameter manager, which records them beside
+            # the staticmaps for the postprocessor.
             self._routing_params = {k: v for k, v in params.items() if k.startswith('ROUTE_')}
-            wflow_params = {k: v for k, v in params.items() if not k.startswith('ROUTE_')}
-            params = wflow_params
 
             config = kwargs.get('config', self.config) or {}
             domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
@@ -223,8 +222,9 @@ class WflowWorker(BaseWorker):
         """Load Q from Wflow CSV or netCDF output.
 
         For lumped models using soil_surface_water__net_runoff_volume_flux,
-        converts from mm/dt to m³/s using basin area and timestep, then
-        applies linear reservoir routing to smooth the instantaneous flux.
+        converts from mm/dt to m³/s using basin area and the TOML's model
+        step, then applies linear reservoir routing to smooth the
+        instantaneous flux (see ``lumped_discharge``).
         """
         q = None
         # Try CSV first (primary format from [output.csv] TOML section)
@@ -251,23 +251,18 @@ class WflowWorker(BaseWorker):
                 ds.close()
         if q is None:
             return None
-        # Convert mm/dt → m³/s if output is from net_runoff_volume_flux (lumped)
-        if self._is_runoff_flux_output(output_dir, config) and config:
-            area, dt = self._get_basin_area_and_timestep(config)
-            if area > 0:
-                q = q * area / (dt * 1000.0)
-                self.logger.info(f"Converted Q from mm/dt to m³/s (area={area:.0f} m², dt={dt}s)")
-        # Apply post-hoc linear reservoir routing for lumped mode
-        # (net_runoff_volume_flux is instantaneous — needs smoothing)
-        if self._is_runoff_flux_output(output_dir, config) and routing_params:
-            q = self._apply_routing(q, routing_params)
+        # Lumped runoff flux (mm per model step) -> m³/s, then the post-hoc
+        # routing; the postprocessor goes through the same function.
+        toml_path = self._find_run_toml(output_dir, config)
+        if toml_path is not None and is_runoff_flux_output(toml_path) and config:
+            q = lumped_discharge_cms(q, toml_path, self._staticmaps_path(config), routing_params)
         from symfluence.models.wflow.extractor import is_distributed_wflow, to_period_start_labels
         if q is not None and is_distributed_wflow(config):
             q = to_period_start_labels(q)
         return q
 
-    def _is_runoff_flux_output(self, output_dir: Path, config: dict = None):
-        """Check if the TOML output uses net_runoff_volume_flux (mm/dt units)."""
+    def _find_run_toml(self, output_dir: Path, config: dict = None):
+        """The run's TOML: beside the outputs, else the domain settings."""
         toml_name = resolve_config_value(config, lambda: config.model.wflow.config_file, 'wflow_sbm.toml', 'WFLOW_CONFIG_FILE') if config else 'wflow_sbm.toml'
         # Search multiple possible locations for the TOML
         search_dirs = [output_dir, output_dir.parent / 'settings', output_dir.parent]
@@ -279,68 +274,20 @@ class WflowWorker(BaseWorker):
         for settings_dir in search_dirs:
             toml_path = settings_dir / toml_name
             if toml_path.exists():
-                native = tomllib.loads(toml_path.read_text())
-                columns = native.get('output', {}).get('csv', {}).get('column', [])
-                # Determine units from the selected discharge column, never from
-                # unrelated diagnostic columns elsewhere in the configuration.
-                for header in ('Q', 'Q_av', 'q_av'):
-                    selected = next((c for c in columns if c.get('header') == header), None)
-                    if selected is not None:
-                        return 'net_runoff_volume_flux' in selected.get('parameter', '')
-                if len(columns) == 1:
-                    return 'net_runoff_volume_flux' in columns[0].get('parameter', '')
-        return False
+                return toml_path
+        return None
 
-    def _get_basin_area_and_timestep(self, config):
-        """Read basin area from staticmaps and timestep from config."""
-        area = 0.0
-        dt = int(config.get('WFLOW_TIMESTEP', 3600))
-        try:
-            domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
-            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
-            staticmaps_name = resolve_config_value(config, lambda: config.model.wflow.staticmaps_file, 'wflow_staticmaps.nc', 'WFLOW_STATICMAPS_FILE')
-            staticmaps_path = data_dir / f'domain_{domain_name}' / 'settings' / 'WFLOW' / staticmaps_name
-            if staticmaps_path.exists():
-                ds = xr.open_dataset(staticmaps_path)
-                if 'wflow_cellarea' in ds:
-                    area = float(np.nansum(ds['wflow_cellarea'].values))
-                ds.close()
-        except Exception:  # noqa: BLE001
-            pass
-        return area, dt
+    def _is_runoff_flux_output(self, output_dir: Path, config: dict = None):
+        """Check if the TOML output uses net_runoff_volume_flux (mm/dt units)."""
+        toml_path = self._find_run_toml(output_dir, config)
+        return toml_path is not None and is_runoff_flux_output(toml_path)
 
     @staticmethod
-    def _apply_routing(q, routing_params):
-        """Two-store linear reservoir routing (fast + slow) with baseflow offset.
-
-        Splits instantaneous runoff into fast (surface) and slow (baseflow)
-        components, each routed through an exponential reservoir, plus a
-        constant baseflow term for irreducible glacial/deep-GW contribution:
-            S_fast(t) = alpha * S_fast(t-1) + split * Q_in(t)
-            S_slow(t) = beta  * S_slow(t-1) + (1-split) * Q_in(t)
-            Q_out(t)  = (1-alpha) * S_fast(t) + (1-beta) * S_slow(t) + baseflow
-
-        Parameters (from routing_params dict):
-            ROUTE_ALPHA:    fast reservoir retention [0, 0.95]
-            ROUTE_BETA:     slow reservoir retention [0.9, 0.9999]
-            ROUTE_SPLIT:    fraction to fast store [0.1, 0.9]
-            ROUTE_BASEFLOW: constant baseflow offset in m³/s [0, 15]
-        """
-        alpha = routing_params.get('ROUTE_ALPHA', 0.5)
-        beta = routing_params.get('ROUTE_BETA', 0.98)
-        split = routing_params.get('ROUTE_SPLIT', 0.5)
-        baseflow = routing_params.get('ROUTE_BASEFLOW', 0.0)
-        vals = q.values.astype(float)
-        n = len(vals)
-        s_fast = 0.0
-        s_slow = 0.0
-        out = np.empty(n)
-        for i in range(n):
-            q_in = max(vals[i], 0.0)
-            s_fast = alpha * s_fast + split * q_in
-            s_slow = beta * s_slow + (1.0 - split) * q_in
-            out[i] = (1.0 - alpha) * s_fast + (1.0 - beta) * s_slow + baseflow
-        return pd.Series(out, index=q.index, name=q.name)
+    def _staticmaps_path(config) -> Path:
+        domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
+        data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
+        staticmaps_name = resolve_config_value(config, lambda: config.model.wflow.staticmaps_file, 'wflow_staticmaps.nc', 'WFLOW_STATICMAPS_FILE')
+        return data_dir / f'domain_{domain_name}' / 'settings' / 'WFLOW' / staticmaps_name
 
     def _load_observations(self, config):
         try:

@@ -47,7 +47,6 @@ CORE_PACKAGES: List[Dict] = [
     {"canonical": "scipy", "names": {"scipy"}},
     {"canonical": "xarray", "names": {"xarray"}},
     {"canonical": "cftime", "names": {"cftime"}},
-    {"canonical": "numexpr", "names": {"numexpr"}},
     {"canonical": "bottleneck", "names": {"bottleneck"}},
     {"canonical": "networkx", "names": {"networkx"}},
     {"canonical": "netcdf4", "names": {"netcdf4"}},
@@ -67,7 +66,7 @@ CORE_PACKAGES: List[Dict] = [
     {"canonical": "pydantic", "names": {"pydantic"}},
     {"canonical": "pvlib", "names": {"pvlib", "pvlib-python"}},
     {"canonical": "cdsapi", "names": {"cdsapi"}},
-    {"canonical": "distributed", "names": {"distributed"}},
+    {"canonical": "dask", "names": {"dask"}},
     {"canonical": "pint-xarray", "names": {"pint-xarray"}},
     {"canonical": "rasterstats", "names": {"rasterstats"}},
 ]

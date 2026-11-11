@@ -27,6 +27,7 @@ import xarray as xr
 from symfluence.core.exceptions import ConfigurationError, FileOperationError, GeospatialError
 from symfluence.core.geometry_utils import calculate_catchment_centroid
 from symfluence.core.modeling.base.base_preprocessor import BaseModelPreProcessor
+from symfluence.core.modeling.mixins.pet_calculator import PETCalculatorMixin
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -51,8 +52,10 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
     MODEL_NAME = "MHM"
 
-    # Grid resolution for the 2-row lumped layout.  Two cells at this
-    # size give approximately the same total area as a single 0.5° cell.
+    # Cell size (degrees) of the 2-row lumped layout when MHM_MATCH_LUMPED_AREA
+    # is False. mRM discharge is runoff x grid area, and two 0.35 deg cells
+    # are ~1914 km2 at 51N (~1336 km2 at 64N) whatever the catchment is, so
+    # the default (True) solves the cell size from the catchment area instead.
     LUMPED_CELLSIZE: float = 0.35
 
     def __init__(self, config, logger):
@@ -106,19 +109,60 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         self.grid_res = float(self._get_config_value(
             lambda: self.config.model.mhm.grid_res,
             default=0.02, dict_key='MHM_GRID_RES'))   # degrees (~2 km lat)
-        if not self.distributed_morph and self.config.model.mhm.match_lumped_area:
-            from scipy.optimize import brentq
-            props = self._get_catchment_properties()
-            # Same two-cell spherical area calculation as mo_common_grid.f90.
-            metres_per_degree = 6371228.0 * np.pi / 180.0
-            def area(cell):
-                return (cell * metres_per_degree) ** 2 * (
-                    np.cos(np.radians(props['lat'])) + np.cos(np.radians(props['lat'] - cell)))
-            self.LUMPED_CELLSIZE = brentq(lambda cell: area(cell) - props['area_m2'], 0.001, 5.0)
-            logger.info(f"mHM lumped cells matched to {props['area_m2'] / 1e6:.3f} km2")
+        if not self.distributed_morph:
+            self._set_lumped_cellsize()
         self._dist_grid = None  # cache of distributed-grid arrays/metadata
         if self.distributed_morph:
             logger.info(f"mHM distributed morphology ON (grid res {self.grid_res} deg, TauDEM flow)")
+
+    @staticmethod
+    def _lumped_grid_area_m2(cellsize: float, lat: float) -> float:
+        """Area (m2) of the 2-row lumped grid whose upper cell is centred on
+        ``lat``. Same two-cell spherical calculation as mo_common_grid.f90."""
+        metres_per_degree = 6371228.0 * np.pi / 180.0
+        return float((cellsize * metres_per_degree) ** 2 * (
+            np.cos(np.radians(lat)) + np.cos(np.radians(lat - cellsize))))
+
+    @classmethod
+    def _solve_lumped_cellsize(cls, area_m2: float, lat: float) -> float:
+        """Cell size (degrees) at which the 2-row lumped grid has ``area_m2``."""
+        from scipy.optimize import brentq
+
+        # The lower cell is centred on lat - cell; keep it short of the south
+        # pole so the bracket stays physical for southern basins.
+        lo, hi = 1e-6, min(30.0, 89.0 + lat)
+        if not np.isfinite(area_m2) or area_m2 <= 0 or not -89.0 < lat < 89.0 or hi <= lo:
+            raise ConfigurationError(
+                f"Cannot size the mHM lumped grid for area {area_m2} m2 at latitude {lat}")
+        a_lo, a_hi = cls._lumped_grid_area_m2(lo, lat), cls._lumped_grid_area_m2(hi, lat)
+        if not a_lo < area_m2 < a_hi:
+            raise ConfigurationError(
+                f"Catchment area {area_m2 / 1e6:.6g} km2 at latitude {lat:.2f} is outside "
+                f"what the 2-cell mHM lumped grid can represent "
+                f"({a_lo / 1e6:.3g} to {a_hi / 1e6:.3g} km2)")
+        return float(brentq(lambda cell: cls._lumped_grid_area_m2(cell, lat) - area_m2,
+                            lo, hi, xtol=1e-12, rtol=1e-12))
+
+    def _set_lumped_cellsize(self) -> None:
+        """Size the lumped grid so mRM's grid area equals the catchment area.
+
+        mRM turns runoff depth into discharge with the area of its own grid,
+        and nothing downstream rescales, so a grid that is not the catchment's
+        size scales every discharge value by grid area / catchment area.
+        MHM_MATCH_LUMPED_AREA=False keeps the legacy fixed 0.35 deg cells.
+        """
+        props = self._get_catchment_properties()
+        if self.config.model.mhm.match_lumped_area:
+            self.LUMPED_CELLSIZE = self._solve_lumped_cellsize(props['area_m2'], props['lat'])
+            logger.info(f"mHM lumped cells matched to {props['area_m2'] / 1e6:.3f} km2 "
+                        f"(cell size {self.LUMPED_CELLSIZE:.6f} deg)")
+            return
+        grid_area = self._lumped_grid_area_m2(self.LUMPED_CELLSIZE, props['lat'])
+        logger.warning(
+            f"MHM_MATCH_LUMPED_AREA is False: the lumped mHM grid covers "
+            f"{grid_area / 1e6:.1f} km2 but the catchment is {props['area_m2'] / 1e6:.1f} km2, "
+            f"so simulated discharge is scaled by {grid_area / props['area_m2']:.3f}. "
+            f"Set MHM_MATCH_LUMPED_AREA: true (the default) to remove the mismatch.")
 
     def _taudem_dir(self) -> str:
         """Resolve a *working* TauDEM binary directory.
@@ -453,8 +497,13 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         utm_epsg = 32600 + utm_zone if lat >= 0 else 32700 + utm_zone
         area_m2 = gdf.to_crs(f"EPSG:{utm_epsg}").geometry.area.sum()
 
-        # Get elevation if available
-        elev = float(gdf['elev_mean'].iloc[0]) if 'elev_mean' in gdf.columns else 1000.0
+        # Elevation is only needed by the lumped morphology (dem.asc); None
+        # here makes that consumer raise instead of using a made-up 1000 m.
+        elev = None
+        if 'elev_mean' in gdf.columns:
+            elev = float(gdf['elev_mean'].iloc[0])
+            if not np.isfinite(elev):
+                elev = None
 
         return {'lat': lat, 'lon': lon, 'area_m2': area_m2, 'elev': elev}
 
@@ -748,25 +797,19 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # Forcing arrives under the canonical CFIF vocabulary (precipitation_flux
         # kg m-2 s-1 == mm s-1, air_temperature K) from open_canonical_forcing.
         if 'precipitation_flux' in forcing_ds:
-            precip = forcing_ds['precipitation_flux'].values * 86400.0  # mm/s -> mm/day rate
+            precip = self._basin_mean_series(forcing_ds, 'precipitation_flux') * 86400.0  # mm/s -> mm/day rate
         else:
             logger.warning("No canonical precip (precipitation_flux); using zeros")
             precip = np.zeros(len(times))
 
         if 'air_temperature' in forcing_ds:
-            temp = forcing_ds['air_temperature'].values
+            temp = self._basin_mean_series(forcing_ds, 'air_temperature')
             if np.nanmean(temp) > 100:   # Kelvin
                 temp = temp - 273.15
         else:
             logger.warning("No canonical airtemp; estimating")
             day_frac = np.arange(len(times)) / 365.0
             temp = 10 + 10 * np.sin(2 * np.pi * day_frac)
-
-        # Flatten to 1D if needed
-        if precip.ndim > 1:
-            precip = precip.reshape(len(times), -1).mean(axis=1)
-        if temp.ndim > 1:
-            temp = temp.reshape(len(times), -1).mean(axis=1)
 
         # Aggregate sub-daily forcing to daily (mHM expects daily timesteps)
         time_index = pd.DatetimeIndex(times)
@@ -818,15 +861,88 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
         logger.info(f"mHM forcing files written to {self.forcing_dir}")
 
+    def _basin_mean_series(self, forcing_ds: xr.Dataset, name: str) -> np.ndarray:
+        """Basin-mean time series of a forcing variable.
+
+        Multi-HRU forcing is collapsed with HRU-area weights; a plain mean
+        over HRUs of unequal size (elevation bands, sub-basins) is not the
+        basin mean.
+        """
+        da = forcing_ds[name]
+        spatial = [d for d in da.dims if d != 'time']
+        if not spatial:
+            return np.asarray(da.values, 'f8')
+        if all(da.sizes[d] == 1 for d in spatial):
+            return np.asarray(da.values, 'f8').reshape(da.sizes['time'])
+        if spatial != ['hru']:
+            # Not an HRU store (e.g. a regular lat/lon grid): no areas to
+            # weight by, keep the plain mean and say so.
+            logger.warning(f"mHM forcing {name} has dims {da.dims}; no HRU areas "
+                           f"available, using an unweighted spatial mean")
+            return np.asarray(da.transpose('time', ...).values, 'f8').reshape(
+                da.sizes['time'], -1).mean(axis=1)
+        weights = self._hru_area_weights(forcing_ds)
+        return np.asarray(da.transpose('time', 'hru').values, 'f8') @ weights
+
+    def _hru_area_weights(self, forcing_ds: xr.Dataset) -> np.ndarray:
+        """Area weights (summing to 1) in the order of the forcing's ``hru``."""
+        cached = getattr(self, '_hru_weights_cache', None)
+        if cached is not None and len(cached) == forcing_ds.sizes['hru']:
+            return cached
+        polygon = self._catchment_polygon_path()
+        gdf = gpd.read_file(polygon)
+        n_hru = forcing_ds.sizes['hru']
+        lon, lat = calculate_catchment_centroid(gdf, logger=logger)
+        utm_zone = int((lon + 180) / 6) + 1
+        utm_epsg = 32600 + utm_zone if lat >= 0 else 32700 + utm_zone
+        areas = pd.Series(gdf.to_crs(f"EPSG:{utm_epsg}").geometry.area.values)
+        id_col = self._get_config_value(
+            lambda: self.config.paths.catchment_hruid, default='HRU_ID',
+            dict_key='CATCHMENT_SHP_HRUID')
+        if 'hruId' in forcing_ds.variables and id_col in gdf.columns:
+            # Several polygons may share an HRU id; their areas add up.
+            by_id = areas.groupby(gdf[id_col].astype('int64').values).sum()
+            ids = np.asarray(forcing_ds['hruId'].values).astype('int64')
+            missing = sorted(set(ids.tolist()) - set(by_id.index.tolist()))
+            if missing:
+                raise GeospatialError(
+                    f"Forcing HRU ids {missing[:10]} are not in {polygon} ({id_col}); "
+                    f"cannot area-weight the mHM basin-mean forcing")
+            w = by_id.reindex(ids).to_numpy('f8')
+        elif len(gdf) == n_hru:
+            logger.info("mHM forcing has no hruId; weighting HRUs by polygon area in file order")
+            w = areas.to_numpy('f8')
+        else:
+            raise GeospatialError(
+                f"Forcing has {n_hru} HRUs but {polygon} has {len(gdf)} polygons and no "
+                f"matching hruId; cannot area-weight the mHM basin-mean forcing")
+        if not np.all(np.isfinite(w)) or w.sum() <= 0:
+            raise GeospatialError(f"Invalid HRU areas in {polygon}")
+        self._hru_weights_cache = w / w.sum()
+        return self._hru_weights_cache
+
     def _lapse_temperature(self, temp: np.ndarray, g: dict) -> np.ndarray:
         """Return temperature as (time, nrow, ncol), lapsed to each cell's
-        elevation when MHM_TEMP_LAPSE_RATE (K/km) is configured."""
+        elevation when MHM_TEMP_LAPSE_RATE (K/km) is configured.
+
+        Sign convention: the value is dT/dz, applied as
+        ``T_cell = T_basin + rate * (z_cell - z_mean) / 1000``. Cooling with
+        height therefore needs a NEGATIVE value (e.g. -6.5). This is the
+        opposite of the framework-wide LAPSE_RATE, which is a positive cooling
+        rate; a positive value here warms high cells and is warned about.
+        """
         lapse = self._get_config_value(
             lambda: self.config.model.mhm.temp_lapse_rate,
             default=None, dict_key='MHM_TEMP_LAPSE_RATE')
         temp = np.asarray(temp, 'f8')
         if lapse is None:
             return np.broadcast_to(temp[:, None, None], (len(temp), g['nrow'], g['ncol'])).copy()
+        if float(lapse) > 0:
+            logger.warning(
+                f"MHM_TEMP_LAPSE_RATE = {lapse} K/km is positive: it is applied as dT/dz, "
+                f"so higher cells get WARMER. Use a negative value (e.g. -6.5) for the "
+                f"usual cooling with height; note this is the opposite sign convention "
+                f"to the framework's LAPSE_RATE.")
         dem = np.where(g['mask'], g['dem'], np.nan)
         z_ref = float(np.nanmean(dem))
         offset = np.nan_to_num(float(lapse) * (dem - z_ref) / 1000.0)
@@ -842,22 +958,26 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         method = self._get_config_value(
             lambda: self.config.model.mhm.pet_method,
             default='hamon', dict_key='MHM_PET_METHOD')
-        lat_rad = np.radians(lat_deg)
-        declination = 0.4093 * np.sin(2 * np.pi / 365 * doy - 1.405)
-        ws = np.arccos(np.clip(-np.tan(lat_rad) * np.tan(declination), -1.0, 1.0))
         if method == 'oudin':
             # Oudin et al. (2005): PET = Re / (lambda rho) * (T + 5) / 100.
+            # Kept local on purpose: the declination constants here (0.4093,
+            # 1.405) differ slightly from the shared oudin_pet_numpy (0.409,
+            # 1.39), about 1 % in PET, and calibrated Oudin setups must not
+            # change.
+            lat_rad = np.radians(lat_deg)
+            declination = 0.4093 * np.sin(2 * np.pi / 365 * doy - 1.405)
+            ws = np.arccos(np.clip(-np.tan(lat_rad) * np.tan(declination), -1.0, 1.0))
             dr = 1 + 0.033 * np.cos(2 * np.pi / 365 * doy)
             re = (24 * 60 / np.pi) * 0.0820 * dr * (
                 ws * np.sin(lat_rad) * np.sin(declination)
                 + np.cos(lat_rad) * np.cos(declination) * np.sin(ws))
             pet = re / 2.45 * (temp + 5.0) / 100.0
         else:
-            # Hamon: D = day length in 12-hour units, RHOSAT = saturated
-            # absolute humidity (g/m3).
-            D = (24.0 / np.pi * ws) / 12.0
-            es = 6.108 * np.exp(17.27 * temp / (temp + 237.3))
-            pet = 0.1651 * D * D * 216.7 * es / (temp + 273.15)
+            # Shared Hamon (Lu et al. 2005: 0.1651 * (N/12) * RHOSAT). The
+            # private copy here multiplied by (N/12)**2 -- Hamon (1961)'s
+            # exponent with Lu's coefficient -- overestimating by N/12
+            # (+70 % at 64N in midsummer).
+            pet = PETCalculatorMixin.hamon_pet_numpy(temp, doy, lat_deg)
         return np.maximum(pet, 0.0)
 
     def _grid_latlon(self, g):
@@ -1011,6 +1131,11 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # Row 1 = upstream cell, row 2 = outlet cell with gauge.
         # Both cells share the same properties so the model is effectively
         # lumped, but mRM can create one routing reach.
+        if props['elev'] is None:
+            raise GeospatialError(
+                f"Catchment polygon {self._catchment_polygon_path()} has no finite "
+                f"'elev_mean' attribute; lumped mHM needs the catchment mean "
+                f"elevation for dem.asc (no default elevation is assumed)")
         self._write_asc_grid(self.morph_dir / 'dem.asc', props['elev'], props)
         self._write_asc_grid(self.morph_dir / 'slope.asc', 0.05, props)
         self._write_asc_grid(self.morph_dir / 'aspect.asc', 180.0, props)

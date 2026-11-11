@@ -81,6 +81,8 @@ class SimulatedAnnealingAlgorithm(OptimizationAlgorithm):
         Returns:
             Optimization results dictionary
         """
+        # Per-run RNG (OptimizationAlgorithm._new_rng): never the process-global stream.
+        self._rng = self._new_rng()
         self.logger.info(f"Starting Simulated Annealing with {n_params} parameters")
 
         # SA parameters from config
@@ -131,7 +133,7 @@ class SimulatedAnnealingAlgorithm(OptimizationAlgorithm):
         )
 
         # Initialize current solution randomly
-        current = self._start_point(n_params, kwargs, np.random.uniform(0, 1, n_params))
+        current = self._start_point(n_params, kwargs, self._rng.uniform(0, 1, n_params))
         current_fit = evaluate_solution(current, 0)
 
         # Track best solution (global best)
@@ -182,7 +184,7 @@ class SimulatedAnnealingAlgorithm(OptimizationAlgorithm):
                     # Worse solution - accept with probability
                     # For maximization: P = exp(delta / T) where delta < 0
                     acceptance_prob = np.exp(delta / temperature)
-                    if np.random.random() < acceptance_prob:
+                    if self._rng.random() < acceptance_prob:
                         current = neighbor
                         current_fit = neighbor_fit
                         n_accepted += 1
@@ -264,7 +266,7 @@ class SimulatedAnnealingAlgorithm(OptimizationAlgorithm):
             Neighbor solution (clipped to [0, 1])
         """
         # Gaussian perturbation
-        perturbation = np.random.normal(0, step_size, n_params)
+        perturbation = self._rng.normal(0, step_size, n_params)
         neighbor = current + perturbation
 
         # Clip to bounds

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from symfluence.core.calibration.parameters.base_parameter_manager import BaseParameterManager
+from symfluence.core.exceptions import ConfigurationError
 from symfluence.core.registries import R
 
 
@@ -60,17 +61,41 @@ class PRMSParameterManager(BaseParameterManager):
         if prms_params_str is None:
             prms_params_str = self._get_config_value(lambda: self.config.model.prms.params_to_calibrate, default=None, dict_key='PRMS_PARAMS_TO_CALIBRATE')
 
+        from ..parameters import (
+            DEFAULT_CALIBRATION_PARAMS,
+            PRMS5_PARAMETER_NAMES,
+            default_calibration_parameters,
+            is_prms5_mode,
+        )
+        model_mode = self._get_config_value(
+            lambda: self.config.model.prms.model_mode, default='DAILY', dict_key='PRMS_MODEL_MODE')
+        default_names = default_calibration_parameters('DAILY')
+
         if prms_params_str is None:
-            prms_params_str = (
-                'soil_moist_max,soil_rechr_max,tmax_allrain,tmax_allsnow,'
-                'hru_percent_imperv,carea_max,smidx_coef,slowcoef_lin,'
-                'gwflow_coef,ssr2gw_rate'
-            )
+            prms_params_str = DEFAULT_CALIBRATION_PARAMS
             logger.warning(
-                f"PRMS_PARAMS_TO_CALIBRATE missing; using fallback: {prms_params_str}"
+                f"PRMS_PARAMS_TO_CALIBRATE missing; using default list for model mode {model_mode}"
             )
 
         self.prms_params = [p.strip() for p in str(prms_params_str).split(',') if p.strip()]
+
+        if is_prms5_mode(model_mode):
+            if self.prms_params == default_names:
+                # The schema default names the PRMS4-style parameters; under
+                # PRMS5 the file holds (and PRMS reads) their replacements.
+                self.prms_params = default_calibration_parameters(model_mode)
+                logger.info(
+                    f"PRMS5 mode: default calibration list uses {sorted(PRMS5_PARAMETER_NAMES.values())} "
+                    f"in place of {sorted(PRMS5_PARAMETER_NAMES)}"
+                )
+            else:
+                ignored = sorted(set(self.prms_params) & PRMS5_PARAMETER_NAMES.keys())
+                if ignored:
+                    raise ConfigurationError(
+                        f"PRMS5 does not read {ignored}; calibrate "
+                        f"{[PRMS5_PARAMETER_NAMES[name] for name in ignored]} instead "
+                        "(PRMS_PARAMS_TO_CALIBRATE)."
+                    )
 
         # Paths
         self.data_dir = Path(self._get_config_value(lambda: self.config.system.data_dir, dict_key='SYMFLUENCE_DATA_DIR'))
@@ -114,16 +139,14 @@ class PRMSParameterManager(BaseParameterManager):
         """
         Update PRMS params.dat file with new parameter values.
 
-        The PRMS parameter file uses blocks separated by ``####``.
-        Each block starts with the parameter name, followed by metadata
-        lines, then value lines. We locate each parameter block and
-        replace its value lines.
-
         Args:
             params: Dictionary of parameter names to values
 
         Returns:
             True if successful
+
+        Raises:
+            ConfigurationError: a parameter has no block in the parameter file.
         """
         try:
             param_path = self.settings_dir / self.param_file
@@ -131,108 +154,17 @@ class PRMSParameterManager(BaseParameterManager):
                 self.logger.error(f"PRMS parameter file not found: {param_path}")
                 return False
 
-            from ..derived_parameters import apply_derived_parameters
-            content = param_path.read_text(encoding='utf-8')
-            content, params = apply_derived_parameters(content, params)
-            blocks = content.split('####\n')
-
-            updated_blocks = []
-            for block in blocks:
-                updated_block = block
-                for param_name, value in params.items():
-                    if self._block_contains_param(block, param_name):
-                        updated_block = self._update_block_values(
-                            block, param_name, value
-                        )
-                        self.logger.debug(f"Updated {param_name} = {value:.6f}")
-                updated_blocks.append(updated_block)
-
-            updated_content = '####\n'.join(updated_blocks)
-            param_path.write_text(updated_content, encoding='utf-8')
+            from ..parameter_file import update_parameter_file
+            update_parameter_file(param_path, params)
             return True
 
+        except ConfigurationError:
+            raise
         except Exception as e:  # noqa: BLE001 — calibration resilience
             self.logger.error(f"Error updating PRMS parameter file: {e}", exc_info=True)
             import traceback
             self.logger.debug(traceback.format_exc())
             return False
-
-    def _block_contains_param(self, block: str, param_name: str) -> bool:
-        """Check if a parameter block contains the named parameter."""
-        lines = block.strip().split('\n')
-        for line in lines:
-            if line.strip() == param_name:
-                return True
-        return False
-
-    def _update_block_values(self, block: str, param_name: str, value: float) -> str:
-        """
-        Replace value lines in a PRMS parameter block.
-
-        A block looks like::
-
-            param_name
-            ndim
-            dimension_name
-            dimension_size
-            type_code
-            value1
-            value2
-            ...
-
-        We replace all value lines (after the type_code line) with the new value.
-        For monthly parameters (nmonths dimension), all 12 values are set the same.
-
-        Preserves leading/trailing whitespace so #### delimiters remain
-        properly separated when blocks are rejoined.
-        """
-        stripped = block.strip()
-        lines = stripped.split('\n')
-        if not lines:
-            return block
-
-        # Find the parameter name line
-        param_idx = None
-        for i, line in enumerate(lines):
-            if line.strip() == param_name:
-                param_idx = i
-                break
-
-        if param_idx is None:
-            return block
-
-        # The structure after param_name is:
-        # ndim (1 line), dimension_name (1 line), dimension_size (1 line), type_code (1 line)
-        # Then value lines follow
-        metadata_lines = int(lines[param_idx + 1]) + 3  # ndim, dimension names, count, type
-        value_start = param_idx + 1 + metadata_lines
-
-        if value_start > len(lines):
-            return block
-
-        # Get dimension size to know how many value lines to replace
-        try:
-            dim_size_idx = param_idx + int(lines[param_idx + 1]) + 2
-            dim_size = int(lines[dim_size_idx].strip())
-        except (IndexError, ValueError):
-            dim_size = 1
-
-        # Rebuild block with updated values
-        new_lines = lines[:value_start]
-        formatted_value = f"{value:.6f}" if isinstance(value, float) else str(value)
-        for _ in range(dim_size):
-            new_lines.append(formatted_value)
-
-        # Preserve any trailing content (unlikely in standard format)
-        remaining_start = value_start + dim_size
-        if remaining_start < len(lines):
-            new_lines.extend(lines[remaining_start:])
-
-        result = '\n'.join(new_lines)
-        # Preserve the trailing newline so #### delimiters stay on their own line
-        if block.endswith('\n'):
-            result += '\n'
-        return result
 
     def get_initial_parameters(self) -> Optional[Dict[str, float]]:
         """Get initial parameter values from parameter file or defaults."""
@@ -245,6 +177,7 @@ class PRMSParameterManager(BaseParameterManager):
             blocks = content.split('####')
 
             from ..derived_parameters import DERIVED_PARAMETERS, read_derived_parameter
+            from ..parameter_file import first_block_value
             params = {}
             for param_name in self.prms_params:
                 if param_name in DERIVED_PARAMETERS:
@@ -254,11 +187,10 @@ class PRMSParameterManager(BaseParameterManager):
                 for block in blocks:
                     if param_name in params:
                         break
-                    if self._block_contains_param(block, param_name):
-                        value = self._extract_first_value(block, param_name)
-                        if value is not None:
-                            params[param_name] = value
-                            break
+                    value = first_block_value(block, param_name)
+                    if value is not None:
+                        params[param_name] = value
+                        break
 
                 if param_name not in params:
                     bounds = self.param_bounds.get(param_name, {'min': 0.1, 'max': 10.0})
@@ -269,26 +201,6 @@ class PRMSParameterManager(BaseParameterManager):
         except Exception as e:  # noqa: BLE001 — calibration resilience
             self.logger.error(f"Error reading initial parameters: {e}", exc_info=True)
             return self._get_default_initial_values()
-
-    def _extract_first_value(self, block: str, param_name: str) -> Optional[float]:
-        """Extract the first value from a parameter block."""
-        lines = block.strip().split('\n')
-        param_idx = None
-        for i, line in enumerate(lines):
-            if line.strip() == param_name:
-                param_idx = i
-                break
-
-        if param_idx is None:
-            return None
-
-        value_start = param_idx + int(lines[param_idx + 1]) + 4
-        if value_start < len(lines):
-            try:
-                return float(lines[value_start].strip())
-            except ValueError:
-                return None
-        return None
 
     def _get_default_initial_values(self) -> Dict[str, float]:
         """Get default initial parameter values from DEFAULT_PARAMS."""

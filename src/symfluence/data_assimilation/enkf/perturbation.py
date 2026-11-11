@@ -130,10 +130,14 @@ class GaussianPerturbation(PerturbationStrategy):
         data = forcing_data.copy()
 
         if variable == 'precip':
-            # Multiplicative lognormal: preserves non-negativity
+            # Multiplicative lognormal: preserves non-negativity. The log-mean
+            # is -sigma^2/2 so the multiplier has expectation 1; with a
+            # log-mean of 0 it is exp(sigma^2/2) (a 4.6 % wet bias at
+            # sigma = 0.3) and every member is systematically too wet.
+            sigma = self.precip_std
             multiplier = self.rng.lognormal(
-                mean=0.0,
-                sigma=self.precip_std,
+                mean=-0.5 * sigma ** 2,
+                sigma=sigma,
                 size=data.shape,
             )
             data = data * multiplier
@@ -143,9 +147,11 @@ class GaussianPerturbation(PerturbationStrategy):
             data = data + noise
         elif variable == 'pet':
             # Multiplicative, similar to precip but smaller perturbation
+            # (unbiased, as for precipitation)
+            sigma = self.precip_std * 0.5
             multiplier = self.rng.lognormal(
-                mean=0.0,
-                sigma=self.precip_std * 0.5,
+                mean=-0.5 * sigma ** 2,
+                sigma=sigma,
                 size=data.shape,
             )
             data = data * multiplier

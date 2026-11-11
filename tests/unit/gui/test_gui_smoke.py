@@ -45,6 +45,7 @@ def test_gui_launch_command_smoke(monkeypatch):
         "show": False,
         "demo": "bow",
         "address": "127.0.0.1",
+        "allow_origin": [],
     }
 
 

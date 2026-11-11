@@ -61,9 +61,7 @@ src/symfluence/models/gr/preprocessor.py:GRPreProcessor._prepare_lumped_forcing:
 src/symfluence/models/gr/preprocessor.py:GRPreProcessor._prepare_lumped_forcing:raise FileNotFoundError(
 src/symfluence/models/gr/preprocessor.py:GRPreProcessor.prepare_forcing_data:raise ValueError(f"Unknown GR spatial mode: {self.spatial_mode}")
 src/symfluence/models/gr/runner.py:GRRunner.__init__:raise ImportError(
-src/symfluence/models/gr/runner.py:GRRunner._execute_gr_distributed:raise ValueError(f"No valid DEM pixels after masking with catchment. Check DEM at {dem_path}")
 src/symfluence/models/gr/runner.py:GRRunner._execute_gr_lumped:raise ValueError("GR_DEFAULT_PARAMS must contain 4 values for X1, X2, X3, X4")
-src/symfluence/models/gr/runner.py:GRRunner._execute_gr_lumped:raise ValueError(f"No valid DEM pixels after masking with catchment. Check DEM at {dem_path}")
 src/symfluence/models/gsflow/config.py:GSFLOWConfigAdapter.validate:raise ValueError(
 src/symfluence/models/gsflow/extractor.py:GSFLOWResultExtractor.extract_streamflow:raise FileNotFoundError(f"No GSFLOW output found in {output_dir}")
 src/symfluence/models/gsflow/extractor.py:GSFLOWResultExtractor.extract_variable:raise ValueError(f"Error extracting {variable_type}: {e}") from e

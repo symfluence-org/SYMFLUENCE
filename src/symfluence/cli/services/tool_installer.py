@@ -626,6 +626,28 @@ class ToolInstaller(BaseService):
             "dry_run": dry_run,
         }
 
+        # Determine which tools to install. Validate the request before
+        # touching the filesystem: a typo in one name must not leave the other
+        # tools half-installed behind an exit code of 0.
+        if specific_tools is None:
+            # Install all non-optional tools by default
+            tools_to_install = [
+                name for name, info in self.external_tools.items()
+                if not info.get('optional', False)
+            ]
+        else:
+            unknown = [t for t in specific_tools if t not in self.external_tools]
+            if unknown:
+                known = ", ".join(sorted(self.external_tools))
+                for tool in unknown:
+                    self._console.error(f"Unknown tool: {tool}")
+                    installation_results["errors"].append(f"Unknown tool: {tool}")
+                self._console.indent(f"Known tools: {known}")
+                self._console.indent("Nothing was installed.")
+                installation_results["failed"].extend(unknown)
+                return installation_results
+            tools_to_install = list(specific_tools)
+
         config = self._load_config(symfluence_instance)
         data_dir, data_dir_reason = self._resolve_data_dir(config)
         install_base_dir = data_dir / "installs"
@@ -636,21 +658,11 @@ class ToolInstaller(BaseService):
         if not dry_run:
             install_base_dir.mkdir(parents=True, exist_ok=True)
 
-        # Determine which tools to install
-        if specific_tools is None:
-            # Install all non-optional tools by default
-            tools_to_install = [
-                name for name, info in self.external_tools.items()
-                if not info.get('optional', False)
-            ]
-        else:
-            tools_to_install = []
-            for tool in specific_tools:
-                if tool in self.external_tools:
-                    tools_to_install.append(tool)
-                else:
-                    self._console.warning(f"Unknown tool: {tool}")
-                    installation_results["errors"].append(f"Unknown tool: {tool}")
+        # --force / --branch / --git-hash apply to the tools the caller asked
+        # for, not to dependencies pulled in automatically: a SUMMA commit
+        # hash does not exist in the SUNDIALS repository, and forcing SUMMA
+        # must not wipe a working SUNDIALS on the way.
+        requested = set(tools_to_install)
 
         # Resolve dependencies and sort by install order
         tools_to_install = self._resolve_dependencies(tools_to_install)
@@ -661,16 +673,38 @@ class ToolInstaller(BaseService):
         for tool_name in tools_to_install:
             tool_info = self.external_tools[tool_name]
             self._console.newline()
-            self._console.info(f"[bold]{action} {tool_name.upper()}:[/bold]")
+            self._console.print(f"[bold]{action} {tool_name.upper()}:[/bold]")
             self._console.indent(tool_info.get("description", ""))
 
             tool_install_dir = install_base_dir / tool_info.get("install_dir", tool_name)
             repository_url = tool_info.get("repository")
-            branch = branch_override if branch_override else tool_info.get("branch")
+            is_requested = tool_name in requested
+            if not is_requested:
+                self._console.indent("(dependency of a requested tool)")
+            tool_force = force and is_requested
+            tool_branch_override = branch_override if is_requested else None
+            tool_git_hash = git_hash if is_requested else None
+            branch = tool_branch_override if tool_branch_override else tool_info.get("branch")
             # Explicit CLI revisions take precedence over a tool's reproducible pin.
-            revision = git_hash or (None if branch_override else tool_info.get("git_hash"))
+            revision = tool_git_hash or (
+                None if tool_branch_override else tool_info.get("git_hash")
+            )
 
             try:
+                # Required tools must be usable before this one is touched: a
+                # dependency that failed (or whose directory merely exists)
+                # would otherwise be built against, and the existing install
+                # of this tool wiped for a build that cannot succeed.
+                unmet = self._unmet_requirement(
+                    tool_info, install_base_dir, installation_results, dry_run
+                )
+                if unmet:
+                    error_msg = f"{tool_name} requires {unmet}"
+                    self._console.error(error_msg)
+                    installation_results["errors"].append(error_msg)
+                    installation_results["failed"].append(tool_name)
+                    continue
+
                 # Check if already installed. The directory alone proves
                 # nothing: it is created by the clone step, before the build
                 # runs, so a failed build (missing nf-config/gdal-config, ...)
@@ -680,7 +714,7 @@ class ToolInstaller(BaseService):
                 # skip when the tool verifies against its `verify_install`
                 # metadata; anything else is reinstalled from scratch.
                 reinstall_incomplete = False
-                if tool_install_dir.exists() and not force:
+                if tool_install_dir.exists() and not tool_force:
                     if self._verify_installation(tool_name, tool_info, tool_install_dir):
                         self._console.indent(
                             f"Skipping - already installed at: {tool_install_dir}"
@@ -710,7 +744,7 @@ class ToolInstaller(BaseService):
                 # Remove existing if reinstalling (forced, or incomplete): git
                 # refuses to clone into a non-empty directory, so a rebuild
                 # has to start from a clean target either way.
-                if tool_install_dir.exists() and (force or reinstall_incomplete):
+                if tool_install_dir.exists() and (tool_force or reinstall_incomplete):
                     self._console.indent(f"Removing existing installation: {tool_install_dir}")
                     # On Windows, git repos contain read-only pack files and
                     # may have broken symlinks/junctions (e.g. SUNDIALS docs).
@@ -755,27 +789,6 @@ class ToolInstaller(BaseService):
                     installation_results["errors"].append(
                         f"{tool_name}: missing system dependencies {missing_deps}"
                     )
-
-                # Check required tools
-                if tool_info.get("requires"):
-                    required_tools = tool_info.get("requires", [])
-                    missing_required_tool = False
-                    for req_tool in required_tools:
-                        req_tool_info = self.external_tools.get(req_tool, {})
-                        req_tool_dir = install_base_dir / req_tool_info.get(
-                            "install_dir", req_tool
-                        )
-                        if not req_tool_dir.exists():
-                            error_msg = (
-                                f"{tool_name} requires {req_tool} but it's not installed"
-                            )
-                            self._console.error(error_msg)
-                            installation_results["errors"].append(error_msg)
-                            installation_results["failed"].append(tool_name)
-                            missing_required_tool = True
-                            break
-                    if missing_required_tool:
-                        continue
 
                 # Run build commands
                 if tool_info.get("build_commands"):
@@ -1171,6 +1184,39 @@ class ToolInstaller(BaseService):
         except Exception as e:  # noqa: BLE001 — top-level fallback
             self._console.warning(f"Verification error: {str(e)}")
             return False
+
+    def _unmet_requirement(
+        self,
+        tool_info: Dict[str, Any],
+        install_base_dir: Path,
+        results: Dict[str, Any],
+        dry_run: bool,
+    ) -> Optional[str]:
+        """Describe the first ``requires`` entry that is not usable, or None.
+
+        A requirement is met only when it *verifies* (``verify_install``
+        metadata), not when its directory exists: the clone step creates the
+        directory before the build runs, so a failed build leaves one behind.
+        A requirement that failed earlier in this run is unmet by definition.
+        During a dry run a requirement planned earlier in the same run counts
+        as met.
+        """
+        for req_tool in tool_info.get("requires") or []:
+            if req_tool in results["failed"]:
+                return f"{req_tool}, which failed to install"
+            if req_tool in results["successful"] or req_tool in results["skipped"]:
+                continue  # installed or verified earlier in this run
+            if dry_run and f"{req_tool} (dry run)" in results["successful"]:
+                continue
+            req_info = self.external_tools.get(req_tool)
+            if req_info is None:
+                return f"{req_tool}, which is not a known tool"
+            req_dir = install_base_dir / req_info.get("install_dir", req_tool)
+            if not req_dir.exists():
+                return f"{req_tool} but it's not installed"
+            if not self._verify_installation(req_tool, req_info, req_dir):
+                return f"{req_tool}, whose installation at {req_dir} does not verify"
+        return None
 
     def _resolve_dependencies(self, tools: List[str]) -> List[str]:
         """

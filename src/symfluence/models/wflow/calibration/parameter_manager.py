@@ -184,6 +184,11 @@ class WflowParameterManager(BaseParameterManager):
                     lambda: self.config.model.wflow.config_file,
                     default='wflow_sbm.toml', dict_key='WFLOW_CONFIG_FILE')
                 self.set_forcing_scales(target_dir / toml_name, forcing_scales)
+            # ROUTE_* have no place in the staticmaps; record them beside the
+            # staticmaps they belong to so the postprocessor routes the saved
+            # series exactly as the worker routed the scored one.
+            from ..lumped_discharge import save_routing_params
+            save_routing_params(target_dir, params)
             return True
         except Exception as e:  # noqa: BLE001
             self.logger.error(f"Failed to update Wflow parameters: {e}")

@@ -17,13 +17,14 @@ import logging
 
 import panel as pn
 
-from . import is_loopback_address
+from . import websocket_serve_kwargs
 from .app import GUI_THEME_CSS, SymfluenceApp
 
 logger = logging.getLogger(__name__)
 
 
-def _serve_app(config_path=None, port=5006, show=True, demo=None, address="127.0.0.1"):
+def _serve_app(config_path=None, port=5006, show=True, demo=None, address="127.0.0.1",
+               allow_origin=None):
     """
     Build and serve the SYMFLUENCE GUI as a Panel web application.
 
@@ -35,7 +36,16 @@ def _serve_app(config_path=None, port=5006, show=True, demo=None, address="127.0
         address: Network interface to bind. Defaults to 127.0.0.1 (loopback);
             the GUI is reachable only from the local machine. A non-loopback
             value (e.g. 0.0.0.0) exposes it on the network and is opt-in.
+        allow_origin: ``host:port`` origins browsers will use to reach the GUI
+            (the value of their ``Origin`` header, without the scheme). Required
+            for a non-loopback bind: the bind address itself is not a usable
+            origin (no browser sends ``0.0.0.0:5006``).
+
+    Raises:
+        ValueError: On a non-loopback bind without ``allow_origin``.
     """
+    serve_kwargs = websocket_serve_kwargs(address, port, allow_origin)
+
     # Pre-import model modules on the main thread so config adapters
     # are registered before the Tornado daemon thread starts.
     # (Importing on a daemon thread can fail due to atexit restrictions.)
@@ -60,19 +70,6 @@ def _serve_app(config_path=None, port=5006, show=True, demo=None, address="127.0
         app.progress_panel.start_polling()
 
         return template
-
-    serve_kwargs = {}
-    if not is_loopback_address(address):
-        # Non-loopback bind exposes the GUI on the network; restrict the
-        # websocket origin to the bound host:port and warn loudly.
-        serve_kwargs['websocket_origin'] = f"{address}:{port}"
-        logger.warning(
-            "SYMFLUENCE GUI is binding to %s:%s, which is reachable from other "
-            "machines on the network. Use the default 127.0.0.1 unless you intend "
-            "to expose it.",
-            address,
-            port,
-        )
 
     pn.serve(
         {'/': create_app},

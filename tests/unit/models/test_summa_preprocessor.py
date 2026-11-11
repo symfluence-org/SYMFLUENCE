@@ -188,12 +188,16 @@ class TestSummaRegistration:
 class TestSummaElevationCorrectionSkip:
     """Test SUMMA skips lapse when model-agnostic correction already applied."""
 
-    def test_skips_lapse_when_already_corrected(self, summa_config, mock_logger, setup_test_directories):
-        """Verify topology is not loaded when elevation_corrected attribute is present."""
+    def test_corrected_files_keep_their_hrus(self, summa_config, mock_logger, setup_test_directories):
+        """Files flagged elevation_corrected go through the normal path with real lapse values.
+
+        A dedicated branch used to hand ``_process_forcing_batches`` an empty
+        lapse table, against which every HRU was filtered out. The per-file
+        check in ``_process_single_file`` is what skips the second lapse.
+        """
         preprocessor = SummaPreProcessor(summa_config, mock_logger)
         fp = preprocessor.forcing_processor
 
-        # Create a fake basin-averaged NetCDF with elevation_corrected=1
         basin_dir = fp.forcing_basin_path
         basin_dir.mkdir(parents=True, exist_ok=True)
         ds = xr.Dataset({
@@ -204,11 +208,19 @@ class TestSummaElevationCorrectionSkip:
         nc_path = basin_dir / f'{preprocessor.domain_name}_ERA5_2020-01-01.nc'
         ds.to_netcdf(nc_path)
 
-        with patch.object(fp, '_load_topology_data') as mock_topo, \
-             patch.object(fp, '_process_forcing_batches'):
+        lapse_table = MagicMock()
+        with patch.object(fp, '_find_intersection_file') as mock_find, \
+             patch.object(fp, '_load_topology_data') as mock_topo, \
+             patch.object(fp, '_precalculate_lapse_corrections') as mock_lapse, \
+             patch.object(fp, '_process_forcing_batches') as mock_batches:
+            mock_find.return_value = MagicMock()
+            mock_topo.return_value = MagicMock()
+            mock_lapse.return_value = (lapse_table, 0.0065)
+
             preprocessor.apply_datastep_and_lapse_rate()
-            # Topology should NOT have been loaded
-            mock_topo.assert_not_called()
+
+            mock_topo.assert_called_once()
+            assert mock_batches.call_args.args[1] is lapse_table
 
     def test_applies_lapse_when_not_corrected(self, summa_config, mock_logger, setup_test_directories):
         """Verify existing behavior unchanged when attribute is absent."""

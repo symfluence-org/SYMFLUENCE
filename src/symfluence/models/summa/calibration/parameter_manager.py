@@ -13,7 +13,6 @@ registry pattern used by all other model parameter managers.
 from __future__ import annotations
 
 import logging
-import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -32,6 +31,13 @@ from .forcing_scaling import (
     PRECIP_MULT_PARAM,
     apply_precip_multiplier,
     split_forcing_params,
+)
+from .parameter_files import (
+    calculate_soil_depths,
+    select_trial_params,
+    update_mizuroute_params,
+    update_soil_depths,
+    write_trial_params,
 )
 
 
@@ -574,21 +580,24 @@ class SUMMAParameterManager(BaseParameterManager):
             params = self._expand_regionalized_params(params)
 
         forcing_values = {k: params[k] for k in self.forcing_params if k in params}
-        params = {k: v for k, v in params.items() if k not in self.forcing_params}
 
-        success = True
-        success = success and self._generate_trial_params_file(params)
-        if PRECIP_MULT_PARAM in forcing_values:
-            file_manager = self._get_config_value(
-                lambda: self.config.model.summa.filemanager, default='fileManager.txt',
-                dict_key='SETTINGS_SUMMA_FILEMANAGER')
-            success = success and apply_precip_multiplier(
-                self.settings_dir, forcing_values[PRECIP_MULT_PARAM], self.logger, file_manager)
-        if self.depth_params:
-            success = success and self._update_soil_depths(params)
-        if self.mizuroute_params:
-            success = success and self._update_mizuroute_parameters(params)
-        return success
+        try:
+            success = True
+            success = success and self._generate_trial_params_file(params)
+            if PRECIP_MULT_PARAM in forcing_values:
+                file_manager = self._get_config_value(
+                    lambda: self.config.model.summa.filemanager, default='fileManager.txt',
+                    dict_key='SETTINGS_SUMMA_FILEMANAGER')
+                success = success and apply_precip_multiplier(
+                    self.settings_dir, forcing_values[PRECIP_MULT_PARAM], self.logger, file_manager)
+            if self.depth_params:
+                success = success and self._update_soil_depths(params)
+            if self.mizuroute_params:
+                success = success and self._update_mizuroute_parameters(params)
+            return success
+        except (KeyError, TypeError, RuntimeError) as e:
+            self.logger.error(f"Error updating SUMMA model files: {e}", exc_info=True)
+            return False
 
     def get_initial_parameters(self) -> Optional[Dict[str, np.ndarray]]:
         """Get initial parameter values from existing files or defaults."""
@@ -908,7 +917,7 @@ class SUMMAParameterManager(BaseParameterManager):
     def _load_original_depths(self) -> Optional[np.ndarray]:
         """Load original soil depths from coldState.nc."""
         try:
-            coldstate_path = self.settings_dir / self._get_config_value(lambda: self.config.model.summa.coldstate, default='coldState.nc', dict_key='SETTINGS_SUMMA_COLDSTATE')
+            coldstate_path = self._coldstate_path()
 
             if not coldstate_path.exists():
                 return None
@@ -922,189 +931,56 @@ class SUMMAParameterManager(BaseParameterManager):
 
         return None
 
+    def _coldstate_path(self) -> Path:
+        return self.settings_dir / self._get_config_value(lambda: self.config.model.summa.coldstate, default='coldState.nc', dict_key='SETTINGS_SUMMA_COLDSTATE')
+
     def _update_soil_depths(self, params: Dict[str, np.ndarray]) -> bool:
-        """Update soil depths in coldState.nc."""
+        """Rescale the soil layers in the coldState file (shared with the worker)."""
         if self.original_depths is None:
+            self.logger.error(
+                "Soil-depth calibration is enabled but the original layer depths could not be "
+                f"read from {self._coldstate_path()}")
             return False
 
-        try:
-            total_mult = params['total_mult'][0] if isinstance(params['total_mult'], np.ndarray) else params['total_mult']
-            shape_factor = params['shape_factor'][0] if isinstance(params['shape_factor'], np.ndarray) else params['shape_factor']
-
-            # Calculate new depths using shape method
-            new_depths = self._calculate_new_depths(total_mult, shape_factor)
-            if new_depths is None:
-                return False
-
-            # Calculate layer heights
-            heights = np.zeros(len(new_depths) + 1)
-            for i in range(len(new_depths)):
-                heights[i + 1] = heights[i] + new_depths[i]
-
-            # Update coldState.nc
-            coldstate_path = self.settings_dir / self._get_config_value(lambda: self.config.model.summa.coldstate, default='coldState.nc', dict_key='SETTINGS_SUMMA_COLDSTATE')
-
-            # Track NetCDF read-modify-write operation (secondary IOPS bottleneck)
-            with self._profiler_ctx.track_netcdf_write(str(coldstate_path)):
-                with nc.Dataset(coldstate_path, 'r+') as ds:
-                    if 'mLayerDepth' not in ds.variables or 'iLayerHeight' not in ds.variables:
-                        return False
-
-                    num_hrus = ds.dimensions['hru'].size
-                    for h in range(num_hrus):
-                        ds.variables['mLayerDepth'][:, h] = new_depths
-                        ds.variables['iLayerHeight'][:, h] = heights
-
-            return True
-
-        except Exception as e:  # noqa: BLE001 — calibration resilience
-            self.logger.error(f"Error updating soil depths: {str(e)}", exc_info=True)
-            return False
+        return update_soil_depths(
+            self._coldstate_path(), self.original_depths, params, self.logger,
+            component=self._profiler_ctx.component_name)
 
     def _calculate_new_depths(self, total_mult: float, shape_factor: float) -> Optional[np.ndarray]:
-        """Calculate new soil depths using shape method."""
+        """Calculate new soil depths using the shape method."""
         if self.original_depths is None:
             return None
-
-        arr = self.original_depths.copy()
-        n = len(arr)
-        idx = np.arange(n)
-
-        # Calculate shape weights
-        if shape_factor > 1:
-            w = np.exp(idx / (n - 1) * np.log(shape_factor))
-        elif shape_factor < 1:
-            w = np.exp((n - 1 - idx) / (n - 1) * np.log(1 / shape_factor))
-        else:
-            w = np.ones(n)
-
-        # Normalize weights
-        w /= w.mean()
-
-        # Apply multipliers
-        new_depths = arr * w * total_mult
-
-        return new_depths
+        return calculate_soil_depths(self.original_depths, total_mult, shape_factor)
 
     # ========================================================================
     # MIZUROUTE PARAMETER HANDLING
     # ========================================================================
 
     def _update_mizuroute_parameters(self, params: Dict) -> bool:
-        """Update mizuRoute parameters in param.nml.default."""
-        try:
-            mizuroute_settings_dir = self.settings_dir.parent / "mizuRoute"
-            param_file = mizuroute_settings_dir / "param.nml.default"
-
-            if not param_file.exists():
-                return True  # Skip if file doesn't exist
-
-            # Track file read operation
-            with self._profiler_ctx.track_file_read(str(param_file)):
-                with open(param_file, 'r', encoding='utf-8') as f:
-                    content = f.read()
-
-            # Update parameters
-            updated_content = content
-            for param_name in self.mizuroute_params:
-                if param_name in params:
-                    param_value = params[param_name]
-                    pattern = rf'(\s+{param_name}\s*=\s*)[0-9.-]+'
-
-                    if param_name in ['tscale']:
-                        replacement = rf'\g<1>{int(param_value)}'
-                    else:
-                        replacement = rf'\g<1>{param_value:.6f}'
-
-                    updated_content = re.sub(pattern, replacement, updated_content)
-
-            # Track file write operation
-            with self._profiler_ctx.track_file_write(str(param_file), size_bytes=len(updated_content)):
-                with open(param_file, 'w', encoding='utf-8') as f:
-                    f.write(updated_content)
-
-            return True
-
-        except Exception as e:  # noqa: BLE001 — calibration resilience
-            self.logger.error(f"Error updating mizuRoute parameters: {str(e)}", exc_info=True)
-            return False
+        """Update mizuRoute parameters in param.nml.default (shared with the worker)."""
+        param_file = self.settings_dir.parent / "mizuRoute" / "param.nml.default"
+        return update_mizuroute_params(
+            param_file, self.mizuroute_params, params, self.logger,
+            component=self._profiler_ctx.component_name)
 
     # ========================================================================
     # TRIAL PARAMETERS FILE GENERATION
     # ========================================================================
 
     def _generate_trial_params_file(self, params: Dict[str, np.ndarray]) -> bool:
-        """Generate trialParams.nc file with proper dimensions."""
-        try:
-            trial_params_path = self.settings_dir / self._get_config_value(lambda: self.config.model.summa.trialparams, default='trialParams.nc', dict_key='SETTINGS_SUMMA_TRIALPARAMS')
+        """Write the trialParams file (shared with the worker).
 
-            # Get HRU and GRU counts from attributes
-            with self._profiler_ctx.track_file_read(str(self.attr_file_path)):
-                with xr.open_dataset(self.attr_file_path) as ds:
-                    num_hrus = ds.sizes.get('hru', 1)
-                    num_grus = ds.sizes.get('gru', 1)
-
-                    # Get original hruId values
-                    if 'hruId' in ds.variables:
-                        original_hru_ids = ds.variables['hruId'][:].copy()
-                    else:
-                        original_hru_ids = np.arange(1, num_hrus + 1)
-                        self.logger.warning(f"hruId not found in attributes.nc, using sequential IDs 1 to {num_hrus}")
-
-                    # Get original gruId values
-                    if 'gruId' in ds.variables:
-                        original_gru_ids = ds.variables['gruId'][:].copy()
-                    else:
-                        original_gru_ids = np.arange(1, num_grus + 1)
-                        self.logger.warning(f"gruId not found in attributes.nc, using sequential IDs 1 to {num_grus}")
-
-            # Define parameter levels
-            routing_params = ['routingGammaShape', 'routingGammaScale']
-
-            # Track NetCDF write operation (primary IOPS bottleneck)
-            with self._profiler_ctx.track_netcdf_write(str(trial_params_path)):
-                with nc.Dataset(trial_params_path, 'w', format='NETCDF4') as output_ds:
-                    # Create dimensions
-                    output_ds.createDimension('hru', num_hrus)
-                    output_ds.createDimension('gru', num_grus)
-
-                    # Create coordinate variables with ORIGINAL ID values
-                    hru_var = output_ds.createVariable('hruId', 'i4', ('hru',), fill_value=-9999)
-                    hru_var[:] = original_hru_ids
-
-                    gru_var = output_ds.createVariable('gruId', 'i4', ('gru',), fill_value=-9999)
-                    gru_var[:] = original_gru_ids
-
-                    # Add parameters
-                    for param_name, param_values in params.items():
-                        param_values_array = np.atleast_1d(np.asarray(param_values))
-
-                        if param_name in routing_params or param_name in self.basin_params:
-                            # GRU-level parameters
-                            param_var = output_ds.createVariable(param_name, 'f8', ('gru',), fill_value=np.nan)
-                            param_var.long_name = f"Trial value for {param_name}"
-
-                            if len(param_values_array) == 1:
-                                param_var[:] = param_values_array[0]
-                            else:
-                                param_var[:] = param_values_array[:num_grus]
-                        else:
-                            # HRU-level parameters
-                            param_var = output_ds.createVariable(param_name, 'f8', ('hru',), fill_value=np.nan)
-                            param_var.long_name = f"Trial value for {param_name}"
-
-                            if len(param_values_array) == num_hrus:
-                                param_var[:] = param_values_array
-                            elif len(param_values_array) == 1:
-                                param_var[:] = param_values_array[0]
-                            else:
-                                param_var[:] = param_values_array[:num_hrus]
-
-            return True
-
-        except Exception as e:  # noqa: BLE001 — calibration resilience
-            self.logger.error(f"Error generating trial params file: {str(e)}", exc_info=True)
-            return False
+        Soil-depth, mizuRoute and forcing pseudo-parameters are applied to
+        other files and are left out here.
+        """
+        trial_params_path = self.settings_dir / self._get_config_value(lambda: self.config.model.summa.trialparams, default='trialParams.nc', dict_key='SETTINGS_SUMMA_TRIALPARAMS')
+        trial_params = select_trial_params(
+            {k: v for k, v in params.items() if k not in self.depth_params},
+            self.mizuroute_params)
+        return write_trial_params(
+            trial_params_path, self.attr_file_path, trial_params, self.logger,
+            gru_level_params=self.basin_params,
+            component=self._profiler_ctx.component_name)
 
 
 # Backward compatibility alias

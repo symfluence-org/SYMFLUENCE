@@ -195,3 +195,39 @@ class TestJobSubmit:
         result = JobCommands.submit(args)
 
         assert result == ExitCode.FILE_NOT_FOUND
+
+
+class TestJobSubmitWaitOutcome:
+    """`job submit --wait` exits non-zero when the job did not complete."""
+
+    def _args(self):
+        return Namespace(
+            config='c.yaml', job_name='j', job_time='01:00:00', job_nodes=1,
+            job_ntasks=1, job_memory='4G', job_account=None, job_partition=None,
+            job_modules=None, conda_env=None, submit_and_wait=True,
+            slurm_template=None, workflow_args=['workflow', 'run'], debug=False,
+        )
+
+    @patch('symfluence.cli.services.JobScheduler')
+    def test_failed_job_maps_to_job_execution_error(self, mock_job_scheduler_class):
+        scheduler = MagicMock()
+        scheduler.handle_slurm_job_submission.return_value = False
+        scheduler.last_result = {'job_id': '9', 'final_state': 'TIMEOUT', 'success': False}
+        mock_job_scheduler_class.return_value = scheduler
+
+        assert JobCommands.submit(self._args()) == ExitCode.JOB_EXECUTION_ERROR
+
+    @patch('symfluence.cli.services.JobScheduler')
+    def test_no_environment_activation_by_default(self, mock_job_scheduler_class):
+        from symfluence.cli.argument_parser import CLIParser
+
+        scheduler = MagicMock()
+        scheduler.handle_slurm_job_submission.return_value = True
+        mock_job_scheduler_class.return_value = scheduler
+        args = CLIParser().parse_args(['job', 'submit', 'workflow', 'run'])
+
+        assert JobCommands.submit(args) == ExitCode.SUCCESS
+        options = scheduler.handle_slurm_job_submission.call_args.args[0]['slurm_options']
+        assert options['job_modules'] is None
+        assert options['conda_env'] is None
+

@@ -160,6 +160,8 @@ class ABCAlgorithm(OptimizationAlgorithm):
         Returns:
             Optimization results dictionary with posterior samples
         """
+        # Per-run RNG (OptimizationAlgorithm._new_rng): never the process-global stream.
+        self._rng = self._new_rng()
         self.logger.info(f"Starting ABC-SMC with {n_params} parameters")
 
         # Get ABC configuration
@@ -184,7 +186,7 @@ class ABCAlgorithm(OptimizationAlgorithm):
         )
 
         # Initialize particles from prior (uniform on [0,1]^d)
-        particles = np.random.uniform(0, 1, (n_particles, n_params))
+        particles = self._rng.uniform(0, 1, (n_particles, n_params))
         weights = np.ones(n_particles) / n_particles
 
         # Evaluate initial population
@@ -550,7 +552,7 @@ class ABCAlgorithm(OptimizationAlgorithm):
         weights = weights / np.sum(weights)
 
         # Systematic resampling
-        positions = (np.arange(n) + np.random.uniform()) / n
+        positions = (np.arange(n) + self._rng.uniform()) / n
         cumsum = np.cumsum(weights)
         indices = np.searchsorted(cumsum, positions)
         indices = np.clip(indices, 0, n - 1)
@@ -703,20 +705,20 @@ class ABCAlgorithm(OptimizationAlgorithm):
         if kernel_type == 'gaussian':
             # Full multivariate Gaussian
             try:
-                noise = np.random.multivariate_normal(np.zeros(d), kernel_cov, size=n)
+                noise = self._rng.multivariate_normal(np.zeros(d), kernel_cov, size=n)
             except np.linalg.LinAlgError:
                 # Fallback to component-wise
                 std = np.sqrt(np.diag(kernel_cov))
-                noise = np.random.normal(0, 1, (n, d)) * std
+                noise = self._rng.normal(0, 1, (n, d)) * std
         elif kernel_type == 'uniform':
             # Uniform box kernel
             std = np.sqrt(np.diag(kernel_cov))
             half_width = std * np.sqrt(3)  # Match variance
-            noise = np.random.uniform(-half_width, half_width, (n, d))
+            noise = self._rng.uniform(-half_width, half_width, (n, d))
         else:  # component_wise (default)
             # Independent Gaussian for each component
             std = np.sqrt(np.diag(kernel_cov))
-            noise = np.random.normal(0, 1, (n, d)) * std
+            noise = self._rng.normal(0, 1, (n, d)) * std
 
         perturbed = particles + noise
         return np.clip(perturbed, 0, 1)

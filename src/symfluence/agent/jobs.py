@@ -192,6 +192,14 @@ def cancel_job(job_id: str, grace_s: float = 5.0) -> dict:
     record = _read_record(job_id)
     pid = record['pid']
 
+    # A job that already wrote its exit code has finished: its pid may since
+    # have been reused by an unrelated process (group), so nothing is
+    # signalled, and the recorded outcome is kept rather than overwritten
+    # with CANCELLED.
+    _, _, exit_path = _paths(job_id)
+    if exit_path.is_file():
+        return job_state(job_id)
+
     if _pid_alive(pid):
         if sys.platform == 'win32':
             # No graceful console signal reaches a detached tree on Windows;

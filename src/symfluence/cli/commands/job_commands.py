@@ -11,13 +11,14 @@ from __future__ import annotations
 from argparse import Namespace
 
 from ..exit_codes import ExitCode
-from .base import BaseCommand, cli_exception_handler
+from .base import BaseCommand, cli_exception_handler, supports_dry_run
 
 
 class JobCommands(BaseCommand):
     """Handlers for SLURM job submission commands."""
 
     @staticmethod
+    @supports_dry_run
     @cli_exception_handler
     def submit(args: Namespace) -> int:
         """
@@ -46,8 +47,8 @@ class JobCommands(BaseCommand):
             'job_memory': BaseCommand.get_arg(args, 'job_memory', '50G'),
             'job_account': BaseCommand.get_arg(args, 'job_account'),
             'job_partition': BaseCommand.get_arg(args, 'job_partition'),
-            'job_modules': BaseCommand.get_arg(args, 'job_modules', 'symfluence_modules'),
-            'conda_env': BaseCommand.get_arg(args, 'conda_env', 'symfluence'),
+            'job_modules': BaseCommand.get_arg(args, 'job_modules'),
+            'conda_env': BaseCommand.get_arg(args, 'conda_env'),
             'submit_and_wait': BaseCommand.get_arg(args, 'submit_and_wait', False),
             'slurm_template': BaseCommand.get_arg(args, 'slurm_template')
         }
@@ -66,17 +67,28 @@ class JobCommands(BaseCommand):
             'config_file': BaseCommand.get_config_path(args),
             'job_mode': 'workflow',
             'job_steps': workflow_args,
-            'slurm_options': slurm_options
+            'slurm_options': slurm_options,
+            'dry_run': bool(BaseCommand.get_arg(args, 'dry_run', False)),
         }
 
-        # Submit the job
+        # Submit the job (with --wait this blocks until the job has ended)
         success = job_scheduler.handle_slurm_job_submission(execution_plan)
 
         if success:
-            BaseCommand._console.success("SLURM job submitted successfully")
+            if execution_plan['dry_run']:
+                return ExitCode.SUCCESS
             if slurm_options['submit_and_wait']:
-                BaseCommand._console.info("Monitoring job execution...")
+                BaseCommand._console.success("SLURM job completed successfully")
+            else:
+                BaseCommand._console.success("SLURM job submitted successfully")
             return ExitCode.SUCCESS
-        else:
-            BaseCommand._console.error("SLURM job submission failed")
-            return ExitCode.JOB_SUBMIT_ERROR
+
+        last_result = getattr(job_scheduler, 'last_result', None)
+        if isinstance(last_result, dict) and last_result.get('final_state'):
+            # Submitted, waited for, and it did not end in COMPLETED.
+            BaseCommand._console.error(
+                f"SLURM job ended in state {last_result['final_state']}"
+            )
+            return ExitCode.JOB_EXECUTION_ERROR
+        BaseCommand._console.error("SLURM job submission failed")
+        return ExitCode.JOB_SUBMIT_ERROR

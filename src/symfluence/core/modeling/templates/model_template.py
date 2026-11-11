@@ -419,6 +419,14 @@ class UnifiedModelRunner(BaseModelRunner, SpatialOrchestrator):  # type: ignore[
             wait=self._get_config_value(lambda: self.config.model.summa.monitor_slurm_job, default=True, dict_key='MONITOR_SLURM_JOB')
         )
 
+        if result.success and not self.slurm_job_finished(result):
+            self.logger.warning(
+                f"SLURM job {result.job_id} was submitted without monitoring "
+                f"(MONITOR_SLURM_JOB is off); it has not finished, so outputs "
+                f"are not merged. Merge after the job completes."
+            )
+            return None
+
         if result.success:
             # Merge outputs
             return self._merge_parallel_outputs()

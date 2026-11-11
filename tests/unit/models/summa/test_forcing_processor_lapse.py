@@ -100,7 +100,6 @@ def test_lapse_batches_follow_each_files_remapping_signature(tmp_path, monkeypat
     for name, signature in zip(names, ['old', 'new', 'new']):
         xr.Dataset(attrs={ATTRIBUTE: signature}).to_netcdf(tmp_path / name)
     monkeypatch.setattr(processor, '_forcing_outputs_are_current', lambda: False)
-    monkeypatch.setattr(processor, '_check_already_corrected', lambda: False)
     monkeypatch.setattr(processor, '_get_forcing_files', lambda: names)
     monkeypatch.setattr(processor, '_prepare_forcing_output_dir', lambda: None)
     monkeypatch.setattr(processor, '_find_intersection_file', lambda directory: directory)

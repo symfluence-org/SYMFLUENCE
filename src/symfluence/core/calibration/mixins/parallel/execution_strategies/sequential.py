@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable, Dict, List
 
-from .base import ExecutionStrategy
+from .base import ExecutionStrategy, task_error_result
 
 
 class SequentialExecutionStrategy(ExecutionStrategy):
@@ -55,8 +55,10 @@ class SequentialExecutionStrategy(ExecutionStrategy):
         """
         results = []
 
-        from symfluence.core.calibration.eval_watchdog import get_watchdog
+        from symfluence.core.calibration.eval_watchdog import cover_model_timeout, get_watchdog
         watchdog = get_watchdog()
+        # The default limit is below most models' own timeout.
+        cover_model_timeout(tasks)
 
         for task in tasks:
             try:
@@ -65,6 +67,6 @@ class SequentialExecutionStrategy(ExecutionStrategy):
                 results.append(result)
             except (ValueError, RuntimeError, IOError) as e:
                 self.logger.error(f"Task failed in sequential execution: {e}")
-                results.append({'error': str(e), 'task': task})
+                results.append(task_error_result(task, e))
 
         return results

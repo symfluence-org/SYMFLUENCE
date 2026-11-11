@@ -57,11 +57,48 @@ class TestIDMapperReverse:
         assert name == "P.obs"
         assert pytest.approx(inv_factor) == 3600.0
 
-    def test_reverse_pass_through(self):
-        cfg = FEWSConfig(auto_id_map=False)
+    def test_export_needs_an_explicit_entry(self):
+        """No guessing on export: an unmapped variable is an error, not a
+        pass-through under its SYMFLUENCE name."""
+        mapper = IDMapper(FEWSConfig(auto_id_map=False))
+        with pytest.raises(IDMappingError, match="No explicit ID-map entry"):
+            mapper.symfluence_to_fews("custom_var")
+
+    def test_auto_map_is_not_used_for_export(self):
+        """The auto-map listed Q.obs before Q.sim, so simulated discharge was
+        exported under the *observation* id."""
+        mapper = IDMapper(FEWSConfig(auto_id_map=True))
+        assert not mapper.has_export_mapping("discharge")
+        ds = xr.Dataset({"discharge": ("time", [1.0, 2.0])})
+        with pytest.raises(IDMappingError, match="explicit ID-map export entry"):
+            mapper.rename_dataset_sym_to_fews(ds)
+
+    def test_explicit_export_entry(self):
+        cfg = FEWSConfig(id_map=[
+            IDMapEntry(fews_id="Q.obs", symfluence_id="discharge", direction="import"),
+            IDMapEntry(fews_id="Q.sim", symfluence_id="discharge", direction="export",
+                       fews_unit="m3/s"),
+        ])
         mapper = IDMapper(cfg)
-        name, _, _ = mapper.symfluence_to_fews("custom_var")
-        assert name == "custom_var"
+        ds = xr.Dataset({
+            "discharge": ("time", [1.0, 2.0], {"units": "m3/s"}),
+            "unmapped": ("time", [0.0, 0.0]),
+        })
+        out = mapper.rename_dataset_sym_to_fews(ds)
+        assert list(out.data_vars) == ["Q.sim"]  # unmapped variable left out
+        assert out["Q.sim"].attrs["units"] == "m3/s"
+        # ... and the import direction still reads observations
+        assert mapper.fews_to_symfluence("Q.obs")[0] == "discharge"
+
+    def test_ambiguous_export_is_an_error_when_used(self):
+        cfg = FEWSConfig(auto_id_map=False, id_map=[
+            IDMapEntry(fews_id="P.obs", symfluence_id="pptrate"),
+            IDMapEntry(fews_id="P.forecast", symfluence_id="pptrate"),
+        ])
+        mapper = IDMapper(cfg)  # fine for import
+        assert mapper.fews_to_symfluence("P.forecast")[0] == "pptrate"
+        with pytest.raises(IDMappingError, match="several export mappings"):
+            mapper.symfluence_to_fews("pptrate")
 
 
 class TestIDMapperYAML:
@@ -125,3 +162,63 @@ class TestIDMapperDataset:
         result = mapper.rename_dataset_fews_to_sym(ds)
         # Should be K after conversion
         np.testing.assert_allclose(result["airtemp"].values, [273.15, 283.15], rtol=1e-5)
+
+    def test_units_follow_the_conversion(self, sample_fews_config_with_conversion):
+        mapper = IDMapper(sample_fews_config_with_conversion)
+        ds = xr.Dataset({"T.obs": ("time", [0.0, 10.0], {"units": "degC"})})
+        result = mapper.rename_dataset_fews_to_sym(ds)
+        assert result["airtemp"].attrs["units"] == "K"
+
+
+class TestUnitSafety:
+    """The auto-map renames without converting, so it must not accept data in
+    other units (mm/h precipitation as mm/s is a 3600-fold error)."""
+
+    @pytest.mark.parametrize("fews_id,units", [
+        ("P.obs", "mm/h"), ("P.obs", "mm"), ("T.obs", "degC"), ("SP", "hPa"),
+    ])
+    def test_auto_map_refuses_other_units(self, fews_id, units):
+        mapper = IDMapper(FEWSConfig(auto_id_map=True))
+        ds = xr.Dataset({fews_id: ("time", [1.0, 2.0], {"units": units})})
+        with pytest.raises(IDMappingError, match="applies no conversion"):
+            mapper.rename_dataset_fews_to_sym(ds)
+
+    @pytest.mark.parametrize("fews_id,units,sym", [
+        ("P.obs", "kg m-2 s-1", "pptrate"), ("P.obs", "mm/s", "pptrate"),
+        ("T.obs", "K", "airtemp"), ("SW", "W m-2", "SWRadAtm"),
+    ])
+    def test_auto_map_accepts_matching_units(self, fews_id, units, sym):
+        mapper = IDMapper(FEWSConfig(auto_id_map=True))
+        ds = xr.Dataset({fews_id: ("time", [1.0, 2.0], {"units": units})})
+        result = mapper.rename_dataset_fews_to_sym(ds)
+        np.testing.assert_allclose(result[sym].values, [1.0, 2.0])
+
+    def test_explicit_factor_overrides_auto_map(self):
+        cfg = FEWSConfig(id_map=[IDMapEntry(
+            fews_id="P.obs", symfluence_id="pptrate", fews_unit="mm/h",
+            symfluence_unit="mm/s", conversion_factor=1.0 / 3600.0)])
+        ds = xr.Dataset({"P.obs": ("time", [3600.0], {"units": "mm/h"})})
+        result = IDMapper(cfg).rename_dataset_fews_to_sym(ds)
+        np.testing.assert_allclose(result["pptrate"].values, [1.0])
+
+    def test_explicit_entry_with_unit_change_needs_a_conversion(self):
+        cfg = FEWSConfig(id_map=[IDMapEntry(
+            fews_id="T.obs", symfluence_id="airtemp", fews_unit="degC", symfluence_unit="K")])
+        with pytest.raises(IDMappingError, match="no conversion_factor"):
+            IDMapper(cfg)
+
+    def test_data_not_in_declared_unit_is_refused(self, sample_fews_config_with_conversion):
+        mapper = IDMapper(sample_fews_config_with_conversion)
+        ds = xr.Dataset({"T.obs": ("time", [280.0], {"units": "K"})})
+        with pytest.raises(IDMappingError, match="declares fews_unit"):
+            mapper.rename_dataset_fews_to_sym(ds)
+
+    def test_two_inputs_for_one_variable_is_a_clear_error(self):
+        """P.obs + P.forecast used to crash inside xarray with a rename conflict."""
+        mapper = IDMapper(FEWSConfig(auto_id_map=True))
+        ds = xr.Dataset({
+            "P.obs": ("time", [1.0, 2.0], {"units": "mm/s"}),
+            "P.forecast": ("time", [1.0, 2.0], {"units": "mm/s"}),
+        })
+        with pytest.raises(IDMappingError, match="map to the same SYMFLUENCE variable"):
+            mapper.rename_dataset_fews_to_sym(ds)

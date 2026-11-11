@@ -22,8 +22,12 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from symfluence.core.exceptions import ValidationError
+from symfluence.core.exceptions import FileOperationError, ValidationError
 from symfluence.core.modeling.base.base_preprocessor import BaseModelPreProcessor
+from symfluence.core.modeling.model_ready.forcing_reader import (
+    resample_canonical_forcing,
+    validated_timestep_seconds,
+)
 from symfluence.core.modeling.spatial_modes import SpatialMode
 from symfluence.core.registries import R
 
@@ -709,21 +713,14 @@ class VICPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         domain_path = self.params_dir / domain_file
 
         if not domain_path.exists():
-            logger.warning("Domain file not found, using synthetic forcing")
-            self._generate_synthetic_forcing(start_date, end_date)
-            return
+            raise FileOperationError(
+                f"VIC domain file not found: {domain_path}. Run domain generation first."
+            )
 
-        domain_ds = xr.open_dataset(domain_path)
-
-        # Try to load forcing data
-        try:
+        # No synthetic fallback: missing or unreadable forcing is an error.
+        with xr.open_dataset(domain_path) as domain_ds:
             forcing_ds = self._load_forcing_data()
             self._write_forcing_files(forcing_ds, domain_ds, start_date, end_date)
-        except Exception as e:  # noqa: BLE001 — model execution resilience
-            logger.warning(f"Could not load forcing data: {e}, using synthetic", exc_info=True)
-            self._generate_synthetic_forcing(start_date, end_date)
-
-        domain_ds.close()
 
     def _load_forcing_data(self) -> xr.Dataset:
         """Load basin-averaged forcing data."""
@@ -777,62 +774,134 @@ class VICPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         lon = domain_ds['lon'].values
         mask = domain_ds['mask'].values
 
-        times = forcing_ds['time'].values if 'time' in forcing_ds else pd.date_range(start_date, end_date, freq='D')
+        if 'time' not in forcing_ds.coords:
+            raise ValidationError("VIC forcing: the forcing data has no 'time' coordinate")
+
+        # VIC reads forcing at the snow-model step, which the global file sets
+        # equal to MODEL_STEPS_PER_DAY (hourly by default).
+        target_seconds = self._forcing_step_seconds()
+
+        times = forcing_ds['time'].values
         if len(times) > 1:
-            dt_seconds = float((pd.Timestamp(times[1]) - pd.Timestamp(times[0])).total_seconds())
+            # Validates the whole axis: gaps, duplicates and irregular steps
+            # raise rather than being filled.
+            dt_seconds = validated_timestep_seconds(times, context='VIC forcing')
         else:
-            dt_seconds = 3600.0
+            dt_seconds = target_seconds
 
         out_ds = xr.Dataset(coords={'time': times, 'lat': lat, 'lon': lon})
         shape = (len(times), len(lat), len(lon))
 
+        missing = []
         for vic_var, candidates in self.VIC_VAR_MAP.items():
             data = self._find_and_convert_variable(
                 forcing_ds, vic_var, candidates, times, dt_seconds, mask, lat, lon
             )
             if data is not None:
                 out_ds[vic_var] = (['time', 'lat', 'lon'], data[:len(times)])
+            elif vic_var == 'VP' and self._derive_vapour_pressure(
+                forcing_ds, out_ds, shape, times, mask, lat, lon
+            ):
+                continue
             else:
-                data = self._derive_missing_variable(
-                    vic_var, forcing_ds, out_ds, times, mask, lat, lon
-                )
-                if vic_var == 'VP' and data is None:
-                    continue  # VP was added directly to out_ds by _derive_missing_variable
-                if data is not None:
-                    data = self._broadcast_to_grid(data, shape, times, mask, lat, lon)
-                    out_ds[vic_var] = (['time', 'lat', 'lon'], data[:len(times)])
+                missing.append(vic_var)
+
+        if missing:
+            wanted = '; '.join(f"{v} (any of {self.VIC_VAR_MAP[v]})" for v in missing)
+            raise ValidationError(
+                f"VIC forcing: required variable(s) not found in the forcing data: {wanted}. "
+                f"Variables present: {sorted(str(v) for v in forcing_ds.data_vars)}. "
+                "VP can also be derived from specific humidity and pressure."
+            )
 
         # Derivation above uses Pa; the VIC image driver reads kPa and multiplies
         # both pressure fields by 1000 before computing density and humidity.
         for var in ('PRESSURE', 'VP'):
-            if var in out_ds:
-                out_ds[var] = out_ds[var] / 1000.0
-                out_ds[var].attrs['units'] = 'kPa'
+            out_ds[var] = out_ds[var] / 1000.0
+            out_ds[var].attrs['units'] = 'kPa'
+
+        # Bring the forcing to the VIC step. PREC is a depth per step, so it is
+        # resampled as a rate (held constant over each source interval, which
+        # conserves the total) and converted back with the *target* step; the
+        # other variables are interpolated (finer) or averaged (coarser).
+        if abs(dt_seconds - target_seconds) >= 1.0:
+            logger.info(
+                f"Resampling VIC forcing from {dt_seconds:.0f} s to {target_seconds:.0f} s"
+            )
+            attrs = {v: out_ds[v].attrs for v in out_ds.data_vars}
+            rate_ds = out_ds.rename({'PREC': 'precipitation_flux'})
+            rate_ds['precipitation_flux'] = rate_ds['precipitation_flux'] / dt_seconds
+            rate_ds = resample_canonical_forcing(rate_ds, target_seconds)
+            out_ds = rate_ds.rename({'precipitation_flux': 'PREC'})
+            out_ds['PREC'] = out_ds['PREC'] * target_seconds
+            out_ds = out_ds[list(self.VIC_VAR_MAP)].transpose('time', 'lat', 'lon')
+            for v, a in attrs.items():
+                out_ds[v].attrs = a
+            times = out_ds['time'].values
 
         # Apply mask
+        run_cell = xr.DataArray(mask == 1, dims=('lat', 'lon'))
         for var in self.VIC_VAR_MAP:
-            if var in out_ds:
-                for t in range(len(times)):
-                    out_ds[var].values[t, mask == 0] = np.nan
+            out_ds[var] = out_ds[var].where(run_cell)
 
         out_ds.attrs['title'] = f'VIC forcing file for {self.domain_name}'
         out_ds.attrs['history'] = f'Created by SYMFLUENCE on {datetime.now().isoformat()}'
 
-        # VIC expects one forcing file per year with complete hourly timesteps
+        # VIC reads one forcing file per calendar year. The first file may start
+        # after 1 January and the last may end before 31 December: the files
+        # hold only real data, and the global parameter file is limited to the
+        # days they cover (see _clip_to_forcing_coverage).
         time_index = pd.DatetimeIndex(times)
         encoding = {'time': {'calendar': 'standard', 'units': 'hours since 1900-01-01'}}
+        self._forcing_coverage = (
+            time_index[0], time_index[-1] + pd.Timedelta(seconds=target_seconds)
+        )
 
         for year in range(time_index[0].year, time_index[-1].year + 1):
-            year_start = pd.Timestamp(f'{year}-01-01 00:00:00')
-            year_end = pd.Timestamp(f'{year}-12-31 23:00:00')
-            full_year_times = pd.date_range(year_start, year_end, freq='h')
-
-            year_ds = out_ds.sel(time=slice(year_start, year_end))
-            year_ds = year_ds.reindex(time=full_year_times, method='nearest')
+            year_ds = out_ds.sel(time=str(year))
+            if year_ds.sizes['time'] == 0:
+                raise ValidationError(f"VIC forcing: no forcing data for {year}")
 
             forcing_path = self.forcing_dir / f'{self.domain_name}_forcing.{year}.nc'
             year_ds.to_netcdf(forcing_path, encoding=encoding)
             logger.info(f"Forcing file written: {forcing_path}")
+
+    def _forcing_step_seconds(self) -> float:
+        """Forcing step VIC expects: one snow-model step (= MODEL_STEPS_PER_DAY)."""
+        steps_per_day = self._get_config_value(
+            lambda: self.config.model.vic.model_steps_per_day,
+            default=24
+        )
+        return 86400.0 / float(steps_per_day)
+
+    def _clip_to_forcing_coverage(self, start_date, end_date):
+        """Limit the simulation dates to whole days covered by the written forcing.
+
+        VIC runs whole days from STARTDAY to ENDDAY, so a day only partly
+        covered by forcing cannot be simulated. Rather than padding the forcing
+        with invented values, the run is shortened to the covered days (with a
+        warning); no overlap at all is an error. Without forcing written by
+        this instance the configured dates are returned unchanged.
+        """
+        coverage = getattr(self, '_forcing_coverage', None)
+        if coverage is None:
+            return start_date, end_date
+        first, end_exclusive = coverage
+        first_full_day = first.ceil('D')
+        last_full_day = end_exclusive.floor('D') - pd.Timedelta(days=1)
+        start = max(pd.Timestamp(start_date).floor('D'), first_full_day)
+        end = min(pd.Timestamp(end_date).floor('D'), last_full_day)
+        if start > end:
+            raise ValidationError(
+                f"VIC forcing ({first} to {end_exclusive}, exclusive) does not cover a "
+                f"single whole day of the simulation period {start_date} to {end_date}."
+            )
+        if start != pd.Timestamp(start_date).floor('D') or end != pd.Timestamp(end_date).floor('D'):
+            logger.warning(
+                f"VIC simulation period limited to the days covered by forcing: "
+                f"{start.date()} to {end.date()} (configured {start_date} to {end_date})"
+            )
+        return start, end
 
     def _find_and_convert_variable(
         self, forcing_ds, vic_var, candidates, times, dt_seconds, mask, lat, lon
@@ -897,70 +966,25 @@ class VICPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
         return None
 
-    def _derive_missing_variable(
-        self, vic_var, forcing_ds, out_ds, times, mask, lat, lon
-    ):
-        """Derive or estimate a missing VIC variable.
+    def _derive_vapour_pressure(
+        self, forcing_ds, out_ds, shape, times, mask, lat, lon
+    ) -> bool:
+        """Derive VP [Pa] from specific humidity and pressure into *out_ds*.
 
-        For VP derived from specific humidity, data is added directly to *out_ds*
-        and None is returned.  For all other variables, the synthetic array is
-        returned (may need broadcasting).
+        Returns False when either input is unavailable (no estimate is made).
         """
-        shape = (len(times), len(lat), len(lon))
-
-        if vic_var == 'VP':
-            spechum_var = None
-            for c in ['specific_humidity', 'specific_humidity', 'huss', 'q']:
-                if c in forcing_ds:
-                    spechum_var = c
-                    break
-
-            if spechum_var is not None and 'PRESSURE' in out_ds:
-                logger.info(f"Deriving VP from specific humidity ({spechum_var}) and pressure")
-                q_data = forcing_ds[spechum_var].values
-                q_data = self._broadcast_to_grid(q_data, shape, times, mask, lat, lon)
-                pressure_pa = out_ds['PRESSURE'].values
-                data = q_data[:len(times)] * pressure_pa / (0.622 + 0.378 * q_data[:len(times)])
-                out_ds[vic_var] = (['time', 'lat', 'lon'], data)
-                return None  # sentinel: already added to out_ds
-            elif 'AIR_TEMP' in out_ds:
-                logger.warning(f"Variable {vic_var} not found in forcing, estimating from temperature")
-                temp_c = out_ds['AIR_TEMP'].values
-                es_pa = 610.8 * np.exp(17.27 * temp_c / (temp_c + 237.3))
-                return 0.6 * es_pa
-            else:
-                logger.warning(f"Variable {vic_var} not found, using default 500 Pa")
-                return 500.0 * np.ones(shape)
-
-        elif vic_var == 'AIR_TEMP':
-            logger.warning(f"Variable {vic_var} not found in forcing, estimating")
-            base = 5 + 10 * np.sin(2 * np.pi * np.arange(len(times)) / 365)
-            return base[:, np.newaxis, np.newaxis] * np.ones(shape)
-
-        elif vic_var == 'PREC':
-            logger.warning(f"Variable {vic_var} not found in forcing, using zeros")
-            return np.zeros(shape)
-
-        elif vic_var == 'SWDOWN':
-            logger.warning(f"Variable {vic_var} not found in forcing, estimating")
-            base = 150 + 100 * np.sin(2 * np.pi * (np.arange(len(times)) - 80) / 365)
-            return np.maximum(0, base[:, np.newaxis, np.newaxis] * np.ones(shape))
-
-        elif vic_var == 'LWDOWN':
-            logger.warning(f"Variable {vic_var} not found in forcing, estimating")
-            if 'AIR_TEMP' in out_ds:
-                temp_k = out_ds['AIR_TEMP'].values + 273.15
-                return 0.75 * 5.67e-8 * temp_k ** 4
-            return 300.0 * np.ones(shape)
-
-        elif vic_var == 'PRESSURE':
-            logger.warning(f"Variable {vic_var} not found in forcing, estimating")
-            elev = self._get_catchment_properties().get('elev', 1000.0)
-            return 101325.0 * np.exp(-elev / 8500.0) * np.ones(shape)
-
-        else:  # WIND
-            logger.warning(f"Variable {vic_var} not found in forcing, estimating")
-            return np.abs(np.random.normal(3, 1, shape))
+        spechum_var = next(
+            (c for c in ('specific_humidity', 'huss', 'q') if c in forcing_ds), None
+        )
+        if spechum_var is None or 'PRESSURE' not in out_ds:
+            return False
+        logger.info(f"Deriving VP from specific humidity ({spechum_var}) and pressure")
+        q_data = forcing_ds[spechum_var].values
+        q_data = self._broadcast_to_grid(q_data, shape, times, mask, lat, lon)
+        pressure_pa = out_ds['PRESSURE'].values
+        data = q_data[:len(times)] * pressure_pa / (0.622 + 0.378 * q_data[:len(times)])
+        out_ds['VP'] = (['time', 'lat', 'lon'], data)
+        return True
 
     @staticmethod
     def _broadcast_to_grid(data, shape, times, mask, lat, lon):
@@ -982,54 +1006,6 @@ class VICPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             return data_grid
         return data
 
-    def _generate_synthetic_forcing(self, start_date: datetime, end_date: datetime) -> None:
-        """Generate synthetic forcing data for testing."""
-        props = self._get_catchment_properties()
-        dates = pd.date_range(start_date, end_date, freq='h')
-        n = len(dates)
-
-        # Synthetic data for VIC 5 image driver
-        day_frac = np.arange(n) / 24.0
-        precip = np.random.exponential(0.1, n)
-        air_temp = 10 + 10 * np.sin(2 * np.pi * day_frac / 365)
-        swdown = np.maximum(0, 200 + 150 * np.sin(2 * np.pi * (day_frac - 80) / 365))
-        temp_k = air_temp + 273.15
-        lwdown = 0.75 * 5.67e-8 * temp_k ** 4
-        elev = props.get('elev', 1000.0)
-        pressure = 101325.0 * np.exp(-elev / 8500.0) * np.ones(n)  # Pa
-        es = 610.8 * np.exp(17.27 * air_temp / (air_temp + 237.3))  # Pa (Tetens)
-        vp = 0.6 * es  # Pa, assuming 60% relative humidity
-        wind = np.abs(np.random.normal(3, 1, n))
-
-        # Create dataset
-        ds = xr.Dataset(
-            {
-                'PREC': (['time', 'lat', 'lon'], precip[:, np.newaxis, np.newaxis]),
-                'AIR_TEMP': (['time', 'lat', 'lon'], air_temp[:, np.newaxis, np.newaxis]),
-                'SWDOWN': (['time', 'lat', 'lon'], swdown[:, np.newaxis, np.newaxis]),
-                'LWDOWN': (['time', 'lat', 'lon'], lwdown[:, np.newaxis, np.newaxis]),
-                'PRESSURE': (['time', 'lat', 'lon'], pressure[:, np.newaxis, np.newaxis]),
-                'VP': (['time', 'lat', 'lon'], vp[:, np.newaxis, np.newaxis]),
-                'WIND': (['time', 'lat', 'lon'], wind[:, np.newaxis, np.newaxis]),
-            },
-            coords={
-                'time': dates,
-                'lat': [props['lat']],
-                'lon': [props['lon']],
-            }
-        )
-
-        for var in ('PRESSURE', 'VP'):
-            ds[var] = ds[var] / 1000.0
-            ds[var].attrs['units'] = 'kPa'
-
-        # VIC expects one forcing file per year
-        encoding = {'time': {'calendar': 'standard', 'units': 'hours since 1900-01-01'}}
-        for year, year_ds in ds.groupby('time.year'):
-            forcing_path = self.forcing_dir / f'{self.domain_name}_forcing.{year}.nc'
-            year_ds.to_netcdf(forcing_path, encoding=encoding)
-            logger.info(f"Synthetic forcing file written: {forcing_path}")
-
     def _generate_global_param_file(self) -> None:
         """
         Generate the VIC global parameter file.
@@ -1048,7 +1024,7 @@ class VICPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         )
         global_path = self.settings_dir / global_file
 
-        start_date, end_date = self._get_simulation_dates()
+        start_date, end_date = self._clip_to_forcing_coverage(*self._get_simulation_dates())
 
         # Get config values
         model_steps_per_day = self._get_config_value(

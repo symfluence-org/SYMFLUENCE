@@ -12,13 +12,14 @@ from argparse import Namespace
 from pathlib import Path
 
 from ..exit_codes import ExitCode
-from .base import BaseCommand, cli_exception_handler
+from .base import BaseCommand, cli_exception_handler, supports_dry_run
 
 
 class ConfigCommands(BaseCommand):
     """Handlers for configuration management commands."""
 
     @staticmethod
+    @supports_dry_run
     @cli_exception_handler
     def list_templates(args: Namespace) -> int:
         """
@@ -92,6 +93,7 @@ class ConfigCommands(BaseCommand):
         return ExitCode.USAGE_ERROR
 
     @staticmethod
+    @supports_dry_run
     @cli_exception_handler
     def validate(args: Namespace) -> int:
         """
@@ -144,6 +146,7 @@ class ConfigCommands(BaseCommand):
             return ExitCode.CONFIG_ERROR
 
     @staticmethod
+    @supports_dry_run
     @cli_exception_handler
     def validate_env(args: Namespace) -> int:
         """
@@ -189,6 +192,7 @@ class ConfigCommands(BaseCommand):
             return ExitCode.SUCCESS
 
     @staticmethod
+    @supports_dry_run
     @cli_exception_handler
     def resolve(args: Namespace) -> int:
         """

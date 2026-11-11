@@ -91,7 +91,10 @@ class SubprocessExecutionMixin:
             ExecutionResult with success status, return code, and metadata
 
         Raises:
-            subprocess.TimeoutExpired: If timeout is exceeded
+            subprocess.TimeoutExpired: If check=True and the timeout is
+                exceeded (with check=False a failed ExecutionResult with
+                return_code -1 is returned instead). The child's whole
+                process group is killed either way.
             subprocess.CalledProcessError: If check=True and process fails
         """
         start_time = time.time()
@@ -126,7 +129,10 @@ class SubprocessExecutionMixin:
                     env=run_env,
                     shell=shell,  # nosec B602,B604
                     text=True,
-                    timeout=timeout
+                    timeout=timeout,
+                    # mpirun / shell wrappers leave grandchildren behind when
+                    # only the direct child is killed on timeout.
+                    kill_group=True,
                 )
 
             duration = time.time() - start_time
@@ -170,7 +176,12 @@ class SubprocessExecutionMixin:
 
         except subprocess.TimeoutExpired:
             duration = time.time() - start_time
-            self.logger.error(f"Process timed out after {timeout}s")
+            self.logger.error(f"Process timed out after {timeout}s; see log file: {log_file}")
+            if check:
+                # A timeout is a failed run. Returning a result here let
+                # callers that rely on check=True (and ignore the return
+                # value) carry on and score whatever output already existed.
+                raise
             return ExecutionResult(
                 success=False,
                 return_code=-1,

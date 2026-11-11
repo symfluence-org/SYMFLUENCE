@@ -33,7 +33,7 @@ class TestBinaryInstall:
 
         assert result == ExitCode.SUCCESS
         mock_manager.get_executables.assert_called_once_with(
-            specific_tools=None, force=False, patched=False,
+            specific_tools=None, force=False, dry_run=False, patched=False,
             branch_override=None, git_hash=None,
         )
 
@@ -56,6 +56,7 @@ class TestBinaryInstall:
         mock_manager.get_executables.assert_called_once_with(
             specific_tools=['summa', 'mizuroute'],
             force=False,
+            dry_run=False,
             patched=False,
             branch_override=None,
             git_hash=None,
@@ -78,9 +79,51 @@ class TestBinaryInstall:
 
         assert result == ExitCode.SUCCESS
         mock_manager.get_executables.assert_called_once_with(
-            specific_tools=['taudem'], force=True, patched=False,
+            specific_tools=['taudem'], force=True, dry_run=False, patched=False,
             branch_override=None, git_hash=None,
         )
+
+    @patch('symfluence.cli.binary_service.BinaryManager')
+    def test_install_dry_run_is_passed_to_the_installer(self, mock_binary_manager_class):
+        """--dry-run used to be dropped here: `--dry-run binary install summa
+        --force` deleted and rebuilt the tool."""
+        mock_manager = MagicMock()
+        mock_manager.get_executables.return_value = {
+            "successful": ["summa (dry run)"], "failed": [], "skipped": [], "errors": [],
+        }
+        mock_binary_manager_class.return_value = mock_manager
+
+        args = Namespace(tools=['summa'], force=True, debug=False, dry_run=True)
+
+        assert BinaryCommands.install(args) == ExitCode.SUCCESS
+        assert mock_manager.get_executables.call_args.kwargs["dry_run"] is True
+
+    @patch('symfluence.cli.binary_service.BinaryManager')
+    def test_install_unknown_tool_exits_non_zero(self, mock_binary_manager_class):
+        """An unknown tool only added to `errors`; the command exited 0."""
+        mock_manager = MagicMock()
+        mock_manager.get_executables.return_value = {
+            "successful": [], "failed": ["zzz"], "skipped": [],
+            "errors": ["Unknown tool: zzz"],
+        }
+        mock_binary_manager_class.return_value = mock_manager
+
+        args = Namespace(tools=['summa', 'zzz'], force=False, debug=False)
+
+        assert BinaryCommands.install(args) == ExitCode.BINARY_ERROR
+
+    @pytest.mark.parametrize("extra", [{"branch": "develop"}, {"git_hash": "deadbeef"}])
+    @patch('symfluence.cli.binary_service.BinaryManager')
+    def test_branch_or_hash_without_named_tools_is_refused(
+        self, mock_binary_manager_class, extra
+    ):
+        mock_manager = MagicMock()
+        mock_binary_manager_class.return_value = mock_manager
+
+        args = Namespace(tools=[], force=False, debug=False, **extra)
+
+        assert BinaryCommands.install(args) == ExitCode.USAGE_ERROR
+        mock_manager.get_executables.assert_not_called()
 
     @patch('symfluence.cli.binary_service.BinaryManager')
     def test_install_failure(self, mock_binary_manager_class):

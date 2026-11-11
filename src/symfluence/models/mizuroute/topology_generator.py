@@ -20,6 +20,11 @@ import netCDF4 as nc4
 import numpy as np
 
 from symfluence.core.exceptions import FileOperationError, ValidationError
+from symfluence.core.modeling.utilities.base_topology_generator import (
+    GRID_DEFINITION_METHODS,
+    BaseTopologyGenerator,
+    check_hru_to_seg_refs,
+)
 from symfluence.core.path_resolver import find_catchment_subfile
 
 if TYPE_CHECKING:
@@ -61,11 +66,20 @@ class MizuRouteTopologyGenerator:
         """
         self.pp.logger.info("Creating network topology file")
 
-        # Check for grid-based distribute mode
-        is_grid_distribute = self.pp.domain_definition_method == 'distribute'
-        if is_grid_distribute:
-            self._create_grid_topology_file()
-            return
+        # Grid-based mode. The typed config normalises the legacy
+        # 'distribute' to 'distributed', so testing only the legacy spelling
+        # sent every grid domain down the vector-network path below, which
+        # never ran cycle detection on the D8 graph.
+        if self.pp.domain_definition_method in GRID_DEFINITION_METHODS:
+            grid_path = self._find_grid_basins_path()
+            if grid_path is not None:
+                self._create_grid_topology_file(grid_path)
+                return
+            self.pp.logger.info(
+                "Domain method is grid-based but no grid-cell basins shapefile "
+                "(GRU_ID + D8 downstream column) was found; building topology "
+                "from the river network and basin shapefiles"
+            )
 
         # Check for point-scale mode
         is_point_scale = self.pp.domain_definition_method == 'point'
@@ -292,20 +306,17 @@ class MizuRouteTopologyGenerator:
             for seg_id, invalid_down_id in invalid_refs:
                 self.pp.logger.warning(f"  Segment {seg_id} had invalid downstream ID {invalid_down_id} -> set to -9999 (outlet)")
 
-        # Validate HRU-to-segment mapping
-        invalid_hru_refs = []
-        for i, hru_to_seg in enumerate(hru_to_seg_ids):
-            if hru_to_seg not in valid_seg_ids:
-                invalid_hru_refs.append((hru_ids[i], hru_to_seg))
-                # Find the closest valid segment or use the first segment
-                if len(valid_seg_ids) > 0:
-                    # Use the segment with closest ID
-                    closest_seg = min(valid_seg_ids, key=lambda x: abs(x - hru_to_seg))
-                    hru_to_seg_ids[i] = closest_seg
-                    self.pp.logger.warning(f"  HRU {hru_ids[i]} had invalid segment reference {hru_to_seg} -> set to {closest_seg}")
+        # Every HRU must drain to a segment that exists. (This used to
+        # rewire an unknown reference to the numerically closest segment id —
+        # an arbitrary reach — with only a warning.)
+        check_hru_to_seg_refs(hru_ids, hru_to_seg_ids, valid_seg_ids)
 
-        if invalid_hru_refs:
-            self.pp.logger.warning(f"Fixed {len(invalid_hru_refs)} invalid HRU-to-segment references")
+        # A vector network has no elevation to pick an outlet by, so a cycle
+        # is an error rather than something to break silently.
+        BaseTopologyGenerator.raise_on_routing_cycles(
+            shp_river[seg_id_col].values.astype(int),
+            shp_river[downseg_id_col].values.astype(int),
+        )
 
         # Create the netCDF file
         with nc4.Dataset(self.pp.setup_dir / topology_name, 'w', format='NETCDF4') as ncid:
@@ -329,7 +340,24 @@ class MizuRouteTopologyGenerator:
     # Grid-based topology
     # =========================================================================
 
-    def _create_grid_topology_file(self):
+    def _grid_basins_candidates(self):
+        """Grid-cell basins shapefile names: what the grid delineator writes
+        (``_riverBasins_{method_suffix}.shp``), then the legacy spelling."""
+        basins_dir = self.pp.project_dir / 'shapefiles' / 'river_basins'
+        names = [
+            f"{self.pp.domain_name}_riverBasins_{self.pp._get_method_suffix()}.shp",
+            f"{self.pp.domain_name}_riverBasins_distribute.shp",
+        ]
+        return [basins_dir / name for name in dict.fromkeys(names)]
+
+    def _find_grid_basins_path(self):
+        """First existing basins shapefile carrying the grid schema, else None."""
+        for candidate in self._grid_basins_candidates():
+            if candidate.exists() and BaseTopologyGenerator._has_grid_schema(candidate):
+                return candidate
+        return None
+
+    def _create_grid_topology_file(self, grid_path=None):
         """
         Create mizuRoute topology for grid-based distributed modeling.
 
@@ -339,11 +367,13 @@ class MizuRouteTopologyGenerator:
         self.pp.logger.info("Creating grid-based network topology for distributed mode")
 
         # Load grid shapefile with D8 topology
-        grid_path = self.pp.project_dir / 'shapefiles' / 'river_basins' / f"{self.pp.domain_name}_riverBasins_distribute.shp"
+        if grid_path is None:
+            grid_path = self._find_grid_basins_path()
 
-        if not grid_path.exists():
-            self.pp.logger.error(f"Grid basins shapefile not found: {grid_path}")
-            raise FileOperationError(f"Grid basins not found: {grid_path}")
+        if grid_path is None:
+            candidates = ", ".join(str(c) for c in self._grid_basins_candidates())
+            self.pp.logger.error(f"Grid basins shapefile not found; looked for: {candidates}")
+            raise FileOperationError(f"Grid basins not found; looked for: {candidates}")
 
         grid_gdf = gpd.read_file(grid_path)
         num_cells = len(grid_gdf)

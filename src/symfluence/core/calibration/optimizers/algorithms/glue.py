@@ -88,6 +88,8 @@ class GLUEAlgorithm(OptimizationAlgorithm):
         Returns:
             Optimization results dictionary including behavioral samples
         """
+        # Per-run RNG (OptimizationAlgorithm._new_rng): never the process-global stream.
+        self._rng = self._new_rng()
         self.logger.info(f"Starting GLUE analysis with {n_params} parameters")
 
         # GLUE parameters from config
@@ -150,7 +152,7 @@ class GLUEAlgorithm(OptimizationAlgorithm):
                 population = all_param_samples[batch_start:batch_end]
             else:
                 # Uniform random sampling
-                population = np.random.uniform(0, 1, (actual_batch_size, n_params))
+                population = self._rng.uniform(0, 1, (actual_batch_size, n_params))
 
             # Evaluate batch
             fitness = evaluate_population(population, batch)
@@ -284,12 +286,12 @@ class GLUEAlgorithm(OptimizationAlgorithm):
         for j in range(n_params):
             # Create n_samples intervals and sample one point from each
             intervals = np.arange(n_samples)
-            np.random.shuffle(intervals)
+            self._rng.shuffle(intervals)
 
             for i in range(n_samples):
                 # Random point within interval [intervals[i]/n, (intervals[i]+1)/n]
                 low = intervals[i] / n_samples
                 high = (intervals[i] + 1) / n_samples
-                samples[i, j] = np.random.uniform(low, high)
+                samples[i, j] = self._rng.uniform(low, high)
 
         return samples

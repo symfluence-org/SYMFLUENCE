@@ -12,6 +12,22 @@ from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List
 
 
+def task_error_result(task: Any, error: BaseException) -> Dict[str, Any]:
+    """Result dict for a task whose worker raised.
+
+    Carries the task's ``individual_id`` (and ``proc_id`` / ``params``) so the
+    population evaluator charges the failure to the individual that failed.
+    A result without an id used to be read as individual 0, overwriting that
+    individual's real score with the penalty.
+    """
+    result: Dict[str, Any] = {'score': None, 'error': str(error), 'task': task}
+    if isinstance(task, dict):
+        for key in ('individual_id', 'proc_id', 'params'):
+            if key in task:
+                result[key] = task[key]
+    return result
+
+
 class ExecutionStrategy(ABC):
     """
     Abstract base class for execution strategies.

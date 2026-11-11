@@ -29,6 +29,7 @@ from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
+from ..namelist import update_namelist_parameters
 from ..parameters import FORCING_PARAMS
 
 # mhm.nml entries that mHM writes to. Each worker points them at its own
@@ -343,101 +344,22 @@ class MHMWorker(BaseWorker):
         return 0.5 * (lo + hi)
 
     def _update_namelist_file(self, namelist_file: Path, params: Dict[str, float]) -> bool:
-        """
-        Update mHM Fortran namelist file with new parameter values.
+        """Write parameter values into an mHM namelist.
 
-        Supports two formats:
-
-        1. **mhm_parameter.nml** (5-element tuple)::
-
-               paramName = lower, upper, value, FLAG, SCALING
-
-           In this case only the *value* (3rd element) is replaced.
-
-        2. **Legacy / mhm.nml** (single value)::
-
-               paramName = value
-
-        Args:
-            namelist_file: Path to namelist (.nml) file
-            params: Parameters to update
+        Delegates to :func:`symfluence.models.mhm.namelist.update_namelist_parameters`
+        (shared with the parameter manager), which also widens a row's
+        lower/upper bounds when the value lies outside them.
 
         Returns:
             True if successful
         """
         try:
-            content = namelist_file.read_text(encoding='utf-8')
-
-            # Detect whether this is a 5-column parameter file by checking
-            # for the characteristic "lower, upper, value, flag, scaling" pattern
-            is_param_nml = 'mhm_parameter' in namelist_file.name
-
-            for param_name, value in params.items():
-                formatted_value = self._format_namelist_value(value)
-
-                if is_param_nml:
-                    # 5-column format: paramName = lower, upper, VALUE, flag, scaling
-                    # Capture: (prefix + lower, upper,) (value) (, flag, scaling)
-                    pattern = re.compile(
-                        r'(^[ \t]*' + re.escape(param_name)
-                        + r'\s*=\s*'           # paramName =
-                        + r'[^,]+,'             # lower,
-                        + r'\s*[^,]+,'          # upper,
-                        + r'\s*)'               # whitespace before value
-                        + r'([^,]+)'            # VALUE  <-- group to replace
-                        + r'(,\s*\d+,\s*\d+)',  # , flag, scaling
-                        re.MULTILINE
-                    )
-                    match = pattern.search(content)
-                    if match:
-                        content = pattern.sub(
-                            r'\g<1>' + formatted_value + r'\g<3>',
-                            content
-                        )
-                        self.logger.debug(
-                            f"Updated {param_name} value = {formatted_value} "
-                            f"(5-column format)"
-                        )
-                    else:
-                        self.logger.warning(
-                            f"Parameter {param_name} not found in {namelist_file}"
-                        )
-                else:
-                    # Legacy single-value format: paramName = value
-                    pattern = re.compile(
-                        r'(^[ \t]*' + re.escape(param_name) + r'\s*=\s*)([^\s,!/]+)',
-                        re.MULTILINE
-                    )
-                    match = pattern.search(content)
-                    if match:
-                        content = pattern.sub(
-                            r'\g<1>' + formatted_value,
-                            content
-                        )
-                        self.logger.debug(f"Updated {param_name} = {formatted_value}")
-                    else:
-                        self.logger.warning(
-                            f"Parameter {param_name} not found in {namelist_file}"
-                        )
-
-            namelist_file.write_text(content, encoding='utf-8')
+            update_namelist_parameters(namelist_file, params, self.logger)
             return True
 
         except Exception as e:  # noqa: BLE001 — calibration resilience
             self.logger.error(f"Error updating mHM namelist: {e}", exc_info=True)
             return False
-
-    def _format_namelist_value(self, value: float) -> str:
-        """Format a parameter value for Fortran namelist syntax."""
-        abs_val = abs(value)
-        if abs_val == 0.0:
-            return '0.0'
-        elif abs_val < 0.001 or abs_val >= 1e6:
-            return f'{value:.6e}'
-        elif abs_val == int(abs_val) and abs_val < 1e6:
-            return f'{value:.1f}'
-        else:
-            return f'{value:.6f}'
 
     def run_model(
         self,

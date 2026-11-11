@@ -33,7 +33,7 @@ import importlib.util
 import logging
 from abc import abstractmethod
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -41,6 +41,9 @@ import pandas as pd
 from symfluence.core.calibration.workers.base_worker import BaseWorker, WorkerTask
 from symfluence.core.logging_utils import log_once
 from symfluence.core.metrics import kge, nse
+from symfluence.core.metrics.metric_transformer import MetricTransformer
+from symfluence.core.metrics.penalty import raw_failure_value
+from symfluence.core.metrics.streamflow_metrics import StreamflowMetrics
 from symfluence.core.mixins.project import resolve_data_subdir
 from symfluence.core.modeling.utilities.periods import parse_period
 
@@ -699,6 +702,10 @@ class InMemoryModelWorker(BaseWorker):
         Returns:
             Dictionary with 'kge', 'nse', 'n_points', and optionally 'error'
         """
+        # Everything the configured objective needs beyond kge/nse.
+        extra_metrics = [
+            name for name in self._requested_metrics() if name not in ('kge', 'nse')
+        ]
         try:
             # Get time index for filtering
             if time_index is None:
@@ -751,6 +758,7 @@ class InMemoryModelWorker(BaseWorker):
 
             if len(sim) < 10:
                 return {
+                    **self._failed_extra_metrics(extra_metrics),
                     'kge': self.penalty_score,
                     'nse': self.penalty_score,
                     'n_points': len(sim),
@@ -767,21 +775,43 @@ class InMemoryModelWorker(BaseWorker):
             if np.isnan(nse_val):
                 nse_val = self.penalty_score
 
-            return {
+            result: Dict[str, Any] = {}
+            if extra_metrics:
+                # The configured objective (RMSE, MAE, PBIAS, KGE_LOG, each
+                # COMPOSITE component, ...). Returning only kge/nse scored a
+                # minimise-metric calibration as all-penalty and silently
+                # swapped KGE_LOG for KGE.
+                result.update(self._metrics_calculator().calculate_metrics(
+                    obs, sim, metrics=extra_metrics))
+            result.update({
                 'kge': kge_val,
                 'nse': nse_val,
                 'n_points': len(sim),
                 'mean_sim': float(np.mean(sim)),
                 'mean_obs': float(np.mean(obs)),
-            }
+            })
+            return result
 
         except (ValueError, ZeroDivisionError, KeyError) as e:
             self.logger.error(f"Error calculating metrics: {e}")
             return {
+                **self._failed_extra_metrics(extra_metrics),
                 'kge': self.penalty_score,
                 'nse': self.penalty_score,
                 'error': str(e)
             }
+
+    def _metrics_calculator(self) -> StreamflowMetrics:
+        """StreamflowMetrics carrying this worker's penalty score (and Box-Cox lambda)."""
+        box_cox_lambda = self._cfg('BOX_COX_LAMBDA')
+        kwargs: Dict[str, Any] = {'penalty_score': self.penalty_score}
+        if box_cox_lambda is not None:
+            kwargs['box_cox_lambda'] = float(box_cox_lambda)
+        return StreamflowMetrics(**kwargs)
+
+    def _failed_extra_metrics(self, names: List[str]) -> Dict[str, float]:
+        """Direction-aware failure value for each requested extra metric."""
+        return {name: raw_failure_value(name, self.penalty_score) for name in names}
 
     # =========================================================================
     # BaseWorker Implementation
@@ -983,14 +1013,18 @@ class InMemoryModelWorker(BaseWorker):
             # Get requested metric
             metric_lower = metric.lower()
             if metric_lower in metrics:
-                val = metrics[metric_lower]
+                name, val = metric_lower, metrics[metric_lower]
             elif 'kge' in metrics:
-                val = metrics['kge']
+                name, val = 'kge', metrics['kge']
             else:
                 return self.penalty_score
 
-            # Return negative for minimization
-            return -val if not np.isnan(val) else self.penalty_score
+            if np.isnan(val):
+                return self.penalty_score
+            # Loss = negative of the maximisation-convention score, so a
+            # minimise-metric (RMSE, MAE) is not driven upwards.
+            score = MetricTransformer.transform_for_maximization(name, val)
+            return self.penalty_score if score is None else -score
 
         except (KeyError, TypeError, ValueError) as e:
             self.logger.error(f"Error evaluating loss: {e}")

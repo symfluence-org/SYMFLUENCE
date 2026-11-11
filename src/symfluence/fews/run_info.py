@@ -4,22 +4,34 @@
 """
 FEWS run_info.xml parser.
 
-Parses the run_info.xml file that FEWS writes into the module working directory
-before invoking the General Adapter. Extracts simulation time window, paths,
-and properties needed to drive a SYMFLUENCE model run.
+Parses the run file that FEWS writes into the module working directory
+before invoking the General Adapter (``exportRunFileActivity``). Extracts the
+simulation time window, paths, and properties needed to drive a SYMFLUENCE
+model run.
+
+The published schema is ``pi_run.xsd`` (namespace
+``http://www.wldelft.nl/fews/PI``): date-times are ``date``/``time``
+*attributes* interpreted in the file's ``<timeZone>`` (decimal hours from
+GMT), files are listed individually (``inputTimeSeriesFile``,
+``inputNetcdfFile``, ``outputDiagnosticFile``, ...) and properties are
+``<string key=".." value=".."/>`` style elements. The parser is deliberately
+tolerant: element lookup ignores the namespace, date-times may also be given
+as element text, and the non-schema ``inputDir`` / ``outputDir`` /
+``stateInputDir`` / ``stateOutputDir`` / ``timeStep`` elements used by
+hand-written run files keep working.
 """
 from __future__ import annotations
 
 # Security rationale: parsing trusted FEWS run_info.xml
 import xml.etree.ElementTree as ET  # nosec B405
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .exceptions import RunInfoParseError
 
-# FEWS datetime format: "2023-01-15T00:00:00Z" or "2023-01-15 00:00:00"
+# Text-form datetimes: "2023-01-15T00:00:00Z" or "2023-01-15 00:00:00"
 _FEWS_DT_FORMATS = [
     "%Y-%m-%dT%H:%M:%SZ",
     "%Y-%m-%dT%H:%M:%S",
@@ -28,21 +40,74 @@ _FEWS_DT_FORMATS = [
 ]
 
 
-def _parse_fews_datetime(text: str) -> datetime:
-    """Parse a FEWS datetime string into a timezone-aware UTC datetime."""
+def local_name(tag: str) -> str:
+    """Element tag without its ``{namespace}`` prefix."""
+    return tag.split("}", 1)[1] if "}" in tag else tag
+
+
+def parse_time_zone(root: ET.Element, error: type = RunInfoParseError) -> float:
+    """Read the PI ``TimeZoneChoice`` of a document root: hours east of GMT.
+
+    ``<timeZone>`` is a decimal hour shift from GMT (``1.0``, ``-3.5``);
+    absent means GMT. ``<daylightSavingObservingTimeZone>`` names a zone with
+    daylight saving, which cannot be converted with a fixed offset and is
+    refused rather than read as GMT.
+    """
+    for child in root:
+        name = local_name(child.tag)
+        if name == "daylightSavingObservingTimeZone":
+            raise error(
+                "daylightSavingObservingTimeZone "
+                f"('{(child.text or '').strip()}') is not supported; export from "
+                "FEWS with a fixed <timeZone> offset (e.g. GMT)."
+            )
+        if name == "timeZone":
+            text = (child.text or "").strip()
+            if not text:
+                return 0.0
+            try:
+                return float(text)
+            except ValueError:
+                raise error(f"Invalid <timeZone> value: '{text}'") from None
+    return 0.0
+
+
+def _parse_fews_datetime(text: str, time_zone_hours: float = 0.0) -> datetime:
+    """Parse a text-form FEWS datetime into a timezone-aware UTC datetime.
+
+    A trailing ``Z`` marks the value as UTC; otherwise it is local time in the
+    file's time zone.
+    """
     text = text.strip()
     for fmt in _FEWS_DT_FORMATS:
         try:
             dt = datetime.strptime(text, fmt)
-            return dt.replace(tzinfo=timezone.utc)
         except ValueError:
             continue
+        if not fmt.endswith("Z"):
+            dt -= timedelta(hours=time_zone_hours)
+        return dt.replace(tzinfo=timezone.utc)
     raise RunInfoParseError(f"Cannot parse FEWS datetime: '{text}'")
+
+
+def _parse_date_time_attrs(date: str, time: Optional[str], time_zone_hours: float) -> datetime:
+    """Parse PI ``date``/``time`` attributes (local to the file's time zone)."""
+    stamp = f"{date.strip()}T{(time or '00:00:00').strip()}"
+    try:
+        dt = datetime.fromisoformat(stamp)
+    except ValueError:
+        raise RunInfoParseError(f"Cannot parse FEWS date/time: '{stamp}'") from None
+    dt -= timedelta(hours=time_zone_hours)
+    return dt.replace(tzinfo=timezone.utc)
 
 
 @dataclass(frozen=True)
 class RunInfo:
-    """Parsed contents of a FEWS run_info.xml file."""
+    """Parsed contents of a FEWS run_info.xml file.
+
+    All date-times are timezone-aware UTC; ``time_zone_hours`` records the
+    offset the run file used so output can be written back in the same zone.
+    """
 
     work_dir: Path
     input_dir: Path
@@ -54,6 +119,12 @@ class RunInfo:
     time_zero: Optional[datetime]
     time_step_seconds: Optional[int]
     properties: Dict[str, str] = field(default_factory=dict)
+    time_zone_hours: float = 0.0
+    input_timeseries_files: Tuple[Path, ...] = ()
+    input_netcdf_files: Tuple[Path, ...] = ()
+    output_timeseries_files: Tuple[Path, ...] = ()
+    output_netcdf_files: Tuple[Path, ...] = ()
+    output_diagnostic_file: Optional[Path] = None
 
     def to_config_overrides(self) -> Dict[str, Any]:
         """Convert run info into config overrides for SymfluenceConfig.
@@ -96,9 +167,22 @@ def parse_run_info(path: Path) -> RunInfo:
 
     root = tree.getroot()
 
+    # Namespace-agnostic child lookup (real run files are in the PI namespace)
+    children: Dict[str, List[ET.Element]] = {}
+    for child in root:
+        children.setdefault(local_name(child.tag), []).append(child)
+
+    def _elem(tag: str, required: bool = True) -> Optional[ET.Element]:
+        found = children.get(tag)
+        if not found:
+            if required:
+                raise RunInfoParseError(f"Missing required element <{tag}> in {path}")
+            return None
+        return found[0]
+
     def _text(tag: str, required: bool = True) -> Optional[str]:
-        elem = root.find(tag)
-        if elem is None or elem.text is None:
+        elem = _elem(tag, required=required)
+        if elem is None or elem.text is None or not elem.text.strip():
             if required:
                 raise RunInfoParseError(f"Missing required element <{tag}> in {path}")
             return None
@@ -110,6 +194,29 @@ def parse_run_info(path: Path) -> RunInfo:
             return None
         return Path(text)
 
+    def _paths(tag: str) -> Tuple[Path, ...]:
+        return tuple(
+            Path(e.text.strip()) for e in children.get(tag, [])
+            if e.text and e.text.strip()
+        )
+
+    time_zone_hours = parse_time_zone(root)
+
+    def _datetime(tag: str, required: bool = True) -> Optional[datetime]:
+        elem = _elem(tag, required=required)
+        if elem is None:
+            return None
+        if elem.get("date"):
+            # pi_run.xsd form: <startDateTime date="2023-01-01" time="00:00:00"/>
+            return _parse_date_time_attrs(elem.get("date", ""), elem.get("time"), time_zone_hours)
+        if elem.text and elem.text.strip():
+            return _parse_fews_datetime(elem.text, time_zone_hours)
+        if required:
+            raise RunInfoParseError(
+                f"<{tag}> in {path} has neither date/time attributes nor text"
+            )
+        return None
+
     work_dir = _path_elem("workDir") or path.parent
     input_dir = _path_elem("inputDir", required=False)
     if input_dir is None:
@@ -118,32 +225,39 @@ def parse_run_info(path: Path) -> RunInfo:
     if output_dir is None:
         output_dir = work_dir / "toFews"
 
-    start_text = _text("startDateTime", required=True)
-    end_text = _text("endDateTime", required=True)
-
-    start_time = _parse_fews_datetime(start_text)  # type: ignore[arg-type]
-    end_time = _parse_fews_datetime(end_text)  # type: ignore[arg-type]
-
-    time_zero_text = _text("time0", required=False)
-    time_zero = _parse_fews_datetime(time_zero_text) if time_zero_text else None
+    start_time = _datetime("startDateTime", required=True)
+    end_time = _datetime("endDateTime", required=True)
+    assert start_time is not None and end_time is not None  # required=True
+    if end_time < start_time:
+        raise RunInfoParseError(
+            f"endDateTime ({end_time}) is before startDateTime ({start_time}) in {path}"
+        )
+    time_zero = _datetime("time0", required=False)
 
     ts_text = _text("timeStep", required=False)
-    time_step_seconds = int(ts_text) if ts_text else None
+    try:
+        time_step_seconds = int(ts_text) if ts_text else None
+    except ValueError:
+        raise RunInfoParseError(f"Invalid <timeStep> '{ts_text}' in {path}") from None
 
     state_input_dir = _path_elem("stateInputDir", required=False)
     state_output_dir = _path_elem("stateOutputDir", required=False)
 
-    # Parse <properties> block
+    # <properties>: pi_sharedtypes.xsd uses <string|int|float|double|bool
+    # key=".." value=".."/> and <dateTime key=".." date=".." time=".."/>;
+    # hand-written files also use <KEY>value</KEY>.
     properties: Dict[str, str] = {}
-    props_elem = root.find("properties")
+    props_elem = _elem("properties", required=False)
     if props_elem is not None:
-        for prop in props_elem.findall("*"):
-            tag = prop.tag
-            # Handle both <key>value</key> and <property key="..." value="..."/> patterns
+        for prop in props_elem:
             if "key" in prop.attrib and "value" in prop.attrib:
                 properties[prop.attrib["key"]] = prop.attrib["value"]
-            elif prop.text is not None:
-                properties[tag] = prop.text.strip()
+            elif "key" in prop.attrib and "date" in prop.attrib:
+                properties[prop.attrib["key"]] = (
+                    f"{prop.attrib['date']}T{prop.attrib.get('time', '00:00:00')}"
+                )
+            elif prop.text is not None and local_name(prop.tag) != "description":
+                properties[local_name(prop.tag)] = prop.text.strip()
 
     return RunInfo(
         work_dir=work_dir,
@@ -156,4 +270,10 @@ def parse_run_info(path: Path) -> RunInfo:
         time_zero=time_zero,
         time_step_seconds=time_step_seconds,
         properties=properties,
+        time_zone_hours=time_zone_hours,
+        input_timeseries_files=_paths("inputTimeSeriesFile"),
+        input_netcdf_files=_paths("inputNetcdfFile"),
+        output_timeseries_files=_paths("outputTimeSeriesFile"),
+        output_netcdf_files=_paths("outputNetcdfFile"),
+        output_diagnostic_file=_path_elem("outputDiagnosticFile", required=False),
     )

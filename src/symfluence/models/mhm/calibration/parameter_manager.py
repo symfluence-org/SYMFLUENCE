@@ -17,6 +17,8 @@ from typing import Dict, List, Optional
 from symfluence.core.calibration.parameters.base_parameter_manager import BaseParameterManager
 from symfluence.core.registries import R
 
+from ..namelist import update_namelist_parameters
+
 
 @R.parameter_managers.add('MHM')
 class MHMParameterManager(BaseParameterManager):
@@ -153,17 +155,10 @@ class MHMParameterManager(BaseParameterManager):
         """
         Update mHM Fortran namelist (.nml) file with new parameter values.
 
-        Supports two formats:
-
-        1. **mhm_parameter.nml** (5-element tuple)::
-
-               paramName = lower, upper, value, FLAG, SCALING
-
-           Only the *value* (3rd element) is replaced.
-
-        2. **Legacy / mhm.nml** (single value)::
-
-               paramName = value
+        Delegates to :func:`symfluence.models.mhm.namelist.update_namelist_parameters`
+        (shared with the calibration worker): ``mhm_parameter.nml`` rows get
+        the value replaced and their lower/upper bounds widened to include
+        it; legacy ``mhm.nml`` entries are single values.
 
         Args:
             params: Dictionary of parameter names to values
@@ -176,57 +171,8 @@ class MHMParameterManager(BaseParameterManager):
                 self.logger.error(f"mHM namelist file not found: {self.namelist_path}")
                 return False
 
-            content = self.namelist_path.read_text(encoding='utf-8')
-
-            for param_name, value in params.items():
-                formatted_value = self._format_namelist_value(value)
-
-                if self._is_param_nml:
-                    # 5-column format: paramName = lower, upper, VALUE, flag, scaling
-                    pattern = re.compile(
-                        r'(^[ \t]*' + re.escape(param_name)
-                        + r'\s*=\s*'
-                        + r'[^,]+,'        # lower,
-                        + r'\s*[^,]+,'     # upper,
-                        + r'\s*)'          # whitespace before value
-                        + r'([^,]+)'       # VALUE  <-- group to replace
-                        + r'(,\s*\d+,\s*\d+)',  # , flag, scaling
-                        re.MULTILINE
-                    )
-                    match = pattern.search(content)
-                    if match:
-                        content = pattern.sub(
-                            r'\g<1>' + formatted_value + r'\g<3>',
-                            content
-                        )
-                        self.logger.debug(
-                            f"Updated {param_name} value = {formatted_value} "
-                            f"(5-column format)"
-                        )
-                    else:
-                        self.logger.warning(
-                            f"Parameter {param_name} not found in {self.namelist_path}"
-                        )
-                else:
-                    # Legacy single-value format
-                    pattern = re.compile(
-                        r'(^[ \t]*' + re.escape(param_name) + r'\s*=\s*)([^\s,!/]+)',
-                        re.MULTILINE
-                    )
-                    match = pattern.search(content)
-                    if match:
-                        content = pattern.sub(
-                            r'\g<1>' + formatted_value,
-                            content
-                        )
-                        self.logger.debug(f"Updated {param_name} = {formatted_value}")
-                    else:
-                        self.logger.warning(
-                            f"Parameter {param_name} not found in {self.namelist_path}"
-                        )
-
-            # Write updated content
-            self.namelist_path.write_text(content, encoding='utf-8')
+            update_namelist_parameters(
+                self.namelist_path, params, self.logger, is_param_nml=self._is_param_nml)
             return True
 
         except Exception as e:  # noqa: BLE001 — calibration resilience
@@ -234,29 +180,6 @@ class MHMParameterManager(BaseParameterManager):
             import traceback
             self.logger.debug(traceback.format_exc())
             return False
-
-    def _format_namelist_value(self, value: float) -> str:
-        """
-        Format a parameter value for Fortran namelist syntax.
-
-        Uses scientific notation for very small or very large values,
-        and fixed-point notation otherwise.
-
-        Args:
-            value: Parameter value to format
-
-        Returns:
-            Formatted string suitable for Fortran namelist
-        """
-        abs_val = abs(value)
-        if abs_val == 0.0:
-            return '0.0'
-        elif abs_val < 0.001 or abs_val >= 1e6:
-            return f'{value:.6e}'
-        elif abs_val == int(abs_val) and abs_val < 1e6:
-            return f'{value:.1f}'
-        else:
-            return f'{value:.6f}'
 
     def get_initial_parameters(self) -> Optional[Dict[str, float]]:
         """Get initial parameter values from namelist file or defaults.

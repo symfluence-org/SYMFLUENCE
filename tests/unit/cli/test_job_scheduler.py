@@ -298,40 +298,160 @@ class TestJobSubmission:
             job_scheduler.submit_slurm_job(execution_plan)
 
 
+def _proc(stdout=''):
+    return MagicMock(stdout=stdout, stderr='', returncode=0)
+
+
 class TestJobMonitoring:
     """Test SLURM job monitoring."""
 
     @patch('subprocess.run')
     @patch('time.sleep')  # Mock sleep to speed up test
     def test_monitor_until_completion(self, mock_sleep, mock_subprocess, job_scheduler):
-        """Test job monitoring until completion."""
-        # Mock squeue returning RUNNING then empty (job completed/removed from queue)
-        # squeue returns empty output when job is no longer in the queue
+        """The queue empties, then accounting says COMPLETED."""
         mock_subprocess.side_effect = [
-            MagicMock(stdout='12345 RUNNING\n', stderr='', returncode=0),
-            MagicMock(stdout='12345 RUNNING\n', stderr='', returncode=0),
-            MagicMock(stdout='', stderr='', returncode=0),  # Empty = job completed
+            _proc('12345 RUNNING\n'),
+            _proc('12345 RUNNING\n'),
+            _proc(''),               # squeue: no longer queued
+            _proc('COMPLETED|0:0\n'),  # sacct
         ]
 
-        job_scheduler._monitor_slurm_job('12345')
+        assert job_scheduler._monitor_slurm_job('12345') == ('COMPLETED', '0:0')
+        assert mock_subprocess.call_args_list[-1].args[0] == [
+            'sacct', '-j', '12345', '-X', '-o', 'State,ExitCode', '--parsable2', '-n']
 
-        # Should have called squeue 3 times
-        assert mock_subprocess.call_count == 3
+    @pytest.mark.parametrize("sacct_line,state", [
+        ('FAILED|1:0', 'FAILED'),
+        ('TIMEOUT|0:0', 'TIMEOUT'),
+        ('CANCELLED by 1234|0:15', 'CANCELLED'),
+        ('OUT_OF_MEMORY|0:125', 'OUT_OF_MEMORY'),
+    ])
+    @patch('subprocess.run')
+    @patch('time.sleep')
+    def test_monitor_failure_detection(self, mock_sleep, mock_subprocess, job_scheduler,
+                                       sacct_line, state):
+        """An empty squeue used to be reported as "completed" whatever happened."""
+        mock_subprocess.side_effect = [_proc(''), _proc(sacct_line + '\n')]
+
+        final_state, _ = job_scheduler._monitor_slurm_job('12345')
+
+        assert final_state == state
 
     @patch('subprocess.run')
     @patch('time.sleep')
-    def test_monitor_failure_detection(self, mock_sleep, mock_subprocess, job_scheduler):
-        """Test detection of job failure."""
-        # Job appears in queue then disappears (could be completed or failed)
+    def test_sacct_retries_through_accounting_lag(self, mock_sleep, mock_subprocess,
+                                                  job_scheduler):
         mock_subprocess.side_effect = [
-            MagicMock(stdout='12345 FAILED\n', stderr='', returncode=0),
-            MagicMock(stdout='', stderr='', returncode=0),  # Empty = job finished
-        ]
+            _proc(''), _proc(''), _proc('RUNNING|0:0\n'), _proc('COMPLETED|0:0\n')]
 
-        job_scheduler._monitor_slurm_job('12345')
+        assert job_scheduler._final_job_state('12345') == ('COMPLETED', '0:0')
 
-        # Should detect when job leaves queue
-        assert mock_subprocess.called
+    @patch('subprocess.run')
+    @patch('time.sleep')
+    def test_no_accounting_record_is_not_success(self, mock_sleep, mock_subprocess,
+                                                 job_scheduler):
+        mock_subprocess.return_value = _proc('')
+
+        assert job_scheduler._final_job_state('12345') == ('UNKNOWN', '')
+
+    @patch('builtins.open', new_callable=mock_open)
+    @patch('subprocess.run')
+    @patch('shutil.which')
+    def test_wait_on_failed_job_is_reported_as_failure(self, mock_which, mock_subprocess,
+                                                       mock_file, job_scheduler):
+        mock_which.return_value = '/usr/bin/sbatch'
+        mock_subprocess.return_value = _proc('Submitted batch job 777\n')
+        plan = {
+            'config_file': 'c.yaml', 'job_mode': 'workflow', 'job_steps': [],
+            'slurm_options': {
+                'job_name': 'j', 'job_time': '01:00:00', 'job_ntasks': 1,
+                'job_memory': '4G', 'submit_and_wait': True,
+            },
+        }
+        with patch.object(job_scheduler, '_monitor_slurm_job',
+                          return_value=('FAILED', '1:0')):
+            assert job_scheduler.handle_slurm_job_submission(plan) is False
+        assert job_scheduler.last_result['final_state'] == 'FAILED'
+        assert job_scheduler.last_result['job_id'] == '777'
+
+
+class TestScriptHardening:
+    """Generated script: optional activation, quoting, strict mode, templates."""
+
+    OPTS = {'job_name': 'run1', 'job_time': '01:00:00', 'job_ntasks': 1, 'job_memory': '4G'}
+
+    def _script(self, job_scheduler, steps=('workflow', 'run'), **options):
+        return job_scheduler._create_symfluence_slurm_script(
+            {'job_mode': 'workflow', 'job_steps': list(steps)},
+            {**self.OPTS, **options}, 'c.yaml')
+
+    def test_no_activation_lines_unless_configured(self, job_scheduler):
+        script = self._script(job_scheduler)
+        assert 'module restore' not in script
+        assert 'conda activate' not in script
+
+    def test_activation_is_quoted_and_precedes_strict_mode(self, job_scheduler):
+        script = self._script(job_scheduler, job_modules='my mods; rm -rf ~',
+                              conda_env='env name')
+        assert "module restore 'my mods; rm -rf ~'" in script
+        assert 'eval "$(conda shell.bash hook)"' in script
+        assert "conda activate 'env name'" in script
+        assert script.index('conda activate') < script.index('set -euo pipefail')
+        assert script.index('set -euo pipefail') < script.index('symfluence workflow run')
+
+    def test_command_failure_reaches_the_exit_code(self, job_scheduler):
+        script = self._script(job_scheduler)
+        assert 'symfluence workflow run --config c.yaml || exit_code=$?' in script
+        assert script.rstrip().endswith('exit $exit_code')
+
+    def test_script_is_valid_bash(self, job_scheduler):
+        import shutil
+        import subprocess
+        bash = shutil.which('bash')
+        if bash is None:
+            pytest.skip('bash not available')
+        script = self._script(job_scheduler, steps=('workflow', 'run', '--config', "my 'cfg'.yaml"),
+                              job_modules='m', conda_env='e', job_account='def-x')
+        assert subprocess.run([bash, '-n'], input=script, text=True).returncode == 0
+
+    @pytest.mark.parametrize("option,value", [
+        ('job_name', 'a b'), ('job_name', 'x\n#SBATCH --wrap=evil'),
+        ('job_account', 'acct; touch x'), ('job_partition', '$(id)'),
+        ('job_time', '1:00:00 --uid=0'),
+    ])
+    def test_unsafe_sbatch_values_are_refused(self, job_scheduler, option, value):
+        with pytest.raises(ValueError, match='Invalid value for SLURM option'):
+            self._script(job_scheduler, **{option: value})
+
+    def test_template_with_placeholder(self, job_scheduler, tmp_path):
+        template = tmp_path / 'job.sh'
+        template.write_text('#!/bin/bash\n#SBATCH --qos=high\nsource env.sh\n'
+                            '{{SYMFLUENCE_COMMAND}}\necho after\n')
+        script = self._script(job_scheduler, slurm_template=str(template))
+        assert script.startswith('#!/bin/bash\n#SBATCH --qos=high\nsource env.sh\n')
+        assert '#SBATCH --job-name' not in script
+        assert 'symfluence workflow run --config c.yaml || exit_code=$?' in script
+        assert script.rstrip().endswith('echo after')
+
+    def test_template_without_placeholder_gets_command_appended(self, job_scheduler, tmp_path):
+        template = tmp_path / 'job.sh'
+        template.write_text('#!/bin/bash\n#SBATCH --qos=high\n')
+        script = self._script(job_scheduler, slurm_template=str(template))
+        assert script.startswith('#!/bin/bash\n#SBATCH --qos=high\n')
+        assert script.rstrip().endswith('exit $exit_code')
+
+    def test_missing_template_is_an_error(self, job_scheduler, tmp_path):
+        with pytest.raises(FileNotFoundError, match='SLURM template not found'):
+            self._script(job_scheduler, slurm_template=str(tmp_path / 'nope.sh'))
+
+    def test_dry_run_writes_and_submits_nothing(self, job_scheduler, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        plan = {'config_file': 'c.yaml', 'job_mode': 'workflow', 'job_steps': [],
+                'dry_run': True, 'slurm_options': dict(self.OPTS)}
+        with patch('subprocess.run') as run:
+            assert job_scheduler.handle_slurm_job_submission(plan) is True
+        run.assert_not_called()
+        assert list(tmp_path.iterdir()) == []
 
 
 class TestHandleSlurmJobSubmission:

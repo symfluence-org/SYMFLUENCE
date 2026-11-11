@@ -32,6 +32,8 @@ from symfluence.core.modeling.netcdf_utils import create_netcdf_encoding
 from symfluence.core.path_resolver import find_basin_shapefile, find_catchment_subfile
 from symfluence.core.process_exec import run as run_subprocess
 
+from .elevation_band_manager import write_unit_bands
+
 if TYPE_CHECKING:
     from symfluence.core.config.models import SymfluenceConfig
 
@@ -445,89 +447,32 @@ class SubcatchmentProcessor(ConfigMixin):
             # Target elevation bands file for this subcatchment
             target_elev_file = self.forcing_fuse_path / f"{self.domain_name}_subcat_{subcat_id}_elev_bands.nc"
 
-            if source_elev_file.exists():
-                # For now, copy the main elevation bands file for each subcatchment
+            if not source_elev_file.exists():
+                raise ModelExecutionError(
+                    f"Elevation bands file not found: {source_elev_file}. "
+                    "Run FUSE preprocessing to create it."
+                )
+
+            with xr.open_dataset(source_elev_file) as bands:
+                unit_dims = [str(d) for d in bands.dims if d != 'elevation_band' and bands.sizes[d] > 1]
+            if not unit_dims:
+                # One band set for the whole domain: it is this subcatchment's too
                 shutil.copy2(source_elev_file, target_elev_file)
-                self.logger.debug(f"Created elevation bands file for subcatchment {subcat_id}")
+            elif len(unit_dims) == 1:
+                # Per-subcatchment bands: take this subcatchment's own
+                write_unit_bands(source_elev_file, target_elev_file, unit_dims[0], subcat_id)
             else:
-                self.logger.warning(f"Source elevation bands file not found: {source_elev_file}")
-                # Create a simple elevation bands file as fallback
-                self._create_simple_elevation_bands(target_elev_file, subcat_id)
+                raise ModelExecutionError(
+                    f"Cannot select subcatchment {subcat_id} from {source_elev_file}: "
+                    f"more than one spatial dimension ({unit_dims})"
+                )
+            self.logger.debug(f"Created elevation bands file for subcatchment {subcat_id}")
 
             return target_elev_file
 
         except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
             self.logger.error(f"Error creating elevation bands for subcatchment {subcat_id}: {str(e)}")
             raise
-
-    def _create_simple_elevation_bands(self, target_file: Path, subcat_id: int):
-        """
-        Create a simple elevation bands file as fallback.
-
-        Args:
-            target_file: Path to output elevation bands file
-            subcat_id: Subcatchment identifier
-        """
-        # Get catchment centroid for coordinates
-        catchment_path = self._get_catchment_path()
-        discretization = self._get_config_value(
-            lambda: self.config.domain.discretization,
-            default='GRUs',
-            dict_key='SUB_GRID_DISCRETIZATION'
-        )
-        catchment_name_col = self._get_config_value(
-            lambda: self.config.paths.catchment_name,
-            default='default',
-            dict_key='CATCHMENT_SHP_NAME'
-        )
-
-        if catchment_name_col == 'default':
-            catchment_name = f"{self.domain_name}_HRUs_{discretization}.shp"
-        else:
-            catchment_name = catchment_name_col
-
-        catchment = gpd.read_file(catchment_path / catchment_name)
-
-        # Calculate centroid
-        if catchment.crs is None:
-            catchment.set_crs(epsg=4326, inplace=True)
-        catchment_geo = catchment.to_crs(epsg=4326)
-        bounds = catchment_geo.total_bounds
-        lon = (bounds[0] + bounds[2]) / 2
-        lat = (bounds[1] + bounds[3]) / 2
-
-        # Create simple single elevation band
-        ds = xr.Dataset(
-            coords={
-                'longitude': ('longitude', [lon]),
-                'latitude': ('latitude', [lat]),
-                'elevation_band': ('elevation_band', [1])
-            }
-        )
-
-        # Add variables (single elevation band covering entire subcatchment)
-        for var_name, data, attrs in [
-            ('area_frac', [1.0], {'units': '-', 'long_name': 'Fraction of the catchment covered by each elevation band'}),
-            ('mean_elev', [1000.0], {'units': 'm asl', 'long_name': 'Mid-point elevation of each elevation band'}),
-            ('prec_frac', [1.0], {'units': '-', 'long_name': 'Fraction of catchment precipitation that falls on each elevation band'})
-        ]:
-            ds[var_name] = xr.DataArray(
-                np.array(data).reshape(1, 1, 1),
-                dims=['elevation_band', 'latitude', 'longitude'],
-                coords=ds.coords,
-                attrs=attrs
-            )
-
-        # Add coordinate attributes
-        ds.longitude.attrs = {'units': 'degreesE', 'long_name': 'longitude'}
-        ds.latitude.attrs = {'units': 'degreesN', 'long_name': 'latitude'}
-        ds.elevation_band.attrs = {'units': '-', 'long_name': 'elevation_band'}
-
-        # Save to file
-        encoding = {var: {'_FillValue': -9999.0, 'dtype': 'float32'} for var in ds.data_vars}
-        ds.to_netcdf(target_file, encoding=encoding)
-
-        self.logger.info(f"Created simple elevation bands file for subcatchment {subcat_id}")
 
     def combine_subcatchment_outputs(self, outputs: List[Tuple[int, Path]]):
         """
