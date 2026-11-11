@@ -46,6 +46,33 @@ class GRParameterManager(BaseParameterManager):
 
         self.gr_params = [p.strip() for p in str(gr_params_str).split(',') if p.strip()]
 
+        # Glacier mode is lumped-only: refuse at setup to calibrate a glacier
+        # parameter the distributed runner never reads.
+        from ..glacier import require_lumped_for_glacier
+        require_lumped_for_glacier(
+            not self._runs_distributed(),
+            bool(self._get_config_value(
+                lambda: self.config.model.gr.glacier_enabled, default=False, dict_key='GR_GLACIER_ENABLED'
+            )),
+            self.gr_params,
+        )
+
+    def _runs_distributed(self) -> bool:
+        """Whether the GR runner will take its distributed path (anything but lumped)."""
+        from symfluence.core.modeling.spatial_modes import SpatialMode
+        mode = self._get_config_value(
+            lambda: self.config.model.gr.spatial_mode, default='auto', dict_key='GR_SPATIAL_MODE'
+        )
+        if mode in (None, 'auto', 'default'):
+            method = self._get_config_value(
+                lambda: self.config.domain.definition_method, default='lumped',
+                dict_key='DOMAIN_DEFINITION_METHOD'
+            )
+            return str(method).lower() in (
+                'delineate', 'distributed', 'subset', 'semi_distributed', 'semidistributed'
+            )
+        return SpatialMode.from_string(str(mode)) != SpatialMode.LUMPED
+
     # ========================================================================
     # IMPLEMENT ABSTRACT METHODS
     # ========================================================================

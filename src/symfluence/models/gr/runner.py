@@ -14,13 +14,12 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
 import rasterio
-import rasterio.mask
 import xarray as xr
 
 from symfluence.core.constants import UnitConversion
@@ -34,6 +33,13 @@ from symfluence.core.modeling.utilities.periods import parse_period
 from symfluence.core.registries import R
 
 from ..mizuroute.mixins import MizuRouteConfigMixin
+from .glacier import require_lumped_for_glacier
+from .hypsometry import (
+    catchment_hypsometry,
+    flat_hypsometry,
+    hypsometry,
+    masked_dem_elevations,
+)
 from .r_environment import (
     configure_r_dll_search,
     describe_rpy2_import_failure,
@@ -189,6 +195,10 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
 
         self.needs_routing = self._check_routing_requirements()
 
+        # Glacier mode exists only in the lumped path; fail at setup rather
+        # than run a distributed model that silently ignores it.
+        require_lumped_for_glacier(self.spatial_mode == SpatialMode.LUMPED, self._glacier_enabled(), ())
+
     def _setup_model_specific_paths(self) -> None:
         """Set up GR-specific paths."""
         # Catchment paths (use backward-compatible path resolution)
@@ -225,6 +235,10 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
             self.logger.debug(f"Using external parameters for calibration: {params}")
             self._external_params = params
             self._skip_calibration = True
+            # Glacier mode is lumped-only: refuse to run with an inert ICE_DDF.
+            require_lumped_for_glacier(
+                self.spatial_mode == SpatialMode.LUMPED, self._glacier_enabled(), params
+            )
 
         with symfluence_error_handler(
             "GR model execution",
@@ -573,26 +587,16 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
             n_hrus = len(ds.hru)
             self.logger.debug(f"Running GR4J for {n_hrus} HRUs")
 
-            # Load DEM for hypsometric curve (use catchment-wide for now)
-            dem_path = self.project_attributes_dir / 'elevation' / 'dem' / f"domain_{self.domain_name}_elv.tif"
-            catchment = gpd.read_file(self.catchment_path / self.catchment_name)
-
-            with rasterio.open(dem_path) as src:
-                if catchment.crs != src.crs:
-                    catchment = catchment.to_crs(src.crs)
-                fill_value = src.nodata if src.nodata is not None else 0
-                out_image, out_transform = rasterio.mask.mask(
-                    src, catchment.geometry, crop=True, nodata=fill_value
-                )
-                masked_dem = out_image[0]
-                masked_dem = masked_dem[masked_dem != fill_value]
-                if masked_dem.size == 0:
-                    raise ValueError(f"No valid DEM pixels after masking with catchment. Check DEM at {dem_path}")
-                Hypso = np.percentile(masked_dem, np.arange(0, 101, 1))
-                Zmean = np.mean(masked_dem)
-                self.logger.debug(f"DEM: {masked_dem.size} valid pixels, "
-                                  f"elev range [{masked_dem.min():.1f}, {masked_dem.max():.1f}] m, "
-                                  f"mean={Zmean:.1f} m")
+            # Hypsometry of each HRU (its forcing is already HRU-specific, so
+            # CemaNeige must spread it over the HRU's own elevation range, not
+            # the whole catchment's), the forcing corrections and the number
+            # of snow layers -- the same inputs the lumped path uses.
+            hru_ids = [
+                int(ds.hru_id.values[i]) if 'hru_id' in ds else i + 1 for i in range(n_hrus)
+            ]
+            hypsometries = self._distributed_hypsometries(hru_ids, 'hru_id' in ds)
+            forcing = self._forcing_corrections()
+            n_layers = int(self._get_config_value(lambda: self.config.model.gr.snow_layers, default=5))
 
             # Get simulation periods
             time_start = pd.to_datetime(self.time_start)
@@ -623,7 +627,7 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
 
             # Loop through each HRU
             for hru_idx in range(n_hrus):
-                hru_id = int(ds.hru_id.values[hru_idx]) if 'hru_id' in ds else hru_idx + 1
+                hru_id = hru_ids[hru_idx]
                 self.logger.info(f"Processing HRU {hru_id} ({hru_idx + 1}/{n_hrus})")
 
                 # Extract data for this HRU
@@ -642,62 +646,11 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
                 hru_df.to_csv(temp_csv, index=False)
 
                 # Run GR4J for this HRU
-                r_script = f'''
-                    library(airGR)
-
-                    # Load HRU data
-                    BasinObs <- read.csv({r_path(temp_csv)})
-
-                    # Preparation of InputsModel
-                    InputsModel <- CreateInputsModel(
-                        FUN_MOD = RunModel_CemaNeigeGR4J,
-                        DatesR = as.POSIXct(BasinObs$time),
-                        Precip = BasinObs$pr,
-                        PotEvap = BasinObs$pet,
-                        TempMean = BasinObs$temp,
-                        HypsoData = c({', '.join(map(str, Hypso))}),
-                        ZInputs = {Zmean}
-                    )
-
-                    # Parse dates and validate indices
-                    date_vector <- format(as.Date(BasinObs$time), "%Y-%m-%d")
-
-                    # Find indices with validation
-                    Ind_Warm <- which(date_vector >= "{spinup_start}" & date_vector <= "{spinup_end}")
-                    Ind_Run <- which(date_vector >= "{run_start}" & date_vector <= "{run_end}")
-
-                    # Validate date ranges overlap with forcing data
-                    if (length(Ind_Run) < 1) {{
-                        forcing_range <- paste(min(as.Date(date_vector)), "to", max(as.Date(date_vector)))
-                        stop(paste0("GR date mismatch for HRU {hru_id}: Requested {run_start} to {run_end} ",
-                                   "but forcing data covers ", forcing_range))
-                    }}
-
-                    # Use parameters
-                    Param <- {param_str}
-
-                    # Preparation of RunOptions
-                    RunOptions <- CreateRunOptions(
-                        FUN_MOD = RunModel_CemaNeigeGR4J,
-                        InputsModel = InputsModel,
-                        IndPeriod_WarmUp = Ind_Warm,
-                        IndPeriod_Run = Ind_Run,
-                        IsHyst = TRUE
-                    )
-
-                    # Run model
-                    OutputsModel <- RunModel_CemaNeigeGR4J(
-                        InputsModel = InputsModel,
-                        RunOptions = RunOptions,
-                        Param = Param
-                    )
-
-                    # Extract results
-                    data.frame(
-                        date = format(OutputsModel$DatesR, "%Y-%m-%d"),
-                        q_routed = OutputsModel$Qsim
-                    )
-                '''
+                hypso, z_mean = hypsometries[hru_idx]
+                r_script = self._distributed_r_script(
+                    temp_csv, hru_id, hypso, z_mean, n_layers, forcing, param_str,
+                    (spinup_start, spinup_end), (run_start, run_end),
+                )
 
                 # Execute R script
                 result_df = run_r_script(robjects, r_script, "distributed GR4J script")
@@ -749,6 +702,136 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
                     shutil.rmtree(temp_dir)
                 except Exception as cleanup_error:  # noqa: BLE001 — model execution resilience
                     self.logger.warning(f"Failed to clean up temp directory {temp_dir}: {cleanup_error}", exc_info=True)
+
+    def _distributed_hypsometries(self, hru_ids: List[int], ids_from_forcing: bool) -> List[Tuple[np.ndarray, Any]]:
+        """``(HypsoData, ZInputs)`` for each HRU of the distributed forcing, in order.
+
+        The preprocessor writes HRU *i* of the forcing from row *i* of the
+        catchment shapefile (``hru_id`` = its ``GRU_ID``), so rows are matched
+        by position and, where both carry ids, checked (and if need be
+        re-ordered) by id. Each HRU's hypsometry comes from the DEM pixels
+        inside its polygon; an HRU without any valid DEM pixel uses its mean
+        elevation attribute with a flat hypsometry. An HRU with no elevation
+        information at all is an error.
+        """
+        dem_path = self.project_attributes_dir / 'elevation' / 'dem' / f"domain_{self.domain_name}_elv.tif"
+        catchment = gpd.read_file(self.catchment_path / self.catchment_name)
+        if len(catchment) != len(hru_ids):
+            raise ModelExecutionError(
+                f"GR distributed forcing has {len(hru_ids)} HRUs but the catchment shapefile "
+                f"{self.catchment_name} has {len(catchment)} features; cannot assign hypsometry per HRU"
+            )
+        rows = list(range(len(hru_ids)))
+        if ids_from_forcing and 'GRU_ID' in catchment.columns:
+            shp_ids = [int(v) for v in catchment['GRU_ID'].values]
+            if shp_ids != hru_ids:
+                position = {gru_id: i for i, gru_id in enumerate(shp_ids)}
+                if len(position) != len(shp_ids) or set(position) != set(hru_ids):
+                    raise ModelExecutionError(
+                        "GR distributed forcing hru_id values do not match the GRU_ID values of "
+                        f"{self.catchment_name}; re-run GR preprocessing"
+                    )
+                rows = [position[hru_id] for hru_id in hru_ids]
+
+        elev_col = self._get_config_value(
+            lambda: self.config.paths.catchment_elev, default='elev_mean', dict_key='CATCHMENT_SHP_ELEV'
+        )
+        out: List[Tuple[np.ndarray, Any]] = []
+        flat: List[int] = []
+        with rasterio.open(dem_path) as src:
+            if catchment.crs != src.crs:
+                catchment = catchment.to_crs(src.crs)
+            for hru_id, row in zip(hru_ids, rows):
+                elevations = masked_dem_elevations(src, catchment.geometry.iloc[[row]])
+                if elevations.size:
+                    out.append(hypsometry(elevations))
+                    continue
+                z = catchment[elev_col].iloc[row] if elev_col in catchment.columns else None
+                if z is None or not np.isfinite(float(z)):
+                    raise ModelExecutionError(
+                        f"GR HRU {hru_id}: no valid DEM pixels inside the HRU ({dem_path}) and no "
+                        f"'{elev_col}' attribute; cannot build its CemaNeige hypsometry"
+                    )
+                out.append(flat_hypsometry(float(z)))
+                flat.append(hru_id)
+        if flat:
+            self.logger.warning(
+                f"GR: {len(flat)} HRU(s) contain no valid DEM pixel; using their '{elev_col}' "
+                f"with a flat hypsometry (HRU ids: {flat[:10]}{' ...' if len(flat) > 10 else ''})"
+            )
+        return out
+
+    @staticmethod
+    def _distributed_r_script(
+        temp_csv: Path, hru_id: int, hypso: Any, z_mean: Any, n_layers: int,
+        forcing: Dict[str, float], param_str: str,
+        spinup: Tuple[str, str], run: Tuple[str, str],
+    ) -> str:
+        """airGR script running CemaNeige-GR4J for one HRU.
+
+        Applies the same forcing corrections (``PCORR`` multiplier, ``TCORR``
+        offset) and ``NLayers`` as the lumped script, with the HRU's own
+        hypsometry.
+        """
+        spinup_start, spinup_end = spinup
+        run_start, run_end = run
+        return f'''
+            library(airGR)
+
+            # Load HRU data
+            BasinObs <- read.csv({r_path(temp_csv)})
+
+            # Preparation of InputsModel
+            InputsModel <- CreateInputsModel(
+                FUN_MOD = RunModel_CemaNeigeGR4J,
+                DatesR = as.POSIXct(BasinObs$time),
+                Precip = BasinObs$pr * {forcing['PCORR']},
+                PotEvap = BasinObs$pet,
+                TempMean = BasinObs$temp + {forcing['TCORR']},
+                HypsoData = c({', '.join(map(str, hypso))}),
+                ZInputs = {z_mean},
+                NLayers = {int(n_layers)}
+            )
+
+            # Parse dates and validate indices
+            date_vector <- format(as.Date(BasinObs$time), "%Y-%m-%d")
+
+            # Find indices with validation
+            Ind_Warm <- which(date_vector >= "{spinup_start}" & date_vector <= "{spinup_end}")
+            Ind_Run <- which(date_vector >= "{run_start}" & date_vector <= "{run_end}")
+
+            # Validate date ranges overlap with forcing data
+            if (length(Ind_Run) < 1) {{
+                forcing_range <- paste(min(as.Date(date_vector)), "to", max(as.Date(date_vector)))
+                stop(paste0("GR date mismatch for HRU {hru_id}: Requested {run_start} to {run_end} ",
+                           "but forcing data covers ", forcing_range))
+            }}
+
+            # Use parameters
+            Param <- {param_str}
+
+            # Preparation of RunOptions
+            RunOptions <- CreateRunOptions(
+                FUN_MOD = RunModel_CemaNeigeGR4J,
+                InputsModel = InputsModel,
+                IndPeriod_WarmUp = Ind_Warm,
+                IndPeriod_Run = Ind_Run,
+                IsHyst = TRUE
+            )
+
+            # Run model
+            OutputsModel <- RunModel_CemaNeigeGR4J(
+                InputsModel = InputsModel,
+                RunOptions = RunOptions,
+                Param = Param
+            )
+
+            # Extract results
+            data.frame(
+                date = format(OutputsModel$DatesR, "%Y-%m-%d"),
+                q_routed = OutputsModel$Qsim
+            )
+        '''
 
     def _save_distributed_results_for_routing(self, results_df, forcing_ds):
         """
@@ -922,32 +1005,13 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
             if len(default_params) != 4:
                 raise ValueError("GR_DEFAULT_PARAMS must contain 4 values for X1, X2, X3, X4")
 
-            # Read DEM
+            # Catchment hypsometry from the DEM (CemaNeige elevation layers)
             dem_path = self.project_attributes_dir / 'elevation' / 'dem' / f"domain_{self.domain_name}_elv.tif"
-            with rasterio.open(dem_path) as src:
-                src.read(1)
-
-            # Read catchment and get centroid
             catchment = gpd.read_file(self.catchment_path / self.catchment_name)
-
-            # Mask DEM with catchment boundary
-            with rasterio.open(dem_path) as src:
-                if catchment.crs != src.crs:
-                    catchment = catchment.to_crs(src.crs)
-                # Use a known fill value so we can reliably filter masked pixels
-                fill_value = src.nodata if src.nodata is not None else 0
-                out_image, out_transform = rasterio.mask.mask(
-                    src, catchment.geometry, crop=True, nodata=fill_value
-                )
-                masked_dem = out_image[0]
-                masked_dem = masked_dem[masked_dem != fill_value]
-                if masked_dem.size == 0:
-                    raise ValueError(f"No valid DEM pixels after masking with catchment. Check DEM at {dem_path}")
-                Hypso = np.percentile(masked_dem, np.arange(0, 101, 1))
-                Zmean = np.mean(masked_dem)
-                self.logger.debug(f"DEM: {masked_dem.size} valid pixels, "
-                                  f"elev range [{masked_dem.min():.1f}, {masked_dem.max():.1f}] m, "
-                                  f"mean={Zmean:.1f} m")
+            Hypso, Zmean, masked_dem = catchment_hypsometry(dem_path, catchment)
+            self.logger.debug(f"DEM: {masked_dem.size} valid pixels, "
+                              f"elev range [{masked_dem.min():.1f}, {masked_dem.max():.1f}] m, "
+                              f"mean={Zmean:.1f} m")
 
             time_start = pd.to_datetime(self.time_start)
             time_end = pd.to_datetime(self.time_end)
