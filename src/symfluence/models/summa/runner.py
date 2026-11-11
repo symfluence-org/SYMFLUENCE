@@ -28,6 +28,7 @@ import pandas as pd
 import xarray as xr
 
 from symfluence.core.modeling.execution import ExecutionResult, SlurmJobConfig
+from symfluence.core.modeling.mixins.slurm_execution import SlurmJobNotMonitoredError
 from symfluence.core.modeling.state import ModelState, StateCapableMixin, StateFormat, StateMetadata
 from symfluence.core.modeling.templates import ModelRunResult, UnifiedModelRunner
 from symfluence.core.registries import R
@@ -280,6 +281,8 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
 
         Delegates to appropriate execution method based on configuration.
         """
+        self._unmonitored_slurm_job_id: Optional[str] = None
+
         # Check for point mode
         if self.domain_definition_method == 'point':
             output = self.run_summa_point()
@@ -297,6 +300,14 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
         # must raise so downstream routing never consumes unfinished output.
         if output is None:
             from symfluence.core.exceptions import ModelExecutionError
+            unmonitored_job = getattr(self, '_unmonitored_slurm_job_id', None)
+            if unmonitored_job is not None:
+                # Submitted, not finished: say exactly that instead of the
+                # generic failure below (nothing failed, and there is no
+                # "underlying failure" in the SUMMA log to look for).
+                raise SlurmJobNotMonitoredError(
+                    self._unmonitored_submission_message(unmonitored_job), job_id=unmonitored_job
+                )
             raise ModelExecutionError(
                 'SUMMA did not complete successfully; downstream routing is blocked. '
                 'See the SUMMA execution log for the underlying failure.'
@@ -380,10 +391,11 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
         if result.success and not self.slurm_job_finished(result):
             # A bare sbatch is not a finished run: merging now would stitch
             # together whatever chunk files a previous run left behind.
-            self.logger.warning(
-                f"SLURM job {result.job_id} was submitted without monitoring "
-                f"(MONITOR_SLURM_JOB is off); it has not finished, so outputs "
-                f"are not merged. Re-run this step once the job has completed."
+            # run_summa() reports this as "submitted, not monitored".
+            self._unmonitored_slurm_job_id = str(result.job_id)
+            self.logger.info(
+                f"SUMMA SLURM job array {result.job_id} submitted; not monitored "
+                f"(MONITOR_SLURM_JOB is off), so outputs are not merged."
             )
             return None
 
@@ -480,6 +492,32 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
         except Exception as e:  # noqa: BLE001 — model execution resilience
             self.logger.error(f"Error merging outputs: {e}", exc_info=True)
             return None
+
+    def merge_parallel_outputs(self) -> Optional[Path]:
+        """Merge the per-chunk outputs of a GRU-parallel run that finished elsewhere.
+
+        For a SLURM job array submitted with ``MONITOR_SLURM_JOB: false``:
+        once every array task has completed, this stitches
+        ``{experiment_id}_*_timestep.nc`` / ``_day.nc`` in the output
+        directory into the unified files and checks their time coverage.
+        Returns the output directory, or None when merging failed.
+        """
+        return self._merge_parallel_outputs()
+
+    def _unmonitored_submission_message(self, job_id: str) -> str:
+        """What an unmonitored SLURM submission means and what to do next."""
+        return (
+            f"SUMMA was submitted as SLURM job array {job_id} and is not monitored "
+            f"(MONITOR_SLURM_JOB: false). Submitted, not finished: this is the expected outcome "
+            f"of an unmonitored submission, not a model failure, but the step is not complete - "
+            f"no outputs were merged and downstream steps (routing, evaluation) must wait. "
+            f"Check the job with 'squeue -j {job_id}' or 'sacct -j {job_id}'. When every array "
+            f"task has completed, merge the chunk outputs in {self.output_dir} "
+            f"({self.experiment_id}_*_timestep.nc, {self.experiment_id}_*_day.nc) with "
+            f"SummaRunner(config, logger).merge_parallel_outputs() and run the remaining workflow "
+            f"steps individually. Re-running this step submits a new job array; to have SYMFLUENCE "
+            f"wait for the job and merge by itself, set MONITOR_SLURM_JOB: true."
+        )
 
     def _merge_files(self, pattern: str, output_file: Path) -> None:
         """Merge files matching pattern into output file."""

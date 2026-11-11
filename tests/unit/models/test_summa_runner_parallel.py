@@ -175,3 +175,82 @@ def test_parallel_summa_unknown_backend_returns_none(tmp_path):
     assert result is None
     runner._run_parallel_summa_local.assert_not_called()
     runner._run_parallel_summa_slurm.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# MONITOR_SLURM_JOB: false -- submitted, not monitored
+# ---------------------------------------------------------------------------
+
+def _slurm_runner(tmp_path, result):
+    runner = make_summa_runner(tmp_path, backend='slurm')
+    runner.output_dir = tmp_path / 'output'
+    runner.output_dir.mkdir()
+    runner.is_slurm_available = MagicMock(return_value=True)
+    runner._count_grus = MagicMock(return_value=4)
+    runner._pre_execution = MagicMock(return_value=True)
+    runner.get_log_path = MagicMock(return_value=tmp_path / 'logs')
+    runner.submit_slurm_job = MagicMock(return_value=result)
+    runner._merge_parallel_outputs = MagicMock(return_value=runner.output_dir)
+    return runner
+
+
+def test_unmonitored_slurm_submission_is_reported_as_submitted_not_failed(tmp_path, caplog):
+    import pytest
+
+    from symfluence.core.exceptions import ModelExecutionError
+    from symfluence.core.modeling.execution import ExecutionResult
+    from symfluence.core.modeling.mixins.slurm_execution import SlurmJobNotMonitoredError
+
+    submitted = ExecutionResult(
+        success=True, return_code=0, job_id='4242',
+        metadata={'status': 'submitted', 'finished': False},
+    )
+    runner = _slurm_runner(tmp_path, submitted)
+
+    with caplog.at_level(logging.INFO), pytest.raises(SlurmJobNotMonitoredError) as excinfo:
+        runner.run_summa()
+
+    # still a step failure for the workflow (not marked complete, exit 14) ...
+    assert isinstance(excinfo.value, ModelExecutionError)
+    assert excinfo.value.job_id == '4242'
+    runner._merge_parallel_outputs.assert_not_called()
+    # ... but it says what happened and what to do, not "did not complete successfully"
+    message = str(excinfo.value)
+    assert 'job array 4242' in message
+    assert 'not monitored' in message and 'MONITOR_SLURM_JOB' in message
+    assert 'not a model failure' in message
+    assert 'squeue -j 4242' in message
+    assert 'merge_parallel_outputs()' in message
+    assert 'did not complete successfully' not in message
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+def test_monitored_slurm_run_merges_and_completes(tmp_path):
+    from symfluence.core.modeling.execution import ExecutionResult
+
+    finished = ExecutionResult(success=True, return_code=0, job_id='4242', metadata={'status': 'COMPLETED'})
+    runner = _slurm_runner(tmp_path, finished)
+
+    assert runner.run_summa() == runner.output_dir
+    runner._merge_parallel_outputs.assert_called_once()
+
+
+def test_failed_slurm_run_keeps_the_generic_failure(tmp_path):
+    import pytest
+
+    from symfluence.core.exceptions import ModelExecutionError
+    from symfluence.core.modeling.execution import ExecutionResult
+    from symfluence.core.modeling.mixins.slurm_execution import SlurmJobNotMonitoredError
+
+    failed = ExecutionResult(success=False, return_code=1, job_id='4242', error_message='boom')
+    runner = _slurm_runner(tmp_path, failed)
+
+    with pytest.raises(ModelExecutionError, match='did not complete successfully') as excinfo:
+        runner.run_summa()
+    assert not isinstance(excinfo.value, SlurmJobNotMonitoredError)
+
+
+def test_merge_parallel_outputs_is_callable_after_the_job_finished(tmp_path):
+    runner = make_summa_runner(tmp_path, backend='slurm')
+    runner._merge_parallel_outputs = MagicMock(return_value=tmp_path)
+    assert runner.merge_parallel_outputs() == tmp_path
