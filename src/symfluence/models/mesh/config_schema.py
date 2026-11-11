@@ -73,7 +73,7 @@ class MESHConfig(BaseModel):
     # Lumped mode enforcement settings
     force_single_gru: bool = Field(default=True, alias='MESH_FORCE_SINGLE_GRU')
     apply_params_all_grus: bool = Field(default=True, alias='MESH_APPLY_PARAMS_ALL_GRUS')
-    use_landcover_multipliers: bool = Field(default=True, alias='MESH_USE_LANDCOVER_MULTIPLIERS')
+    use_landcover_multipliers: bool = Field(default=False, alias='MESH_USE_LANDCOVER_MULTIPLIERS')
     enable_frozen_soil: bool = Field(default=True, alias='MESH_ENABLE_FROZEN_SOIL')
     frozen_soil_parameters: Optional[MESHFrozenSoilConfig] = Field(default=None, alias='MESH_FROZEN_SOIL_PARAMETERS')
     daily_tolerance_days: int = Field(default=1, alias='MESH_DAILY_TOLERANCE_DAYS')

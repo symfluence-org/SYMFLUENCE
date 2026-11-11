@@ -798,7 +798,6 @@ src/symfluence/models/lstm/calibration/worker.py:LSTMWorker.evaluate:except Exce
 src/symfluence/models/lstm/plotter.py:LSTMPlotter.plot_results:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/lstm/postprocessor.py:LSTMPostProcessor.extract_streamflow:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/lstm/visualizer.py:visualize_lstm:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/mesh/calibration/parameter_manager.py:MESHParameterManager._build_block_to_nalcms_mapping:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/mesh/calibration/parameter_manager.py:MESHParameterManager._read_param_from_file:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/mesh/calibration/parameter_manager.py:MESHParameterManager._update_class_file:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/mesh/calibration/parameter_manager.py:MESHParameterManager._update_ini_file:except Exception as e:  # noqa: BLE001 — calibration resilience
