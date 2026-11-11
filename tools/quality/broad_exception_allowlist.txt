@@ -1130,7 +1130,6 @@ src/symfluence/models/vic/extractor.py:VICResultExtractor.extract_variable:excep
 src/symfluence/models/vic/postprocessor.py:VICPostProcessor.extract_streamflow:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/vic/preprocessor.py:VICPreProcessor._compute_elevation_bands:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/vic/preprocessor.py:VICPreProcessor._generate_distributed_domain:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/vic/preprocessor.py:VICPreProcessor._generate_forcing_files:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/vic/preprocessor.py:VICPreProcessor._load_forcing_data:except Exception:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/vic/preprocessor.py:VICPreProcessor.run_preprocessing:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/watflood/calibration/optimizer.py:WATFLOODModelOptimizer.run_final_evaluation:except Exception as e:  # noqa: BLE001 — calibration resilience
