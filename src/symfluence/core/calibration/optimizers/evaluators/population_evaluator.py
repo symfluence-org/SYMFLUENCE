@@ -367,6 +367,7 @@ class PopulationEvaluator:
     def evaluate_solution(
         self,
         normalized_params: np.ndarray,
+        *,
         proc_id: int = 0
     ) -> float:
         """
@@ -374,7 +375,8 @@ class PopulationEvaluator:
 
         Args:
             normalized_params: Normalized parameters [0, 1]
-            proc_id: Process ID for parallel execution
+            proc_id: Process ID whose directories the evaluation uses
+                (keyword-only: an iteration counter must not end up here)
 
         Returns:
             Fitness score
