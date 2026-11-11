@@ -10,7 +10,7 @@ config system through ``R.config_schemas`` (via the model manifest /
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -54,7 +54,13 @@ class MESHConfig(BaseModel):
     landcover_stats_file: str = Field(default='default', alias='MESH_LANDCOVER_STATS_FILE')
     main_id: str = Field(default='default', alias='MESH_MAIN_ID')
     ds_main_id: str = Field(default='default', alias='MESH_DS_MAIN_ID')
-    landcover_classes: str = Field(default='default', alias='MESH_LANDCOVER_CLASSES')
+    # 'default' = the table of the detected classification, or {class id: name}
+    # (with MESH_GRU_MAPPING {class id: CLASS type}) for any other classification.
+    landcover_classes: Union[str, Dict[int, str]] = Field(default='default', alias='MESH_LANDCOVER_CLASSES')
+    # Classification of the class ids in the land-cover statistics: 'nalcms',
+    # 'igbp' (MODIS MCD12Q1), or 'default' = detect (IGBP_<id> columns from the
+    # framework's MODIS statistics -> igbp; prepared frac_<id> tables -> nalcms).
+    landcover_classification: str = Field(default='default', alias='MESH_LANDCOVER_CLASSIFICATION')
     ddb_vars: str = Field(default='default', alias='MESH_DDB_VARS')
     ddb_units: str = Field(default='default', alias='MESH_DDB_UNITS')
     ddb_to_units: str = Field(default='default', alias='MESH_DDB_TO_UNITS')

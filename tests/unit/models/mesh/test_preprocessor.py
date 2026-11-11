@@ -155,7 +155,7 @@ class TestMESHConfigCreation:
 
         # Mock the data_preprocessor to avoid file I/O
         with patch.object(preprocessor, '_data_preprocessor') as mock_data_proc:
-            mock_data_proc.detect_gru_classes.return_value = ['IGBP_10']
+            mock_data_proc.detect_gru_classes.return_value = [10]
 
             config = preprocessor._create_meshflow_config()
 
@@ -172,7 +172,7 @@ class TestMESHConfigCreation:
         preprocessor = MESHPreProcessor(mesh_config, mock_logger)
 
         with patch.object(preprocessor, '_data_preprocessor') as mock_data_proc:
-            mock_data_proc.detect_gru_classes.return_value = ['IGBP_10']
+            mock_data_proc.detect_gru_classes.return_value = [10]
 
             config = preprocessor._create_meshflow_config()
 
