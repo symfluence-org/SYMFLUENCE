@@ -12,7 +12,11 @@ import pandas as pd
 import pytest
 import xarray as xr
 
-from symfluence.core.modeling.mixins.pet_calculator import PETCalculatorMixin
+from symfluence.core.modeling.mixins.pet_calculator import (
+    PETCalculatorMixin,
+    day_length_hours,
+    hamon_pet,
+)
 
 
 class MockPreProcessor(PETCalculatorMixin):
@@ -155,7 +159,7 @@ class TestHamonPET:
         assert isinstance(pet, xr.DataArray)
         assert len(pet) == 365
         assert pet.attrs['units'] == 'mm/day'
-        assert pet.attrs['method'] == 'Hamon (1961)'
+        assert pet.attrs['method'] == 'Hamon (1961), Lu et al. (2005) form'
 
         # Check reasonable values
         assert float(pet.mean()) > 0
@@ -322,21 +326,18 @@ class TestHamonNumpyPET:
         assert (pet >= 0).all()
         assert pet.mean() > 0
 
-    def test_coefficient_0_55(self):
-        """Test 0.55 coefficient (SAC-SMA/HBV variant)."""
+    def test_coefficient_0_55_refused(self):
+        """0.55 is the inches/day coefficient of the removed (D/12)^2 variant."""
+        with pytest.raises(ValueError, match='0.55'):
+            PETCalculatorMixin.hamon_pet_numpy(np.array([15.0]), np.array([80]), lat=45.0, coefficient=0.55)
+
+    def test_coefficient_scales_linearly(self):
+        """The coefficient is Lu et al.'s calibration coefficient."""
         temp = 15.0 * np.ones(365)
         doy = np.arange(1, 366)
-        pet = PETCalculatorMixin.hamon_pet_numpy(temp, doy, lat=45.0, coefficient=0.55)
-
-        assert 0.5 < pet.mean() < 5.0
-
-    def test_coefficient_0_1651(self):
-        """Test 0.1651 coefficient (original Hamon 1961 variant)."""
-        temp = 15.0 * np.ones(365)
-        doy = np.arange(1, 366)
-        pet = PETCalculatorMixin.hamon_pet_numpy(temp, doy, lat=45.0, coefficient=0.1651)
-
-        assert 0.1 < pet.mean() < 5.0
+        base = PETCalculatorMixin.hamon_pet_numpy(temp, doy, lat=45.0)
+        scaled = PETCalculatorMixin.hamon_pet_numpy(temp, doy, lat=45.0, coefficient=2 * 0.1651)
+        np.testing.assert_allclose(scaled, 2 * base)
 
     def test_subzero_temp(self):
         """Test that sub-zero temperatures still return non-negative PET."""
@@ -420,21 +421,15 @@ class TestThornthwaiteNumpyPET:
 class TestNumpyXarrayConsistency:
     """Test that numpy and xarray PET methods produce consistent results."""
 
-    def test_hamon_numpy_variants_reasonable(self):
-        """Verify both Hamon numpy variants produce physically reasonable PET."""
-        time = pd.date_range('2020-01-01', periods=365, freq='D')
+    def test_hamon_numpy_matches_xarray(self):
+        """The numpy and xarray Hamon entry points are one implementation."""
+        time = pd.date_range('2021-01-01', periods=365, freq='D')
         temp_vals = 15 + 10 * np.sin(2 * np.pi * np.arange(365) / 365)
-        doy = np.asarray(time.dayofyear)
-        lat = 45.0
-
-        pet_055 = PETCalculatorMixin.hamon_pet_numpy(temp_vals, doy, lat, coefficient=0.55)
-        pet_1651 = PETCalculatorMixin.hamon_pet_numpy(temp_vals, doy, lat, coefficient=0.1651)
-
-        # Both should be non-negative with reasonable means
-        assert (pet_055 >= 0).all()
-        assert (pet_1651 >= 0).all()
-        assert 0.5 < pet_055.mean() < 5.0
-        assert 0.1 < pet_1651.mean() < 5.0
+        pet_np = PETCalculatorMixin.hamon_pet_numpy(temp_vals, np.asarray(time.dayofyear), 45.0)
+        temp = xr.DataArray(temp_vals, dims='time', coords={'time': time}, attrs={'units': 'degC'})
+        pet_xr = MockPreProcessor(Mock()).calculate_pet_hamon(temp, 45.0)
+        np.testing.assert_allclose(pet_xr.values, pet_np, rtol=1e-12)
+        assert 0.5 < pet_np.mean() < 5.0
 
     def test_oudin_numpy_reasonable(self):
         """Verify numpy Oudin produces physically reasonable PET values."""
@@ -453,3 +448,83 @@ class TestNumpyXarrayConsistency:
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
+
+
+class TestHamonLu2005Reference:
+    """One Hamon implementation, in the Lu et al. (2005) form.
+
+    Regression for five diverged copies: calculate_pet_hamon gave 8.55 mm/day
+    at 15 degC / 12 h (reference 2.12), hamon_pet_numpy 0.93 (0.35 with
+    coefficient 0.1651), Wflow 0.21 and mHM used (N/12)^2.
+    """
+
+    REFERENCE = 2.12  # mm/day at 15 degC with a 12 h day
+
+    def test_core_reference_value(self):
+        assert float(hamon_pet(15.0, 12.0)) == pytest.approx(self.REFERENCE, rel=0.01)
+
+    def test_core_matches_written_formula(self):
+        es = 6.108 * np.exp(17.26939 * 15.0 / (15.0 + 237.3))
+        expected = 0.1651 * (14.0 / 12.0) * 216.7 * es / (15.0 + 273.3)
+        assert float(hamon_pet(15.0, 14.0)) == pytest.approx(expected, rel=1e-12)
+
+    def test_numpy_reference_value_at_equinox(self):
+        # Day 80 at 45N is within a few minutes of a 12 h day.
+        assert day_length_hours(45.0, 80) == pytest.approx(12.0, abs=0.1)
+        pet = PETCalculatorMixin.hamon_pet_numpy(np.array([15.0]), np.array([80]), 45.0)
+        assert pet[0] == pytest.approx(self.REFERENCE, rel=0.01)
+
+    def test_xarray_reference_value_at_equinox(self):
+        time = pd.date_range('2021-03-21', periods=3)
+        temp = xr.DataArray(np.full(3, 15.0), dims='time', coords={'time': time}, attrs={'units': 'degC'})
+        pet = MockPreProcessor(Mock()).calculate_pet_hamon(temp, 45.0)
+        assert pet.attrs['units'] == 'mm/day'
+        assert float(pet[0]) == pytest.approx(self.REFERENCE, rel=0.01)
+
+    def test_kelvin_input_gives_the_same_pet(self):
+        time = pd.date_range('2021-03-21', periods=3)
+        pre = MockPreProcessor(Mock())
+        c = xr.DataArray(np.full(3, 15.0), dims='time', coords={'time': time}, attrs={'units': 'degC'})
+        k = xr.DataArray(np.full(3, 288.15), dims='time', coords={'time': time}, attrs={'units': 'K'})
+        np.testing.assert_allclose(pre.calculate_pet_hamon(k, 45.0).values,
+                                   pre.calculate_pet_hamon(c, 45.0).values, rtol=1e-12)
+
+    def test_monotonic_in_temperature(self):
+        pet = hamon_pet(np.linspace(-30.0, 40.0, 141), 12.0)
+        assert np.all(np.diff(pet) > 0)
+
+    def test_linear_in_day_length(self):
+        pet = hamon_pet(15.0, np.array([6.0, 12.0, 18.0, 24.0]))
+        np.testing.assert_allclose(pet / pet[1], [0.5, 1.0, 1.5, 2.0])
+        assert float(hamon_pet(15.0, 0.0)) == 0.0
+
+    def test_subzero_is_small_positive_not_cut_off(self):
+        pet = float(hamon_pet(-5.0, 12.0))
+        assert 0.0 < pet < 0.7
+
+    def test_nan_temperature_stays_nan(self):
+        pet = PETCalculatorMixin.hamon_pet_numpy(np.array([np.nan, 10.0]), np.array([100, 100]), 45.0)
+        assert np.isnan(pet[0]) and pet[1] > 0
+
+    @pytest.mark.parametrize('lat', [-89.0, -70.0, -45.0, 0.0, 45.0, 64.0, 70.0, 89.0])
+    def test_day_length_clamped_and_finite(self, lat):
+        n = day_length_hours(lat, np.arange(1, 367))
+        assert np.all(np.isfinite(n))
+        assert n.min() >= 0.0 and n.max() <= 24.0
+
+    def test_polar_day_and_night(self):
+        assert day_length_hours(80.0, 172) == pytest.approx(24.0)
+        assert day_length_hours(80.0, 355) == pytest.approx(0.0)
+        assert day_length_hours(-80.0, 172) == pytest.approx(0.0)
+        pet = PETCalculatorMixin.hamon_pet_numpy(np.array([5.0, 5.0]), np.array([172, 355]), 80.0)
+        assert np.all(np.isfinite(pet))
+        assert pet[0] == pytest.approx(float(hamon_pet(5.0, 24.0)))
+        assert pet[1] == 0.0
+
+    def test_broadcasts_over_a_grid(self):
+        temp = np.full((4, 3, 2), 10.0)
+        doy = np.array([1, 91, 182, 274])[:, None, None]
+        lat = np.array([[60.0, 60.0], [64.0, 64.0], [66.0, 66.0]])[None]
+        pet = PETCalculatorMixin.hamon_pet_numpy(temp, doy, lat)
+        assert pet.shape == (4, 3, 2)
+        assert pet[2, 2, 0] > pet[2, 0, 0]  # longer midsummer day further north

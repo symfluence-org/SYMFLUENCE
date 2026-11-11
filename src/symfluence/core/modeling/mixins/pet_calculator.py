@@ -19,6 +19,56 @@ import xarray as xr
 
 from symfluence.core.constants import PhysicalConstants
 
+#: Calibration coefficient of the Lu et al. (2005) form of Hamon PET.
+HAMON_LU_COEFFICIENT = 0.1651
+
+
+def day_length_hours(lat, day_of_year):
+    """Day length N (hours, 0-24) from latitude (degrees) and day of year.
+
+    FAO-56 solar declination and sunset hour angle. The arccos argument is
+    clipped, so latitudes inside the polar circles give exactly 0 h (polar
+    night) or 24 h (polar day) rather than NaN. Arguments broadcast (numpy or
+    xarray).
+    """
+    lat_rad = np.deg2rad(lat)
+    decl = 0.409 * np.sin(2.0 * np.pi / 365.0 * day_of_year - 1.39)
+    cos_arg = np.clip(-np.tan(lat_rad) * np.tan(decl), -1.0, 1.0)
+    return 24.0 / np.pi * np.arccos(cos_arg)
+
+
+def hamon_pet(temp_c, day_length_h, coefficient: float = HAMON_LU_COEFFICIENT):
+    """Hamon PET (mm/day) in the form of Lu et al. (2005).
+
+    ``PET = coefficient * (N / 12) * RHOSAT`` with
+
+    - ``N``: day length in hours,
+    - ``RHOSAT = 216.7 * es / (T + 273.3)``: saturated vapour density (g/m3),
+    - ``es = 6.108 * exp(17.26939 * T / (T + 237.3))``: saturation vapour
+      pressure (hPa), ``T`` in degrees Celsius.
+
+    At 15 degC and a 12 h day this gives 2.12 mm/day.
+
+    Sub-zero temperatures are NOT cut off: the formula stays positive and
+    decays smoothly (about 0.5 mm/day at -5 degC with a 12 h day), which is
+    what every earlier copy in this code base did. Callers that want the
+    "PET = 0 for T <= 0 degC" convention apply it themselves. NaN temperature
+    gives NaN PET.
+
+    This is the single Hamon implementation; arguments broadcast and may be
+    numpy arrays or xarray objects (dask-backed included).
+
+    Reference:
+        Lu, J., Sun, G., McNulty, S. G., Amatya, D. M. (2005). A comparison of
+        six potential evapotranspiration methods for regional use in the
+        southeastern United States. JAWRA 41(3), 621-633.
+        Hamon, W. R. (1961). Estimating potential evapotranspiration.
+        J. Hydraul. Div. ASCE 87(HY3), 107-120.
+    """
+    es_hpa = 6.108 * np.exp(17.26939 * temp_c / (temp_c + 237.3))
+    rhosat = 216.7 * es_hpa / (temp_c + 273.3)
+    return coefficient * (day_length_h / 12.0) * rhosat
+
 
 class PETCalculatorMixin:
     """
@@ -161,9 +211,13 @@ class PETCalculatorMixin:
         Calculate PET using Hamon's method.
 
         Hamon's method uses temperature and daylight hours to estimate PET.
+        Thin xarray wrapper around :func:`hamon_pet` (Lu et al. 2005 form,
+        2.12 mm/day at 15 degC with a 12 h day). Sub-zero temperatures are
+        not cut off and NaN temperature stays NaN.
 
         Reference:
-            Hamon (1961). "Estimating Potential Evapotranspiration"
+            Hamon (1961). "Estimating Potential Evapotranspiration";
+            Lu et al. (2005), JAWRA 41(3).
 
         Args:
             temp_data: Temperature data in either Kelvin or Celsius
@@ -179,26 +233,14 @@ class PETCalculatorMixin:
         # Day of year using xarray accessor
         doy = temp_data.time.dt.dayofyear
 
-        # Calculate daylight hours
-        lat_rad = np.deg2rad(lat)
-        decl = 0.409 * np.sin(2.0 * np.pi / 365.0 * doy - 1.39)
-        cos_arg = (-np.tan(lat_rad) * np.tan(decl)).clip(-1.0, 1.0)
-        sunset_angle = np.arccos(cos_arg)
-        daylight_hours = 24.0 * sunset_angle / np.pi
-
-        # Saturated vapor pressure (kPa)
-        # Use xarray-wrapped exp for dask support
-        e_sat = 0.6108 * xr.apply_ufunc(np.exp, 17.27 * temp_C / (temp_C + 237.3), dask="parallelized")
-
-        # Hamon PET (mm/day)
-        pet = 0.1651 * daylight_hours * e_sat * 2.54
-        pet = pet.where(pet > 0, 0.0)
+        # Lu et al. (2005) form; see hamon_pet() for the formula and units.
+        pet = hamon_pet(temp_C, day_length_hours(lat, doy))
 
         # Add metadata
         pet.attrs = {
             'units': 'mm/day',
             'long_name': 'Potential evapotranspiration',
-            'method': 'Hamon (1961)',
+            'method': 'Hamon (1961), Lu et al. (2005) form',
             'latitude': lat
         }
 
@@ -281,42 +323,34 @@ class PETCalculatorMixin:
         temp_c: np.ndarray,
         day_of_year: np.ndarray,
         lat: float,
-        coefficient: float = 0.55,
+        coefficient: float = HAMON_LU_COEFFICIENT,
     ) -> np.ndarray:
-        """Hamon PET (mm/day) from numpy arrays.
+        """Hamon PET (mm/day) from numpy arrays, Lu et al. (2005) form.
 
-        Two common coefficient variants exist in the literature:
-        - 0.55: ``PET = 0.55 * (D/12)^2 * e_sat``  (used by SAC-SMA, HBV, XAJ)
-        - 0.1651: ``PET = 0.1651 * D * e_sat / (T+273.2) * 29.8``  (Hamon 1961
-          original formulation used by TOPMODEL, HEC-HMS)
+        ``PET = coefficient * (N / 12) * RHOSAT``; see :func:`hamon_pet`.
+        *coefficient* is Lu's calibration coefficient (default 0.1651).
 
-        When *coefficient* is 0.1651 this method switches to the original
-        Hamon (1961) formulation automatically.
+        The former default ``0.55 * (D/12)^2 * e_sat[kPa]`` was neither
+        Hamon (1961) nor Lu et al. (2005) and gave less than half the
+        reference PET; 0.55 is the inches-per-day coefficient of Hamon (1961)
+        and is refused here rather than silently fed into the mm/day form.
 
         Args:
-            temp_c: Temperature in Celsius (1-D array, length *n*).
-            day_of_year: Day-of-year integers (1-D array, length *n*).
-            lat: Latitude in degrees.
-            coefficient: Hamon coefficient (default 0.55).
+            temp_c: Temperature in Celsius.
+            day_of_year: Day-of-year integers, broadcastable with *temp_c*.
+            lat: Latitude in degrees (scalar or broadcastable array).
+            coefficient: Coefficient of the Lu et al. (2005) form.
 
         Returns:
-            PET array (mm/day), same shape as *temp_c*.
+            PET array (mm/day), broadcast shape of the inputs.
         """
-        lat_rad = np.deg2rad(lat)
-        decl = 0.409 * np.sin(2.0 * np.pi / 365.0 * day_of_year - 1.39)
-        cos_arg = np.clip(-np.tan(lat_rad) * np.tan(decl), -1.0, 1.0)
-        sunset_angle = np.arccos(cos_arg)
-        day_length = 24.0 / np.pi * sunset_angle
-
-        e_sat = 0.6108 * np.exp(17.27 * temp_c / (temp_c + 237.3))
-
-        if coefficient == 0.1651:
-            # Original Hamon (1961) formulation
-            pet = 0.1651 * day_length * e_sat / (temp_c + 273.2) * 29.8
-        else:
-            # Simplified variant (coefficient * (D/12)^2 * e_sat)
-            pet = coefficient * (day_length / 12.0) ** 2 * e_sat
-
+        if coefficient == 0.55:
+            raise ValueError(
+                "hamon_pet_numpy: coefficient=0.55 is the inches/day coefficient "
+                "of the Hamon (1961) (D/12)^2 form, which is no longer implemented; "
+                f"use the Lu et al. (2005) coefficient ({HAMON_LU_COEFFICIENT}) or a "
+                "calibrated value of it.")
+        pet = hamon_pet(np.asarray(temp_c, dtype=float), day_length_hours(lat, day_of_year), coefficient)
         return np.maximum(pet, 0.0)
 
     @staticmethod
