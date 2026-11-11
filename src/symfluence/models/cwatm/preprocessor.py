@@ -298,7 +298,13 @@ class CWatMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
         def _sub(key: str, val: str) -> None:
             nonlocal content
-            content = re.sub(rf'(?m)^{re.escape(key)}\s*=.*$', lambda _m, _line=f'{key} = {val}': _line, content)
+            line = f'{key} = {val}'
+
+            def _replacement(_match: re.Match[str]) -> str:
+                # Callable, so backslashes in a Windows path are not read as escapes.
+                return line
+
+            content = re.sub(rf'(?m)^{re.escape(key)}\s*=.*$', _replacement, content)
 
         _sub('PathRoot', str(cwatm_input))
         _sub('PathOut', str(sim_output_dir))
