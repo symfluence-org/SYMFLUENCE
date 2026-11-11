@@ -530,3 +530,37 @@ class TestAsBool:
     def test_numeric(self, ddb_handler):
         assert ddb_handler._as_bool(1) is True
         assert ddb_handler._as_bool(0) is False
+
+
+class TestComputeDrainageArea:
+    """Accumulated drainage area when the meshflow DDB carries no DA."""
+
+    def _da(self, grid_area, next_, rank):
+        import logging
+
+        import xarray as xr
+
+        from symfluence.models.mesh.preprocessing.drainage_database import MESHDrainageDatabase
+        ddb = MESHDrainageDatabase.__new__(MESHDrainageDatabase)
+        ddb.logger = logging.getLogger('test')
+        ds = xr.Dataset({'GridArea': ('N', grid_area), 'Next': ('N', next_), 'Rank': ('N', rank)})
+        return ddb._compute_drainage_area(ds, 'N', len(grid_area)).values
+
+    def test_chain_accumulates_once(self):
+        """Regression: a chain of four 1 km2 cells gave [1, 5, 5, 5]."""
+        da = self._da([1e6, 1e6, 1e6, 1e6], [2, 3, 4, 0], [1, 2, 3, 4])
+        assert da.tolist() == [1e6, 2e6, 3e6, 4e6]
+
+    def test_confluence_in_any_storage_order(self):
+        # ranks 1 and 2 are headwaters joining at rank 3, which drains to the outlet (4)
+        da = self._da([4e6, 3e6, 1e6, 2e6], [0, 4, 3, 3], [4, 3, 1, 2])
+        assert da.tolist() == [10e6, 6e6, 1e6, 2e6]
+
+    def test_self_referencing_outlet(self):
+        da = self._da([1e6, 2e6], [2, 2], [1, 2])
+        assert da.tolist() == [1e6, 3e6]
+
+    def test_cycle_is_rejected(self):
+        from symfluence.models.mesh.errors import MESHInputError
+        with pytest.raises(MESHInputError, match='cycle'):
+            self._da([1e6, 1e6], [2, 1], [1, 2])

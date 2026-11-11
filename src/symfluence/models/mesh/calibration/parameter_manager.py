@@ -88,17 +88,25 @@ class MESHParameterManager(BaseParameterManager):
     # Number of canopy categories in a CLASS 4x vegetation group.
     N_CANOPY_CATEGORIES = 4
 
-    # Default multipliers for landcover-specific parameter scaling
-    # These allow differentiated soil/surface parameters by landcover type
-    # Keys are NALCMS/IGBP class IDs, values are multiplier dictionaries
+    # Default multipliers for landcover-specific parameter scaling (opt-in via
+    # MESH_USE_LANDCOVER_MULTIPLIERS). Keys are NALCMS 2020 class ids — the
+    # classification the MESH preprocessor labels GRUs with
+    # (MESHConfigDefaults.LANDCOVER_CLASSES) — and are matched against the
+    # class id each CLASS block carries on its own MID record. A block whose
+    # class is not listed (or that carries no land-cover label) gets 1.0.
+    # For any other classification supply MESH_LANDCOVER_MULTIPLIERS.
     DEFAULT_LANDCOVER_MULTIPLIERS = {
-        1: {'KSAT': 0.8, 'SDEP': 1.2, 'MANN_CLASS': 1.5},   # Needleleaf forest: slower infiltration, deeper soil, rougher
-        8: {'KSAT': 1.0, 'SDEP': 1.0, 'MANN_CLASS': 1.2},   # Shrubland: moderate
-        9: {'KSAT': 0.9, 'SDEP': 1.1, 'MANN_CLASS': 1.3},   # Broadleaf deciduous: similar to needleleaf
-        10: {'KSAT': 1.2, 'SDEP': 0.9, 'MANN_CLASS': 0.8},  # Grassland: faster infiltration, shallower, smoother
-        15: {'KSAT': 0.5, 'SDEP': 0.3, 'MANN_CLASS': 0.5},  # Snow/Ice: very low infiltration, minimal soil
-        16: {'KSAT': 1.5, 'SDEP': 0.5, 'MANN_CLASS': 0.6},  # Barren: fast infiltration (fractured rock), shallow soil
+        1: {'KSAT': 0.8, 'SDEP': 1.2, 'MANN_CLASS': 1.5},   # Temperate/sub-polar needleleaf forest: slower infiltration, deeper soil, rougher
+        5: {'KSAT': 0.9, 'SDEP': 1.1, 'MANN_CLASS': 1.3},   # Temperate/sub-polar broadleaf deciduous forest: similar to needleleaf
+        8: {'KSAT': 1.0, 'SDEP': 1.0, 'MANN_CLASS': 1.2},   # Temperate/sub-polar shrubland: moderate
+        10: {'KSAT': 1.2, 'SDEP': 0.9, 'MANN_CLASS': 0.8},  # Temperate/sub-polar grassland: faster infiltration, shallower, smoother
+        16: {'KSAT': 1.5, 'SDEP': 0.5, 'MANN_CLASS': 0.6},  # Barren lands: fast infiltration (fractured rock), shallow soil
+        19: {'KSAT': 0.5, 'SDEP': 0.3, 'MANN_CLASS': 0.5},  # Snow and ice: very low infiltration, minimal soil
     }
+
+    # Parameters written as one value per river class in
+    # MESH_parameters_hydrology.ini; a calibrated value replaces every column.
+    RIVER_CLASS_PARAMS = frozenset({'WF_R2', 'R2N', 'R1N', 'PWR', 'FLZ'})
 
     def __init__(self, config: Dict, logger: logging.Logger, mesh_settings_dir: Path):
         super().__init__(config, logger, mesh_settings_dir)
@@ -206,24 +214,33 @@ class MESHParameterManager(BaseParameterManager):
 
         # Multi-GRU parameter distribution settings
         # MESH_APPLY_PARAMS_ALL_GRUS: Apply calibrated params to all landcover classes (default: True)
-        # MESH_USE_LANDCOVER_MULTIPLIERS: Apply landcover-specific multipliers (default: True)
+        # MESH_USE_LANDCOVER_MULTIPLIERS: Apply landcover-specific multipliers (default: False)
         self.apply_to_all_grus = self._get_config_value(lambda: None, default=True, dict_key='MESH_APPLY_PARAMS_ALL_GRUS')
-        self.use_landcover_multipliers = self._get_config_value(lambda: None, default=True, dict_key='MESH_USE_LANDCOVER_MULTIPLIERS')
+        self.use_landcover_multipliers = self._get_config_value(lambda: None, default=False, dict_key='MESH_USE_LANDCOVER_MULTIPLIERS')
 
-        # Load custom multipliers from config or use defaults
-        self.landcover_multipliers = self._get_config_value(
-            lambda: None, default=self.DEFAULT_LANDCOVER_MULTIPLIERS, dict_key='MESH_LANDCOVER_MULTIPLIERS'
+        # Load custom multipliers from config or use defaults. Keys are the
+        # land-cover class ids found on the CLASS blocks' MID records (YAML/JSON
+        # may deliver them as strings).
+        custom_multipliers = self._get_config_value(
+            lambda: None, default=None, dict_key='MESH_LANDCOVER_MULTIPLIERS'
+        )
+        self.landcover_multipliers = self._normalise_multipliers(
+            custom_multipliers if custom_multipliers is not None else self.DEFAULT_LANDCOVER_MULTIPLIERS
         )
 
         # Detect all GRU blocks in CLASS.ini for multi-GRU parameter distribution
         self.all_gru_blocks = self._detect_all_gru_blocks()
 
-        # Build mapping from block index to NALCMS class ID for multipliers
-        # This reads the landcover stats CSV to determine which NALCMS classes
-        # correspond to which CLASS.ini blocks (blocks are ordered by frac_* column order)
-        self.block_to_nalcms = (
-            self._build_block_to_nalcms_mapping() if self.use_landcover_multipliers else {}
-        )
+    @staticmethod
+    def _normalise_multipliers(table: Dict[Any, Dict[str, float]]) -> Dict[int, Dict[str, float]]:
+        """Return the multiplier table keyed by integer land-cover class id."""
+        try:
+            return {int(class_id): dict(values) for class_id, values in table.items()}
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise MESHConfigurationError(
+                'MESH_LANDCOVER_MULTIPLIERS must map integer land-cover class ids '
+                f'to {{parameter: multiplier}} dictionaries: {exc}'
+            ) from exc
 
     def _get_parameter_names(self) -> List[str]:
         """Return MESH parameter names from config."""
@@ -377,36 +394,7 @@ class MESHParameterManager(BaseParameterManager):
         except OSError:
             return []
 
-        blocks: List[Dict[str, Any]] = []
-        i = 0
-        while i < len(lines):
-            line = lines[i]
-            # Look for DRN/SDEP marker (line 12 of each block)
-            if 'DRN/SDEP' in line:
-                drn_line = i
-                # XSLP/XDRAINH line should be next (line 13)
-                xslp_line = i + 1 if i + 1 < len(lines) else None
-
-                # Try to extract class ID from the XSLP line comment (e.g., "100 Temp_sub-_need_fore")
-                class_id = None
-                if xslp_line and xslp_line < len(lines):
-                    xslp_content = lines[xslp_line]
-                    # Look for 3-digit class ID (e.g., 100, 101, 102 for NALCMS mapping)
-                    import re
-                    match = re.search(r'\s(\d{3})\s+\w', xslp_content)
-                    if match:
-                        mesh_class_id = int(match.group(1))
-                        # MESH class IDs are typically 100 + NALCMS class
-                        class_id = mesh_class_id - 100 if mesh_class_id >= 100 else mesh_class_id
-
-                blocks.append({
-                    'class_id': class_id,
-                    'drn_line': drn_line,
-                    'xslp_line': xslp_line,
-                    'block_index': len(blocks)
-                })
-            i += 1
-
+        blocks = self._detect_all_gru_blocks_from_lines(lines)
         if blocks:
             self.logger.debug(
                 f"Detected {len(blocks)} GRU blocks in CLASS.ini: "
@@ -414,34 +402,45 @@ class MESHParameterManager(BaseParameterManager):
             )
         return blocks
 
-    def _detect_all_gru_blocks_from_lines(self, lines: List[str]) -> List[Dict[str, Any]]:
-        """Detect all GRU blocks from a list of lines (for use during file update).
+    @staticmethod
+    def _block_class_id(xslp_line: str) -> Optional[int]:
+        """Land-cover class id a CLASS block declares on its MID record.
 
-        Similar to _detect_all_gru_blocks but operates on already-loaded lines.
+        meshflow writes CLASS line 13 as ``XSLP XDRAINH MANN KSAT <id> <label>``
+        where ``<id>`` is the land-cover class number of the ``frac_<id>``
+        column the block was built from (1-2 digits for NALCMS) and ``<label>``
+        its abbreviated class name. Synthetic blocks (spatial units, glacier
+        ice surfaces) carry a bare running MID with no label; that number is
+        not a land-cover class, so they return None.
+        """
+        tokens = xslp_line.split()
+        marker = next((i for i, tok in enumerate(tokens) if 'XSLP/' in tok), len(tokens))
+        if marker < 5:
+            return None
+        label = tokens[5:marker]
+        if label and label[-1] == '13':  # CLASS record number preceding the marker
+            label = label[:-1]
+        if not label or not re.fullmatch(r'\d+', tokens[4]):
+            return None
+        return int(tokens[4])
+
+    def _detect_all_gru_blocks_from_lines(self, lines: List[str]) -> List[Dict[str, Any]]:
+        """Detect all GRU blocks from a list of CLASS.ini lines.
+
+        Each block is located by its DRN/SDEP record (CLASS line 12); the
+        XSLP/.../MID record follows it and supplies the block's class id.
         """
         blocks: List[Dict[str, Any]] = []
-        i = 0
-        while i < len(lines):
-            line = lines[i]
-            if 'DRN/SDEP' in line:
-                drn_line = i
-                xslp_line = i + 1 if i + 1 < len(lines) else None
-
-                class_id = None
-                if xslp_line and xslp_line < len(lines):
-                    xslp_content = lines[xslp_line]
-                    match = re.search(r'\s(\d{3})\s+\w', xslp_content)
-                    if match:
-                        mesh_class_id = int(match.group(1))
-                        class_id = mesh_class_id - 100 if mesh_class_id >= 100 else mesh_class_id
-
-                blocks.append({
-                    'class_id': class_id,
-                    'drn_line': drn_line,
-                    'xslp_line': xslp_line,
-                    'block_index': len(blocks)
-                })
-            i += 1
+        for i, line in enumerate(lines):
+            if 'DRN/SDEP' not in line:
+                continue
+            xslp_line = i + 1 if i + 1 < len(lines) else None
+            blocks.append({
+                'class_id': self._block_class_id(lines[xslp_line]) if xslp_line is not None else None,
+                'drn_line': i,
+                'xslp_line': xslp_line,
+                'block_index': len(blocks),
+            })
         return blocks
 
     def _resolve_project_dir(self) -> Optional[Path]:
@@ -463,48 +462,6 @@ class MESHParameterManager(BaseParameterManager):
                 return project_dir
 
         return None
-
-    def _build_block_to_nalcms_mapping(self) -> Dict[int, int]:
-        """Build mapping from CLASS.ini block index to NALCMS class ID.
-
-        Reads the landcover stats CSV to determine which NALCMS classes are present
-        and their order (which corresponds to CLASS.ini block order).
-
-        Returns:
-            Dict mapping block index (0, 1, 2, ...) to NALCMS class ID (1, 8, 9, ...)
-        """
-        import pandas as pd
-
-        # Look for landcover stats in various locations
-        project_dir = self.project_dir or self.mesh_settings_dir.parent.parent
-        possible_paths = [
-            resolve_data_subdir(project_dir, 'forcing') / 'MESH_input' / 'temp_modified_domain_stats_NA_NALCMS_landcover_2020_30m.csv',
-            resolve_data_subdir(project_dir, 'attributes') / 'gistool-outputs' / 'modified_domain_stats_NA_NALCMS_landcover_2020_30m.csv',
-            resolve_data_subdir(project_dir, 'attributes') / 'gistool-outputs' / 'landcover_stats_multi_gru.csv',
-        ]
-
-        for lc_path in possible_paths:
-            if lc_path.exists():
-                try:
-                    df = pd.read_csv(lc_path)
-                    # Extract class IDs from frac_* columns (preserving order)
-                    frac_cols = [col for col in df.columns if col.startswith('frac_')]
-                    class_ids = []
-                    for col in frac_cols:
-                        match = re.match(r'frac_(\d+)', col)
-                        if match:
-                            class_ids.append(int(match.group(1)))
-
-                    if class_ids:
-                        mapping = {i: class_id for i, class_id in enumerate(class_ids)}
-                        self.logger.debug(f"Block to NALCMS mapping: {mapping}")
-                        return mapping
-                except Exception as e:  # noqa: BLE001 — calibration resilience
-                    self.logger.warning(f"Failed to read landcover mapping from {lc_path}: {e}", exc_info=True)
-
-        # Fallback: assume sequential mapping
-        self.logger.warning("Could not determine NALCMS class mapping; multipliers may not work correctly")
-        return {}
 
     def _load_parameter_bounds(self) -> Dict[str, Dict[str, float]]:
         """Return MESH parameter bounds, preferring config-specified bounds.
@@ -889,7 +846,7 @@ class MESHParameterManager(BaseParameterManager):
             self.logger.error(f"Error updating MESH parameters: {e}", exc_info=True)
             return False
 
-    # Parameters that have multiple values per line (one per GRU/river class)
+    # Array parameters that cannot be injected when absent from the file
     ARRAY_PARAMS = {'WF_R2'}
 
     def _update_class_file(self, file_path: Path, params: Dict[str, float]) -> bool:
@@ -902,8 +859,9 @@ class MESHParameterManager(BaseParameterManager):
         When MESH_APPLY_PARAMS_ALL_GRUS=True (default), calibrated parameters
         are applied to all landcover class blocks.
 
-        When MESH_USE_LANDCOVER_MULTIPLIERS=True (default), landcover-specific
-        multipliers are applied (e.g., forest gets deeper soil, barren gets shallower).
+        When MESH_USE_LANDCOVER_MULTIPLIERS=True (default False), landcover-specific
+        multipliers are applied (e.g., forest gets deeper soil, barren gets shallower),
+        selected by the land-cover class id on each block's own MID record.
         """
         try:
             self.logger.debug(f"Updating CLASS file: {file_path}")
@@ -940,9 +898,10 @@ class MESHParameterManager(BaseParameterManager):
                 drn_line = block['drn_line']
                 xslp_line = block['xslp_line']
 
-                # Get NALCMS class ID for this block using the mapping
-                # block_to_nalcms maps block index (0, 1, 2, ...) to NALCMS class ID (1, 8, 9, ...)
-                nalcms_class_id = self.block_to_nalcms.get(block_idx)
+                # Land-cover class of this block, read from its own MID record.
+                # (Block position says nothing about the class: blocks of
+                # removed GRUs are gone and meshflow does not sort them.)
+                nalcms_class_id = block.get('class_id')
 
                 # Get multipliers for this landcover class
                 multipliers = {}
@@ -1066,7 +1025,7 @@ class MESHParameterManager(BaseParameterManager):
                     if block_idx == 0 or multiplier != 1.0:
                         mult_info = f" (x{multiplier:.2f})" if multiplier != 1.0 else ""
                         self.logger.debug(
-                            f"Block {block_idx} (NALCMS {nalcms_class_id}): "
+                            f"Block {block_idx} (land-cover class {nalcms_class_id}): "
                             f"{param_name}: {old_val} -> {new_val_str}{mult_info}"
                         )
 
@@ -1168,30 +1127,35 @@ class MESHParameterManager(BaseParameterManager):
             for param_name, value in params.items():
                 if param_name in gru_params:
                     continue
-                if param_name in self.ARRAY_PARAMS:
-                    # Handle array parameters (e.g., WF_R2 has one value per river class)
-                    # Format: WF_R2  0.30    0.30    0.30  # comment
-                    # Replace all numeric values on the line with the calibrated value
-                    pattern = rf'^(?P<prefix>\s*{param_name}\s*(?:=|\s)\s*)(?P<vals>[\d\.\s\-\+eE]+)(?P<comment>\s*[!#].*)?$'
+                n = 0
+                if param_name in self.RIVER_CLASS_PARAMS:
+                    # One value per river class, e.g.
+                    #   WF_R2  0.30    0.30    0.30  # comment
+                    # The calibrated value replaces every column; replacing
+                    # only the first would leave the higher river classes on
+                    # their template values.
+                    # Horizontal whitespace only, so the match cannot run on
+                    # into following all-numeric lines.
+                    pattern = rf'^(?P<prefix>[ \t]*{param_name}[ \t]*(?:=|[ \t])[ \t]*)(?P<vals>[\d\.\-\+eE \t]+)(?P<comment>[ \t]*[!#].*)?$'
 
-                    def replace_array_values(m, _value=value):
-                        prefix = m.group('prefix')
+                    m = re.search(pattern, content, flags=re.MULTILINE | re.IGNORECASE)
+                    if m:
                         values_str = m.group('vals')
-                        comment = m.group('comment') or ''
-                        # Count how many values there were
-                        num_values = len(re.findall(r'[\d\.\-\+eE]+', values_str))
-                        # Create new values string with same count
-                        new_values = '    '.join([f"{_value:.2f}"] * num_values)
-                        return prefix + new_values + comment
-
-                    content, n = re.subn(
-                        pattern,
-                        replace_array_values,
-                        content,
-                        count=1,
-                        flags=re.MULTILINE | re.IGNORECASE
-                    )
-                else:
+                        num_values = len(values_str.split())
+                        # A single value goes through the scalar replacement
+                        # below (identical output to before); WF_R2 has always
+                        # been written here.
+                        if num_values > 1 or param_name in self.ARRAY_PARAMS:
+                            # Significant digits, not fixed point: a seasonal
+                            # FLZ (~1e-7) would otherwise round to 0.
+                            new_values = '    '.join([f"{value:.9g}"] * num_values)
+                            trailing = values_str[len(values_str.rstrip()):]
+                            content = (
+                                content[:m.start('vals')] + new_values + trailing
+                                + content[m.end('vals'):]
+                            )
+                            n = 1
+                if n == 0 and param_name not in self.ARRAY_PARAMS:
                     # Match: KEY value (ignore comments starting with !)
                     # Use word boundary \b to avoid matching partial names
                     # and handle KEY=value or KEY value. Significant digits, not

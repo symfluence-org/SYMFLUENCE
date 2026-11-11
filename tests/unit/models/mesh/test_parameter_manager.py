@@ -478,11 +478,162 @@ class TestVegetationColumnTargeting:
         assert pm.class_param_positions['RSMIN'][1] == 0  # group_start(0) + index 0
 
 
-def test_disabled_multipliers_do_not_require_class_mapping(mesh_config, logger, temp_dir, monkeypatch):
-    mesh_config['MESH_USE_LANDCOVER_MULTIPLIERS'] = False
-    def unexpected_mapping(self):
-        raise AssertionError('Disabled multipliers must not require NALCMS mapping')
-    monkeypatch.setattr(MESHParameterManager, '_build_block_to_nalcms_mapping', unexpected_mapping)
+def _class_block(mid_and_label):
+    return (
+        "   0.000   0.000   0.000   1.000   0.000   0.000   0.000   0.000   2.000  05 5xFCAN/4xLAMX\n"
+        "   0.000   0.000   0.000   0.000   0.100   0.100   0.100   0.100   0.100  06 5xLNZ0/4xLAMN\n"
+        "   0.000   0.000   0.000   0.000   0.100   0.100   0.100   0.100   0.100  07 5xALVC/4xCMAS\n"
+        "   0.000   0.000   0.000   0.000   0.100   0.100   0.100   0.100   0.100  08 5xALIC/4xROOT\n"
+        "   0.000   0.000   0.000   0.000   0.100   0.100   0.100   0.100  09 4xRSMN/4xQA50\n"
+        "   0.000   0.000   0.000   0.000   0.100   0.100   0.100   0.100  10 4xVPDA/4xVPDB\n"
+        "   0.000   0.000   0.000   0.000   0.100   0.100   0.100   0.100  11 4xPSGA/4xPSGB\n"
+        "   1.000   2.500   1.000  50.000  12 DRN/SDEP/FARE/DD\n"
+        f"   0.030   0.350   0.100   0.050   {mid_and_label}  13 XSLP/XDRAINH/MANN/KSAT/MID\n"
+        "  50.000  30.000  20.000  14 3xSAND\n"
+        "  20.000  25.000  30.000  15 3xCLAY\n"
+        "   5.000   3.000   1.000  16 3xORGM\n"
+        "   4.000   2.000   1.000   2.000   0.000   4.000  17 3xTBAR/TCAN/TSNO/TPND\n"
+        "   0.200   0.200   0.200   0.000   0.000   0.000   0.000  18 3xTHLQ/3xTHIC/ZPND\n"
+        "   0.000   0.000 100.000   0.750 250.000   1.000  19 RCAN/SCAN/SNO/ALBS/RHOS/GRO\n"
+    )
+
+
+_CLASS_HEADER = (
+    "  MESH Model\n  MESHFlow\n  X\n"
+    "  51.40  -115.60      10.0      2.0      50.0   -1.0    1    1    2\n"
+)
+_CLASS_FOOTER = "   0   0   0   0  20\n   0   0   0   0  21\n   0   0   0   0  22 IHOUR/IMINS/IJDAY/IYEAR\n"
+
+
+class TestLandcoverMultipliers:
+    """Multipliers follow the class id on each block's MID record."""
+
+    # meshflow order for a real domain: not sorted, and classes whose GRUs
+    # were removed have no block. The last two blocks are synthetic (a glacier
+    # surface with a bare running MID, a spatial unit) and carry no class.
+    BLOCKS = ['10 Temp_sub-_gras', '16 Barr_land', '1 Temp_sub-_need_fore', '15 Crop', '17', '1001']
+
+    def _manager(self, temp_dir, logger, **extra):
+        (temp_dir / 'MESH_parameters_CLASS.ini').write_text(
+            _CLASS_HEADER + ''.join(_class_block(b) for b in self.BLOCKS) + _CLASS_FOOTER
+        )
+        config = {
+            'DOMAIN_NAME': 'test_domain',
+            'MESH_PARAMS_TO_CALIBRATE': 'KSAT,SDEP,MANN_CLASS',
+            **extra,
+        }
+        return MESHParameterManager(config, logger, temp_dir)
+
+    def _written(self, temp_dir):
+        lines = (temp_dir / 'MESH_parameters_CLASS.ini').read_text().splitlines()
+        sdep = [float(ln.split()[1]) for ln in lines if 'DRN/SDEP' in ln]
+        ksat = [float(ln.split()[3]) for ln in lines if 'XSLP/' in ln]
+        mann = [float(ln.split()[2]) for ln in lines if 'XSLP/' in ln]
+        return ksat, sdep, mann
+
+    def test_class_ids_come_from_the_mid_record(self, temp_dir, logger):
+        pm = self._manager(temp_dir, logger)
+        assert [b['class_id'] for b in pm.all_gru_blocks] == [10, 16, 1, 15, None, None]
+
+    def test_default_is_off(self, temp_dir, logger):
+        pm = self._manager(temp_dir, logger)
+        assert pm.use_landcover_multipliers is False
+        assert pm._update_class_file(temp_dir / 'MESH_parameters_CLASS.ini',
+                                     {'KSAT': 100.0, 'SDEP': 2.0, 'MANN_CLASS': 0.1})
+        ksat, sdep, mann = self._written(temp_dir)
+        assert ksat == [100.0] * 6
+        assert sdep == [2.0] * 6
+        assert mann == [0.1] * 6
+
+    def test_multipliers_keyed_on_block_class_not_position(self, temp_dir, logger):
+        """Regression: multipliers were assigned by block position against the
+        land-cover CSV column order, and the table used IGBP numbering
+        (15 = snow/ice) for NALCMS data (15 = cropland)."""
+        # A land-cover CSV listing more classes than there are blocks must not matter.
+        stats = temp_dir / 'domain_test_domain' / 'attributes' / 'gistool-outputs'
+        stats.mkdir(parents=True)
+        (stats / 'modified_domain_stats_NA_NALCMS_landcover_2020_30m.csv').write_text(
+            "ID,frac_1,frac_10,frac_15,frac_16\n1,0.01,0.6,0.38,0.01\n")
+        pm = self._manager(temp_dir, logger, MESH_USE_LANDCOVER_MULTIPLIERS=True,
+                           SYMFLUENCE_DATA_DIR=str(temp_dir))
+        assert pm._update_class_file(temp_dir / 'MESH_parameters_CLASS.ini',
+                                     {'KSAT': 100.0, 'SDEP': 2.0, 'MANN_CLASS': 0.1})
+        ksat, sdep, mann = self._written(temp_dir)
+        #       grass(10) barren(16) needleleaf(1) cropland(15) no class  no class
+        assert ksat == pytest.approx([120.0, 150.0, 80.0, 100.0, 100.0, 100.0])
+        assert sdep == pytest.approx([1.8, 1.0, 2.4, 2.0, 2.0, 2.0])
+        assert mann == pytest.approx([0.08, 0.06, 0.15, 0.1, 0.1, 0.1])
+
+    def test_default_table_uses_nalcms_numbering(self):
+        from symfluence.models.mesh.preprocessing.config_defaults import MESHConfigDefaults
+        names = MESHConfigDefaults.LANDCOVER_CLASSES
+        table = MESHParameterManager.DEFAULT_LANDCOVER_MULTIPLIERS
+        assert 'Snow and Ice' in names[19] and 19 in table
+        assert 15 not in table  # NALCMS 15 is cropland
+        assert 9 not in table   # NALCMS 9 is tropical grassland, not broadleaf forest
+        assert 'broadleaf deciduous' in names[5] and 5 in table
+
+    def test_custom_table_with_string_keys(self, temp_dir, logger):
+        pm = self._manager(temp_dir, logger, MESH_USE_LANDCOVER_MULTIPLIERS=True,
+                           MESH_LANDCOVER_MULTIPLIERS={'15': {'KSAT': 2.0}})
+        assert pm._update_class_file(temp_dir / 'MESH_parameters_CLASS.ini', {'KSAT': 100.0})
+        assert self._written(temp_dir)[0] == pytest.approx([100.0, 100.0, 100.0, 200.0, 100.0, 100.0])
+
+
+_HYDROLOGY_INI = (
+    "2.0: MESH Hydrology parameters input file (Version 2.0)\n##### Option Flags #####\n----#\n    0\n"
+    "##### Channel routing parameters per river class #####\n-------#\n       5\n"
+    "WF_R2{cols}  # channel roughness\nR2N{cols}\nR1N{cols}\nPWR{cols}\nFLZ{cols}\n"
+    "##### GRU class independent hydrologic parameters #####\n-------#\n       0\n"
+)
+
+
+class TestRiverClassParameters:
+    """FLZ/PWR/R2N/R1N/WF_R2 carry one value per river class."""
+
+    PARAMS = {'FLZ': 1.2345678e-07, 'PWR': 1.5, 'R2N': 0.123456, 'R1N': 0.02, 'WF_R2': 0.3456}
+
+    def _update(self, temp_dir, logger, n_classes):
+        path = temp_dir / 'MESH_parameters_hydrology.ini'
+        path.write_text(_HYDROLOGY_INI.format(cols='    0.400' * n_classes))
+        pm = MESHParameterManager(
+            {'DOMAIN_NAME': 'test_domain', 'MESH_PARAMS_TO_CALIBRATE': 'FLZ,PWR', 'ROUTING_MODE': 'x'},
+            logger, temp_dir)
+        assert pm._update_ini_file(path, dict(self.PARAMS))
+        rows = {}
+        for line in path.read_text().splitlines():
+            name = line.split()[0] if line.split() else ''
+            if name in self.PARAMS:
+                rows[name] = [float(v) for v in line.split('#')[0].split()[1:]]
+        return path, rows
+
+    def test_every_river_class_is_updated(self, temp_dir, logger):
+        """Regression: only the first column was replaced, so river classes
+        2..n kept the template value."""
+        path, rows = self._update(temp_dir, logger, 3)
+        for name, value in self.PARAMS.items():
+            assert rows[name] == [value] * 3, name
+        assert '# channel roughness' in path.read_text()
+        assert path.read_text().count('\n') == _HYDROLOGY_INI.count('\n')
+
+    def test_single_river_class_unchanged(self, temp_dir, logger):
+        """One river class: the single value is replaced at full precision,
+        exactly as the scalar path did."""
+        _, rows = self._update(temp_dir, logger, 1)
+        for name in ('FLZ', 'PWR', 'R2N', 'R1N'):
+            assert rows[name] == [self.PARAMS[name]], name
+        assert rows['WF_R2'] == [0.3456]  # was rounded to 0.35 by a '.2f' format
+
+    def test_missing_scalar_is_still_injected(self, temp_dir, logger):
+        path = temp_dir / 'MESH_parameters_hydrology.ini'
+        path.write_text("2.0: MESH Hydrology parameters input file (Version 2.0)\nZSNL 0.1\n")
+        pm = MESHParameterManager(
+            {'DOMAIN_NAME': 'test_domain', 'MESH_PARAMS_TO_CALIBRATE': 'FLZ'}, logger, temp_dir)
+        assert pm._update_ini_file(path, {'FLZ': 1e-6})
+        assert 'FLZ  1e-06' in path.read_text()
+
+
+def test_disabled_multipliers_do_not_read_landcover_stats(mesh_config, logger, temp_dir):
     manager = MESHParameterManager(mesh_config, logger, temp_dir)
-    assert manager.block_to_nalcms == {}
     assert manager.use_landcover_multipliers is False
+    assert not hasattr(manager, 'block_to_nalcms')

@@ -21,7 +21,7 @@ from symfluence.core.calibration.workers.base_worker import (
     BaseWorker,
     run_worker_task,
 )
-from symfluence.core.exceptions import ModelExecutionError
+from symfluence.core.exceptions import ConfigurationError, ModelExecutionError
 from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.modeling.utilities.periods import split_period
@@ -107,6 +107,8 @@ class PRMSWorker(BaseWorker):
             params = self._enforce_constraints(params)
             return self._update_parameter_file(param_file, params)
 
+        except ConfigurationError:
+            raise
         except Exception as e:  # noqa: BLE001 — calibration resilience
             self.logger.error(f"Error applying PRMS parameters: {e}", exc_info=True)
             import traceback
@@ -117,85 +119,28 @@ class PRMSWorker(BaseWorker):
         """
         Update PRMS parameter file with new values.
 
-        Parses the ####-delimited block format and replaces value lines
-        for each calibration parameter.
-
         Args:
             param_file: Path to params.dat
             params: Parameters to update
 
         Returns:
             True if successful
+
+        Raises:
+            ConfigurationError: a parameter has no block in the file (e.g.
+                ``soil_rechr_max`` under PRMS5, ``rain_cbh_adj`` in station
+                mode); it would otherwise be calibrated without any effect.
         """
         try:
-            from ..derived_parameters import apply_derived_parameters
-            content = param_file.read_text(encoding='utf-8')
-            content, params = apply_derived_parameters(content, params)
-            blocks = content.split('####\n')
-
-            updated_blocks = []
-            for block in blocks:
-                updated_block = block
-                for param_name, value in params.items():
-                    lines = block.strip().split('\n')
-                    for line in lines:
-                        if line.strip() == param_name:
-                            updated_block = self._replace_block_values(
-                                block, param_name, value
-                            )
-                            self.logger.debug(
-                                f"Updated {param_name} = {value:.6f}"
-                            )
-                            break
-                updated_blocks.append(updated_block)
-
-            param_file.write_text('####\n'.join(updated_blocks), encoding='utf-8')
+            from ..parameter_file import update_parameter_file
+            update_parameter_file(param_file, params)
             return True
 
+        except ConfigurationError:
+            raise
         except Exception as e:  # noqa: BLE001 — calibration resilience
             self.logger.error(f"Error updating PRMS parameter file: {e}", exc_info=True)
             return False
-
-    def _replace_block_values(self, block: str, param_name: str, value: float) -> str:
-        """Replace value lines in a PRMS parameter block.
-
-        Preserves leading/trailing whitespace in the block so that
-        #### delimiters remain properly separated when blocks are rejoined.
-        """
-        stripped = block.strip()
-        lines = stripped.split('\n')
-
-        param_idx = None
-        for i, line in enumerate(lines):
-            if line.strip() == param_name:
-                param_idx = i
-                break
-
-        if param_idx is None:
-            return block
-
-        # Structure: name, ndim, dim_name, dim_size, type_code, values...
-        try:
-            dim_size = int(lines[param_idx + int(lines[param_idx + 1]) + 2].strip())
-        except (IndexError, ValueError):
-            dim_size = 1
-
-        value_start = param_idx + int(lines[param_idx + 1]) + 4
-        formatted = f"{value:.6f}"
-
-        new_lines = lines[:value_start]
-        for _ in range(dim_size):
-            new_lines.append(formatted)
-
-        remaining = value_start + dim_size
-        if remaining < len(lines):
-            new_lines.extend(lines[remaining:])
-
-        result = '\n'.join(new_lines)
-        # Preserve the trailing newline so #### delimiters stay on their own line
-        if block.endswith('\n'):
-            result += '\n'
-        return result
 
     @staticmethod
     def _enforce_constraints(params: Dict[str, float]) -> Dict[str, float]:

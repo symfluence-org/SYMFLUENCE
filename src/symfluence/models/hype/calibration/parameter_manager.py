@@ -194,6 +194,15 @@ class HYPEParameterManager(BaseParameterManager):
     # HYPE-SPECIFIC METHODS
     # ========================================================================
 
+    @staticmethod
+    def _format_value(value: Any) -> str:
+        """Full-precision text for par.txt, as HYPEConfigManager writes it.
+
+        Fixed-point ``.6f`` turned small rate constants into something else
+        (1.4e-5 -> 0.000014, 4e-7 -> 0.000000).
+        """
+        return repr(float(value))
+
     def update_par_file(self, params: Dict[str, Any]) -> bool:
         """
         Update par.txt file with new parameter values.
@@ -213,7 +222,7 @@ class HYPEParameterManager(BaseParameterManager):
             missing: List[str] = []
             for param_name, value in params.items():
                 if isinstance(value, (list, tuple)):
-                    val_str = '\t'.join(f'{v:.6f}' for v in value)
+                    val_str = '\t'.join(self._format_value(v) for v in value)
                     new_content = re.sub(
                         rf'^({param_name}\s+)[^\!\n]*',
                         rf'\g<1>{val_str}\t',
@@ -232,7 +241,7 @@ class HYPEParameterManager(BaseParameterManager):
 
                 def replacer(match, _value=value):
                     count = len(match.group(2).split())
-                    return match.group(1) + '\t'.join([f'{_value:.6f}'] * count)
+                    return match.group(1) + '\t'.join([self._format_value(_value)] * count)
 
                 content, n = re.subn(pattern, replacer, content, count=1, flags=re.MULTILINE)
                 if n == 0:

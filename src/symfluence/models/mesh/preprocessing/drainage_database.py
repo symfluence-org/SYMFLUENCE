@@ -18,6 +18,7 @@ import numpy as np
 import xarray as xr
 
 from symfluence.core.mixins import ConfigMixin
+from symfluence.models.mesh.errors import MESHInputError
 from symfluence.models.mesh.preprocessing.config_defaults import (
     is_elevation_band_mode,
     should_force_single_gru,
@@ -914,29 +915,50 @@ class MESHDrainageDatabase(ConfigMixin):
         n_dim: str,
         n_size: int
     ) -> xr.DataArray:
-        """Compute accumulated drainage area."""
+        """Compute accumulated drainage area.
+
+        Each cell's area is its own GridArea plus the accumulated area of every
+        cell draining into it. Cells are visited upstream to downstream (a
+        cell only after all of its contributors), so each cell's total is
+        passed on exactly once.
+        """
         grid_area = ds['GridArea'].values
         next_arr = ds['Next'].values.astype(int)
         rank_arr = ds['Rank'].values.astype(int)
 
-        da = grid_area.copy()
+        da = grid_area.astype(float)
 
-        for _ in range(n_size):
-            changed = False
-            for i in range(n_size):
-                if next_arr[i] > 0:
-                    ds_idx = np.where(rank_arr == next_arr[i])[0]
-                    if len(ds_idx) > 0:
-                        ds_idx = ds_idx[0]
-                        # Skip self-referencing outlets (subbasin drains to itself)
-                        if ds_idx == i:
-                            continue
-                        new_da = da[ds_idx] + grid_area[i]
-                        if new_da != da[ds_idx]:
-                            da[ds_idx] = new_da
-                            changed = True
-            if not changed:
-                break
+        # Index of the cell each cell drains to (-1: outlet, self-reference or
+        # a Next that matches no Rank).
+        index_of_rank: dict = {}
+        for i, rank in enumerate(rank_arr):
+            index_of_rank.setdefault(int(rank), i)
+        downstream = np.full(n_size, -1, dtype=int)
+        for i in range(n_size):
+            if next_arr[i] > 0:
+                j = index_of_rank.get(int(next_arr[i]), -1)
+                if j != i:
+                    downstream[i] = j
+
+        n_upstream = np.zeros(n_size, dtype=int)
+        for j in downstream[downstream >= 0]:
+            n_upstream[j] += 1
+        ready = [i for i in range(n_size) if n_upstream[i] == 0]
+        visited = 0
+        while ready:
+            i = ready.pop()
+            visited += 1
+            j = downstream[i]
+            if j >= 0:
+                da[j] += da[i]
+                n_upstream[j] -= 1
+                if n_upstream[j] == 0:
+                    ready.append(j)
+        if visited != n_size:
+            raise MESHInputError(
+                'Drainage database Rank/Next topology contains a cycle; '
+                'cannot accumulate drainage area'
+            )
 
         self.logger.debug(f"Added DA: max={da.max()/1e6:.1f} km²")
 

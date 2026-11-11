@@ -191,6 +191,75 @@ def test_multi_subbasin_drains_to_downstream_valley_band(manager):
     valley_2 = out[out["subid"] == 201].iloc[0]
     assert valley_2["maindown"] == 0
 
+def _two_parents(n_bands_downstream=0):
+    base = pd.DataFrame([
+        {"subid": 10, "maindown": 20, "grwdown": 20, "rivlen": 100.0,
+         "slope_mean": 0.01, "area": 100.0, "latitude": 51.0,
+         "longitude": -115.0, "elev_mean": 2000.0, "glacier_fraction": 0.0,
+         "SLC_1": 1.0},
+        {"subid": 20, "maindown": 0, "grwdown": 0, "rivlen": 200.0,
+         "slope_mean": 0.01, "area": 200.0, "latitude": 51.0,
+         "longitude": -115.0, "elev_mean": 1500.0, "glacier_fraction": 0.0,
+         "SLC_1": 1.0},
+    ])
+    bands = {10: [{"elev_mean": 1900, "area_frac": 0.5}, {"elev_mean": 2100, "area_frac": 0.5}]}
+    if n_bands_downstream:
+        bands[20] = [{"elev_mean": 1000 + k, "area_frac": 1.0} for k in range(n_bands_downstream)]
+    return base, bands
+
+
+def test_valley_band_drains_to_unbanded_downstream_parent(manager):
+    """Regression: with no bands for the downstream parent the upstream valley
+    band got maindown 0 and was disconnected from the network."""
+    base, bands = _two_parents()
+    out = manager._build_banded_geodata(base, bands).set_index("subid")
+    assert out.loc[1001, "maindown"] == 20 and out.loc[1001, "grwdown"] == 20
+    assert out.loc[1002, "maindown"] == 1001
+    assert out.loc[20, "maindown"] == 0
+    assert set(out["maindown"]) - {0} <= set(out.index)
+
+
+def test_valley_band_drains_to_downstream_parent_kept_lumped(manager):
+    """Regression: a parent with too many bands is kept lumped, yet upstream
+    bands were routed to its (non-existent) first band id."""
+    base, bands = _two_parents(n_bands_downstream=manager._BAND_ID_MULTIPLIER)
+    out = manager._build_banded_geodata(base, bands).set_index("subid")
+    assert 20 in out.index and len(out) == 3
+    assert out.loc[1001, "maindown"] == 20
+    assert set(out["maindown"]) - {0} <= set(out.index)
+
+
+def test_unbanded_upstream_parent_drains_to_downstream_valley_band(manager):
+    base, bands = _two_parents()
+    bands = {20: [{"elev_mean": 1400, "area_frac": 0.5}, {"elev_mean": 1600, "area_frac": 0.5}]}
+    out = manager._build_banded_geodata(base, bands).set_index("subid")
+    assert out.loc[10, "maindown"] == 2001 and out.loc[10, "grwdown"] == 2001
+    assert set(out["maindown"]) - {0} <= set(out.index)
+
+
+def test_valley_band_of_missing_downstream_parent_is_an_outlet(manager):
+    base, bands = _two_parents()
+    base = base[base["subid"] == 10]
+    out = manager._build_banded_geodata(base, bands).set_index("subid")
+    assert out.loc[1001, "maindown"] == 0
+
+
+def test_id_shift_moves_groundwater_target_with_the_subids(manager):
+    """Regression: the 0-based -> 1-based shift updated subid and maindown but
+    left grwdown, so each sub-basin's groundwater target was itself."""
+    df = pd.DataFrame({"subid": [0, 1, 2], "maindown": [1, 2, -1]})
+    df["grwdown"] = df["maindown"]
+    out = manager._shift_ids_if_needed(df)
+    assert out["subid"].tolist() == [1, 2, 3]
+    assert out["maindown"].tolist() == [2, 3, 0]
+    assert out["grwdown"].tolist() == [2, 3, 0]
+
+
+def test_one_based_ids_are_not_shifted(manager):
+    df = pd.DataFrame({"subid": [1, 2], "maindown": [2, 0], "grwdown": [2, 0]})
+    assert manager._shift_ids_if_needed(df.copy()).equals(df)
+
+
 # ── Forcing-side band expansion (lapse) ──────────────────────────────────────
 
 @pytest.fixture

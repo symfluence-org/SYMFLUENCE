@@ -665,10 +665,10 @@ MESH_APPLY_PARAMS_ALL_GRUS: true
 
 # MESH_USE_LANDCOVER_MULTIPLIERS
 #   Type:        bool
-#   Default:     True
+#   Default:     False
 #   Source:      MESHConfig (model_configs.py)
-#   Usage:      Use landcover-based parameter multipliers
-MESH_USE_LANDCOVER_MULTIPLIERS: true
+#   Usage:      Scale calibrated KSAT/SDEP/MANN_CLASS per land-cover class (heuristic, opt-in)
+MESH_USE_LANDCOVER_MULTIPLIERS: false
 
 # MESH_ENABLE_FROZEN_SOIL
 #   Type:        bool
