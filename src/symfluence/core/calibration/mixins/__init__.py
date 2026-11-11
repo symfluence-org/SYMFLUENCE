@@ -8,7 +8,7 @@ Reusable mixin classes that provide common functionality for optimizers:
 - ParallelExecutionMixin: Parallel processing infrastructure
 - ResultsTrackingMixin: Results persistence and tracking
 - RetryExecutionMixin: Retry logic with exponential backoff
-- GradientOptimizationMixin: ADAM/LBFGS gradient-based optimization
+- GradientOptimizationMixin: finite-difference gradient helpers
 - SUMMAOptimizerMixin: SUMMA-specific functionality (extracted from legacy BaseOptimizer)
 """
 from __future__ import annotations

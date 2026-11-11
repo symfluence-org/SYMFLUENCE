@@ -85,12 +85,11 @@ class MizuRoutePreProcessor(BaseModelPreProcessor, GeospatialUtilsMixin, MizuRou
             _create_grid_topology_file(): Grid-based distributed topology
             _check_if_headwater_basin(): Detect headwater basins with no river network
             _create_synthetic_river_network(): Generate single-segment network for headwaters
-            _fix_routing_cycles(): Graph algorithm to detect and fix cycles (167 lines)
+            _fix_routing_cycles(): Graph algorithm to detect and fix cycles
             _find_closest_segment_to_pour_point(): Locate segment nearest to basin outlet
 
         Remapping (delegated to MizuRouteRemapGenerator):
             create_area_weighted_remap_file(): Area-based weights from delineated catchments
-            create_equal_weight_remap_file(): Uniform weights for all segments
             remap_summa_catchments_to_routing(): Spatial intersection remapping
 
         Control File Generation:

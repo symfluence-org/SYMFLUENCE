@@ -425,10 +425,6 @@ src/symfluence/data/preprocessing/dataset_handlers/nwm3_retrospective_utils.py:N
 src/symfluence/data/preprocessing/dataset_handlers/rdrs_utils.py:RDRSHandler._merge_from_daily_files:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/dataset_handlers/rdrs_utils.py:RDRSHandler._merge_from_daily_files:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/dataset_handlers/rdrs_utils.py:RDRSHandler.create_shapefile:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
-src/symfluence/data/preprocessing/elevation_calculator.py:ElevationCalculator._align_crs:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/elevation_calculator.py:ElevationCalculator.calculate_mean_elevation:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/elevation_calculator.py:ElevationCalculator.calculate_mean_elevation:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/elevation_calculator.py:ElevationCalculator.get_nodata_value:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/forcing_resampler.py:ForcingResampler._run_parallel_with_worker:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/forcing_resampler.py:ForcingResampler._validate_existing_shapefile:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/forcing_resampler.py:ForcingResampler._validate_existing_shapefile:except Exception as e:  # noqa: BLE001 — preprocessing resilience
@@ -456,13 +452,7 @@ src/symfluence/data/preprocessing/resampling/weight_generator.py:RemappingWeight
 src/symfluence/data/preprocessing/resampling/weight_generator.py:RemappingWeightGenerator._maybe_rename_with_handler:except Exception as e:  # noqa: BLE001 — defensive guard
 src/symfluence/data/preprocessing/resampling/weight_generator.py:RemappingWeightGenerator._move_output_files:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/data/preprocessing/resampling/weight_generator.py:_run_easmore_with_suppressed_output:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
-src/symfluence/data/preprocessing/shapefile_manager.py:ShapefileManager._validate_existing_wgs84:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/shapefile_manager.py:ShapefileManager.align_longitude_frame:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/data/preprocessing/shapefile_manager.py:ShapefileManager.ensure_unique_hru_ids:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
-src/symfluence/data/preprocessing/shapefile_manager.py:ShapefileManager.ensure_wgs84:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/data_assimilation/da_manager.py:DataAssimilationManager.run_data_assimilation:except Exception as e:  # noqa: BLE001 — must-not-raise contract
-src/symfluence/data_assimilation/enkf/ensemble_manager.py:SubprocessEnsembleManager.extract_predictions:except Exception:  # noqa: BLE001 — must-not-raise contract
-src/symfluence/data_assimilation/enkf/ensemble_manager.py:SubprocessEnsembleManager.forecast_step:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/evaluation/analysis_manager.py:AnalysisManager.run_sensitivity_analysis:except Exception as exc:  # noqa: BLE001 — aggregate per-model failures for the post-loop decision
 src/symfluence/evaluation/benchmarking.py:Benchmarker._save_results:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/evaluation/benchmarking.py:Benchmarker.run_benchmarking:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
@@ -493,7 +483,6 @@ src/symfluence/geospatial/geofabric/delineators/coastal_delineator.py:CoastalWat
 src/symfluence/geospatial/geofabric/delineators/coastal_delineator.py:CoastalWatershedDelineator.delineate_coastal:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/geospatial/geofabric/delineators/coastal_delineator.py:CoastalWatershedDelineator.delineate_coastal:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/geospatial/geofabric/delineators/coastal_delineator.py:CoastalWatershedDelineator.delineate_point_buffer_shape:except Exception as e:  # noqa: BLE001 — preprocessing resilience
-src/symfluence/geospatial/geofabric/delineators/coastal_delineator.py:CoastalWatershedDelineator.merge_small_grus:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/geospatial/geofabric/delineators/distributed_delineator.py:GeofabricDelineator._subset_upstream_geofabric:except Exception as e:  # noqa: BLE001 — preprocessing resilience
 src/symfluence/geospatial/geofabric/delineators/distributed_delineator.py:GeofabricDelineator.delineate_geofabric:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/geospatial/geofabric/delineators/grid_delineator.py:GridDelineator._add_grid_attributes:except Exception as e:  # noqa: BLE001 — preprocessing resilience
@@ -673,7 +662,6 @@ src/symfluence/models/fuse/calibration/worker.py:FUSEWorker._calculate_multi_gau
 src/symfluence/models/fuse/calibration/worker.py:FUSEWorker._calculate_multi_gauge_metrics:except Exception as exc:  # noqa: BLE001 — let the existence check below surface the real failure
 src/symfluence/models/fuse/forcing_processor.py:FuseForcingProcessor._calculate_distributed_pet:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/fuse/forcing_processor.py:FuseForcingProcessor._prepare_lumped_forcing:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/fuse/forcing_processor.py:FuseForcingProcessor.prepare_forcing_data:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/fuse/plotter.py:FUSEPlotter.plot_streamflow:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/fuse/postprocessor.py:FUSEPostProcessor._get_netcdf_selections:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/fuse/preprocessor.py:FUSEPreProcessor._save_fuse_forcing:except Exception as e:  # noqa: BLE001 — model execution resilience
@@ -879,8 +867,6 @@ src/symfluence/models/mhm/preprocessor.py:MHMPreProcessor._build_distributed_gri
 src/symfluence/models/mhm/preprocessor.py:MHMPreProcessor._generate_forcing_files:except Exception as e:  # noqa: BLE001 — smoke-test fallback only
 src/symfluence/models/mhm/preprocessor.py:MHMPreProcessor._generate_gauge_data:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/mhm/preprocessor.py:MHMPreProcessor.run_preprocessing:except Exception as e:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/mizuroute/calibration/optimizer.py:MizuRouteModelOptimizer._get_simulation_results:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/mizuroute/calibration/optimizer.py:MizuRouteModelOptimizer._update_model_parameters:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/mizuroute/control_writer.py:ControlFileWriter._detect_runoff_variable:except Exception as e:  # noqa: BLE001 — detection is best-effort; keep config on failure
 src/symfluence/models/mizuroute/runner.py:MizuRouteRunner.sync_control_file_dimensions:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/mizuroute/topology_generator.py:MizuRouteTopologyGenerator._find_closest_segment_to_pour_point:except Exception as e:  # noqa: BLE001 — model execution resilience

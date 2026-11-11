@@ -40,23 +40,23 @@ class AnalysisPlotter(BasePlotter):
     @property
     def _scatter_panel(self) -> ScatterPanel:
         """Lazy-loaded scatter panel."""
-        if not hasattr(self, '__scatter_panel'):
-            self.__scatter_panel = ScatterPanel(self.plot_config, self.logger)
-        return self.__scatter_panel
+        if getattr(self, '_cached_scatter_panel', None) is None:
+            self._cached_scatter_panel = ScatterPanel(self.plot_config, self.logger)
+        return self._cached_scatter_panel
 
     @property
     def _fdc_panel(self) -> FDCPanel:
         """Lazy-loaded FDC panel."""
-        if not hasattr(self, '__fdc_panel'):
-            self.__fdc_panel = FDCPanel(self.plot_config, self.logger)
-        return self.__fdc_panel
+        if getattr(self, '_cached_fdc_panel', None) is None:
+            self._cached_fdc_panel = FDCPanel(self.plot_config, self.logger)
+        return self._cached_fdc_panel
 
     @property
     def _ts_panel(self) -> TimeSeriesPanel:
         """Lazy-loaded time series panel."""
-        if not hasattr(self, '__ts_panel'):
-            self.__ts_panel = TimeSeriesPanel(self.plot_config, self.logger)
-        return self.__ts_panel
+        if getattr(self, '_cached_ts_panel', None) is None:
+            self._cached_ts_panel = TimeSeriesPanel(self.plot_config, self.logger)
+        return self._cached_ts_panel
 
     # -------------------------------------------------------------------------
     # Plotting methods

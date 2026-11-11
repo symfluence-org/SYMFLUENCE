@@ -321,3 +321,11 @@ class TestSUMMAPlotting:
                 # Would need actual SUMMA output files for a real test
                 # Here we just verify the method is callable
                 assert callable(analysis_plotter.plot_summa_outputs)
+
+
+class TestAnalysisPanelCaching:
+    """The lazy panel properties must build each panel once, not per access."""
+
+    @pytest.mark.parametrize("name", ["_scatter_panel", "_fdc_panel", "_ts_panel"])
+    def test_panel_is_cached(self, analysis_plotter, name):
+        assert getattr(analysis_plotter, name) is getattr(analysis_plotter, name)

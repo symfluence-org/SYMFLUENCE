@@ -19,10 +19,7 @@ import geopandas as gpd
 import numpy as np
 import xarray as xr
 
-from symfluence.core.exceptions import FileOperationError, ModelExecutionError
-from symfluence.core.modeling.spatial_modes import SpatialMode
 from symfluence.core.modeling.utilities import BaseForcingProcessor, DataQualityHandler, ForcingDataProcessor
-from symfluence.core.modeling.variable_utils import VariableHandler
 from symfluence.core.path_resolver import find_catchment_subfile
 
 
@@ -104,119 +101,6 @@ class FuseForcingProcessor(BaseForcingProcessor):
     def model_name(self) -> str:
         """Return model name for logging."""
         return "FUSE"
-
-    def _infer_spatial_mode_from_domain(self) -> str:
-        """Infer FUSE spatial mode from DOMAIN_DEFINITION_METHOD when FUSE_SPATIAL_MODE is not set."""
-        domain_method = self._get_config_value(
-            lambda: self.config.domain.definition_method,
-            default='lumped',
-            dict_key='DOMAIN_DEFINITION_METHOD'
-        )
-        domain_to_fuse = {
-            'lumped': 'lumped',
-            'point': 'lumped',
-            'semidistributed': 'semi_distributed',
-            'semi_distributed': 'semi_distributed',
-            'distributed': 'distributed',
-            'discretized': 'distributed',
-            'subset': 'semi_distributed',
-            'delineate': 'semi_distributed',
-        }
-        mode = domain_to_fuse.get(str(domain_method).lower(), 'lumped')
-        self.logger.info(f"FUSE_SPATIAL_MODE not set, inferred '{mode}' from DOMAIN_DEFINITION_METHOD='{domain_method}'")
-        return mode
-
-    def prepare_forcing_data(self, ts_config: Dict[str, Any], pet_method: str = 'oudin') -> Path:
-        """
-        Prepare forcing data with support for lumped, semi-distributed, and distributed modes.
-
-        Args:
-            ts_config: Timestep configuration dictionary from get_timestep_config()
-            pet_method: PET calculation method ('oudin', 'hamon', 'hargreaves')
-
-        Returns:
-            Path to created forcing file
-
-        Raises:
-            FileNotFoundError: If no forcing files found
-            ValueError: If unknown spatial mode specified
-        """
-        try:
-            self.logger.debug(f"Using {ts_config['time_label']} timestep (resample freq: {ts_config['resample_freq']})")
-
-            # Get spatial mode configuration (fall back to DOMAIN_DEFINITION_METHOD if FUSE_SPATIAL_MODE not set)
-            spatial_mode = self._get_config_value(lambda: self.config.model.fuse.spatial_mode, default=None, dict_key='FUSE_SPATIAL_MODE')
-            if spatial_mode is None:
-                spatial_mode = self._infer_spatial_mode_from_domain()
-            subcatchment_dim = self._get_config_value(lambda: self.config.model.fuse.subcatchment_dim, default='longitude', dict_key='FUSE_SUBCATCHMENT_DIM')
-
-            self.logger.debug(f"Preparing FUSE forcing data in {spatial_mode} mode")
-
-            # Read and process forcing data
-            # Only the forcing remapped onto this run's HRUs (issue #339).
-            forcing_files = self._select_run_files(sorted(self.forcing_basin_path.glob('*.nc')))
-            if not forcing_files:
-                raise FileOperationError("No forcing files found in basin-averaged data directory")
-
-            variable_handler = VariableHandler(
-                config=self.config,
-                logger=self.logger,
-                dataset=self._get_config_value(lambda: self.config.forcing.dataset, dict_key='FORCING_DATASET'),
-                model='FUSE'
-            )
-            ds = xr.open_mfdataset(forcing_files, data_vars='minimal', combine='nested', concat_dim='time', coords='minimal', compat='override').sortby('time')
-            ds = variable_handler.process_forcing_data(ds)
-            ds = self._subset_to_simulation_time(ds, "Forcing")
-
-            # Spatial organization BEFORE resampling
-            if spatial_mode == SpatialMode.LUMPED:
-                ds = self._prepare_lumped_forcing(ds)
-            elif spatial_mode == SpatialMode.SEMI_DISTRIBUTED:
-                ds = self._prepare_semi_distributed_forcing(ds, subcatchment_dim)
-            elif spatial_mode == SpatialMode.DISTRIBUTED:
-                ds = self._prepare_distributed_forcing(ds)
-            else:
-                raise ModelExecutionError(f"Unknown FUSE spatial mode: {spatial_mode}")
-
-            # Resample to target resolution AFTER spatial organization
-            self.logger.debug(f"Resampling data to {ts_config['time_label']} resolution")
-            # Enable optimized backends for resampling if available
-            ds = ds.resample(time=ts_config['resample_freq']).mean()
-
-            # Ensure consistent variable names after VariableHandler processing.
-            # VariableHandler maps to MODEL_REQUIREMENTS names ('precip', 'temp').
-            # Legacy code and some downstream consumers expect 'pr' and 'temp'.
-            # Also handle pre-VariableHandler names ('pptrate', 'airtemp') as fallback.
-            if 'temp' not in ds and 'air_temperature' in ds:
-                ds['temp'] = ds['air_temperature']
-            if 'pr' not in ds:
-                if 'precip' in ds:
-                    ds['pr'] = ds['precip']
-                elif 'precipitation_flux' in ds:
-                    ds['pr'] = ds['precipitation_flux']
-
-            # Calculate PET for the correct spatial configuration
-            if spatial_mode == SpatialMode.LUMPED:
-                catchment = gpd.read_file(self.catchment_path)
-                mean_lon, mean_lat = self.calculate_catchment_centroid(catchment)
-                pet = self._calculate_pet(ds['temp'], mean_lat, pet_method)
-            else:
-                # For distributed modes, calculate PET after spatial organization
-                pet = self._calculate_distributed_pet(ds, spatial_mode, pet_method)
-
-            # Ensure PET is also at target resolution
-            pet = pet.resample(time=ts_config['resample_freq']).mean()
-            self.logger.info(f"PET data resampled to {ts_config['time_label']} resolution")
-
-            # Save forcing data
-            output_file = self.forcing_fuse_path / f"{self.domain_name}_input.nc"
-
-            self.logger.info(f"FUSE forcing data will be saved to: {output_file}")
-            return output_file
-
-        except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
-            self.logger.error(f"Error preparing forcing data: {str(e)}")
-            raise
 
     def _prepare_lumped_forcing(self, ds: xr.Dataset) -> xr.Dataset:
         """

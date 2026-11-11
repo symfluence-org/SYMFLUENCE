@@ -594,51 +594,6 @@ class CDSRegionalReanalysisHandler(BaseAcquisitionHandler, ABC):
             logging.warning(f"Failed to read time dimension from {dataset_path}: {exc}")
             return 0
 
-    def _download_per_timestep(
-        self, output_dir: Path, expected_times: pd.DatetimeIndex
-    ) -> Path:
-        if self._get_dataset_id() == "CARRA":
-            raise RuntimeError(
-                "CARRA CDS requests reject per-timestep retrieval; "
-                "use the multi-hour request only."
-            )
-        c = _make_cds_client()
-        datasets = []
-        domain_name = self.domain_name
-        dataset_id = self._get_dataset_id()
-
-        for ts in expected_times:
-            years = [str(ts.year)]
-            months = [ts.strftime("%m")]
-            days = [ts.strftime("%d")]
-            hours = [f"{ts:%H}:00"]
-
-            analysis_req = self._build_analysis_request(years, months, days, hours)
-            forecast_req = self._build_forecast_request(years, months, days, hours)
-
-            af = output_dir / f"{domain_name}_{dataset_id}_analysis_{ts:%Y%m%d%H}.nc"
-            ff = output_dir / f"{domain_name}_{dataset_id}_forecast_{ts:%Y%m%d%H}.nc"
-
-            logging.info(
-                f"Downloading {dataset_id} timestep {ts:%Y-%m-%d %H:%M} (analysis/forecast)"
-            )
-            self._retrieve_with_retry(c, self._get_dataset_name(), analysis_req, str(af))
-            self._retrieve_with_retry(c, self._get_dataset_name(), forecast_req, str(ff))
-
-            ds = self._process_and_merge_datasets(af, ff)
-            datasets.append(ds)
-
-            for f in [af, ff]:
-                if f.exists():
-                    f.unlink()
-
-        combined = xr.concat(datasets, dim="time").sortby("time")
-        if hasattr(combined, "get_index"):
-            time_index = combined.get_index("time")
-            combined = combined.sel(time=~time_index.duplicated())
-
-        return self._save_final_dataset(combined, output_dir)
-
     def _standardize_time_dimension(self, ds: xr.Dataset) -> xr.Dataset:
         """Rename time dimension to standard 'time'."""
         time_name = 'valid_time' if 'valid_time' in ds.dims else 'time'

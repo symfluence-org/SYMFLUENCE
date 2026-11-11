@@ -24,7 +24,6 @@ import os
 import shutil
 import socket
 import subprocess
-import tempfile
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -374,32 +373,6 @@ class LocalScratchManager(ConfigMixin):
                 shutil.rmtree(dest)
             shutil.copytree(source, dest)
 
-    def _rsync_files_only(self, source: Path, dest: Path, pattern: str = "*") -> int:
-        """
-        Copy files matching pattern from source to dest, without deleting existing files.
-
-        Args:
-            source: Source directory
-            dest: Destination directory
-            pattern: Glob pattern for files to copy
-
-        Returns:
-            Number of files copied
-        """
-        if not source.exists():
-            return 0
-
-        dest.mkdir(parents=True, exist_ok=True)
-        copied = 0
-
-        for src_file in source.glob(pattern):
-            if src_file.is_file():
-                dest_file = dest / src_file.name
-                shutil.copy2(src_file, dest_file)
-                copied += 1
-
-        return copied
-
     def _update_file_paths_for_scratch(self) -> None:
         """Update file paths in configuration files to point to scratch."""
         self.logger.debug(f"Rank {self.mpi_rank}: Updating file paths for scratch space...")
@@ -457,37 +430,6 @@ class LocalScratchManager(ConfigMixin):
         # This will be updated by the optimizer when it creates process-specific
         # directories, so we just ensure the file exists
         self.logger.debug(f"  Rank {self.mpi_rank}: mizuroute.control will be updated by optimizer")
-
-    def get_scratch_paths(self) -> Dict[str, Path]:
-        """
-        Get scratch paths for use in optimization.
-
-        Returns:
-            Dictionary with scratch paths if scratch is enabled,
-            otherwise returns standard paths
-        """
-        if self.use_scratch:
-            # Use platform-independent temp directory as fallback
-            temp_base = Path(tempfile.gettempdir())
-            fallback_data_dir = temp_base / "symfluence_data"
-            fallback_project_dir = temp_base / "symfluence_project"
-            return {
-                'data_dir': self.scratch_data_dir or fallback_data_dir,
-                'project_dir': self.scratch_project_dir or fallback_project_dir,
-                'settings_dir': (self.scratch_project_dir or fallback_project_dir) / "settings" / "SUMMA",
-                'mizuroute_settings_dir': (self.scratch_project_dir or fallback_project_dir) / "settings" / "mizuRoute",
-                'forcing_dir': resolve_data_subdir(self.scratch_project_dir or fallback_project_dir, 'forcing') / "SUMMA_input",
-                'observations_dir': resolve_data_subdir(self.scratch_project_dir or fallback_project_dir, 'observations') / "streamflow" / "preprocessed",
-            }
-        else:
-            return {
-                'data_dir': self.original_data_dir if self.original_data_dir else Path(self._get_config_value(lambda: self.config.system.data_dir, dict_key='SYMFLUENCE_DATA_DIR')),
-                'project_dir': self.original_project_dir,
-                'settings_dir': self.original_project_dir / "settings" / "SUMMA",
-                'mizuroute_settings_dir': self.original_project_dir / "settings" / "mizuRoute",
-                'forcing_dir': resolve_data_subdir(self.original_project_dir, 'forcing') / "SUMMA_input",
-                'observations_dir': resolve_data_subdir(self.original_project_dir, 'observations') / "streamflow" / "preprocessed",
-            }
 
     def stage_results_back(self) -> None:
         """
@@ -672,46 +614,3 @@ class LocalScratchManager(ConfigMixin):
         self.logger.debug(f"Rank {self.mpi_rank}: Scratch space will be automatically cleaned by SLURM")
         # SLURM_TMPDIR is automatically cleaned up by SLURM after job completion
         # So we don't need to do anything here
-
-    def sync_scratch_between_ranks(self, comm=None) -> None:
-        """
-        Optional: Synchronize scratch setup between MPI ranks on the same node.
-        This can be used to avoid duplicate copying when multiple ranks are on the same node.
-
-        Args:
-            comm: MPI communicator (if using mpi4py)
-        """
-        if not self.use_scratch or comm is None:
-            return
-
-        # This is an advanced feature that requires mpi4py
-        try:
-            from mpi4py import MPI
-
-            # Create a communicator for ranks on the same node
-            node_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
-            node_rank = node_comm.Get_rank()
-
-            # Only rank 0 on each node does the setup
-            if node_rank == 0:
-                self.logger.debug(f"Rank {self.mpi_rank}: Primary rank on {self.node_name}, setting up scratch")
-                success = self.setup_scratch_space()
-            else:
-                self.logger.debug(f"Rank {self.mpi_rank}: Secondary rank on {self.node_name}, waiting for scratch setup")
-                success = None
-
-            # Broadcast success status to all ranks on the node
-            success = node_comm.bcast(success, root=0)
-
-            # All ranks wait for setup to complete
-            node_comm.Barrier()
-
-            if not success:
-                self.use_scratch = False
-                self.logger.warning(f"Rank {self.mpi_rank}: Scratch setup failed, falling back to standard filesystem")
-
-            node_comm.Free()
-
-        except ImportError:
-            self.logger.debug(f"Rank {self.mpi_rank}: mpi4py not available, each rank will set up its own scratch")
-            self.setup_scratch_space()

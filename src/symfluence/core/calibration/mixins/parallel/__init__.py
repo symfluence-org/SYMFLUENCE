@@ -19,13 +19,11 @@ from .execution_strategies import (
     SequentialExecutionStrategy,
 )
 from .local_scratch_manager import LocalScratchManager
-from .task_distributor import TaskDistributor
 from .worker_environment import WorkerEnvironmentConfig
 
 __all__ = [
     'DirectoryManager',
     'ConfigurationUpdater',
-    'TaskDistributor',
     'WorkerEnvironmentConfig',
     'LocalScratchManager',
     'ExecutionStrategy',
