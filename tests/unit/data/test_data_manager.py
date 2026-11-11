@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from symfluence.core.config.models import SymfluenceConfig
+from symfluence.core.config.models import LapseRateConfig, SymfluenceConfig
 from symfluence.data import data_manager as dm_mod
 from symfluence.data.data_manager import DataManager
 
@@ -60,3 +60,42 @@ def test_acquire_observations_delegates(data_manager):
 def test_get_status_returns_dict(data_manager):
     status = data_manager.get_status()
     assert isinstance(status, dict)
+
+
+def _manager_with_lapse(lapse):
+    cfg = SymfluenceConfig.from_minimal(
+        domain_name="test_basin", model="SUMMA",
+        EXPERIMENT_TIME_START="2020-01-01 00:00", EXPERIMENT_TIME_END="2020-12-31 23:00",
+    )
+    if lapse is not None:
+        forcing = cfg.forcing.model_copy(update={"lapse": LapseRateConfig(**lapse)})
+        cfg = cfg.model_copy(update={"forcing": forcing})
+    with patch.object(dm_mod, "AcquisitionService", MagicMock(__name__="AcquisitionService")), \
+         patch.object(dm_mod, "EMEarthIntegrator", MagicMock(__name__="EMEarthIntegrator")), \
+         patch.object(dm_mod, "VariableHandler", MagicMock(__name__="VariableHandler")):
+        return DataManager(cfg, logging.getLogger("test.data_manager"), reporting_manager=None)
+
+
+def test_requested_lapse_corrections_are_reported_as_not_applied(caplog):
+    """The 'lapse' toggles were wired to a module that never existed; say so."""
+    manager = _manager_with_lapse({"pressure": True, "longwave": True})
+    assert manager.config.forcing.lapse.pressure is True
+    with caplog.at_level(logging.WARNING):
+        manager._warn_unapplied_lapse_corrections()
+    assert "pressure, longwave" in caplog.text
+    assert "NOT applied" in caplog.text
+
+
+@pytest.mark.parametrize("lapse", [None, {}, {"lw_gradient": -0.03}])
+def test_no_lapse_warning_without_a_request(caplog, lapse):
+    manager = _manager_with_lapse(lapse)
+    with caplog.at_level(logging.WARNING):
+        manager._warn_unapplied_lapse_corrections()
+    assert "NOT applied" not in caplog.text
+
+
+def test_no_hook_into_a_missing_elevation_correction_module():
+    import symfluence.data.preprocessing as preprocessing
+
+    assert not hasattr(preprocessing, "ElevationCorrectionProcessor")
+    assert "ElevationCorrectionProcessor" not in preprocessing.__all__

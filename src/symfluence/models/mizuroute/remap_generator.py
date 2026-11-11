@@ -5,8 +5,8 @@
 MizuRoute remapping file generation sub-module.
 
 Handles creation of remapping NetCDF files that map between source model
-spatial units and routing network HRUs, supporting area-weighted, equal-weight,
-and spatial intersection-based remapping approaches.
+spatial units and routing network HRUs, supporting area-weighted and
+spatial intersection-based remapping approaches.
 """
 from __future__ import annotations
 
@@ -140,78 +140,6 @@ class MizuRouteRemapGenerator:
     # Equal-weight remapping
     # =========================================================================
 
-    def create_equal_weight_remap_file(self):
-        """
-        Create remapping file with equal weights for all routing HRUs.
-
-        This method creates a NetCDF remapping file that distributes runoff
-        equally from a single lumped hydrological model GRU to multiple
-        routing HRUs. Used when routing a lumped model through a distributed
-        river network (e.g., single SUMMA GRU routed through multiple
-        mizuRoute segments).
-
-        The remapping file contains:
-        - RN_hruId: Routing network HRU IDs from topology
-        - nOverlaps: Number of source GRUs per routing HRU (always 1)
-        - HM_hruId: Source hydrological model GRU ID (always 1)
-        - weight: Equal areal weight (1/n_hrus) for each HRU
-
-        File is written to: {setup_dir}/{SETTINGS_MIZU_REMAP}
-
-        Note:
-            This equal-weight approach assumes uniform runoff distribution
-            and is appropriate only for lumped-to-distributed routing.
-            For area-weighted remapping, use create_area_weighted_remap_file.
-        """
-        self.pp.logger.info("Creating equal-weight remapping file")
-
-        # Load topology to get segment information
-        topology_file = self.pp.setup_dir / self.pp.mizu_topology_file
-        with xr.open_dataset(topology_file) as topo:
-            seg_ids = topo['segId'].values
-            hru_ids = topo['hruId'].values  # Now we have multiple HRUs
-
-        len(seg_ids)
-        n_hrus = len(hru_ids)
-        equal_weight = 1.0 / n_hrus  # Equal weight for each HRU
-
-        remap_name = self.pp.mizu_remap_file
-        if not remap_name:
-            remap_name = "remap_file.nc"
-            self.pp.logger.warning(f"SETTINGS_MIZU_REMAP not found in config, using default: {remap_name}")
-
-        with nc4.Dataset(self.pp.setup_dir / remap_name, 'w', format='NETCDF4') as ncid:
-            # Set attributes
-            ncid.setncattr('Author', "Created by SUMMA workflow scripts")
-            ncid.setncattr('Purpose', 'Equal-weight remapping for lumped to distributed routing')
-
-            # Create dimensions
-            ncid.createDimension('hru', n_hrus)  # One entry per HRU
-            ncid.createDimension('data', n_hrus)  # One data entry per HRU
-
-            # Create variables
-            # RN_hruId: The routing HRU IDs (1, 2, 3, ..., n_hrus)
-            rn_hru = ncid.createVariable('RN_hruId', 'i4', ('hru',))
-            rn_hru[:] = hru_ids
-            rn_hru.long_name = 'River network HRU ID'
-
-            # nOverlaps: Each HRU gets input from 1 SUMMA GRU
-            noverlaps = ncid.createVariable('nOverlaps', 'i4', ('hru',))
-            noverlaps[:] = [1] * n_hrus  # Each HRU has 1 overlap (with SUMMA GRU 1)
-            noverlaps.long_name = 'Number of overlapping HM_HRUs for each RN_HRU'
-
-            # HM_hruId: The SUMMA GRU ID (1) for each entry
-            hm_hru = ncid.createVariable('HM_hruId', 'i4', ('data',))
-            hm_hru[:] = [1] * n_hrus  # All entries point to SUMMA GRU 1
-            hm_hru.long_name = 'ID of overlapping HM_HRUs'
-
-            # weight: Equal weights for all HRUs
-            weights = ncid.createVariable('weight', 'f8', ('data',))
-            weights[:] = [equal_weight] * n_hrus
-            weights.long_name = f'Equal areal weights ({equal_weight:.4f}) for all HRUs'
-
-        self.pp.logger.info(f"Equal-weight remapping file created with {n_hrus} HRUs, weight = {equal_weight:.4f}")
-
     # =========================================================================
     # SUMMA catchment-to-routing remapping
     # =========================================================================
@@ -250,7 +178,7 @@ class MizuRouteRemapGenerator:
         )
         if self.pp.domain_definition_method == 'lumped' and routing_delineation == 'river_network':
             self.pp.logger.info("Area-weighted mapping for SUMMA catchments to routing catchments")
-            self.create_area_weighted_remap_file()  # Changed from create_equal_weight_remap_file
+            self.create_area_weighted_remap_file()
             return
 
         hm_path_cfg = self.pp._get_config_value(

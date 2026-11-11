@@ -81,7 +81,6 @@ class ResultsTrackingMixin(ConfigMixin):
     - Iteration history recording
     - Best parameter tracking
     - Results file I/O (CSV, JSON)
-    - Pareto front storage for multi-objective optimization
     """
 
     def __init_results_tracking__(self):
@@ -90,7 +89,6 @@ class ResultsTrackingMixin(ConfigMixin):
         self._best_score: float = float('-inf')
         self._best_params: Optional[Dict[str, float]] = None
         self._best_iteration: int = -1
-        self._pareto_front: List[Dict[str, Any]] = []
         self._start_time: Optional[datetime] = None
 
     # =========================================================================
@@ -431,88 +429,6 @@ class ResultsTrackingMixin(ConfigMixin):
 
         with open(params_path, 'r', encoding='utf-8') as f:
             return json.load(f)
-
-    # =========================================================================
-    # Multi-objective support
-    # =========================================================================
-
-    def record_pareto_solution(
-        self,
-        objectives: List[float],
-        params: Dict[str, float],
-        dominated: bool = False
-    ) -> None:
-        """
-        Record a solution on the Pareto front.
-
-        Args:
-            objectives: List of objective values
-            params: Parameter values
-            dominated: Whether this solution is dominated
-        """
-        record = {
-            'objectives': objectives,
-            'params': params,
-            'dominated': dominated,
-            'timestamp': datetime.now().isoformat(),
-        }
-
-        self._pareto_front.append(record)
-
-    def get_pareto_front(self) -> List[Dict[str, Any]]:
-        """
-        Get non-dominated solutions from the Pareto front.
-
-        Returns:
-            List of non-dominated solutions
-        """
-        return [s for s in self._pareto_front if not s.get('dominated', False)]
-
-    def save_pareto_front(
-        self,
-        algorithm: str,
-        experiment_id: Optional[str] = None
-    ) -> Optional[Path]:
-        """
-        Save Pareto front to a CSV file.
-
-        Args:
-            algorithm: Algorithm name
-            experiment_id: Optional experiment identifier
-
-        Returns:
-            Path to the saved Pareto front file
-        """
-        if experiment_id is None:
-            experiment_id = self._get_config_value(lambda: self.config.domain.experiment_id, default='optimization', dict_key='EXPERIMENT_ID')
-
-        pareto_solutions = self.get_pareto_front()
-
-        if not pareto_solutions:
-            self.logger.warning("No Pareto front to save")
-            return None
-
-        # Convert to DataFrame
-        records = []
-        for sol in pareto_solutions:
-            record = {
-                f'obj_{i}': obj for i, obj in enumerate(sol['objectives'])
-            }
-            record.update(sol['params'])
-            records.append(record)
-
-        df = pd.DataFrame(records)
-
-        # Generate filename
-        filename = f"{experiment_id}_{algorithm.lower().replace('/', '_')}_pareto_front.csv"
-        pareto_path = self.results_dir / filename
-
-        # Save
-        df.to_csv(pareto_path, index=False)
-
-        self.logger.info(f"Saved Pareto front to {pareto_path}")
-
-        return pareto_path
 
     # =========================================================================
     # Timing

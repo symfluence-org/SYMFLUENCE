@@ -133,7 +133,7 @@ class ErrorLogger:
         self.logger.warning(f"Logging failure artifacts to: {failure_dir}")
 
         # 1. Copy trialParams.nc if it exists
-        trial_params_src = settings_dir / resolve_settings_file_names(self.config).trialparams
+        trial_params_src = settings_dir / resolve_settings_file_names(self.config, settings_dir).trialparams
         if trial_params_src.exists():
             try:
                 trial_params_dst = failure_dir / f"trialParams_{failure_id}.nc"
@@ -189,7 +189,7 @@ class ErrorLogger:
             self.logger.warning(f"Failed to save debug info: {e}")
 
         # 5. Copy coldState.nc if it exists (for soil depth debugging)
-        coldstate_src = settings_dir / resolve_settings_file_names(self.config).coldstate
+        coldstate_src = settings_dir / resolve_settings_file_names(self.config, settings_dir).coldstate
         if coldstate_src.exists():
             try:
                 coldstate_dst = failure_dir / f"coldState_{failure_id}.nc"
@@ -227,7 +227,7 @@ class ErrorLogger:
         success_dir.mkdir(parents=True, exist_ok=True)
 
         # Copy trialParams.nc
-        trial_params_src = settings_dir / resolve_settings_file_names(self.config).trialparams
+        trial_params_src = settings_dir / resolve_settings_file_names(self.config, settings_dir).trialparams
         if trial_params_src.exists():
             try:
                 trial_params_dst = success_dir / f"trialParams_{success_id}.nc"

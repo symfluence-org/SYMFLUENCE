@@ -202,53 +202,6 @@ class WorkerResult:
             error=error
         )
 
-    @classmethod
-    def from_legacy_dict(cls, result_data: Dict[str, Any]) -> 'WorkerResult':
-        """
-        Create a WorkerResult from a legacy dictionary format.
-
-        Args:
-            result_data: Dictionary in legacy format
-
-        Returns:
-            WorkerResult instance
-        """
-        individual_id = result_data.get('individual_id', result_data.get('task_id', 0))
-        params = result_data.get('params', result_data.get('parameters', {}))
-
-        # Score may be under various keys
-        score = (
-            result_data.get('score') or
-            result_data.get('fitness') or
-            result_data.get('objective') or
-            result_data.get('kge') or
-            result_data.get('nse')
-        )
-
-        # Handle metrics
-        metrics = result_data.get('metrics', {})
-        if not metrics:
-            # Look for common metric keys
-            metric_keys = ['kge', 'nse', 'rmse', 'mae', 'bias', 'correlation']
-            metrics = {k: result_data[k] for k in metric_keys if k in result_data}
-
-        return cls(
-            individual_id=individual_id,
-            params=params,
-            score=score,
-            metrics=metrics,
-            error=result_data.get('error'),
-            runtime=result_data.get('runtime'),
-            iteration=result_data.get('iteration'),
-            additional_data={
-                k: v for k, v in result_data.items()
-                if k not in {'individual_id', 'task_id', 'params', 'parameters',
-                            'score', 'fitness', 'objective', 'metrics', 'error',
-                            'runtime', 'iteration', 'kge', 'nse', 'rmse', 'mae',
-                            'bias', 'correlation'}
-            }
-        )
-
     def to_legacy_dict(self) -> Dict[str, Any]:
         """
         Convert to legacy dictionary format.
@@ -883,55 +836,8 @@ class BaseWorker(ABC):
         return any(te in error_str for te in self.TRANSIENT_ERRORS)
 
     # =========================================================================
-    # Hooks for subclass customization
-    # =========================================================================
-
-    def pre_evaluation(self, task: WorkerTask) -> None:
-        """
-        Hook called before evaluation begins.
-
-        Subclasses can override to perform setup tasks.
-
-        Args:
-            task: WorkerTask about to be evaluated
-        """
-        pass
-
-    def post_evaluation(self, task: WorkerTask, result: WorkerResult) -> None:
-        """
-        Hook called after evaluation completes.
-
-        Subclasses can override to perform cleanup or logging.
-
-        Args:
-            task: WorkerTask that was evaluated
-            result: WorkerResult from evaluation
-        """
-        pass
-
-    # =========================================================================
     # Utility methods
     # =========================================================================
-
-    def setup_worker_isolation(self) -> None:
-        """
-        Setup process isolation for worker.
-
-        Sets environment variables to prevent thread contention
-        and file locking issues in parallel execution.
-        """
-        import os
-
-        env_vars = {
-            **WORKER_THREAD_ENV,
-            'VECLIB_MAXIMUM_THREADS': '1',
-            'NUMEXPR_NUM_THREADS': '1',
-            **WORKER_FILE_LOCKING_ENV,
-            'HDF5_DISABLE_VERSION_CHECK': '1',
-        }
-
-        for key, value in env_vars.items():
-            os.environ[key] = value
 
     @staticmethod
     def evaluate_worker_function(task_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -1063,7 +969,7 @@ WORKER_THREAD_ENV: Dict[str, str] = {
 }
 
 #: Disable HDF5/NetCDF file locking so concurrent workers can read shared
-#: forcing/attribute files (same values as ``BaseWorker.setup_worker_isolation``).
+#: forcing/attribute files.
 WORKER_FILE_LOCKING_ENV: Dict[str, str] = {
     'NETCDF_DISABLE_LOCKING': '1',
     'HDF5_USE_FILE_LOCKING': 'FALSE',

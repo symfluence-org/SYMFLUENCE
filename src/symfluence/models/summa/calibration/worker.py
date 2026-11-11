@@ -24,6 +24,8 @@ from symfluence.core.path_resolver import resolve_install_dir
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
+from .parameter_files import resolve_settings_file_names
+
 logger = logging.getLogger(__name__)
 
 
@@ -153,7 +155,7 @@ class SUMMAWorker(BaseWorker):
             import netCDF4 as nc
 
             # Find trial parameter file
-            trial_param_file = settings_dir / 'trialParams.nc'
+            trial_param_file = settings_dir / resolve_settings_file_names(config, settings_dir).trialparams
             if not trial_param_file.exists():
                 # Try alternate name
                 experiment_id = resolve_config_value(config, lambda: config.domain.experiment_id, 'default', 'EXPERIMENT_ID')
@@ -623,7 +625,8 @@ class SUMMAWorker(BaseWorker):
             data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
 
             # Try to get area from SUMMA attributes file first (more reliable)
-            attrs_file = data_dir / f'domain_{domain_name}' / 'settings' / 'SUMMA' / 'attributes.nc'
+            project_settings = data_dir / f'domain_{domain_name}' / 'settings' / 'SUMMA'
+            attrs_file = project_settings / resolve_settings_file_names(config, project_settings).attributes
             if attrs_file.exists():
                 with xr.open_dataset(attrs_file) as attrs:
                     if 'HRUarea' in attrs.data_vars:

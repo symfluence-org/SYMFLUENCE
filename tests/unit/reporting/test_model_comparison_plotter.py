@@ -138,52 +138,6 @@ class TestModelComparisonPlotter:
 class TestModelComparisonPlotterPanels:
     """Test individual panel methods of ModelComparisonPlotter."""
 
-    def test_plot_timeseries_panel(
-        self, model_comparison_plotter, sample_results_df, sample_obs_series
-    ):
-        """Test time series panel plotting."""
-        if hasattr(model_comparison_plotter, '_plot_timeseries_panel'):
-            mock_ax = Mock()
-            model_cols = ['SUMMA_discharge', 'FUSE_discharge']
-
-            # Should not raise
-            try:
-                model_comparison_plotter._plot_timeseries_panel(
-                    mock_ax, sample_results_df, sample_obs_series, model_cols
-                )
-            except Exception as e:  # noqa: BLE001
-                pytest.fail(f"_plot_timeseries_panel raised: {e}")
-
-    def test_plot_fdc_panel(
-        self, model_comparison_plotter, sample_results_df, sample_obs_series
-    ):
-        """Test flow duration curve panel plotting."""
-        if hasattr(model_comparison_plotter, '_plot_fdc_panel'):
-            mock_ax = Mock()
-            model_cols = ['SUMMA_discharge', 'FUSE_discharge']
-
-            try:
-                model_comparison_plotter._plot_fdc_panel(
-                    mock_ax, sample_results_df, sample_obs_series, model_cols
-                )
-            except Exception as e:  # noqa: BLE001
-                pytest.fail(f"_plot_fdc_panel raised: {e}")
-
-    def test_plot_scatter_panels(
-        self, model_comparison_plotter, sample_results_df, sample_obs_series
-    ):
-        """Test scatter plot panels."""
-        if hasattr(model_comparison_plotter, '_plot_scatter_panels'):
-            mock_axes = [Mock(), Mock()]
-            model_cols = ['SUMMA_discharge', 'FUSE_discharge']
-
-            try:
-                model_comparison_plotter._plot_scatter_panels(
-                    mock_axes, sample_results_df, sample_obs_series, model_cols
-                )
-            except Exception as e:  # noqa: BLE001
-                pytest.fail(f"_plot_scatter_panels raised: {e}")
-
     def test_plot_metrics_table(self, model_comparison_plotter):
         """Test metrics table panel."""
         if hasattr(model_comparison_plotter, '_plot_metrics_table'):
@@ -197,42 +151,6 @@ class TestModelComparisonPlotterPanels:
                 model_comparison_plotter._plot_metrics_table(mock_ax, metrics_dict)
             except Exception as e:  # noqa: BLE001
                 pytest.fail(f"_plot_metrics_table raised: {e}")
-
-    def test_plot_monthly_boxplots(
-        self, model_comparison_plotter, sample_results_df, sample_obs_series
-    ):
-        """Test monthly boxplot panel."""
-        if hasattr(model_comparison_plotter, '_plot_monthly_boxplots'):
-            mock_ax = Mock()
-            model_cols = ['SUMMA_discharge', 'FUSE_discharge']
-
-            # Configure boxplot mock to return dict-like structure
-            mock_boxes = [Mock()]
-            boxplot_result = {'boxes': mock_boxes, 'whiskers': [], 'caps': [], 'medians': []}
-            mock_ax.boxplot.return_value = boxplot_result
-
-            try:
-                model_comparison_plotter._plot_monthly_boxplots(
-                    mock_ax, sample_results_df, sample_obs_series, model_cols
-                )
-            except Exception as e:  # noqa: BLE001
-                pytest.fail(f"_plot_monthly_boxplots raised: {e}")
-
-    def test_plot_residual_analysis(
-        self, model_comparison_plotter, sample_results_df, sample_obs_series
-    ):
-        """Test residual analysis panel."""
-        if hasattr(model_comparison_plotter, '_plot_residual_analysis'):
-            mock_ax = Mock()
-            model_cols = ['SUMMA_discharge', 'FUSE_discharge']
-
-            try:
-                model_comparison_plotter._plot_residual_analysis(
-                    mock_ax, sample_results_df, sample_obs_series, model_cols
-                )
-            except Exception as e:  # noqa: BLE001
-                pytest.fail(f"_plot_residual_analysis raised: {e}")
-
 
 class TestModelComparisonDateAlignment:
     """Metrics pair sim and obs by timestamp, not by array position."""
@@ -255,3 +173,14 @@ class TestModelComparisonDateAlignment:
         obs, sim = model_comparison_plotter._align_valid_pairs(a, b)
         np.testing.assert_array_equal(obs, [2.0, 3.0])
         np.testing.assert_array_equal(sim, [2.0, 3.0])
+
+
+class TestModelComparisonPanelCaching:
+    """The lazy panel properties must build each panel once, not per access."""
+
+    @pytest.mark.parametrize("name", [
+        "_ts_panel", "_fdc_panel", "_metrics_panel",
+        "_scatter_panel", "_monthly_panel", "_residual_panel",
+    ])
+    def test_panel_is_cached(self, model_comparison_plotter, name):
+        assert getattr(model_comparison_plotter, name) is getattr(model_comparison_plotter, name)

@@ -71,8 +71,9 @@ class TRouteRunner(BaseModelRunner):  # type: ignore[misc]
         # 2. Set up paths
         settings_path = self.project_dir / 'settings' / 'troute'
         topology_file = settings_path / self._get_config_value(
-            lambda: self.config.model.troute.topology if self.config.model and self.config.model.troute else None,
-            default='troute_topology.nc'
+            lambda: self.config.model.troute.topology_file if self.config.model and self.config.model.troute else None,
+            default='troute_topology.nc',
+            dict_key='SETTINGS_TROUTE_TOPOLOGY',
         )
         troute_out_path = self.get_experiment_output_dir()
         troute_out_path.mkdir(parents=True, exist_ok=True)

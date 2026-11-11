@@ -146,3 +146,23 @@ def test_topology_file_carries_hru_ids(tmp_path):
     with xr.open_dataset(tmp_path / 'topo.nc') as ds:
         np.testing.assert_array_equal(ds.hruId.values, [65, 7])
         np.testing.assert_array_equal(ds.link_id_hru.values, [2, 1])
+
+
+def test_runner_reads_the_configured_topology_file_name(tmp_path, monkeypatch):
+    """SETTINGS_TROUTE_TOPOLOGY reaches the runner (it read a non-existent field)."""
+    import symfluence.models.troute.runner as runner_module
+
+    runner = _runner(TRouteConfig(SETTINGS_TROUTE_TOPOLOGY='my_network.nc'))
+    runner.project_dir = tmp_path
+    runner._prepare_runoff_file = lambda: tmp_path / 'r.nc'
+    runner.get_experiment_output_dir = lambda: tmp_path / 'out'
+    used = {}
+    runner._run_builtin_muskingum_cunge = (
+        lambda runoff, topology, out: used.update(topology=topology)
+    )
+    monkeypatch.setattr(runner_module, '_check_troute_available', lambda: False)
+
+    runner.run_troute()
+
+    # the same file the preprocessor writes (topology_generator reads topology_file)
+    assert used['topology'] == tmp_path / 'settings' / 'troute' / 'my_network.nc'

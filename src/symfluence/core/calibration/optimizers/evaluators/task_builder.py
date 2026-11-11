@@ -141,6 +141,16 @@ class TaskBuilder(ConfigMixin):
         Returns:
             Task dictionary for worker execution
         """
+        # A process id outside the configured range silently selected the
+        # non-parallel default directories (or, inside the range, another
+        # process's). Algorithms used to reach this with an iteration counter.
+        n_proc = max(1, int(self.num_processes))
+        is_int = isinstance(proc_id, (int, np.integer)) and not isinstance(proc_id, bool)
+        if not is_int or not 0 <= proc_id < n_proc:
+            raise ValueError(
+                f"Invalid proc_id {proc_id!r} for an evaluation task: expected an "
+                f"integer in [0, {n_proc}) (NUM_PROCESSES={self.num_processes})."
+            )
         dirs = self.parallel_dirs.get(proc_id, {})
         settings_dir = Path(dirs.get('settings_dir', self.optimization_settings_dir))
         sim_dir = dirs.get('sim_dir', self.default_sim_dir)
@@ -326,44 +336,6 @@ class TaskBuilder(ConfigMixin):
                 evaluation_id=f"pop_eval_{i:03d}",
                 multiobjective=multiobjective,
                 objective_names=objective_names,
-                random_seed=random_seed
-            )
-            tasks.append(task)
-
-        return tasks
-
-    def build_trial_tasks(
-        self,
-        trials: List[np.ndarray],
-        trial_indices: List[int],
-        iteration: int,
-        base_random_seed: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
-        """
-        Build task dictionaries for trial solutions (e.g., in DE).
-
-        Args:
-            trials: List of trial parameter arrays (normalized)
-            trial_indices: Corresponding indices in population
-            iteration: Current iteration number
-            base_random_seed: Base random seed
-
-        Returns:
-            List of task dictionaries
-        """
-        tasks = []
-
-        for idx, trial in zip(trial_indices, trials):
-            params = self.param_manager.denormalize_parameters(trial)
-            proc_id = idx % self.num_processes
-
-            random_seed = self._next_task_seed(base_random_seed)
-
-            task = self.build_task(
-                individual_id=idx,
-                params=params,
-                proc_id=proc_id,
-                evaluation_id=f"trial_{iteration:03d}_{idx:03d}",
                 random_seed=random_seed
             )
             tasks.append(task)

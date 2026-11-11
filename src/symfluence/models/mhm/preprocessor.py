@@ -28,7 +28,6 @@ from symfluence.core.exceptions import ConfigurationError, FileOperationError, G
 from symfluence.core.geometry_utils import calculate_catchment_centroid
 from symfluence.core.modeling.base.base_preprocessor import BaseModelPreProcessor
 from symfluence.core.modeling.mixins.pet_calculator import PETCalculatorMixin
-from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
 logger = logging.getLogger(__name__)
@@ -163,48 +162,6 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             f"{grid_area / 1e6:.1f} km2 but the catchment is {props['area_m2'] / 1e6:.1f} km2, "
             f"so simulated discharge is scaled by {grid_area / props['area_m2']:.3f}. "
             f"Set MHM_MATCH_LUMPED_AREA: true (the default) to remove the mismatch.")
-
-    def _taudem_dir(self) -> str:
-        """Resolve a *working* TauDEM binary directory.
-
-        The flow network is built in-process with pyflwdir, so this is only a
-        documented fallback for callers that want TauDEM. Multiple installs can
-        coexist (e.g. a per-domain copy with broken shared libraries alongside a
-        good shared install), so candidate locations are validated by checking
-        that ``d8flowdir`` exists and actually loads (a copy with missing dylibs
-        exits 127). The configured TAUDEM_DIR wins if set; otherwise the first
-        runnable candidate is returned, falling back to the framework default.
-        """
-        td = self._get_config_value(lambda: self.config.paths.taudem_dir,
-                                    default='default', dict_key='TAUDEM_DIR')
-        if td != 'default':
-            return str(td)
-        data_dir = Path(self._get_config_value(
-            lambda: self.config.system.data_dir, dict_key='SYMFLUENCE_DATA_DIR'))
-        # Candidate install roots: per-domain data dir, its SYMFLUENCE_data
-        # parent, and the sibling code/<->data SYMFLUENCE_data layout.
-        candidates = [
-            data_dir / 'installs' / 'TauDEM' / 'bin',
-            data_dir.parent / 'installs' / 'TauDEM' / 'bin',
-        ]
-        s = str(data_dir)
-        if 'code/SYMFLUENCE_data' in s:
-            alt = Path(s.replace('code/SYMFLUENCE_data', 'data/SYMFLUENCE_data'))
-            candidates.append(alt.parent / 'installs' / 'TauDEM' / 'bin')
-            candidates.append(Path(s.split('code/SYMFLUENCE_data')[0])
-                              / 'data' / 'SYMFLUENCE_data' / 'installs' / 'TauDEM' / 'bin')
-        default = candidates[0]
-        for cand in candidates:
-            exe = cand / 'd8flowdir'
-            if not exe.exists():
-                continue
-            try:
-                rc = run_subprocess([str(exe)], capture_output=True).returncode
-            except OSError:
-                continue
-            if rc not in (126, 127):   # 127/126 => dylib/load failure
-                return str(cand)
-        return str(default)
 
     def _build_distributed_grids(self) -> dict:
         """Build the distributed mHM grid: resample the DEM to grid_res, derive

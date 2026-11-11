@@ -169,7 +169,11 @@ class OptimizationAlgorithm(ConfigMixin, ABC):
 
         Args:
             n_params: Number of parameters to optimize
-            evaluate_solution: Callback to evaluate a single normalized solution
+            evaluate_solution: Callback to evaluate a single normalized solution,
+                ``evaluate_solution(x, step_id)``. The optional second argument
+                is the algorithm's own step/iteration counter; it does not
+                select a worker process (single evaluations always run in
+                process 0).
             evaluate_population: Callback to evaluate a population of normalized solutions
             denormalize_params: Callback to convert normalized params to dict
             record_iteration: Callback to record iteration results
