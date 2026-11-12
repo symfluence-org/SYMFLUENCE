@@ -31,6 +31,7 @@ import pandas as pd
 
 from symfluence.core.exceptions import ConfigurationError
 from symfluence.core.mixins.project import resolve_data_subdir
+from symfluence.core.modeling.mixins.pet_calculator import PETCalculatorMixin
 
 DEFAULT_LAPSE_RATE = 0.0065  # degC/m, standard environmental lapse rate
 BAND_PERCENTILES = (10.0, 30.0, 50.0, 70.0, 90.0)  # five equal-area bands
@@ -75,27 +76,14 @@ def simulation_time_info(start: Any, end: Any, timestep_hours: float) -> Tuple[i
 
 
 def oudin_pet_mm_hr(temp_k: np.ndarray, dates: Any, latitude_deg: float) -> np.ndarray:
-    """Oudin potential evapotranspiration as an hourly rate (mm/hr)."""
-    temp_c = temp_k - 273.15
-    doy = pd.DatetimeIndex(dates).dayofyear
-    lat_rad = np.radians(latitude_deg)
+    """Oudin potential evapotranspiration as an hourly rate (mm/hr).
 
-    dr = 1.0 + 0.033 * np.cos(2.0 * np.pi * doy / 365.0)
-    delta = 0.409 * np.sin(2.0 * np.pi * doy / 365.0 - 1.39)
-    ws = np.arccos(-np.tan(lat_rad) * np.tan(delta))
-    ws = np.clip(ws, 0.0, np.pi)
-    ra = (24.0 * 60.0 / np.pi) * 0.0820 * dr * (
-        ws * np.sin(lat_rad) * np.sin(delta)
-        + np.cos(lat_rad) * np.cos(delta) * np.sin(ws)
-    )
-
-    lam_rho = 2.45 * 1000.0
-    pet_mm_day = np.where(
-        temp_c > -5.0,
-        ra / lam_rho * (temp_c + 5.0) / 100.0 * 1000.0,
-        0.0,
-    )
-    pet_mm_day = np.maximum(pet_mm_day, 0.0)
+    Uses the shared Oudin routine, which handles polar day and night (the
+    sunset-hour-angle argument is clipped before the arccos).
+    """
+    doy = np.asarray(pd.DatetimeIndex(dates).dayofyear, dtype=float)
+    pet_mm_day = PETCalculatorMixin.oudin_pet_numpy(
+        np.asarray(temp_k, dtype=float) - 273.15, doy, latitude_deg)
     return pet_mm_day / 24.0
 
 

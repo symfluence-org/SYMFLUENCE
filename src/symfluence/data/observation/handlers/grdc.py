@@ -177,8 +177,9 @@ class GRDCHandler(BaseObservationHandler):
                 self.logger.warning(f"Cannot identify date column in {csv_file}")
                 return None
 
-        # Parse dates if string
-        if df['date'].dtype == 'object':
+        # Parse dates unless already datetime (strings are ``object`` on
+        # pandas 2 and ``str`` on pandas 3)
+        if not pd.api.types.is_datetime64_any_dtype(df['date']):
             df['date'] = pd.to_datetime(df['date'])
 
         # Set index

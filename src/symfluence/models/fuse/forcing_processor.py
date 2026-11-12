@@ -19,6 +19,7 @@ import geopandas as gpd
 import numpy as np
 import xarray as xr
 
+from symfluence.core.modeling.mixins.pet_calculator import PETCalculatorMixin
 from symfluence.core.modeling.utilities import BaseForcingProcessor, DataQualityHandler, ForcingDataProcessor
 from symfluence.core.path_resolver import find_catchment_subfile
 
@@ -333,36 +334,10 @@ class FuseForcingProcessor(BaseForcingProcessor):
         else:
             temp_c = temp_vals
 
-        # Day-of-year: shape (n_time,)
-        doy = temp.time.dt.dayofyear.values.astype(np.float64)
-
-        # Per-HRU latitude in radians: shape (n_hru,)
-        lat_rad = np.deg2rad(lats)
-
-        # Solar geometry — shapes annotated for broadcasting
-        # solar_decl: (n_time,)
-        solar_decl = 0.409 * np.sin((2.0 * np.pi / 365.0) * doy - 1.39)
-        # dr: (n_time,)
-        dr = 1.0 + 0.033 * np.cos((2.0 * np.pi / 365.0) * doy)
-
-        # Broadcast: (n_time, 1) x (n_hru,) -> (n_time, n_hru)
-        cos_arg = -np.tan(lat_rad)[np.newaxis, :] * np.tan(solar_decl)[:, np.newaxis]
-        cos_arg = np.clip(cos_arg, -1.0, 1.0)
-        sunset_angle = np.arccos(cos_arg)  # (n_time, n_hru)
-
-        # Extraterrestrial radiation Ra: (n_time, n_hru)
-        sin_lat = np.sin(lat_rad)[np.newaxis, :]
-        cos_lat = np.cos(lat_rad)[np.newaxis, :]
-        sin_decl = np.sin(solar_decl)[:, np.newaxis]
-        cos_decl = np.cos(solar_decl)[:, np.newaxis]
-        dr_2d = dr[:, np.newaxis]
-
-        Ra = ((24.0 * 60.0 / np.pi) * 0.082 * dr_2d *
-              (sunset_angle * sin_lat * sin_decl +
-               cos_lat * cos_decl * np.sin(sunset_angle)))
-
-        # Oudin formula
-        pet_vals = np.where(temp_c + 5.0 > 0.0, Ra / (100.0 * 2.45) * (temp_c + 5.0), 0.0)
+        # (n_time, 1) day-of-year against (1, n_hru) latitudes
+        doy = temp.time.dt.dayofyear.values.astype(np.float64)[:, np.newaxis]
+        lat_2d = np.asarray(lats, dtype=np.float64)[np.newaxis, :]
+        pet_vals = PETCalculatorMixin.oudin_pet_numpy(temp_c, doy, lat_2d)
 
         return xr.DataArray(
             pet_vals,

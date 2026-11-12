@@ -889,6 +889,14 @@ class FUSERunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, Miz
         except Exception as e:  # noqa: BLE001 — model execution resilience
             self.logger.error(f"Error copying default to best parameters: {str(e)}", exc_info=True)
 
+    def _forcing_elevation(self, bands: Dict[str, Any]) -> float:
+        """Z_FORCING: ``FUSE_FORCING_ELEVATION`` when set, else the bands' mean elevation."""
+        configured = self._get_config_value(
+            lambda: self.config.model.fuse.forcing_elevation if self.config.model and self.config.model.fuse else None,
+            default=None,
+        )
+        return float(configured) if configured is not None else float(bands['z_forcing'])
+
     def _add_elevation_params_to_constraints(self) -> bool:
         """
         Add elevation band parameters to the FUSE constraints file as FIXED parameters.
@@ -917,7 +925,7 @@ class FUSERunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, Miz
             n_bands = bands['n_bands']
             mean_elevs = bands['mean_elev']
             area_fracs = bands['area_frac']
-            z_forcing = bands['z_forcing']
+            z_forcing = self._forcing_elevation(bands)
 
             # Find constraints file
             constraints_file = self.setup_dir / 'fuse_zConstraints_snow.txt'
@@ -1024,7 +1032,7 @@ class FUSERunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, Miz
             n_bands = bands['n_bands']
             mean_elevs = bands['mean_elev']
             area_fracs = bands['area_frac']
-            z_forcing = bands['z_forcing']
+            z_forcing = self._forcing_elevation(bands)
 
             # Update para_def.nc with correct elevation band parameters
             with xr.open_dataset(para_def_path) as ds:
@@ -1150,7 +1158,7 @@ class FUSERunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, Miz
             n_bands = bands['n_bands']
             mean_elevs = bands['mean_elev']
             area_fracs = bands['area_frac']
-            z_forcing = bands['z_forcing']
+            z_forcing = self._forcing_elevation(bands)
 
             # Update para_sce.nc with correct elevation band parameters
             # Need to handle the 'par' dimension which may have multiple parameter sets

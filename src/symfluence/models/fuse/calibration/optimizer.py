@@ -258,7 +258,6 @@ class FUSEModelOptimizer(BaseModelOptimizer):
             z_forcing = self._get_config_value(
                 lambda: self.config.model.fuse.forcing_elevation if self.config.model and self.config.model.fuse else None,
                 default=None,
-                dict_key='FUSE_FORCING_ELEVATION'
             )
             params['Z_FORCING'] = float(z_forcing) if z_forcing is not None else bands['z_forcing']
 

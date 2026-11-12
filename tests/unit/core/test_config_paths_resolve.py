@@ -114,16 +114,9 @@ def _unresolvable_paths() -> list[str]:
     return bad
 
 
-# Guarded reads (``... if self.config.model else None``) that the checker did
-# not look inside until it learnt to. Each names an option with no schema field,
-# so the setting is ignored on typed configs. Fix the read (add the field or use
-# a flat ``dict_key``) and delete the entry; do not add to this list.
-_KNOWN_UNRESOLVED = {
-    "symfluence/models/fuse/calibration/optimizer.py: config.model.fuse.forcing_elevation",
-    "symfluence/models/gnn/runner.py: config.model.gnn.checkpoint_interval",
-    "symfluence/models/hype/preprocessor.py: config.model.hype.timeshift",
-    "symfluence/models/hype/preprocessor.py: config.model.hype.frac_threshold",
-}
+# Reads known not to resolve. Empty, and meant to stay so: fix the read (add
+# the schema field or use a flat ``dict_key``) rather than listing it here.
+_KNOWN_UNRESOLVED: set = set()
 
 
 # Config sections contributed by optional plugins. They resolve only when the

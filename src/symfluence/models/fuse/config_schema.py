@@ -38,6 +38,11 @@ class FUSEConfig(BaseModel):
     # Additional FUSE settings
     file_id: Optional[str] = Field(default=None, alias='FUSE_FILE_ID')
     n_elevation_bands: int = Field(default=1, alias='FUSE_N_ELEVATION_BANDS', ge=1)
+    forcing_elevation: Optional[float] = Field(
+        default=None, alias='FUSE_FORCING_ELEVATION',
+        description=('Elevation (m) the forcing represents (Z_FORCING), e.g. reanalysis orography; '
+                     'omitted uses the area-weighted mean elevation of the bands')
+    )
     timeout: int = Field(default=3600, alias='FUSE_TIMEOUT', ge=60, le=86400)  # seconds (1min to 24hr)
     run_internal_calibration: bool = Field(default=True, alias='FUSE_RUN_INTERNAL_CALIBRATION')
     output_timestep_seconds: int = Field(default=86400, alias='FUSE_OUTPUT_TIMESTEP_SECONDS')

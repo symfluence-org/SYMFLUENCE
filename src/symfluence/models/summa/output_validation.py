@@ -32,12 +32,14 @@ def validate_output_coverage(file_manager: Path, output_dir: Path, timestep_seco
         with xr.open_dataset(path) as ds:
             if 'time' not in ds:
                 raise ValidationError(f'{path.name}: missing time coordinate')
-            times = pd.DatetimeIndex(ds.time.values)
+            # Nanosecond resolution on both sides: the integer comparison below
+            # needs one unit, and pandas 3 no longer defaults to ns.
+            times = pd.DatetimeIndex(ds.time.values).as_unit('ns')
             if len(times) < 2 or times.hasnans or not times.is_monotonic_increasing or times.has_duplicates:
                 raise ValidationError(f'{path.name}: invalid or insufficient timestamps')
             step = (pd.Timedelta(seconds=float(timestep_seconds)) if timestep_seconds is not None
                     else pd.Timedelta(int(np.median(np.diff(times.asi8))), unit='ns').round('ms'))
-            expected = pd.date_range(start, end, freq=step)
+            expected = pd.date_range(start, end, freq=step).as_unit('ns')
             # NetCDF floating-point time decoding can introduce microsecond noise.
             # Compare every timestamp with an absolute tolerance; never relative
             # tolerance against epoch-sized values or just the two endpoints.
@@ -57,12 +59,12 @@ def validate_routing_coverage(summa_file: Path, routing_dir: Path, prefix: str):
     if not files:
         raise ValidationError('No mizuRoute output files')
     with xr.open_dataset(summa_file) as ds:
-        expected = pd.DatetimeIndex(ds.time.values)
+        expected = pd.DatetimeIndex(ds.time.values).as_unit('ns')
     parts = []
     for path in files:
         with xr.open_dataset(path) as ds:
             parts.extend(ds.time.values)
-    times = pd.DatetimeIndex(parts).sort_values()
+    times = pd.DatetimeIndex(parts).as_unit('ns').sort_values()
     if times.has_duplicates or not times.equals(expected):
         raise ValidationError('mizuRoute output coverage does not match complete SUMMA output')
     return files

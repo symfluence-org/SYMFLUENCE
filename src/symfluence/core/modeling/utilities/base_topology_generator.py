@@ -514,7 +514,8 @@ class BaseTopologyGenerator(ABC):
                 self.pp.logger.info("Detected headwater basin: all river network IDs are None/null")
                 return True
 
-            if shp_river[seg_id_col].dtype == 'object':
+            # strings are ``object`` on pandas 2 and ``str`` on pandas 3
+            if shp_river[seg_id_col].dtype.kind not in 'iufb':
                 seg_ids_none_str = (shp_river[seg_id_col] == 'None').all()
                 downseg_ids_none_str = (shp_river[downseg_id_col] == 'None').all()
                 if seg_ids_none_str and downseg_ids_none_str:

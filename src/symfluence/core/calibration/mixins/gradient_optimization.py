@@ -171,25 +171,56 @@ class GradientOptimizationMixin(ConfigMixin):
         ``sqrt(float32 eps) ~= 3.5e-4`` amplifies it rather than resolving a
         slope.
         """
-        if steps < self._LINE_SEARCH_MIN_STEPS:
-            return
-        if failures / steps < self._LINE_SEARCH_FAILURE_ALERT:
-            return
         if getattr(self, '_line_search_degenerate_reported', False):
             return
-        self._line_search_degenerate_reported = True
-        float32_floor = float(np.sqrt(np.finfo(np.float32).eps))
-        hint = ""
-        if epsilon < float32_floor:
-            hint = (
-                f" gradient_epsilon={epsilon:g} is below sqrt(float32 eps)="
-                f"{float32_floor:.1e}, so if the model evaluates in float32 "
-                f"(the JAX default) the gradient is noise, not slope — raise "
-                f"gradient_epsilon or evaluate in float64."
-            )
-        self.logger.error(
-            "Line search has failed on %d of %d steps (%.0f%%); the optimizer "
-            "is running as steepest descent, not L-BFGS, and its result should "
-            "not be read as a converged quasi-Newton solution.%s",
-            failures, steps, 100 * failures / steps, hint,
+        self._line_search_degenerate_reported = warn_if_line_search_degenerate(
+            self.logger, failures, steps, epsilon,
+            failure_alert=self._LINE_SEARCH_FAILURE_ALERT,
+            min_steps=self._LINE_SEARCH_MIN_STEPS,
         )
+
+
+#: Fraction of failed line searches above which the search is reported as
+#: degenerate, and the minimum number of steps before judging.
+LINE_SEARCH_FAILURE_ALERT = 0.5
+LINE_SEARCH_MIN_STEPS = 20
+
+
+def warn_if_line_search_degenerate(
+    logger: logging.Logger,
+    failures: int,
+    steps: int,
+    epsilon: Optional[float],
+    failure_alert: float = LINE_SEARCH_FAILURE_ALERT,
+    min_steps: int = LINE_SEARCH_MIN_STEPS,
+) -> bool:
+    """Log an error when most steps could not use the quasi-Newton direction.
+
+    ``failures`` counts steps that ran as steepest descent because the
+    quasi-Newton line search failed or no curvature history was available.
+
+    Returns True when the error was logged, so the caller can report it once.
+    ``epsilon`` is the finite-difference step, or None when the gradient is
+    not a finite difference (no float32 hint is given then).
+    """
+    if steps < min_steps:
+        return False
+    if failures / steps < failure_alert:
+        return False
+    float32_floor = float(np.sqrt(np.finfo(np.float32).eps))
+    hint = ""
+    if epsilon is not None and epsilon < float32_floor:
+        hint = (
+            f" gradient_epsilon={epsilon:g} is below sqrt(float32 eps)="
+            f"{float32_floor:.1e}, so if the model evaluates in float32 "
+            f"(the JAX default) the gradient is noise, not slope — raise "
+            f"gradient_epsilon or evaluate in float64."
+        )
+    logger.error(
+        "The quasi-Newton step was unusable on %d of %d steps (%.0f%%: line "
+        "search failed or no curvature history); the optimizer "
+        "is running as steepest descent, not L-BFGS, and its result should "
+        "not be read as a converged quasi-Newton solution.%s",
+        failures, steps, 100 * failures / steps, hint,
+    )
+    return True

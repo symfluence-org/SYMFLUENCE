@@ -221,3 +221,20 @@ def test_preprocessors_pass_their_run_forcing_selector(tmp_path):
                 patch.object(pp, '_get_forcing_dir', return_value=tmp_path):
             pp._prepare_daily_rainfall(tmp_path)
         assert prep.call_args.kwargs['forcing_selector'] == pp._select_run_forcing
+
+
+@pytest.mark.parametrize('lat', [78.2, -75.0, 66.0, 45.0])
+def test_oudin_is_finite_inside_the_polar_circles(lat):
+    """Polar day and night used to give NaN (unclipped arccos argument)."""
+    from symfluence.core.modeling.mixins.pet_calculator import PETCalculatorMixin
+    from symfluence.models.parflow.lumped_forcing import oudin_pet_mm_hr
+
+    dates = pd.date_range('2021-01-01', '2021-12-31', freq='D')
+    temp_k = np.full(len(dates), 283.15)
+    pet = oudin_pet_mm_hr(temp_k, dates, lat)
+    assert np.all(np.isfinite(pet)) and np.all(pet >= 0)
+    np.testing.assert_allclose(
+        pet * 24.0,
+        PETCalculatorMixin.oudin_pet_numpy(temp_k - 273.15, np.asarray(dates.dayofyear), lat))
+    if lat > 70:
+        assert pet[0] == 0.0 and pet[180] > 0.0  # polar night, polar day

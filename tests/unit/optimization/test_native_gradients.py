@@ -781,3 +781,59 @@ class TestGradientConfigOptions:
         for mode in ['auto', 'native', 'finite_difference']:
             config = OptimizationConfig(gradient_mode=mode)
             assert config.gradient_mode == mode
+
+
+class TestLBFGSDegenerateWarning:
+    """The live L-BFGS reports once when it is not running as quasi-Newton."""
+
+    @staticmethod
+    def _run(algo, objective):
+        return algo.optimize(
+            n_params=3,
+            evaluate_solution=objective,
+            evaluate_population=lambda p, i: np.array([objective(x, i) for x in p]),
+            denormalize_params=lambda x: {f'p{i}': v for i, v in enumerate(x)},
+            record_iteration=lambda *args, **kwargs: None,
+            update_best=lambda *args, **kwargs: None,
+            log_progress=lambda *args, **kwargs: None,
+            compute_gradient=None,
+            gradient_mode='finite_difference',
+        )
+
+    def test_reports_once_when_every_step_is_steepest_descent(
+        self, mock_config, test_logger, caplog
+    ):
+        from symfluence.core.calibration.optimizers.algorithms.lbfgs import LBFGSAlgorithm
+
+        # A linear objective has a constant gradient, so no secant pair ever
+        # passes the curvature condition and every step is steepest descent.
+        mock_config['LBFGS_STEPS'] = 30
+        mock_config['NUMBER_OF_ITERATIONS'] = 30
+        mock_config['LBFGS_LR'] = 0.01
+        mock_config['GRADIENT_EPSILON'] = 1e-4
+        mock_config['GRADIENT_CLIP_VALUE'] = 0.0
+        algo = LBFGSAlgorithm(mock_config, test_logger)
+
+        with caplog.at_level(logging.ERROR, logger=test_logger.name):
+            self._run(algo, lambda x, step_id=0: float(np.sum(x)))
+
+        errors = [r for r in caplog.records if r.levelno == logging.ERROR]
+        assert len(errors) == 1
+        assert "steepest descent" in errors[0].getMessage()
+        assert "gradient_epsilon" in errors[0].getMessage()
+
+    def test_silent_on_a_healthy_run(self, mock_config, test_logger, caplog):
+        from symfluence.core.calibration.optimizers.algorithms.lbfgs import LBFGSAlgorithm
+
+        mock_config['LBFGS_STEPS'] = 40
+        mock_config['NUMBER_OF_ITERATIONS'] = 40
+        mock_config['LBFGS_LR'] = 1.0
+        mock_config['GRADIENT_EPSILON'] = 1e-6
+        mock_config['GRADIENT_CLIP_VALUE'] = 0.0
+        algo = LBFGSAlgorithm(mock_config, test_logger)
+        scales = np.array([1.0, 10.0, 100.0])
+
+        with caplog.at_level(logging.ERROR, logger=test_logger.name):
+            self._run(algo, lambda x, step_id=0: -float(np.sum(scales * (x - 0.7) ** 2)))
+
+        assert not [r for r in caplog.records if r.levelno == logging.ERROR]
