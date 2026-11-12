@@ -4215,6 +4215,55 @@ DOWNLOAD_HUBEAU_DATA: true
 #   Usage:      1
 HUBEAU_USE_DAILY: true
 
+# KIWIS_CHANNEL_URL
+#   Type:        str
+#   Default:     None
+#   Source:      KiWISConfig (evaluation.py)
+#   Description: KiWebPortal share-channel URL (grants access: prefer the KIWIS_CHANNEL_URL environment variable)
+KIWIS_CHANNEL_URL: null
+
+# KIWIS_TS_ID
+#   Type:        str
+#   Default:     None
+#   Source:      KiWISConfig (evaluation.py)
+#   Description: KiWIS time series id of the discharge series (or environment variable KIWIS_TS_ID)
+KIWIS_TS_ID: null
+
+# KIWIS_INTERVAL_LABEL
+#   Type:        str
+#   Default:     start
+#   Source:      KiWISConfig (evaluation.py)
+#   Description: Stamp interval means at the interval 'start' or 'end'
+KIWIS_INTERVAL_LABEL: start
+
+# KIWIS_MIN_COVERAGE
+#   Type:        float
+#   Default:     0.8
+#   Source:      KiWISConfig (evaluation.py)
+#   Description: Share of sub-interval values needed for an interval mean
+KIWIS_MIN_COVERAGE: 0.8
+
+# KIWIS_REVISE_DAYS
+#   Type:        float
+#   Default:     3.0
+#   Source:      KiWISConfig (evaluation.py)
+#   Description: On update, refetch this many days before the newest stored value
+KIWIS_REVISE_DAYS: 3.0
+
+# KIWIS_TIMEOUT
+#   Type:        float
+#   Default:     180.0
+#   Source:      KiWISConfig (evaluation.py)
+#   Description: Request timeout in seconds
+KIWIS_TIMEOUT: 180.0
+
+# KIWIS_RETRIES
+#   Type:        int
+#   Default:     2
+#   Source:      KiWISConfig (evaluation.py)
+#   Description: Retries of a failed request
+KIWIS_RETRIES: 2
+
 # DOWNLOAD_USGS_GW
 #   Type:        bool
 #   Default:     False
