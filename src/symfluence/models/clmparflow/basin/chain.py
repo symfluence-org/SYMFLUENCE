@@ -117,6 +117,7 @@ class ChainSettings:
     forcing_names: Dict[str, str] = field(default_factory=dict)
     mpirun: Optional[str] = None
     timeout: Optional[int] = None
+    segv_retries: int = 2  # reruns of a segment that ended in a segmentation fault
 
 
 def run_chain(runs: Path, grid: BasinGrid, params: BasinParameters, parflow_dir: Path, forcing_file: ForcingSource,
@@ -140,7 +141,8 @@ def run_chain(runs: Path, grid: BasinGrid, params: BasinParameters, parflow_dir:
         log(f'ParFlow-CLM basin segment {name} (WY{wy})')
         run_segment(run, name, grid, params, parflow_dir, forcing_file, f'{wy - 1}-10-01', f'{wy}-10-01', prev,
                     settings.P, settings.Q, mpirun=settings.mpirun, timeout=settings.timeout,
-                    forcing_unit_variable=settings.forcing_unit_variable, forcing_names=settings.forcing_names)
+                    forcing_unit_variable=settings.forcing_unit_variable, forcing_names=settings.forcing_names,
+                    segv_retries=settings.segv_retries)
         s = summarise_segment(run, grid)
         status(**{f'done_{name}': dict(mean_q_m3s=round(s['mean_q_m3s'], 1),
                                        dsub_hm3=round((s['sub1'] - s['sub0']) / 1e6, 1),

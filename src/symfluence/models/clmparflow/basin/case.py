@@ -54,6 +54,7 @@ from symfluence.core.exceptions import (
     ValidationError,
 )
 
+from ..segfault_retry import DEFAULT_SEGV_RETRIES, run_with_segfault_retry
 from . import pfio
 from .grid import BasinGrid
 
@@ -393,12 +394,19 @@ def write_clm_files(run: Path, grid: BasinGrid, params: BasinParameters, start: 
 
 
 def run_parflow(run: Path, name: str, parflow_dir: Path, ranks: int, mpirun: Optional[str] = None,
-                timeout: Optional[int] = None) -> Tuple[int, str]:
-    """Run ParFlow in ``run``; returns (exit code, tail of stdout+stderr)."""
+                timeout: Optional[int] = None, segv_retries: int = DEFAULT_SEGV_RETRIES) -> Tuple[int, str]:
+    """Run ParFlow in ``run``; returns (exit code, tail of stdout+stderr).
+
+    A run that ends in a segmentation fault is started again up to ``segv_retries`` times (see
+    ``segfault_retry``). stdin is closed: mpirun otherwise reads the parent's stdin.
+    """
     exe = Path(parflow_dir) / 'bin' / 'parflow'
     cmd = [mpirun or 'mpirun', '-np', str(ranks), str(exe), name] if ranks > 1 or mpirun else [str(exe), name]
     env = dict(os.environ, PARFLOW_DIR=str(parflow_dir))
-    r = subprocess.run(cmd, cwd=run, env=env, capture_output=True, text=True, timeout=timeout)
+    r = run_with_segfault_retry(
+        lambda: subprocess.run(cmd, cwd=run, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                               timeout=timeout),
+        run, name, retries=segv_retries)
     return r.returncode, (r.stdout + r.stderr)[-3000:]
 
 
@@ -430,13 +438,14 @@ def write_segment(run: Path, name: str, grid: BasinGrid, params: BasinParameters
 def run_segment(run: Path, name: str, grid: BasinGrid, params: BasinParameters, parflow_dir: Path,
                 forcing_file: ForcingSource, start: str, end: str, prev: Optional[Path] = None, P: int = 1, Q: int = 1,
                 keep_forcing: bool = False, mpirun: Optional[str] = None, timeout: Optional[int] = None,
-                forcing_unit_variable: str = 'unit_id', forcing_names: Optional[Dict[str, str]] = None) -> Dict:
+                forcing_unit_variable: str = 'unit_id', forcing_names: Optional[Dict[str, str]] = None,
+                segv_retries: int = DEFAULT_SEGV_RETRIES) -> Dict:
     """Write and run one segment; raises if ParFlow does not finish. Forcing and CLM output folders are removed."""
     t0 = time.time()
     meta = write_segment(run, name, grid, params, parflow_dir, forcing_file, start, end, prev, P, Q,
                          forcing_unit_variable, forcing_names)
     t1 = time.time()
-    rc, out = run_parflow(run, name, parflow_dir, P * Q, mpirun, timeout)
+    rc, out = run_parflow(run, name, parflow_dir, P * Q, mpirun, timeout, segv_retries)
     meta.update(rc=rc, build_s=round(t1 - t0), run_s=round(time.time() - t1))
     (run / 'meta.json').write_text(json.dumps(meta, indent=1))
     (run / 'run.log').write_text(out)

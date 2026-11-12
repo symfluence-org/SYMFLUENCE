@@ -126,6 +126,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   layering guard forbids handler-module imports from outside `data/`.
 
 ### Fixed
+- **ParFlow-CLM random segfaults**: CLM inside ParFlow segfaults now and then (a few percent of runs, at the
+  first step) on inputs that rerun cleanly and bit-identically. The lumped runner and basin-mode segments now
+  rerun a run that ended with signal 11 / exit 139 up to `CLMPARFLOW_SEGV_RETRIES` times (default 2), keeping
+  each failed attempt's output as `<run>.segv<n>.log` and removing partial `<run>.out.*` files first. Basin
+  mode also starts mpirun with stdin closed (it read the parent's stdin). Other failures are not rerun.
 - **Wflow parallel calibration**: the Wflow worker now provides `evaluate_worker_function`; previously
   every parallel or async Wflow DDS run failed with "Subclasses must implement" and calibration ran
   serially. Final streamflow scoring of distributed Wflow reads the native outlet `output.csv` instead of
