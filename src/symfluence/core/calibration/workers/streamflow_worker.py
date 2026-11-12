@@ -19,6 +19,7 @@ from abc import abstractmethod
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 
 from symfluence.core.exceptions import ModelExecutionError
@@ -73,14 +74,33 @@ class StreamflowWorker(BaseWorker):
         config: Dict[str, Any],
         *,
         project_dir: Path,
+        sim: pd.Series,
+        obs: pd.Series,
         **kwargs,
     ) -> Dict[str, Any]:
         """Score components beyond the streamflow metrics (default: none).
 
-        Called only after the streamflow metrics were computed. Raising
-        fails the trial with the exception message as the reason.
+        ``sim`` and ``obs`` are the series the streamflow metrics were
+        computed from: same index, scoring window applied, no NaN. Called
+        only after those metrics were computed. Raising fails the trial with
+        the exception message as the reason.
         """
         return {}
+
+    @staticmethod
+    def daily_mean_if_subdaily(series: pd.Series) -> pd.Series:
+        """``series`` on a ``DatetimeIndex``, averaged to days when finer than daily.
+
+        For readers of models that may run sub-daily: observations are
+        scored as daily means, and a sub-daily series aligned against them
+        would be compared at its midnight values only.
+        """
+        if not isinstance(series.index, pd.DatetimeIndex):
+            series = series.copy()
+            series.index = pd.to_datetime(series.index)
+        if len(series) > 1 and pd.Series(series.index).diff().median() < pd.Timedelta(days=1):
+            series = series.resample('D').mean()
+        return series
 
     @property
     def _model_label(self) -> str:
@@ -125,15 +145,17 @@ class StreamflowWorker(BaseWorker):
 
             period = kwargs.get('period') or resolve_config_value(
                 config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
-            obs_aligned, sim_aligned = self._streamflow_metrics.align_timeseries(
+            obs_aligned, sim_aligned = self._streamflow_metrics.align_series(
                 sim_series, obs_series,
                 calibration_period=split_period(period, allow_extra=True),
             )
             results: Dict[str, Any] = self._streamflow_metrics.calculate_metrics(
-                obs_aligned, sim_aligned, metrics=self._requested_metrics(config)
+                np.asarray(obs_aligned.values), np.asarray(sim_aligned.values),
+                metrics=self._requested_metrics(config)
             )
             results.update(self.additional_metrics(
-                output_dir, config, project_dir=project_dir, **kwargs))
+                output_dir, config, project_dir=project_dir,
+                sim=sim_aligned, obs=obs_aligned, **kwargs))
             return results
 
         except ModelExecutionError as e:

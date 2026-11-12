@@ -15,11 +15,10 @@ import xarray as xr
 
 from symfluence.core.calibration.workers.base_worker import (
     MACOS_MALLOC_QUIET_ENV,
-    BaseWorker,
     run_worker_task,
 )
+from symfluence.core.calibration.workers.streamflow_worker import StreamflowWorker
 from symfluence.core.exceptions import ModelExecutionError
-from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.path_resolver import resolve_install_dir
@@ -29,14 +28,13 @@ from symfluence.models.wflow.lumped_discharge import is_runoff_flux_output, lump
 
 
 @R.workers.add('WFLOW')
-class WflowWorker(BaseWorker):
+class WflowWorker(StreamflowWorker):
     """Worker for Wflow model calibration."""
 
     def __init__(self, config=None, logger=None):
         super().__init__(config, logger)
         self._routing_params = None  # Populated per iteration by apply_parameters
 
-    _streamflow_metrics = StreamflowMetrics()
 
     def apply_parameters(self, params, settings_dir, **kwargs):
         try:
@@ -158,65 +156,30 @@ class WflowWorker(BaseWorker):
             self.logger.error(f"Wflow execution failed: {e}")
             return False
 
-    def calculate_metrics(self, output_dir, config, **kwargs):
-        # Note: base_worker calls calculate_metrics(task.output_dir, task.config)
-        try:
-            sim = self._load_simulated_streamflow(
-                Path(output_dir), config, self._routing_params or None
-            )
-            if sim is None:
-                self.logger.warning(f"No sim data found in {output_dir}")
-                return {'KGE': -999.0, 'NSE': -999.0}
-            obs = self._load_observations(config)
-            if obs is None:
-                self.logger.warning("No observation data found")
-                return {'KGE': -999.0, 'NSE': -999.0}
-            # Ensure datetime index and resample sub-daily to daily
-            if not isinstance(sim.index, pd.DatetimeIndex):
-                sim.index = pd.to_datetime(sim.index)
-            if not isinstance(obs.index, pd.DatetimeIndex):
-                obs.index = pd.to_datetime(obs.index)
-            if len(sim) > 1:
-                median_dt = pd.Series(sim.index).diff().median()
-                if median_dt < pd.Timedelta(days=1):
-                    sim = sim.resample('D').mean()
-            # Filter to calibration period (excludes cold-start spinup)
-            cal_period = (resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
-                          if isinstance(config, dict) else '')
-            parts = split_period(cal_period)
-            if parts is not None:
-                sim = sim.loc[parts[0]:parts[1]]  # type: ignore[misc]
-                obs = obs.loc[parts[0]:parts[1]]  # type: ignore[misc]
-            sim, obs = sim.align(obs, join='inner')
-            common_idx = sim.dropna().index.intersection(obs.dropna().index)
-            sim, obs = sim.loc[common_idx], obs.loc[common_idx]
-            if len(sim) < 30:
-                self.logger.warning(f"Insufficient data: n={len(sim)} < 30")
-                return {'KGE': -999.0, 'NSE': -999.0}
-            self.logger.info(
-                f"Metrics: n={len(sim)}, sim_mean={sim.mean():.2f}, obs_mean={obs.mean():.2f}, "
-                f"output_dir={output_dir}, cal_period={cal_period}"
-            )
-            metrics = self._streamflow_metrics.calculate_metrics(obs.values, sim.values)
-            if any(str(k).upper() == 'SEASONAL_BIAS_SCORE'
-                   for k in (resolve_config_value(config, lambda: config.optimization.composite_metric, None, 'COMPOSITE_METRIC') or {})):
-                from .seasonal import seasonal_bias_score
-                metrics['seasonal_bias_score'] = seasonal_bias_score(sim, obs)
-            if resolve_config_value(config, lambda: config.model.wflow.cryosphere_constraints, False, 'WFLOW_CRYOSPHERE_CONSTRAINTS'):
-                from ..cryosphere import calculate_constraints
-                project = Path(config['SYMFLUENCE_DATA_DIR']) / ('domain_' + config['DOMAIN_NAME'])
-                # Spatial geometry is immutable during calibration; parameter updates
-                # cannot change the areas used to weight snow/ice observations.
-                metrics.update(calculate_constraints(
-                    output_dir, project / 'settings/WFLOW', project, cal_period,
-                    resolve_config_value(config, lambda: config.model.wflow.snow_cover_error_scale, .2, 'WFLOW_SNOW_COVER_ERROR_SCALE'),
-                    resolve_config_value(config, lambda: config.model.wflow.glacier_mb_error_scale, 1., 'WFLOW_GLACIER_MB_ERROR_SCALE'),
-                    resolve_config_value(config, lambda: config.model.wflow.snow_cover_threshold_mm, 5., 'WFLOW_SNOW_COVER_THRESHOLD_MM')))
-            self.logger.info(f"Computed metrics: {metrics}")
-            return metrics
-        except Exception as e:  # noqa: BLE001
-            self.logger.error(f"Metric calculation failed: {e}")
-            return {'KGE': -999.0, 'NSE': -999.0}
+    def read_simulated_streamflow(self, output_dir, config, **kwargs):
+        """This trial's outlet discharge (m3/s), daily means when Wflow ran sub-daily."""
+        sim = self._load_simulated_streamflow(Path(output_dir), config, self._routing_params or None)
+        return None if sim is None else self.daily_mean_if_subdaily(sim)
+
+    def additional_metrics(self, output_dir, config, *, project_dir, sim, obs, **kwargs):
+        """Seasonal bias (when a COMPOSITE_METRIC component) and cryosphere constraints."""
+        metrics: Dict[str, Any] = {}
+        if any(str(k).upper() == 'SEASONAL_BIAS_SCORE'
+               for k in (resolve_config_value(config, lambda: config.optimization.composite_metric, None, 'COMPOSITE_METRIC') or {})):
+            from .seasonal import seasonal_bias_score
+            metrics['seasonal_bias_score'] = seasonal_bias_score(sim, obs)
+        if resolve_config_value(config, lambda: config.model.wflow.cryosphere_constraints, False, 'WFLOW_CRYOSPHERE_CONSTRAINTS'):
+            from ..cryosphere import calculate_constraints
+
+            # Spatial geometry is immutable during calibration; parameter updates
+            # cannot change the areas used to weight snow/ice observations.
+            metrics.update(calculate_constraints(
+                output_dir, project_dir / 'settings/WFLOW', project_dir,
+                resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD'),
+                resolve_config_value(config, lambda: config.model.wflow.snow_cover_error_scale, .2, 'WFLOW_SNOW_COVER_ERROR_SCALE'),
+                resolve_config_value(config, lambda: config.model.wflow.glacier_mb_error_scale, 1., 'WFLOW_GLACIER_MB_ERROR_SCALE'),
+                resolve_config_value(config, lambda: config.model.wflow.snow_cover_threshold_mm, 5., 'WFLOW_SNOW_COVER_THRESHOLD_MM')))
+        return metrics
 
     def _load_simulated_streamflow(self, output_dir: Path, config: dict = None, routing_params: dict = None):
         """Load Q from Wflow CSV or netCDF output.
@@ -295,20 +258,6 @@ class WflowWorker(BaseWorker):
         data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
         staticmaps_name = resolve_config_value(config, lambda: config.model.wflow.staticmaps_file, 'wflow_staticmaps.nc', 'WFLOW_STATICMAPS_FILE')
         return data_dir / f'domain_{domain_name}' / 'settings' / 'WFLOW' / staticmaps_name
-
-    def _load_observations(self, config):
-        try:
-            domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
-            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
-            project_dir = data_dir / f'domain_{domain_name}'
-            values, index = self._streamflow_metrics.load_observations(
-                config, project_dir, domain_name, resample_freq=None,
-            )
-            if values is None or index is None:
-                return None
-            return pd.Series(values, index=index, name='discharge_cms')
-        except Exception:  # noqa: BLE001
-            return None
 
     @staticmethod
     def evaluate_worker_function(task_data):

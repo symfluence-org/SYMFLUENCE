@@ -114,3 +114,40 @@ def test_failing_additional_metric_fails_the_trial(tmp_path, config):
 
 def test_reader_is_required():
     assert StreamflowWorker.__abstractmethods__ >= {'read_simulated_streamflow'}
+
+
+def test_additional_metrics_receive_the_scored_series(tmp_path, config):
+    seen = {}
+
+    class _Recording(_Worker):
+        def additional_metrics(self, output_dir, config, *, project_dir, sim, obs, **kwargs):
+            seen.update(sim=sim, obs=obs)
+            return {}
+
+    sim = _sim()
+    sim.iloc[5] = np.nan
+    cfg = dict(config, CALIBRATION_PERIOD='2001-01-01, 2001-01-31')
+    _Recording(sim, config=cfg).calculate_metrics(tmp_path, cfg)
+    assert seen['sim'].index.equals(seen['obs'].index)
+    assert len(seen['sim']) == 30 and not seen['sim'].isna().any()
+    assert seen['sim'].index.max() == pd.Timestamp('2001-01-31')
+
+
+def test_daily_mean_if_subdaily():
+    hours = pd.date_range('2001-01-01', periods=48, freq='h')
+    hourly = pd.Series(np.r_[np.full(24, 1.0), np.full(24, 3.0)], index=hours)
+    daily = StreamflowWorker.daily_mean_if_subdaily(hourly)
+    assert daily.tolist() == [1.0, 3.0]
+    assert list(daily.index) == list(pd.date_range('2001-01-01', periods=2, freq='D'))
+    already = pd.Series([1.0, 2.0], index=['2001-01-01', '2001-01-02'])
+    out = StreamflowWorker.daily_mean_if_subdaily(already)
+    assert isinstance(out.index, pd.DatetimeIndex) and out.tolist() == [1.0, 2.0]
+
+
+@pytest.mark.parametrize('model', ['WFLOW', 'LISFLOOD', 'PCRGLOBWB', 'CWATM', 'PRMS', 'GSFLOW', 'MHM', 'WATFLOOD'])
+def test_converted_workers_share_the_scoring_tail(model):
+    from symfluence.core.registries import R
+
+    worker_cls = R.workers.get(model)
+    assert issubclass(worker_cls, StreamflowWorker)
+    assert worker_cls.calculate_metrics is StreamflowWorker.calculate_metrics

@@ -770,9 +770,7 @@ src/symfluence/models/ignacio/runner.py:IGNACIORunner._run_via_api:except Except
 src/symfluence/models/ignacio/runner.py:IGNACIORunner._run_via_cli:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/lisflood/calibration/optimizer.py:LisfloodModelOptimizer.run_final_evaluation:except Exception as e:  # noqa: BLE001
 src/symfluence/models/lisflood/calibration/parameter_manager.py:LisfloodParameterManager.update_model_files:except Exception as e:  # noqa: BLE001
-src/symfluence/models/lisflood/calibration/worker.py:LisfloodWorker._load_observations:except Exception:  # noqa: BLE001
 src/symfluence/models/lisflood/calibration/worker.py:LisfloodWorker.apply_parameters:except Exception as e:  # noqa: BLE001
-src/symfluence/models/lisflood/calibration/worker.py:LisfloodWorker.calculate_metrics:except Exception as e:  # noqa: BLE001
 src/symfluence/models/lisflood/calibration/worker.py:LisfloodWorker.run_model:except Exception as e:  # noqa: BLE001
 src/symfluence/models/lisflood/extractor.py:LisfloodResultExtractor.extract_variable:except Exception as e:  # noqa: BLE001
 src/symfluence/models/lisflood/postprocessor.py:LisfloodPostProcessor.extract_streamflow:except Exception as e:  # noqa: BLE001
@@ -940,7 +938,6 @@ src/symfluence/models/parflow/postprocessor.py:ParFlowPostProcessor.extract_stre
 src/symfluence/models/parflow/postprocessor.py:ParFlowPostProcessor.extract_streamflow:except Exception:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/parflow/postprocessor.py:ParFlowPostProcessor.extract_streamflow:except Exception:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/parflow/runner.py:ParFlowRunner._get_parflow_dir:except Exception:  # noqa: BLE001 — model execution resilience
-src/symfluence/models/pcrglobwb/calibration/worker.py:PCRGLOBWBWorker.calculate_metrics:except Exception as e:  # noqa: BLE001
 src/symfluence/models/pcrglobwb/extractor.py:PCRGLOBWBResultExtractor.extract_variable:except Exception as e:  # noqa: BLE001
 src/symfluence/models/pcrglobwb/postprocessor.py:PCRGLOBWBPostProcessor.extract_streamflow:except Exception as e:  # noqa: BLE001
 src/symfluence/models/pcrglobwb/preprocessor.py:PCRGLOBWBPreProcessor._build_domain_grid:except Exception:  # noqa: BLE001
@@ -1118,9 +1115,7 @@ src/symfluence/models/watflood/preprocessor.py:WATFLOODPreProcessor._mean_dem_el
 src/symfluence/models/watflood/preprocessor.py:WATFLOODPreProcessor.run_preprocessing:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/watflood/runner.py:WATFLOODRunner.run:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/wflow/calibration/parameter_manager.py:WflowParameterManager.update_model_files:except Exception as e:  # noqa: BLE001
-src/symfluence/models/wflow/calibration/worker.py:WflowWorker._load_observations:except Exception:  # noqa: BLE001
 src/symfluence/models/wflow/calibration/worker.py:WflowWorker.apply_parameters:except Exception as e:  # noqa: BLE001
-src/symfluence/models/wflow/calibration/worker.py:WflowWorker.calculate_metrics:except Exception as e:  # noqa: BLE001
 src/symfluence/models/wflow/calibration/worker.py:WflowWorker.run_model:except Exception as e:  # noqa: BLE001
 src/symfluence/models/wflow/extractor.py:WflowResultExtractor.extract_variable:except Exception as e:  # noqa: BLE001
 src/symfluence/models/wflow/postprocessor.py:WflowPostProcessor.extract_streamflow:except Exception as e:  # noqa: BLE001
