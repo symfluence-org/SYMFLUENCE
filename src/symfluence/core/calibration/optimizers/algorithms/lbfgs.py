@@ -33,6 +33,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
+from ...mixins.gradient_optimization import warn_if_line_search_degenerate
 from .base_algorithm import NativeGradientCallback, OptimizationAlgorithm
 from .config_schema import LBFGSDefaults
 
@@ -246,6 +247,11 @@ class LBFGSAlgorithm(OptimizationAlgorithm):
         best_x = x.copy()
         best_fitness = float('-inf')
         n_improvements = 0
+        # Steps after the first that ran as steepest descent: the quasi-Newton
+        # line search found no step, or the previous step left no curvature
+        # history. Reported once when they dominate.
+        steepest_descent_steps = 0
+        degenerate_reported = False
 
         # Initial minimization-space objective and gradient
         g, grad = eval_min(x)
@@ -274,6 +280,7 @@ class LBFGSAlgorithm(OptimizationAlgorithm):
             # the natural trial step is 1.0 once history exists; the first
             # step is plain steepest descent and starts from lr.
             trial_step = 1.0 if s_history else lr
+            quasi_newton = bool(s_history)
             step_size, g_new, grad_new = self._line_search_with_gradient_func(
                 x, direction, g, grad, eval_min,
                 trial_step, c1, c2
@@ -286,12 +293,21 @@ class LBFGSAlgorithm(OptimizationAlgorithm):
                     f"L-BFGS line search failed at step {step}; resetting history "
                     "and trying steepest descent"
                 )
+                quasi_newton = False
                 s_history.clear()
                 y_history.clear()
                 direction = -grad
                 step_size, g_new, grad_new = self._line_search_with_gradient_func(
                     x, direction, g, grad, eval_min,
                     lr, c1, c2
+                )
+
+            if step > 0 and not quasi_newton:
+                steepest_descent_steps += 1
+            if not degenerate_reported:
+                degenerate_reported = warn_if_line_search_degenerate(
+                    self.logger, steepest_descent_steps, step + 1,
+                    None if use_native else gradient_epsilon,
                 )
 
             if step_size is None:

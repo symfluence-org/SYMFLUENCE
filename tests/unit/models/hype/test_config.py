@@ -43,3 +43,20 @@ class TestHYPEConfigAdapter:
         config = {"SETTINGS_HYPE_PATH": None}
         with pytest.raises(ConfigValidationError, match="Missing required"):
             adapter.validate(config)
+
+
+def test_timeshift_and_frac_threshold_are_schema_fields():
+    """They were read from the typed config but had no field, so were ignored."""
+    from symfluence.models.hype.config_schema import HYPEConfig
+
+    default = HYPEConfig()
+    assert default.timeshift == 0 and default.frac_threshold == 0.05
+    cfg = HYPEConfig(HYPE_TIMESHIFT=-1, HYPE_FRAC_THRESHOLD=0.02)
+    assert cfg.timeshift == -1 and cfg.frac_threshold == 0.02
+
+
+def test_gnn_checkpoint_interval_is_a_schema_field():
+    from symfluence.models.gnn.config_schema import GNNConfig
+
+    assert GNNConfig().checkpoint_interval == 50
+    assert GNNConfig(GNN_CHECKPOINT_INTERVAL=5).checkpoint_interval == 5

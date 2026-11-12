@@ -558,7 +558,8 @@ class MizuRouteTopologyGenerator:
                 return True
 
             # Also check for string 'None' values (sometimes shapefiles store None as string)
-            if shp_river[seg_id_col].dtype == 'object':
+            # strings are ``object`` on pandas 2 and ``str`` on pandas 3
+            if shp_river[seg_id_col].dtype.kind not in 'iufb':
                 seg_ids_none_str = (shp_river[seg_id_col] == 'None').all()
                 downseg_ids_none_str = (shp_river[downseg_id_col] == 'None').all()
 

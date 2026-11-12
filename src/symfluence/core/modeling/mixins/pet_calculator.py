@@ -13,6 +13,8 @@ All methods automatically detect and handle temperature units (Kelvin or Celsius
 """
 from __future__ import annotations
 
+from typing import Union
+
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -357,21 +359,24 @@ class PETCalculatorMixin:
     def oudin_pet_numpy(
         temp_c: np.ndarray,
         day_of_year: np.ndarray,
-        lat: float,
+        lat: Union[float, np.ndarray],
     ) -> np.ndarray:
         """Oudin PET (mm/day) from numpy arrays.
+
+        The sunset-hour-angle argument is clipped, so latitudes inside the
+        polar circles give polar-day / polar-night radiation rather than NaN.
 
         Reference:
             Oudin et al. (2005). "Which potential evapotranspiration input
             for a lumped rainfall-runoff model?"
 
         Args:
-            temp_c: Temperature in Celsius (1-D array).
-            day_of_year: Day-of-year integers (1-D array).
-            lat: Latitude in degrees.
+            temp_c: Temperature in Celsius.
+            day_of_year: Day of year, broadcastable with *temp_c*.
+            lat: Latitude in degrees (scalar or broadcastable array).
 
         Returns:
-            PET array (mm/day).
+            PET array (mm/day), broadcast shape of the inputs.
         """
         lat_rad = np.deg2rad(lat)
         decl = 0.409 * np.sin(2.0 * np.pi / 365.0 * day_of_year - 1.39)

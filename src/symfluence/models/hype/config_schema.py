@@ -30,6 +30,14 @@ class HYPEConfig(BaseModel):
         alias='HYPE_PARAMS_TO_CALIBRATE'
     )
     spinup_days: int = Field(default=365, alias='HYPE_SPINUP_DAYS')
+    timeshift: float = Field(
+        default=0, alias='HYPE_TIMESHIFT',
+        description='Hours added to forcing timestamps before daily aggregation (e.g. UTC to local time)'
+    )
+    frac_threshold: float = Field(
+        default=0.05, ge=0, lt=1, alias='HYPE_FRAC_THRESHOLD',
+        description='Minimum land-cover fraction of a subbasin for a class to be kept'
+    )
     glacier_fraction: Optional[float] = Field(
         default=None, ge=0, le=1, alias='HYPE_GLACIER_FRACTION',
         description='Observed glacier area fraction override for a single lumped basin'
