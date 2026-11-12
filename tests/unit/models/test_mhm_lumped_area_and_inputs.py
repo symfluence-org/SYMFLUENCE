@@ -25,6 +25,7 @@ import xarray as xr
 from shapely.geometry import box
 
 from symfluence.core.exceptions import ConfigurationError, GeospatialError
+from symfluence.core.mixins.config import SCHEMA_DEFAULT, fallback_default
 from symfluence.core.modeling.mixins.pet_calculator import day_length_hours, hamon_pet
 from symfluence.models.mhm.config_schema import MHMConfig
 from symfluence.models.mhm.preprocessor import MHMPreProcessor
@@ -38,8 +39,8 @@ class _Pre(MHMPreProcessor):
         self._cfg = cfg
         self.config = SimpleNamespace(model=SimpleNamespace(mhm=SimpleNamespace(match_lumped_area=match)))
 
-    def _get_config_value(self, accessor, default=None, dict_key=None):
-        return self._cfg.get(dict_key, default)
+    def _get_config_value(self, accessor, default=SCHEMA_DEFAULT, dict_key=None):
+        return self._cfg[dict_key] if dict_key in self._cfg else fallback_default(default, dict_key)
 
     def _catchment_polygon_path(self):
         return self._polygon

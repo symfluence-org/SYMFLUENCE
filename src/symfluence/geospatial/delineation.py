@@ -805,25 +805,19 @@ class DomainDelineator(PathResolverMixin):
             # Get subset and grid options
             subset_from_geofabric = self._get_config_value(
                 lambda: self.config.domain.subset_from_geofabric,
-                default=False
+                dict_key='SUBSET_FROM_GEOFABRIC',
             )
-            grid_source = self._get_config_value(
-                lambda: self.config.domain.grid_source,
-                default='generate'
-            )
+            grid_source = self._get_config_value(lambda: self.config.domain.grid_source, dict_key='GRID_SOURCE')
             geofabric_type = self._get_config_value(
                 lambda: self.config.domain.delineation.geofabric_type,
-                default='na'
+                dict_key='GEOFABRIC_TYPE',
             )
 
             artifacts = DelineationArtifacts(method=domain_method)
 
             # Early exit: User provided pre-existing shapefiles, skip all delineation
             # Check if RIVER_BASINS_NAME is explicitly set (not "default")
-            if self._get_config_value(
-                lambda: self.config.paths.river_basins_name,
-                default='default'
-            ) != "default":
+            if self._get_config_value(lambda: self.config.paths.river_basins_name, dict_key='RIVER_BASINS_NAME') != "default":
                 self.logger.info("Shapefile provided, skipping domain definition")
                 return None, artifacts
 
@@ -907,7 +901,7 @@ class DomainDelineator(PathResolverMixin):
                     # Check if we need delineated catchments for distributed routing
                     routing_delineation = self._get_config_value(
                         lambda: self.config.domain.delineation.routing,
-                        default="lumped"
+                        dict_key='ROUTING_DELINEATION',
                     )
                     if routing_delineation == "river_network":
                         self.logger.info("Creating delineated catchments for lumped-to-distributed routing")
@@ -949,7 +943,7 @@ class DomainDelineator(PathResolverMixin):
                     # Optional coastal delineation for basins draining to ocean
                     if self._get_config_value(
                         lambda: self.config.domain.delineation.delineate_coastal_watersheds,
-                        default=False
+                        dict_key='DELINEATE_COASTAL_WATERSHEDS',
                     ):
                         coastal_result = self.delineator.delineate_coastal()
                         if coastal_result and all(coastal_result):
@@ -972,10 +966,13 @@ class DomainDelineator(PathResolverMixin):
             if domain_method == "distributed":
                 # Store grid configuration in metadata
                 artifacts.metadata['grid_cell_size'] = str(
-                    self._get_config_value(lambda: self.config.domain.grid_cell_size, default=1000.0)
+                    self._get_config_value(lambda: self.config.domain.grid_cell_size, dict_key='GRID_CELL_SIZE')
                 )
                 artifacts.metadata['clip_to_watershed'] = str(
-                    self._get_config_value(lambda: self.config.domain.clip_grid_to_watershed, default=True)
+                    self._get_config_value(
+                        lambda: self.config.domain.clip_grid_to_watershed,
+                        dict_key='CLIP_GRID_TO_WATERSHED',
+                    )
                 )
                 artifacts.metadata['grid_source'] = grid_source
 
@@ -1026,7 +1023,7 @@ class DomainDelineator(PathResolverMixin):
                     self.logger.info("Creating distributed grid domain from native forcing resolution")
                     native_dataset = self._get_config_value(
                         lambda: self.config.domain.native_grid_dataset,
-                        default='era5'
+                        dict_key='NATIVE_GRID_DATASET',
                     )
                     artifacts.metadata['native_grid_dataset'] = native_dataset
 

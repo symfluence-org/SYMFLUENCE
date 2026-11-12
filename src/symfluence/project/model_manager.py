@@ -155,7 +155,7 @@ class ModelManager(BaseManager):
         """
         modules_str = self._get_config_value(
             lambda: self.config.model.ngen.modules_selected,
-            default='SLOTH,PET,CFE',
+            dict_key='NGEN_MODULES_SELECTED',
         )
         alias_map = {'SAC-SMA': 'SACSMA', 'SNOW-17': 'SNOW17', 'NOAH-OWP': 'NOAH'}
         selected = set()
@@ -439,10 +439,7 @@ class ModelManager(BaseManager):
         # Determine coupling mode. Default is sequential (process-based models
         # communicate via files). Use COUPLING_MODE=dcoupler to opt in to
         # graph-based execution for JAX-native or tightly-coupled workflows.
-        coupling_mode = self._get_config_value(
-            lambda: self.config.model.coupling_mode,
-            default='sequential',
-        )
+        coupling_mode = self._get_config_value(lambda: self.config.model.coupling_mode, dict_key='COUPLING_MODE')
         if coupling_mode == 'dcoupler' and len(workflow) > 1:
             if self._try_dcoupler_execution(workflow):
                 return

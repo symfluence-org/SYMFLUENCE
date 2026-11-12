@@ -161,7 +161,11 @@ def persist_run_evaluation(runner: Any, model_name: str) -> Optional[Path]:
     logger = getattr(runner, 'logger', None) or logging.getLogger(__name__)
     try:
         config = runner.config
-        algorithm = resolve_config_value(config, lambda: config.optimization.algorithm, 'PSO', 'ITERATIVE_OPTIMIZATION_ALGORITHM')
+        algorithm = resolve_config_value(
+            config,
+            lambda: config.optimization.algorithm,
+            dict_key='ITERATIVE_OPTIMIZATION_ALGORITHM',
+        )
         return evaluate_self_training_model(
             config, runner.config_dict, Path(runner.project_dir), runner.experiment_id,
             runner.domain_name, model_name, str(algorithm or 'PSO'), logger,

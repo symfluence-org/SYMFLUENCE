@@ -135,7 +135,6 @@ class BaseTopologyGenerator(ABC):
 
         routing_delineation = self.pp._get_config_value(
             lambda: self.pp.config.domain.delineation.routing,
-            default='lumped',
             dict_key='ROUTING_DELINEATION',
         )
         if method == 'lumped' and routing_delineation == 'river_network':
@@ -371,7 +370,7 @@ class BaseTopologyGenerator(ABC):
 
         grid_cell_size = self.pp._get_config_value(
             lambda: self.pp.config.domain.grid_cell_size,
-            default=1000.0, dict_key='GRID_CELL_SIZE',
+            dict_key='GRID_CELL_SIZE',
         )
         lengths = np.full(num_cells, float(grid_cell_size))
 
@@ -431,11 +430,11 @@ class BaseTopologyGenerator(ABC):
 
         river_network_path = self.pp._get_config_value(
             lambda: self.pp.config.paths.river_network_path,
-            default='default'
+            dict_key='RIVER_NETWORK_SHP_PATH',
         )
         river_network_name = self.pp._get_config_value(
             lambda: self.pp.config.paths.river_network_name,
-            default='default'
+            dict_key='RIVER_NETWORK_SHP_NAME',
         )
 
         if river_network_name == 'default':
@@ -446,12 +445,12 @@ class BaseTopologyGenerator(ABC):
             river_network_path = Path(river_network_path)
 
         river_basin_path = self.pp._get_config_value(
-            lambda: self.pp.config.paths.river_basins_path,  # type: ignore[attr-defined]
-            default='default'
+            lambda: self.pp.config.paths.river_basins_path,
+            dict_key='RIVER_BASINS_PATH',
         )
         river_basin_name = self.pp._get_config_value(
-            lambda: self.pp.config.paths.river_basins_name,  # type: ignore[attr-defined]
-            default='default'
+            lambda: self.pp.config.paths.river_basins_name,
+            dict_key='RIVER_BASINS_NAME',
         )
 
         if river_basin_name == 'default':
@@ -786,8 +785,7 @@ class BaseTopologyGenerator(ABC):
     def _enforce_outlets(self, shp_river: 'gpd.GeoDataFrame') -> None:
         """Force configured segments to be outlets (downSegId = 0)."""
         make_outlet = self.pp._get_config_value(
-            lambda: self.pp.config.model.mizuroute.make_outlet,  # type: ignore[attr-defined]
-            default='n/a',
+            lambda: self.pp.config.model.mizuroute.make_outlet,
             dict_key='SETTINGS_MIZU_MAKE_OUTLET',
         )
         if not make_outlet or make_outlet == 'n/a':

@@ -416,7 +416,10 @@ class UnifiedModelRunner(BaseModelRunner, SpatialOrchestrator):  # type: ignore[
 
         result = self.submit_slurm_job(
             script_path=script_path,
-            wait=self._get_config_value(lambda: self.config.model.summa.monitor_slurm_job, default=True, dict_key='MONITOR_SLURM_JOB')
+            wait=self._get_config_value(
+                lambda: self.config.model.summa.monitor_slurm_job,
+                dict_key='MONITOR_SLURM_JOB',
+            )
         )
 
         if result.success and not self.slurm_job_finished(result):

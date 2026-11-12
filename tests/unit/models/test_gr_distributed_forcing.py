@@ -22,6 +22,7 @@ from rasterio.transform import from_origin
 from shapely.geometry import box
 
 from symfluence.core.exceptions import ConfigurationError, ModelExecutionError
+from symfluence.core.mixins.config import SCHEMA_DEFAULT, fallback_default
 from symfluence.models.gr.calibration.parameter_manager import GRParameterManager
 from symfluence.models.gr.glacier import require_lumped_for_glacier
 from symfluence.models.gr.hypsometry import catchment_hypsometry, flat_hypsometry
@@ -61,7 +62,7 @@ def _runner(tmp_path: Path, catchment: gpd.GeoDataFrame) -> GRRunner:
     runner.domain_name = 'toy'
     runner.catchment_path = shp_dir
     runner.catchment_name = 'hrus.shp'
-    runner._get_config_value = lambda getter, default=None, **kw: default
+    runner._get_config_value = lambda getter, default=SCHEMA_DEFAULT, dict_key=None, **kw: fallback_default(default, dict_key)
     return runner
 
 
@@ -195,7 +196,7 @@ def test_runner_rejects_glacier_parameters_in_distributed_run():
     runner = object.__new__(GRRunner)
     runner.logger = logging.getLogger('test_gr_distributed')
     runner.spatial_mode = 'distributed'
-    runner._get_config_value = lambda getter, default=None, **kw: default
+    runner._get_config_value = lambda getter, default=SCHEMA_DEFAULT, dict_key=None, **kw: fallback_default(default, dict_key)
     runner.config = SimpleNamespace()
     with pytest.raises(ConfigurationError, match='ICE_DDF'):
         runner.run_gr(params={'X1': 300.0, 'ICE_DDF': 5.0})

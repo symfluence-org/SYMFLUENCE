@@ -53,7 +53,10 @@ class MultiScaleMethod(ConfigMixin):
             pour_point_path: Path to the pour point shapefile
             mpi_prefix: MPI command prefix
         """
-        max_distance = self._get_config_value(lambda: self.config.domain.delineation.move_outlets_max_distance, default=200, dict_key='MOVE_OUTLETS_MAX_DISTANCE')
+        max_distance = self._get_config_value(
+            lambda: self.config.domain.delineation.move_outlets_max_distance,
+            dict_key='MOVE_OUTLETS_MAX_DISTANCE',
+        )
 
         # Get multi-scale parameters
         thresholds = self._get_config_value(lambda: self.config.domain.delineation.multi_scale_thresholds, default=[10000, 5000, 2500, 1000, 500], dict_key='MULTI_SCALE_THRESHOLDS')

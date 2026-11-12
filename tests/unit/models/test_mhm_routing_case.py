@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from symfluence.core.exceptions import ConfigurationError
+from symfluence.core.mixins.config import SCHEMA_DEFAULT, fallback_default
 from symfluence.models.mhm.config_schema import MHMConfig
 from symfluence.models.mhm.parameters import DEFAULT_PARAMS, PARAM_BOUNDS
 from symfluence.models.mhm.preprocessor import MHMPreProcessor
@@ -13,7 +14,8 @@ from symfluence.models.mhm.preprocessor import MHMPreProcessor
 
 def _preprocessor(**cfg):
     pre = SimpleNamespace(config=None)
-    pre._get_config_value = lambda accessor, default=None, dict_key=None: cfg.get(dict_key, default)
+    pre._get_config_value = lambda accessor, default=SCHEMA_DEFAULT, dict_key=None: (
+        cfg[dict_key] if dict_key in cfg else fallback_default(default, dict_key))
     return pre
 
 

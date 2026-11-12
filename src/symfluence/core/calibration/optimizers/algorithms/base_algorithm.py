@@ -61,8 +61,7 @@ class OptimizationAlgorithm(ConfigMixin, ABC):
         )
         self.target_metric = self._get_config_value(
             lambda: self.config.optimization.metric,
-            default='KGE',
-            dict_key='OPTIMIZATION_METRIC'
+            dict_key='OPTIMIZATION_METRIC',
         )
         self.penalty_score = ModelDefaults.PENALTY_SCORE
         self.random_seed = self._get_config_value(

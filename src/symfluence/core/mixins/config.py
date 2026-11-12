@@ -53,6 +53,16 @@ def resolve_config_value(
         value = config.get(dict_key)
         if value is not None:
             return value
+    return fallback_default(default, dict_key)
+
+
+def fallback_default(default: Any = SCHEMA_DEFAULT, dict_key: Optional[str] = None) -> Any:
+    """What a read falls back to when the config holds no value for the key.
+
+    ``default`` when one was passed; otherwise the default the schema
+    declares for ``dict_key``, or ``None`` when it declares none. Exposed so
+    stand-ins for ``_get_config_value`` (test doubles) follow the same rule.
+    """
     if default is not SCHEMA_DEFAULT:
         return default
     if dict_key is None:
@@ -338,7 +348,7 @@ class ConfigMixin:
         """Forcing time step size in seconds from config.forcing.time_step_size."""
         return int(self._get_config_value(
             lambda: self.config.forcing.time_step_size,
-            default=3600
+            dict_key='FORCING_TIME_STEP_SIZE',
         ))
 
     @property
@@ -364,7 +374,4 @@ class ConfigMixin:
     @property
     def optimization_metric(self) -> str:
         """Optimization metric from config.optimization.metric."""
-        return self._get_config_value(
-            lambda: self.config.optimization.metric,
-            default='KGE'
-        )
+        return self._get_config_value(lambda: self.config.optimization.metric, dict_key='OPTIMIZATION_METRIC')

@@ -304,7 +304,7 @@ class LoggingManager(ConfigMixin):
 
         # Get log level from config or parameter
         if log_level is None:
-            log_level = self._get_config_value(lambda: self.config.system.log_level, default='INFO', dict_key='LOG_LEVEL')
+            log_level = self._get_config_value(lambda: self.config.system.log_level, dict_key='LOG_LEVEL')
 
         # Force DEBUG level if debug_mode is enabled
         if self.debug_mode:
@@ -704,7 +704,10 @@ class LoggingManager(ConfigMixin):
                 'hydrological_model': self._get_config_value(lambda: self.config.model.hydrological_model, dict_key='HYDROLOGICAL_MODEL'),
                 'domain_definition_method': self._get_config_value(lambda: self.config.domain.definition_method, dict_key='DOMAIN_DEFINITION_METHOD'),
                 'optimization_algorithm': self._get_config_value(lambda: self.config.optimization.algorithm, dict_key='ITERATIVE_OPTIMIZATION_ALGORITHM'),
-                'force_run_all': self._get_config_value(lambda: self.config.system.force_run_all_steps, default=False, dict_key='FORCE_RUN_ALL_STEPS')
+                'force_run_all': self._get_config_value(
+                    lambda: self.config.system.force_run_all_steps,
+                    dict_key='FORCE_RUN_ALL_STEPS',
+                )
             }
         }
 

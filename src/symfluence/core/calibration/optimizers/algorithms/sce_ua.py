@@ -551,13 +551,11 @@ class SCEUAAlgorithm(OptimizationAlgorithm):
         # Early stopping parameters from config
         stagnation_limit = self._get_config_value(
             lambda: self.config.optimization.sce_ua.evolution_stagnation,
-            default=5,
-            dict_key='EVOLUTION_STAGNATION'
+            dict_key='EVOLUTION_STAGNATION',
         )
         pct_change_threshold = self._get_config_value(
             lambda: self.config.optimization.sce_ua.percent_change_threshold,
-            default=0.01,
-            dict_key='PERCENT_CHANGE_THRESHOLD'
+            dict_key='PERCENT_CHANGE_THRESHOLD',
         )
 
         self.logger.info(
@@ -665,11 +663,7 @@ class SCEUAAlgorithm(OptimizationAlgorithm):
         tracking_rows_buffer: List[Dict[str, Any]] = []
         best_tracking_rows_buffer: List[Dict[str, Any]] = []
 
-        metric_name = self._get_config_value(
-            lambda: self.config.optimization.metric,
-            default='KGE',
-            dict_key='OPTIMIZATION_METRIC'
-        )
+        metric_name = self._get_config_value(lambda: self.config.optimization.metric, dict_key='OPTIMIZATION_METRIC')
 
         best_score_so_far = float(best_fit)
 

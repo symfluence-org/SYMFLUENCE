@@ -10,6 +10,7 @@ import pytest
 import xarray as xr
 
 from symfluence.core.exceptions import ConfigurationError, ModelExecutionError
+from symfluence.core.mixins.config import SCHEMA_DEFAULT, fallback_default
 from symfluence.models.troute.config_schema import TRouteConfig
 from symfluence.models.troute.runner import TRouteRunner
 from symfluence.models.troute.topology_generator import TRouteTopologyGenerator
@@ -20,12 +21,12 @@ def _runner(troute_cfg=None):
     runner.logger = logging.getLogger('test_troute')
     runner.config = SimpleNamespace(model=SimpleNamespace(troute=troute_cfg or TRouteConfig()))
 
-    def get_value(accessor, default=None, **kwargs):
+    def get_value(accessor, default=SCHEMA_DEFAULT, dict_key=None, **kwargs):
         try:
             value = accessor()
         except AttributeError:
             value = None
-        return default if value is None else value
+        return fallback_default(default, dict_key) if value is None else value
 
     runner._get_config_value = get_value
     return runner
@@ -135,7 +136,7 @@ def test_topology_file_carries_hru_ids(tmp_path):
 
     pp = SimpleNamespace(
         logger=logging.getLogger('test_troute'), config=SimpleNamespace(),
-        _get_config_value=lambda accessor, default=None, **kw: default,
+        _get_config_value=lambda accessor, default=SCHEMA_DEFAULT, dict_key=None, **kw: fallback_default(default, dict_key),
     )
     data = TopologyData(
         seg_ids=np.array([1, 2]), down_seg_ids=np.array([2, 0]), slopes=np.array([.01, .01]),
