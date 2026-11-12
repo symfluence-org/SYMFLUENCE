@@ -715,7 +715,14 @@ class WRFHydroWorker(BaseWorker):
         """
         import netCDF4
 
-        catchment_area_km2 = float(config.get('CATCHMENT_AREA_KM2', 2210.0))
+        from symfluence.core.metrics.streamflow_metrics import require_catchment_area_km2
+        domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+        data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
+        catchment_area_km2 = require_catchment_area_km2(
+            config, data_dir / f'domain_{domain_name}', domain_name,
+            configured_km2=config.get('CATCHMENT_AREA_KM2') or resolve_config_value(
+                config, lambda: config.domain.catchment_area, None, 'CATCHMENT_AREA'),
+        )
         area_m2 = catchment_area_km2 * 1e6
 
         # Parse timestamps from filenames and group by date
