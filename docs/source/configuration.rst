@@ -386,6 +386,48 @@ Forcing Data Parameters
      - -6.5
      - Temperature lapse rate (°C/km)
 
+Elevation corrections of remapped forcing
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The optional ``lapse`` section moves non-temperature forcing variables from the
+elevation of the forcing cells to the elevation of each HRU. The forcing
+remapper applies it to the basin-averaged files, using
+``dz = HRU elevation - area-weighted elevation of the overlapping forcing cells``.
+Air temperature is not changed here; model preprocessors apply
+``APPLY_LAPSE_RATE`` / ``LAPSE_RATE``. Everything is off by default.
+
+.. code-block:: yaml
+
+   lapse:
+     pressure: true        # hypsometric equation
+     humidity: true        # specific humidity at conserved relative humidity
+     longwave: true        # LW + lw_gradient * dz
+     shortwave: false      # SW * (1 + sw_gradient * dz)
+     precipitation: false  # P  * (1 + precip_gradient * dz)
+     wind: false           # U  * (1 + wind_gradient * dz)
+     lw_gradient: -0.029       # W m-2 per m (-2.9 W m-2 per 100 m)
+     sw_gradient: 0.00002      # fraction per m (+2% per km)
+     precip_gradient: 0.0004   # fraction per m (+4% per 100 m)
+     wind_gradient: 0.0        # fraction per m
+
+Notes:
+
+- The active settings are part of the remapping cache identity, so changing
+  them regenerates the basin-averaged forcing (and the remapping weights)
+  instead of reusing files written under other settings. The basin-averaged
+  directory is shared by every experiment on a domain: experiments that differ
+  in these settings will regenerate each other's files.
+- The corrections act between forcing cell and HRU. Elevation bands that a
+  model builds inside an HRU (HYPE, MESH, VIC, ParFlow, FUSE) are separate, as
+  are model precipitation multipliers; avoid correcting the same effect twice.
+- The catchment shapefile needs a mean elevation (``elev_mean``) and the
+  forcing shapefile a cell elevation; a forcing cell without a valid elevation
+  gets no correction.
+- Point domains and single-cell forcing grids use point-scale extraction, which
+  does not apply these corrections (a warning says so).
+- Each corrected file records what was applied in the global attribute
+  ``symfluence_elevation_corrections``.
+
 Model Selection Parameters
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

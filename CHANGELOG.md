@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Elevation corrections of remapped forcing (opt-in)**: the `lapse` config section (`pressure`, `humidity`,
+  `longwave`, `shortwave`, `precipitation`, `wind`, with `lw_gradient`, `sw_gradient`, `precip_gradient`,
+  `wind_gradient`) is now applied by the forcing remapper, from the elevation difference between each HRU and
+  the forcing cells it overlaps. The toggles existed since February but were never applied. Air temperature is
+  still lapsed by the model preprocessors. Active settings are part of the remapping cache identity, so changing
+  them regenerates the basin-averaged forcing. `precip_gradient` default is 0.0004 (+4% per 100 m, as documented;
+  the stored default was 0.00004). All off by default: existing remapped forcing and its cache are unchanged.
 - **ParFlow-CLM basin mode: anisotropy, K zone, lake (opt-in)**: `CLMPARFLOW_BASIN_K_TENSOR` [kx, ky, kz]
   multiplies the aquifer K per grid axis (`TensorByFile`), with `CLMPARFLOW_BASIN_GRID_ROTATION` to align the
   grid with a structural strike; `CLMPARFLOW_BASIN_K_ZONE` + `_K_ZONE_FACTOR` (+ `_K_ZONE_SOIL`) scale K inside

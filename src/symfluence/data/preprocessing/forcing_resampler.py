@@ -184,7 +184,7 @@ import logging
 import multiprocessing as mp
 import warnings
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import geopandas as gpd
 import xarray as xr
@@ -220,7 +220,9 @@ class _ParallelWorker:
         cached_hru_field: str,
         domain_name: str,
         target_geometry=None,
+        elevation_corrections: Optional[dict] = None,
     ):
+        self.elevation_corrections = elevation_corrections
         self.config_dict = config_dict
         self.project_dir = Path(project_dir)
         self.output_dir = Path(output_dir)
@@ -281,6 +283,9 @@ class _ParallelWorker:
             self.cached_target_shp_wgs84,
             self.cached_hru_field
         )
+        from .resampling.elevation_correction import ElevationCorrectionSettings
+        self._weight_applier.elevation_corrections = ElevationCorrectionSettings.from_dict(
+            self.elevation_corrections)
 
         # Initialize file processor
         self._file_processor = FileProcessor(
@@ -632,6 +637,14 @@ class ForcingResampler(PathResolverMixin):
             self._adopt_legacy_outputs(
                 forcing_files, lambda old: self._point_output_is_current(old, geometry.count))
 
+        from .resampling.elevation_correction import ElevationCorrectionSettings
+        requested = ElevationCorrectionSettings.from_config(self.config).requested
+        if requested:
+            self.logger.warning(
+                f"The 'lapse' section requests elevation corrections for {', '.join(requested)}, "
+                "but point-scale extraction (point domains and single-cell forcing grids) "
+                "does not apply them: the forcing is left uncorrected.")
+
         self.point_scale_extractor.process(
             forcing_files=forcing_files,
             output_dir=self.forcing_basin_path,
@@ -686,6 +699,17 @@ class ForcingResampler(PathResolverMixin):
         config_hash = remap_config_signature(
             config_dict, self._get_config_value(lambda: self.config.forcing.dataset))
         target_hash = target_signature(target)
+        # Active elevation corrections (``lapse`` section) are part of the
+        # output identity: files remapped under other settings are regenerated.
+        # Inactive settings hash to '' so existing caches keep their signature.
+        from .resampling.elevation_correction import ElevationCorrectionSettings
+        corrections = ElevationCorrectionSettings.from_config(self.config)
+        self._elevation_corrections = corrections
+        self.weight_applier.elevation_corrections = corrections
+        if corrections.active:
+            self.logger.info(
+                f"Elevation corrections applied to remapped forcing: {', '.join(corrections.requested)}")
+        config_hash += corrections.signature()
         self.logger.info(f"Remapping {len(forcing_files)} files on {len(groups)} distinct coordinate grids")
         requested_cpus = int(self._get_config_value(lambda: self.config.system.num_processes, default=1))
         for grid, files in groups.items():
@@ -773,6 +797,8 @@ class ForcingResampler(PathResolverMixin):
             cached_hru_field=self.weight_generator.cached_hru_field,
             domain_name=self._get_config_value(lambda: self.config.domain.name),
             target_geometry=self.file_processor.target_geometry,
+            elevation_corrections=getattr(self, '_elevation_corrections', None)
+            and self._elevation_corrections.to_dict(),
         )
 
         return self._run_parallel_with_worker(files, num_cpus, worker)
