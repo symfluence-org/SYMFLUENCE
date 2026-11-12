@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Forecast verification by lead time** (`evaluation/forecast_verification.py`): `verify_forecasts` takes a
+  tidy (model, init, time, q) table and an observed series and returns lead-day scores (bias, MAE, RMSE,
+  NSE, skill vs persistence and day-of-year climatology), the "offset" benchmark (forecast plus the error at
+  issue of the previous forecast), daily-mean scores with multi-model means on common issue days, monthly
+  volume ratios, high-flow contingency (POD/FAR/CSI) at a quantile threshold, clustered high-flow events with
+  warned lead days, and summer daily-cycle timing. Start- or end-stamped model intervals of any sub-daily or
+  daily step; no file layout assumed. `ForecastVerification.write` saves CSVs and a Markdown report.
 - **ParFlow-CLM basin mode: anisotropy, K zone, lake (opt-in)**: `CLMPARFLOW_BASIN_K_TENSOR` [kx, ky, kz]
   multiplies the aquifer K per grid axis (`TensorByFile`), with `CLMPARFLOW_BASIN_GRID_ROTATION` to align the
   grid with a structural strike; `CLMPARFLOW_BASIN_K_ZONE` + `_K_ZONE_FACTOR` (+ `_K_ZONE_SOIL`) scale K inside
