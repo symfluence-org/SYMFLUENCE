@@ -240,3 +240,47 @@ def test_weight_applier_corrects_staged_files(tmp_path):
     with xr.open_dataset(path) as ds:
         np.testing.assert_allclose(ds.precipitation_flux.values[:, 1], 1.2e-4, rtol=1e-6)
         np.testing.assert_allclose(ds.precipitation_flux.values[:, 0], 1e-4, rtol=1e-6)
+
+
+# --- config loading -------------------------------------------------------------
+
+_FLAT = dict(
+    DOMAIN_NAME='x', EXPERIMENT_ID='e', EXPERIMENT_TIME_START='2012-01-01 00:00',
+    EXPERIMENT_TIME_END='2012-02-01 00:00', DOMAIN_DEFINITION_METHOD='lumped',
+    SUB_GRID_DISCRETIZATION='lumped', HYDROLOGICAL_MODEL='SUMMA', FORCING_DATASET='ERA5',
+)
+_NESTED = dict(
+    domain=dict(name='x', experiment_id='e', time_start='2012-01-01 00:00',
+                time_end='2012-02-01 00:00', definition_method='lumped', discretization='lumped'),
+    model=dict(hydrological_model='SUMMA'),
+)
+
+
+def _load(tmp_path, content, caplog):
+    import yaml
+    path = tmp_path / 'config.yaml'
+    path.write_text(yaml.safe_dump(content))
+    with caplog.at_level(logging.WARNING):
+        cfg = SymfluenceConfig.from_file(path, use_env=False)
+    assert 'Unrecognized configuration key' not in caplog.text
+    return cfg
+
+
+@pytest.mark.parametrize('layout', ['flat', 'nested_top_level', 'nested_under_forcing'])
+def test_lapse_section_is_read_from_a_config_file(tmp_path, caplog, layout):
+    """A top-level ``lapse`` section used to be dropped with only a warning."""
+    lapse = {'pressure': True, 'precip_gradient': 0.0002}
+    system = dict(SYMFLUENCE_DATA_DIR=str(tmp_path), SYMFLUENCE_CODE_DIR=str(tmp_path))
+    if layout == 'flat':
+        content = {**_FLAT, **system, 'lapse': lapse}
+    else:
+        content = {**_NESTED, 'system': dict(data_dir=str(tmp_path), code_dir=str(tmp_path)),
+                   'forcing': {'dataset': 'ERA5'}}
+        if layout == 'nested_top_level':
+            content['lapse'] = lapse
+        else:
+            content['forcing']['lapse'] = lapse
+    cfg = _load(tmp_path, content, caplog)
+    assert cfg.forcing.lapse.pressure is True
+    assert cfg.forcing.lapse.precip_gradient == 0.0002
+    assert ElevationCorrectionSettings.from_config(cfg).requested == ['pressure']
