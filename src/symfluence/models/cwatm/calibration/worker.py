@@ -13,10 +13,8 @@ from typing import Dict, Optional
 
 import pandas as pd
 
-from symfluence.core.calibration.workers.base_worker import BaseWorker
-from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.calibration.workers.streamflow_worker import StreamflowWorker
 from symfluence.core.mixins.config import resolve_config_value
-from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.path_resolver import resolve_install_dir
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
@@ -25,10 +23,9 @@ from .parameter_manager import CWatMParameterManager
 
 
 @R.workers.add('CWATM')
-class CWatMWorker(BaseWorker):
+class CWatMWorker(StreamflowWorker):
     """Calibration worker for CWatM."""
 
-    _streamflow_metrics = StreamflowMetrics()
 
     def apply_parameters(self, params: Dict[str, float], settings_dir: Path, **kwargs) -> bool:
         original_dir = self._get_original_settings_dir()
@@ -71,31 +68,9 @@ class CWatMWorker(BaseWorker):
             self.logger.warning(f"CWatM timed out after {timeout}s")
             return False
 
-    def calculate_metrics(self, output_dir: Path, config: Dict, **kwargs) -> Dict[str, float]:
-        try:
-            sim = self._load_simulated_streamflow(output_dir)
-            obs = self._load_observations(config)
-
-            if sim is None or obs is None or len(sim) == 0 or len(obs) == 0:
-                return {'KGE': -999.0, 'NSE': -999.0}
-
-            cal_period = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
-            parts = split_period(cal_period)
-            if parts:
-                sim = sim[parts[0]:parts[1]]
-                obs = obs[parts[0]:parts[1]]
-
-            combined = pd.concat([sim.rename('sim'), obs.rename('obs')], axis=1).dropna()
-            if len(combined) < 30:
-                return {'KGE': -999.0, 'NSE': -999.0}
-
-            return self._streamflow_metrics.calculate_metrics(
-                combined['obs'].values, combined['sim'].values,
-                metrics=self._requested_metrics(config),
-            )
-        except (OSError, ValueError, KeyError, TypeError) as e:
-            self.logger.error(f"Metric calculation failed: {e}")
-            return {'KGE': -999.0, 'NSE': -999.0}
+    def read_simulated_streamflow(self, output_dir: Path, config: Dict, **kwargs) -> Optional[pd.Series]:
+        """This trial's daily outlet discharge (m3/s)."""
+        return self._load_simulated_streamflow(Path(output_dir))
 
     def _load_simulated_streamflow(self, output_dir: Path) -> Optional[pd.Series]:
         import xarray as xr
@@ -117,21 +92,6 @@ class CWatMWorker(BaseWorker):
 
         self.logger.error(f"No discharge output found in {output_dir}")
         return None
-
-    def _load_observations(self, config: Dict) -> Optional[pd.Series]:
-        data_dir = config.get('SYMFLUENCE_DATA_DIR', '.')
-        domain = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
-        obs_dir = Path(data_dir) / f'domain_{domain}' / 'observations' / 'streamflow' / 'preprocessed'
-        if not obs_dir.exists():
-            return None
-
-        csv_files = sorted(obs_dir.glob('*.csv'))
-        if not csv_files:
-            return None
-
-        df = pd.read_csv(csv_files[0], parse_dates=[0], index_col=0)
-        col = 'discharge_cms' if 'discharge_cms' in df.columns else df.columns[0]
-        return df[col].dropna()
 
     def _get_original_settings_dir(self) -> Path:
         data_dir = self.config.get('SYMFLUENCE_DATA_DIR', '.')

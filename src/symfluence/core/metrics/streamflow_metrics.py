@@ -510,6 +510,17 @@ class StreamflowMetrics:
         calibration_period: Optional[Tuple[str, str]] = None,
         min_overlap: int = 10
     ) -> Tuple[np.ndarray, np.ndarray]:
+        """:meth:`align_series` as ``(obs, sim)`` numpy arrays."""
+        obs_clean, sim_clean = self.align_series(sim, obs, calibration_period, min_overlap)
+        return obs_clean.values, sim_clean.values
+
+    def align_series(
+        self,
+        sim: pd.Series,
+        obs: pd.Series,
+        calibration_period: Optional[Tuple[str, str]] = None,
+        min_overlap: int = 10
+    ) -> Tuple[pd.Series, pd.Series]:
         """
         Align simulation and observation time series.
 
@@ -520,7 +531,8 @@ class StreamflowMetrics:
             min_overlap: Minimum number of overlapping points required
 
         Returns:
-            Tuple of (obs_aligned, sim_aligned) as numpy arrays
+            Tuple of (obs_aligned, sim_aligned) as Series on their common,
+            NaN-free index
 
         Raises:
             ValueError: If insufficient overlapping data
@@ -547,8 +559,8 @@ class StreamflowMetrics:
 
         # Remove NaN pairs
         valid_mask = ~(np.isnan(obs_aligned.values) | np.isnan(sim_aligned.values))
-        obs_clean = obs_aligned.values[valid_mask]
-        sim_clean = sim_aligned.values[valid_mask]
+        obs_clean = obs_aligned[valid_mask]
+        sim_clean = sim_aligned[valid_mask]
 
         if len(obs_clean) < min_overlap:
             raise ValueError(f"Insufficient valid data after NaN removal: {len(obs_clean)} points")
