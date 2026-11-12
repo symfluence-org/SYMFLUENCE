@@ -54,7 +54,7 @@ class WflowRunner(BaseModelRunner):
     def _build_run_command(self) -> Optional[List[str]]:
         config_file_name = self._get_config_value(
             lambda: self.config.model.wflow.config_file,
-            default='wflow_sbm.toml',
+            dict_key='WFLOW_CONFIG_FILE',
         )
         toml_path = self.settings_dir / config_file_name
         return [str(self.wflow_exe), str(toml_path)]
@@ -63,7 +63,4 @@ class WflowRunner(BaseModelRunner):
         return self.settings_dir
 
     def _get_run_timeout(self) -> int:
-        return self._get_config_value(
-            lambda: self.config.model.wflow.timeout,
-            default=7200,
-        )
+        return self._get_config_value(lambda: self.config.model.wflow.timeout, dict_key='WFLOW_TIMEOUT')

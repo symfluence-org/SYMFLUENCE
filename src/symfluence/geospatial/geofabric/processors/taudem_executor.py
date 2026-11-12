@@ -91,8 +91,16 @@ class TauDEMExecutor:
         self.logger = logger
         self.taudem_dir = taudem_dir
         self.num_processes = resolve_config_value(config, lambda: config.system.num_processes, 1, 'NUM_PROCESSES')
-        self.max_retries = resolve_config_value(config, lambda: config.domain.delineation.max_retries, 3, 'MAX_RETRIES')
-        self.retry_delay = resolve_config_value(config, lambda: config.domain.delineation.retry_delay, 5, 'RETRY_DELAY')
+        self.max_retries = resolve_config_value(
+            config,
+            lambda: config.domain.delineation.max_retries,
+            dict_key='MAX_RETRIES',
+        )
+        self.retry_delay = resolve_config_value(
+            config,
+            lambda: config.domain.delineation.retry_delay,
+            dict_key='RETRY_DELAY',
+        )
 
         # Add TauDEM to PATH (os.pathsep: ':' corrupts PATH on Windows)
         os.environ['PATH'] = f"{os.environ['PATH']}{os.pathsep}{taudem_dir}"

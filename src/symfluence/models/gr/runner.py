@@ -390,7 +390,8 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
 
     def _glacier_enabled(self) -> bool:
         return bool(self._get_config_value(
-            lambda: self.config.model.gr.glacier_enabled, default=False, dict_key='GR_GLACIER_ENABLED'
+            lambda: self.config.model.gr.glacier_enabled,
+            dict_key='GR_GLACIER_ENABLED',
         ))
 
     def _execute_gr_lumped_glacier(self, params: Dict[str, float], n_layers: int,
@@ -596,7 +597,7 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
             ]
             hypsometries = self._distributed_hypsometries(hru_ids, 'hru_id' in ds)
             forcing = self._forcing_corrections()
-            n_layers = int(self._get_config_value(lambda: self.config.model.gr.snow_layers, default=5))
+            n_layers = int(self._get_config_value(lambda: self.config.model.gr.snow_layers, dict_key='GR_SNOW_LAYERS'))
 
             # Get simulation periods
             time_start = pd.to_datetime(self.time_start)
@@ -733,9 +734,7 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
                     )
                 rows = [position[hru_id] for hru_id in hru_ids]
 
-        elev_col = self._get_config_value(
-            lambda: self.config.paths.catchment_elev, default='elev_mean', dict_key='CATCHMENT_SHP_ELEV'
-        )
+        elev_col = self._get_config_value(lambda: self.config.paths.catchment_elev, dict_key='CATCHMENT_SHP_ELEV')
         out: List[Tuple[np.ndarray, Any]] = []
         flat: List[int] = []
         with rasterio.open(dem_path) as src:
@@ -1033,7 +1032,7 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
             # calibrated values instead of falling back to poor defaults.
             external_params = self._external_params
             forcing = self._forcing_corrections()
-            n_layers = self._get_config_value(lambda: self.config.model.gr.snow_layers, default=5)
+            n_layers = self._get_config_value(lambda: self.config.model.gr.snow_layers, dict_key='GR_SNOW_LAYERS')
             if self._glacier_enabled():
                 if not external_params:
                     raise ModelExecutionError(

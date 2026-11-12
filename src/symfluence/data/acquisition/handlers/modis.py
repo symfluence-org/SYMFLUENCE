@@ -44,7 +44,10 @@ class MODISSnowAcquirer(BaseAcquisitionHandler):
         output_dir.mkdir(parents=True, exist_ok=True)
         out_nc = output_dir / f"{self.domain_name}_{product}_raw.nc"
 
-        if out_nc.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False, dict_key='FORCE_DOWNLOAD'):
+        if out_nc.exists() and not self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             return out_nc
 
         # Construct NCSS query

@@ -60,10 +60,7 @@ class MODFLOWRunner(BaseModelRunner):
         )
 
     def _get_timeout(self) -> int:
-        return self._get_config_value(
-            lambda: self.config.model.modflow.timeout,
-            default=3600,
-        )
+        return self._get_config_value(lambda: self.config.model.modflow.timeout, dict_key='MODFLOW_TIMEOUT')
 
     def run_modflow(self, sim_dir: Optional[Path] = None, coupling_source_dir: Optional[Path] = None, **kwargs) -> Optional[Path]:
         """
@@ -210,7 +207,7 @@ class MODFLOWRunner(BaseModelRunner):
 
         recharge_var = self._get_config_value(
             lambda: self.config.model.modflow.recharge_variable,
-            default='scalarSoilDrainage',
+            dict_key='MODFLOW_RECHARGE_VARIABLE',
         )
 
         nc_files = sorted(source_output_dir.glob("*.nc"))
@@ -231,9 +228,7 @@ class MODFLOWRunner(BaseModelRunner):
         logger.debug(f"Wrote coupled recharge ({len(recharge_series)} periods) to {rch_path}")
 
     def _grid_mode(self) -> str:
-        return str(self._get_config_value(
-            lambda: self.config.model.modflow.grid_mode, default='lumped', dict_key='MODFLOW_GRID_MODE',
-        )).lower()
+        return str(self._get_config_value(lambda: self.config.model.modflow.grid_mode, dict_key='MODFLOW_GRID_MODE')).lower()
 
     def _prepare_basin_recharge(self, land: str, source_output_dir: Path) -> None:
         """Basin mode: zone recharge from the land model's output -> RCH time series + TDIS."""

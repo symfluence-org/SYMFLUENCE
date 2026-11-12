@@ -226,7 +226,10 @@ class NgenParameterManager(BaseParameterManager):
 
     def _parse_modules_to_calibrate(self) -> List[str]:
         """Parse which ngen modules to calibrate from config"""
-        modules_str = self._get_config_value(lambda: self.config.model.ngen.modules_to_calibrate, default='CFE', dict_key='NGEN_MODULES_TO_CALIBRATE')
+        modules_str = self._get_config_value(
+            lambda: self.config.model.ngen.modules_to_calibrate,
+            dict_key='NGEN_MODULES_TO_CALIBRATE',
+        )
         if modules_str is None:
             modules_str = 'CFE'
         modules = [m.strip().upper() for m in modules_str.split(',') if m.strip()]
@@ -274,7 +277,10 @@ class NgenParameterManager(BaseParameterManager):
 
         # PET parameters
         if 'PET' in self.modules_to_calibrate:
-            pet_params_str = self._get_config_value(lambda: self.config.model.ngen.pet_params_to_calibrate, default='wind_speed_measurement_height_m', dict_key='NGEN_PET_PARAMS_TO_CALIBRATE')
+            pet_params_str = self._get_config_value(
+                lambda: self.config.model.ngen.pet_params_to_calibrate,
+                dict_key='NGEN_PET_PARAMS_TO_CALIBRATE',
+            )
             if pet_params_str is None:
                 pet_params_str = 'wind_speed_measurement_height_m'
             params['PET'] = [p.strip() for p in pet_params_str.split(',') if p.strip()]
@@ -288,14 +294,20 @@ class NgenParameterManager(BaseParameterManager):
 
         # SAC-SMA parameters
         if 'SACSMA' in self.modules_to_calibrate:
-            sacsma_params_str = self._get_config_value(lambda: self.config.model.ngen.sacsma_params_to_calibrate, default='UZTWM,UZFWM,UZK,LZTWM,LZFPM,LZFSM,LZPK,LZSK,ZPERC,REXP,PFREE', dict_key='NGEN_SACSMA_PARAMS_TO_CALIBRATE')
+            sacsma_params_str = self._get_config_value(
+                lambda: self.config.model.ngen.sacsma_params_to_calibrate,
+                dict_key='NGEN_SACSMA_PARAMS_TO_CALIBRATE',
+            )
             if sacsma_params_str is None:
                 sacsma_params_str = 'UZTWM,UZFWM,UZK,LZTWM,LZFPM,LZFSM,LZPK,LZSK,ZPERC,REXP,PFREE'
             params['SACSMA'] = [p.strip() for p in sacsma_params_str.split(',') if p.strip()]
 
         # Snow-17 parameters
         if 'SNOW17' in self.modules_to_calibrate:
-            snow17_params_str = self._get_config_value(lambda: self.config.model.ngen.snow17_params_to_calibrate, default='SCF,MFMAX,MFMIN,TIPM,PLWHC', dict_key='NGEN_SNOW17_PARAMS_TO_CALIBRATE')
+            snow17_params_str = self._get_config_value(
+                lambda: self.config.model.ngen.snow17_params_to_calibrate,
+                dict_key='NGEN_SNOW17_PARAMS_TO_CALIBRATE',
+            )
             if snow17_params_str is None:
                 snow17_params_str = 'SCF,MFMAX,MFMIN,TIPM,PLWHC'
             params['SNOW17'] = [p.strip() for p in snow17_params_str.split(',') if p.strip()]
@@ -499,7 +511,10 @@ class NgenParameterManager(BaseParameterManager):
             # Determine num_timesteps from config using FORCING_TIME_STEP_SIZE
             start_time = self._get_config_value(lambda: self.config.domain.time_start, dict_key='EXPERIMENT_TIME_START')
             end_time = self._get_config_value(lambda: self.config.domain.time_end, dict_key='EXPERIMENT_TIME_END')
-            forcing_timestep = self._get_config_value(lambda: self.config.forcing.time_step_size, default=3600, dict_key='FORCING_TIME_STEP_SIZE')
+            forcing_timestep = self._get_config_value(
+                lambda: self.config.forcing.time_step_size,
+                dict_key='FORCING_TIME_STEP_SIZE',
+            )
             try:
                 forcing_timestep = int(forcing_timestep)
             except (ValueError, TypeError):
@@ -880,7 +895,10 @@ class NgenParameterManager(BaseParameterManager):
             # Determine num_timesteps from config using FORCING_TIME_STEP_SIZE
             start_time = self._get_config_value(lambda: self.config.domain.time_start, dict_key='EXPERIMENT_TIME_START')
             end_time = self._get_config_value(lambda: self.config.domain.time_end, dict_key='EXPERIMENT_TIME_END')
-            forcing_timestep = self._get_config_value(lambda: self.config.forcing.time_step_size, default=3600, dict_key='FORCING_TIME_STEP_SIZE')
+            forcing_timestep = self._get_config_value(
+                lambda: self.config.forcing.time_step_size,
+                dict_key='FORCING_TIME_STEP_SIZE',
+            )
             try:
                 forcing_timestep = int(forcing_timestep)
             except (ValueError, TypeError):

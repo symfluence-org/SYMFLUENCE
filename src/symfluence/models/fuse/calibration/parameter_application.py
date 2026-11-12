@@ -294,7 +294,11 @@ def apply_regionalization(
     try:
         # Get regionalization method
         method = config.get('PARAMETER_REGIONALIZATION', 'lumped')
-        if resolve_config_value(config, lambda: config.model.fuse.use_transfer_functions, False, 'USE_TRANSFER_FUNCTIONS') and method == 'lumped':
+        if resolve_config_value(
+            config,
+            lambda: config.model.fuse.use_transfer_functions,
+            dict_key='USE_TRANSFER_FUNCTIONS',
+        ) and method == 'lumped':
             method = 'transfer_function'
 
         # Get original parameter bounds

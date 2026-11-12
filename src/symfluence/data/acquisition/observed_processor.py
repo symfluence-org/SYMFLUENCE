@@ -880,7 +880,10 @@ class ObservedDataProcessor(ConfigMixin):
                     gdf = gpd.read_file(shapefile_path)
 
                     # Get area column from the shapefile
-                    area_column = self._get_config_value(lambda: self.config.paths.river_basin_area, default='GRU_area', dict_key='RIVER_BASIN_SHP_AREA')
+                    area_column = self._get_config_value(
+                        lambda: self.config.paths.river_basin_area,
+                        dict_key='RIVER_BASIN_SHP_AREA',
+                    )
 
                     # If area column not found, try alternative names
                     if area_column not in gdf.columns:

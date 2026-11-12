@@ -150,7 +150,11 @@ def _get_catchment_area_worker(config: Dict, logger) -> float:
             try:
                 import geopandas as gpd
                 gdf = gpd.read_file(basin_files[0])
-                area_col = resolve_config_value(config, lambda: config.paths.river_basin_area, 'GRU_area', 'RIVER_BASIN_SHP_AREA')
+                area_col = resolve_config_value(
+                    config,
+                    lambda: config.paths.river_basin_area,
+                    dict_key='RIVER_BASIN_SHP_AREA',
+                )
 
                 logger.debug(f"Found basin shapefile: {basin_files[0]}")
                 logger.debug(f"Looking for area column: {area_col}")
@@ -190,7 +194,11 @@ def _get_catchment_area_worker(config: Dict, logger) -> float:
             try:
                 import geopandas as gpd
                 gdf = gpd.read_file(catchment_files[0])
-                area_col = resolve_config_value(config, lambda: config.paths.catchment_area, 'HRU_area', 'CATCHMENT_SHP_AREA')
+                area_col = resolve_config_value(
+                    config,
+                    lambda: config.paths.catchment_area,
+                    dict_key='CATCHMENT_SHP_AREA',
+                )
 
                 if area_col in gdf.columns:
                     total_area = gdf[area_col].sum()
@@ -238,7 +246,11 @@ def _calculate_metrics_with_target(summa_dir: Path, mizuroute_dir: Path, config:
             project_dir = PathType(project_dir)
 
         # Determine the calibration target type
-        calibration_var = resolve_config_value(config, lambda: config.optimization.calibration_variable, 'streamflow', 'CALIBRATION_VARIABLE')
+        calibration_var = resolve_config_value(
+            config,
+            lambda: config.optimization.calibration_variable,
+            dict_key='CALIBRATION_VARIABLE',
+        )
         optimization_target = resolve_config_value(config, lambda: config.optimization.target, calibration_var, 'OPTIMIZATION_TARGET').lower()
 
         logger.debug(f"[METRICS_CALC] Config keys: {list(config.keys())[:10]}")
@@ -261,7 +273,11 @@ def _calculate_metrics_with_target(summa_dir: Path, mizuroute_dir: Path, config:
         # Validate mizuRoute output exists when routing is required for streamflow
         if optimization_target in ['streamflow', 'flow', 'discharge']:
             domain_method = resolve_config_value(config, lambda: config.domain.definition_method, 'lumped', 'DOMAIN_DEFINITION_METHOD')
-            routing_delineation = resolve_config_value(config, lambda: config.domain.delineation.routing, 'lumped', 'ROUTING_DELINEATION')
+            routing_delineation = resolve_config_value(
+                config,
+                lambda: config.domain.delineation.routing,
+                dict_key='ROUTING_DELINEATION',
+            )
 
             # Check if routing is required (non-lumped domain or river_network routing)
             needs_routing = (
@@ -407,7 +423,11 @@ def _select_inline_simulation_source(
             return mizu_files[0], True, 0.0
 
     domain_method = resolve_config_value(config, lambda: config.domain.definition_method, 'lumped', 'DOMAIN_DEFINITION_METHOD')
-    routing_delineation = resolve_config_value(config, lambda: config.domain.delineation.routing, 'lumped', 'ROUTING_DELINEATION')
+    routing_delineation = resolve_config_value(
+        config,
+        lambda: config.domain.delineation.routing,
+        dict_key='ROUTING_DELINEATION',
+    )
     if domain_method not in ['lumped', 'point'] or routing_delineation != 'lumped':
         logger.error(
             "No mizuRoute output found and domain/routing not both lumped "

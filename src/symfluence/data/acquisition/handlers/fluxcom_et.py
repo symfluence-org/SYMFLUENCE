@@ -95,7 +95,10 @@ class FLUXCOMETAcquirer(BaseAcquisitionHandler):
 
         processed_file = et_dir / f"{self.domain_name}_FLUXCOM_ET.nc"
 
-        if processed_file.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False):
+        if processed_file.exists() and not self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             self.logger.info(f"Using existing FLUXCOM file: {processed_file}")
             return processed_file
 
@@ -134,7 +137,10 @@ class FLUXCOMETAcquirer(BaseAcquisitionHandler):
 
         out_file = output_dir / filename
 
-        if out_file.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False):
+        if out_file.exists() and not self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             return out_file
 
         self.logger.info(f"Downloading: {filename}")
@@ -210,7 +216,10 @@ class FLUXCOMETAcquirer(BaseAcquisitionHandler):
                     obj_hash = item.get("hash", "")
                     out_file = output_dir / f"ET_{year}_monthly_halfdeg.nc"
 
-                    if out_file.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False):
+                    if out_file.exists() and not self._get_config_value(
+                        lambda: self.config.data.force_download,
+                        dict_key='FORCE_DOWNLOAD',
+                    ):
                         self.logger.info(f"  {year}: already exists, skipping")
                         downloaded.append(out_file)
                         break

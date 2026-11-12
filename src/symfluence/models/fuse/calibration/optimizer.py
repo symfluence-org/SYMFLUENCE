@@ -85,7 +85,11 @@ class FUSEModelOptimizer(BaseModelOptimizer):
 
     def _get_fuse_executable_path_pre_init(self, config) -> Path:
         """Helper to get FUSE executable path before full initialization."""
-        fuse_install = resolve_config_value(config, lambda: config.model.fuse.install_path, 'default', 'FUSE_INSTALL_PATH')
+        fuse_install = resolve_config_value(
+            config,
+            lambda: config.model.fuse.install_path,
+            dict_key='FUSE_INSTALL_PATH',
+        )
         return resolve_install_dir(fuse_install, self.data_dir, 'installs/fuse/bin') / 'fuse.exe'
 
     def _get_model_name(self) -> str:
@@ -534,13 +538,22 @@ class FUSEModelOptimizer(BaseModelOptimizer):
             return False
 
         # Check calibration variable (only streamflow calibration uses routing)
-        calibration_var = self._get_config_value(lambda: self.config.optimization.calibration_variable, default='streamflow', dict_key='CALIBRATION_VARIABLE')
+        calibration_var = self._get_config_value(
+            lambda: self.config.optimization.calibration_variable,
+            dict_key='CALIBRATION_VARIABLE',
+        )
         if calibration_var != 'streamflow':
             return False
 
         # Check spatial mode and routing delineation
-        spatial_mode = self._get_config_value(lambda: self.config.model.fuse.spatial_mode, default='lumped', dict_key='FUSE_SPATIAL_MODE')
-        routing_delineation = self._get_config_value(lambda: self.config.domain.delineation.routing, default='lumped', dict_key='ROUTING_DELINEATION')
+        spatial_mode = self._get_config_value(
+            lambda: self.config.model.fuse.spatial_mode,
+            dict_key='FUSE_SPATIAL_MODE',
+        )
+        routing_delineation = self._get_config_value(
+            lambda: self.config.domain.delineation.routing,
+            dict_key='ROUTING_DELINEATION',
+        )
 
         # Distributed or semi-distributed modes need routing
         if spatial_mode in ['semi_distributed', 'distributed']:

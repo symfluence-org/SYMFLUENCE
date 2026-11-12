@@ -44,7 +44,11 @@ class WATFLOODWorker(StreamflowWorker):
             data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             original_dir = data_dir / f'domain_{domain_name}' / 'WATFLOOD_input' / 'settings'
 
-            par_file = resolve_config_value(config, lambda: config.model.watflood.par_file, 'bow.par', 'WATFLOOD_PAR_FILE')
+            par_file = resolve_config_value(
+                config,
+                lambda: config.model.watflood.par_file,
+                dict_key='WATFLOOD_PAR_FILE',
+            )
             if original_dir.exists() and original_dir.resolve() != settings_dir.resolve():
                 settings_dir.mkdir(parents=True, exist_ok=True)
                 # Copy the WATFLOOD settings tree (subdirectories included) when the
@@ -103,8 +107,12 @@ class WATFLOODWorker(StreamflowWorker):
             sim_dir = Path(kwargs.get('sim_dir', output_dir))
             sim_dir.mkdir(parents=True, exist_ok=True)
 
-            install_path = resolve_config_value(config, lambda: config.model.watflood.install_path, 'default', 'WATFLOOD_INSTALL_PATH')
-            exe_name = resolve_config_value(config, lambda: config.model.watflood.exe, 'watflood', 'WATFLOOD_EXE')
+            install_path = resolve_config_value(
+                config,
+                lambda: config.model.watflood.install_path,
+                dict_key='WATFLOOD_INSTALL_PATH',
+            )
+            exe_name = resolve_config_value(config, lambda: config.model.watflood.exe, dict_key='WATFLOOD_EXE')
             if install_path == 'default':
                 install_dir = data_dir / "installs" / "watflood" / "bin"
             else:
@@ -143,7 +151,7 @@ class WATFLOODWorker(StreamflowWorker):
             env['MallocStackLogging'] = '0'
             if not is_native:
                 env['WINEDEBUG'] = '-all'
-            timeout = resolve_config_value(config, lambda: config.model.watflood.timeout, 3600, 'WATFLOOD_TIMEOUT')
+            timeout = resolve_config_value(config, lambda: config.model.watflood.timeout, dict_key='WATFLOOD_TIMEOUT')
 
             try:
                 with open(sim_dir / 'watflood_stdout.log', 'w') as out, \

@@ -128,14 +128,12 @@ class TWSEvaluator(ModelEvaluator):
 
         self.optimization_target = self._target_override_if_valid(('stor_grace', 'stor_mb')) or self._get_config_value(
             lambda: self.config.optimization.target,
-            default='streamflow',
-            dict_key='OPTIMIZATION_TARGET'
+            dict_key='OPTIMIZATION_TARGET',
         )
         if self.optimization_target not in ['stor_grace', 'stor_mb']:
             eval_var = self._get_config_value(
                 lambda: self.config.evaluation.evaluation_variable,
-                default='',
-                dict_key='EVALUATION_VARIABLE'
+                dict_key='EVALUATION_VARIABLE',
             )
             if eval_var in ['stor_grace', 'stor_mb']:
                 self.optimization_target = eval_var
@@ -144,39 +142,30 @@ class TWSEvaluator(ModelEvaluator):
 
         self.grace_column = self._get_config_value(
             lambda: self.config.evaluation.tws.grace_column,
-            default='grace_jpl_anomaly',
-            dict_key='TWS_GRACE_COLUMN'
+            dict_key='TWS_GRACE_COLUMN',
         )
         self.anomaly_baseline = self._get_config_value(
             lambda: self.config.evaluation.tws.anomaly_baseline,
-            default='overlap',
-            dict_key='TWS_ANOMALY_BASELINE'
+            dict_key='TWS_ANOMALY_BASELINE',
         )
         self.unit_conversion = self._get_config_value(
             lambda: self.config.evaluation.tws.unit_conversion,
-            default=1.0,
-            dict_key='TWS_UNIT_CONVERSION'
+            dict_key='TWS_UNIT_CONVERSION',
         )
 
         # Detrending option: removes linear trend from both series before comparison
-        self.detrend = self._get_config_value(
-            lambda: self.config.evaluation.tws.detrend,
-            default=False,
-            dict_key='TWS_DETREND'
-        )
+        self.detrend = self._get_config_value(lambda: self.config.evaluation.tws.detrend, dict_key='TWS_DETREND')
 
         # Scaling option: scale model variability to match observed
         # Useful when model has correct pattern but wrong amplitude
         self.scale_to_obs = self._get_config_value(
             lambda: self.config.evaluation.tws.scale_to_obs,
-            default=False,
-            dict_key='TWS_SCALE_TO_OBS'
+            dict_key='TWS_SCALE_TO_OBS',
         )
 
         storage_str = self._get_config_value(
             lambda: self.config.evaluation.tws.storage_components,
-            default='',
-            dict_key='TWS_STORAGE_COMPONENTS'
+            dict_key='TWS_STORAGE_COMPONENTS',
         )
         if storage_str:
             self.storage_vars = [v.strip() for v in storage_str.split(',') if v.strip()]

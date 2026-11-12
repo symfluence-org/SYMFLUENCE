@@ -365,11 +365,7 @@ class ResultsTrackingMixin(ConfigMixin):
                 return obj
 
         # Determine the optimization metric used
-        metric_name = self._get_config_value(
-            lambda: self.config.optimization.metric,
-            default='KGE',
-            dict_key='OPTIMIZATION_METRIC'
-        )
+        metric_name = self._get_config_value(lambda: self.config.optimization.metric, dict_key='OPTIMIZATION_METRIC')
 
         # Prepare output
         output = {

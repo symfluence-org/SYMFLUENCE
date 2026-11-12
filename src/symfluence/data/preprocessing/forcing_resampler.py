@@ -569,8 +569,7 @@ class ForcingResampler(PathResolverMixin):
                 f"Catchment shapefile {target} not found; remapped forcing names carry the "
                 "discretization only, not the HRU geometry")
             return None
-        hru_field = self._get_config_value(
-            lambda: self.config.paths.catchment_hruid, default='HRU_ID', dict_key='CATCHMENT_SHP_HRUID')
+        hru_field = self._get_config_value(lambda: self.config.paths.catchment_hruid, dict_key='CATCHMENT_SHP_HRUID')
         geometry = hru_geometry(target, hru_field)
         self.file_processor.target_geometry = geometry
         return geometry

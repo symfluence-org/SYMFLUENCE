@@ -52,8 +52,14 @@ class CARRA2Handler(CARRAHandler):
             lng, lt = inverse.transform(vx,vy)
             geometries.append(Polygon(zip(lng,lt)))
         frame = gpd.GeoDataFrame({'ID':np.arange(len(lat)),
-                                  self._get_config_value(lambda: self.config.forcing.shape_lat_name, default='lat'):lat,
-                                  self._get_config_value(lambda: self.config.forcing.shape_lon_name, default='lon'):lon},
+                                  self._get_config_value(
+                                      lambda: self.config.forcing.shape_lat_name,
+                                      dict_key='FORCING_SHAPE_LAT_NAME',
+                                  ):lat,
+                                  self._get_config_value(
+                                      lambda: self.config.forcing.shape_lon_name,
+                                      dict_key='FORCING_SHAPE_LON_NAME',
+                                  ):lon},
                                  geometry=geometries,crs=4326)
         if not frame.geometry.is_valid.all():
             raise ValueError('Invalid native CARRA2 cell polygons')

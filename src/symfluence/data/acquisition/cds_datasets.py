@@ -1039,7 +1039,7 @@ class CARRAAcquirer(CDSRegionalReanalysisHandler):
     """
 
     def download(self, output_dir: Path) -> Path:
-        if self._get_config_value(lambda: self.config.forcing.carra_source, default='cds', dict_key='CARRA_SOURCE') == 'belgingur':
+        if self._get_config_value(lambda: self.config.forcing.carra_source, dict_key='CARRA_SOURCE') == 'belgingur':
             from .belgingur_carra import BelgingurCARRAAcquirer
             return BelgingurCARRAAcquirer(self.config, self.logger, self.reporting_manager).download(output_dir)
         return super().download(output_dir)

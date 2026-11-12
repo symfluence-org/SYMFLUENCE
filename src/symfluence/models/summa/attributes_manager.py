@@ -614,7 +614,8 @@ class SummaAttributesManager(ConfigurableMixin):
 
         intersect_path = self._get_default_path('INTERSECT_SOIL_PATH', 'shapefiles/catchment_intersection/with_soilgrids')
         intersect_name = self._get_config_value(
-            lambda: self.config.paths.intersect_soil_name, default='default'
+            lambda: self.config.paths.intersect_soil_name,
+            dict_key='INTERSECT_SOIL_NAME',
         )
         if intersect_name == 'default':
             intersect_name = 'catchment_with_soilclass.shp'
@@ -755,7 +756,8 @@ class SummaAttributesManager(ConfigurableMixin):
 
         intersect_path = self._get_default_path('INTERSECT_LAND_PATH', 'shapefiles/catchment_intersection/with_landclass')
         intersect_name = self._get_config_value(
-            lambda: self.config.paths.intersect_land_name, default='default'
+            lambda: self.config.paths.intersect_land_name,
+            dict_key='INTERSECT_LAND_NAME',
         )
         if intersect_name == 'default':
             intersect_name = 'catchment_with_landclass.shp'
@@ -838,7 +840,8 @@ class SummaAttributesManager(ConfigurableMixin):
 
         intersect_path = self._get_default_path('INTERSECT_DEM_PATH', 'shapefiles/catchment_intersection/with_dem')
         intersect_name = self._get_config_value(
-            lambda: self.config.paths.intersect_dem_name, default='default'
+            lambda: self.config.paths.intersect_dem_name,
+            dict_key='INTERSECT_DEM_NAME',
         )
         if intersect_name == 'default':
             intersect_name = 'catchment_with_dem.shp'

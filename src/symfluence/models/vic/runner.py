@@ -26,10 +26,7 @@ class VICRunner(BaseModelRunner):
         self.settings_dir = self.project_dir / "settings" / "VIC"
 
         # Determine executable name from driver config
-        driver = self._get_config_value(
-            lambda: self.config.model.vic.driver,
-            default='image',
-        )
+        driver = self._get_config_value(lambda: self.config.model.vic.driver, dict_key='VIC_DRIVER')
         default_exe = 'vic_image.exe' if driver == 'image' else 'vic_classic.exe'
 
         self.vic_exe = self.get_model_executable(
@@ -49,7 +46,7 @@ class VICRunner(BaseModelRunner):
         """Build VIC execution command with global parameter file."""
         global_file_name = self._get_config_value(
             lambda: self.config.model.vic.global_param_file,
-            default='vic_global.txt',
+            dict_key='VIC_GLOBAL_PARAM_FILE',
         )
         global_param = self.settings_dir / global_file_name
         return [str(self.vic_exe), '-g', str(global_param)]
@@ -60,7 +57,4 @@ class VICRunner(BaseModelRunner):
 
     def _get_run_timeout(self) -> int:
         """VIC timeout from config."""
-        return self._get_config_value(
-            lambda: self.config.model.vic.timeout,
-            default=7200,
-        )
+        return self._get_config_value(lambda: self.config.model.vic.timeout, dict_key='VIC_TIMEOUT')

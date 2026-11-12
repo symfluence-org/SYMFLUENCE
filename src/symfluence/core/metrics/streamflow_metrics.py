@@ -95,7 +95,11 @@ class StreamflowMetrics:
                         store_series = store_series.resample(resample_freq).mean()
                     return np.asarray(store_series.values), cast(pd.DatetimeIndex, store_series.index)
 
-            obs_file = resolve_config_value(config, lambda: config.paths.observations_path, 'default', 'OBSERVATIONS_PATH')
+            obs_file = resolve_config_value(
+                config,
+                lambda: config.paths.observations_path,
+                dict_key='OBSERVATIONS_PATH',
+            )
             if obs_file == 'default' or not obs_file:
                 obs_file = resolve_data_subdir(project_dir, 'observations') / 'streamflow' / 'preprocessed' / f"{domain_name}_streamflow_processed.csv"
             else:
@@ -371,8 +375,12 @@ class StreamflowMetrics:
             domain_name,
             resolve_config_value(config, lambda: config.domain.definition_method, 'lumped', 'DOMAIN_DEFINITION_METHOD'),
             resolve_config_value(config, lambda: config.domain.experiment_id, 'run_1', 'EXPERIMENT_ID'),
-            explicit_path=resolve_config_value(config, lambda: config.paths.catchment_path, 'default', 'CATCHMENT_PATH'),
-            explicit_name=resolve_config_value(config, lambda: config.paths.catchment_name, 'default', 'CATCHMENT_SHP_NAME'),
+            explicit_path=resolve_config_value(config, lambda: config.paths.catchment_path, dict_key='CATCHMENT_PATH'),
+            explicit_name=resolve_config_value(
+                config,
+                lambda: config.paths.catchment_name,
+                dict_key='CATCHMENT_SHP_NAME',
+            ),
             logger=logger,
         )
 

@@ -214,8 +214,7 @@ class LisfloodParameterManager(BaseParameterManager):
             if xml_params:
                 settings_file = self._get_config_value(
                     lambda: self.config.model.lisflood.settings_file,
-                    default="settings.xml",
-                    dict_key="LISFLOOD_SETTINGS_FILE",
+                    dict_key='LISFLOOD_SETTINGS_FILE',
                 )
                 xml_path = target_dir / settings_file
                 if xml_path.exists():

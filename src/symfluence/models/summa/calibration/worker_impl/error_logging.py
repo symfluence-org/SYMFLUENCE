@@ -59,7 +59,11 @@ class ErrorLogger:
 
         # Determine error logging mode
         # PARAMS_KEEP_TRIALS is a convenience flag that enables 'failures' mode
-        params_keep_trials = resolve_config_value(config, lambda: config.optimization.params_keep_trials, False, 'PARAMS_KEEP_TRIALS')
+        params_keep_trials = resolve_config_value(
+            config,
+            lambda: config.optimization.params_keep_trials,
+            dict_key='PARAMS_KEEP_TRIALS',
+        )
 
         # PARAMS_KEEP_TRIALS turns failure logging on unless a mode was chosen.
         # The schema default is 'none', so an unset mode arrives as 'none' from
@@ -68,10 +72,18 @@ class ErrorLogger:
         if params_keep_trials and self.mode == 'none':
             self.mode = 'failures'
 
-        self.stop_on_failure = resolve_config_value(config, lambda: config.optimization.stop_on_model_failure, False, 'STOP_ON_MODEL_FAILURE')
+        self.stop_on_failure = resolve_config_value(
+            config,
+            lambda: config.optimization.stop_on_model_failure,
+            dict_key='STOP_ON_MODEL_FAILURE',
+        )
 
         # Set up error log directory
-        error_log_subdir = resolve_config_value(config, lambda: config.optimization.error_log_dir, 'error_logs', 'ERROR_LOG_DIR')
+        error_log_subdir = resolve_config_value(
+            config,
+            lambda: config.optimization.error_log_dir,
+            dict_key='ERROR_LOG_DIR',
+        )
         self.error_log_dir = base_output_dir / error_log_subdir
 
         # Track if we've had a failure (for STOP_ON_MODEL_FAILURE)
@@ -370,8 +382,16 @@ def log_worker_failure(
 
     # Check if error logging is disabled in config
     if config:
-        params_keep_trials = resolve_config_value(config, lambda: config.optimization.params_keep_trials, False, 'PARAMS_KEEP_TRIALS')
-        error_mode = resolve_config_value(config, lambda: config.optimization.error_logging_mode, 'none', 'ERROR_LOGGING_MODE')
+        params_keep_trials = resolve_config_value(
+            config,
+            lambda: config.optimization.params_keep_trials,
+            dict_key='PARAMS_KEEP_TRIALS',
+        )
+        error_mode = resolve_config_value(
+            config,
+            lambda: config.optimization.error_logging_mode,
+            dict_key='ERROR_LOGGING_MODE',
+        )
         if not params_keep_trials and error_mode == 'none':
             return None
 

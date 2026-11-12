@@ -193,7 +193,7 @@ class CoupledGWWorker(BaseWorker):
 
         if 'SY' in params:
             sy = float(params['SY'])
-            ss = float(resolve_config_value(config, lambda: config.model.modflow.ss, 1e-5, 'MODFLOW_SS'))
+            ss = float(resolve_config_value(config, lambda: config.model.modflow.ss, dict_key='MODFLOW_SS'))
             (modflow_dir / "gwf.sto").write_text(
                 "BEGIN OPTIONS\n  SAVE_FLOWS\nEND OPTIONS\n\n"
                 "BEGIN GRIDDATA\n  ICONVERT\n    CONSTANT 1\n"
@@ -204,8 +204,8 @@ class CoupledGWWorker(BaseWorker):
         if 'DRAIN_CONDUCTANCE' in params:
             drain_elev = resolve_config_value(config, lambda: config.model.modflow.drain_elevation, None, 'MODFLOW_DRAIN_ELEVATION')
             if drain_elev is None:
-                top = float(resolve_config_value(config, lambda: config.model.modflow.top, 1500.0, 'MODFLOW_TOP'))
-                bot = float(resolve_config_value(config, lambda: config.model.modflow.bot, 1400.0, 'MODFLOW_BOT'))
+                top = float(resolve_config_value(config, lambda: config.model.modflow.top, dict_key='MODFLOW_TOP'))
+                bot = float(resolve_config_value(config, lambda: config.model.modflow.bot, dict_key='MODFLOW_BOT'))
                 drain_elev = (top + bot) / 2.0
             else:
                 drain_elev = float(drain_elev)

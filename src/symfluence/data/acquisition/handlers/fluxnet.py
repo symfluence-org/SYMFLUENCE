@@ -96,7 +96,10 @@ class FLUXNETAcquirer(BaseAcquisitionHandler):
         # Output file path
         processed_file = output_dir / f"{self.domain_name}_FLUXNET_{station_id}.csv"
 
-        if processed_file.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False, dict_key='FORCE_DOWNLOAD'):
+        if processed_file.exists() and not self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             self.logger.info(f"Using existing FLUXNET file: {processed_file}")
             return processed_file
 

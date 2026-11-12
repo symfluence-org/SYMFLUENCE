@@ -86,7 +86,7 @@ class Sentinel1SMAcquirer(BaseAcquisitionHandler):
         self.logger.info(f"Found {len(products)} Sentinel-1 products")
 
         # Download products
-        force_download = self._get_config_value(lambda: self.config.data.force_download, default=False)
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
         downloaded = 0
 
         for product in products:

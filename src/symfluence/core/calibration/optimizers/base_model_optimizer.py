@@ -163,8 +163,8 @@ class BaseModelOptimizer(
             dict_key='POPULATION_SIZE'
         )
         self.target_metric = self._get_config_value(
-            lambda: self.config.optimization.metric, default='KGE',
-            dict_key='OPTIMIZATION_METRIC'
+            lambda: self.config.optimization.metric,
+            dict_key='OPTIMIZATION_METRIC',
         )
 
         # Random seed
@@ -273,7 +273,8 @@ class BaseModelOptimizer(
         """Helper to visualize optimization progress if reporting manager available."""
         if self.reporting_manager:
             calibration_variable = self._get_config_value(
-                lambda: self.config.optimization.calibration_variable, default='streamflow'
+                lambda: self.config.optimization.calibration_variable,
+                dict_key='CALIBRATION_VARIABLE',
             )
             # Plots go into this run's results directory. They used to go to
             # ``<display name>_<experiment>`` next to it, a sibling directory
@@ -287,7 +288,8 @@ class BaseModelOptimizer(
             )
 
             calibrate_depth = self._get_config_value(
-                lambda: self.config.model.summa.calibrate_depth, default=False
+                lambda: self.config.model.summa.calibrate_depth,
+                dict_key='CALIBRATE_DEPTH',
             )
             if calibrate_depth:
                 self.reporting_manager.visualize_optimization_depth_parameters(
@@ -323,7 +325,7 @@ class BaseModelOptimizer(
         model_name = self._get_model_name()
         target_type = str(self._get_config_value(
             lambda: self.config.optimization.target,
-            default='streamflow', dict_key='OPTIMIZATION_TARGET'
+            dict_key='OPTIMIZATION_TARGET',
         )).lower()
         return self._factory.create_calibration_target(model_name, target_type)
 
@@ -374,8 +376,7 @@ class BaseModelOptimizer(
         # Determine current metric for same-metric preference
         current_metric = self._get_config_value(
             lambda: self.config.optimization.metric,
-            default='KGE',
-            dict_key='OPTIMIZATION_METRIC'
+            dict_key='OPTIMIZATION_METRIC',
         )
 
         # Collect all valid candidates grouped by metric match
@@ -569,8 +570,8 @@ class BaseModelOptimizer(
             (objective_names, multiobjective)
         """
         multi_target = bool(self._get_config_value(
-            lambda: self.config.optimization.nsga2.multi_target, default=False,
-            dict_key='NSGA2_MULTI_TARGET'
+            lambda: self.config.optimization.nsga2.multi_target,
+            dict_key='NSGA2_MULTI_TARGET',
         ))
         objective_names = self._get_nsga2_objective_names()
         if multi_target or len(set(objective_names)) > 1:
@@ -743,7 +744,8 @@ class BaseModelOptimizer(
         """Adjust end time to align with forcing data timestep."""
         try:
             forcing_timestep_seconds = self._get_config_value(
-                lambda: self.config.forcing.time_step_size, default=3600
+                lambda: self.config.forcing.time_step_size,
+                dict_key='FORCING_TIME_STEP_SIZE',
             )
             adjusted = adjust_end_time_for_forcing(end_time_str, forcing_timestep_seconds)
             if adjusted != end_time_str:
@@ -777,7 +779,7 @@ class BaseModelOptimizer(
         permanent_base = self.project_dir / 'simulations' / f'run_{algorithm}'
 
         use_local_scratch = self._get_config_value(
-            lambda: self.config.system.use_local_scratch, default=False,
+            lambda: self.config.system.use_local_scratch,
             dict_key='USE_LOCAL_SCRATCH',
         )
 
@@ -1015,11 +1017,7 @@ class BaseModelOptimizer(
             - 'native': Require native gradients (error if unavailable)
             - 'finite_difference': Always use FD (useful for comparison/debugging)
         """
-        return self._get_config_value(
-            lambda: self.config.optimization.gradient_mode,
-            default='auto',
-            dict_key='GRADIENT_MODE'
-        )
+        return self._get_config_value(lambda: self.config.optimization.gradient_mode, dict_key='GRADIENT_MODE')
 
     def _evaluate_population(
         self,
@@ -1156,7 +1154,7 @@ class BaseModelOptimizer(
         """
         checkpoint_interval = self._get_config_value(
             lambda: self.config.optimization.checkpoint_interval,
-            default=10, dict_key='CHECKPOINT_INTERVAL',
+            dict_key='CHECKPOINT_INTERVAL',
         )
 
         def evaluate_solution(normalized_params, step_id=0):
@@ -1350,8 +1348,8 @@ class BaseModelOptimizer(
         # For MOEA/D, add multi-objective support only when explicitly enabled
         if algorithm_name.lower() in ['moead', 'moea-d', 'moea_d']:
             moead_multi = bool(self._get_config_value(
-                lambda: self.config.optimization.moead.multi_target, default=False,
-                dict_key='MOEAD_MULTI_TARGET'
+                lambda: self.config.optimization.moead.multi_target,
+                dict_key='MOEAD_MULTI_TARGET',
             ))
             kwargs['multiobjective'] = moead_multi
             if moead_multi:

@@ -181,14 +181,12 @@ class ETEvaluator(ModelEvaluator):
         # Determine ET variable type from the override, then config
         self.optimization_target = self._target_override_if_valid(('et', 'latent_heat')) or self._get_config_value(
             lambda: self.config.optimization.target,
-            default='streamflow',
-            dict_key='OPTIMIZATION_TARGET'
+            dict_key='OPTIMIZATION_TARGET',
         )
         if self.optimization_target not in ['et', 'latent_heat']:
             eval_var = self._get_config_value(
                 lambda: self.config.evaluation.evaluation_variable,
-                default='',
-                dict_key='EVALUATION_VARIABLE'
+                dict_key='EVALUATION_VARIABLE',
             )
             if eval_var in ['et', 'latent_heat']:
                 self.optimization_target = eval_var
@@ -211,20 +209,17 @@ class ETEvaluator(ModelEvaluator):
         # Temporal aggregation method
         self.temporal_aggregation = self._get_config_value(
             lambda: self.config.evaluation.et.temporal_aggregation,
-            default='daily_mean',
-            dict_key='ET_TEMPORAL_AGGREGATION'
+            dict_key='ET_TEMPORAL_AGGREGATION',
         )
 
         # Quality control settings
         self.use_quality_control = self._get_config_value(
             lambda: self.config.evaluation.et.use_quality_control,
-            default=True,
-            dict_key='ET_USE_QUALITY_CONTROL'
+            dict_key='ET_USE_QUALITY_CONTROL',
         )
         self.max_quality_flag = self._get_config_value(
             lambda: self.config.evaluation.et.max_quality_flag,
-            default=2,
-            dict_key='ET_MAX_QUALITY_FLAG'
+            dict_key='ET_MAX_QUALITY_FLAG',
         )
 
         self.logger.info(
@@ -985,8 +980,7 @@ class ETEvaluator(ModelEvaluator):
 
             max_qc = self._get_config_value(
                 lambda: self.config.evaluation.et.modis_max_qc,
-                default=0,
-                dict_key='ET_MODIS_MAX_QC'
+                dict_key='ET_MODIS_MAX_QC',
             )
             quality_mask = modland_qc <= max_qc
 
@@ -1044,8 +1038,7 @@ class ETEvaluator(ModelEvaluator):
 
             max_relative_unc = self._get_config_value(
                 lambda: self.config.evaluation.et.gleam_max_relative_uncertainty,
-                default=0.5,
-                dict_key='ET_GLEAM_MAX_RELATIVE_UNCERTAINTY'
+                dict_key='ET_GLEAM_MAX_RELATIVE_UNCERTAINTY',
             )
 
             # Calculate relative uncertainty (avoid division by zero)

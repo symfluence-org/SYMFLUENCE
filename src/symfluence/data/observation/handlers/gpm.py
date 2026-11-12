@@ -68,10 +68,7 @@ class GPMIMERGHandler(BaseObservationHandler):
         gpm_dir.mkdir(parents=True, exist_ok=True)
 
         # Check for existing files
-        force_download = self._get_config_value(
-            lambda: self.config.data.force_download,
-            default=False
-        )
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
 
         existing_files = list(gpm_dir.glob("*.nc")) + list(gpm_dir.glob("*.nc4"))
         if existing_files and not force_download:

@@ -324,12 +324,18 @@ class SMAPAcquirer(BaseAcquisitionHandler):
 
     def _download_via_cmr(self, output_dir: Path) -> Path:
         """Fallback: download SMAP granules via CMR HTTPS links."""
-        cmr_short_name = self._get_config_value(lambda: None, default=self._get_config_value(lambda: self.config.evaluation.smap.product, default='SPL4SMGP', dict_key='SMAP_PRODUCT'), dict_key='SMAP_CMR_SHORT_NAME')
+        cmr_short_name = self._get_config_value(lambda: None, default=self._get_config_value(
+            lambda: self.config.evaluation.smap.product,
+            dict_key='SMAP_PRODUCT',
+        ), dict_key='SMAP_CMR_SHORT_NAME')
         if isinstance(cmr_short_name, str) and cmr_short_name.upper().startswith('SMAP_L4_SM_GPH'):
             cmr_short_name = 'SPL4SMGP'
         cmr_version = str(self._get_config_value(lambda: None, default='008', dict_key='SMAP_CMR_VERSION')).zfill(3)
         max_granules = self._get_config_value(lambda: self.config.evaluation.smap.max_granules, dict_key='SMAP_MAX_GRANULES')
-        use_opendap = bool(self._get_config_value(lambda: self.config.evaluation.smap.use_opendap, default=False, dict_key='SMAP_USE_OPENDAP'))
+        use_opendap = bool(self._get_config_value(
+            lambda: self.config.evaluation.smap.use_opendap,
+            dict_key='SMAP_USE_OPENDAP',
+        ))
 
         lat_min, lat_max = sorted([self.bbox["lat_min"], self.bbox["lat_max"]])
         lon_min, lon_max = sorted([self.bbox["lon_min"], self.bbox["lon_max"]])
@@ -400,7 +406,10 @@ class SMAPAcquirer(BaseAcquisitionHandler):
                         return output_dir
                     filename = href.split("/")[-1]
                     out_file = output_dir / filename
-                    if out_file.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False, dict_key='FORCE_DOWNLOAD'):
+                    if out_file.exists() and not self._get_config_value(
+                        lambda: self.config.data.force_download,
+                        dict_key='FORCE_DOWNLOAD',
+                    ):
                         downloaded += 1
                         continue
                     self.logger.info(f"Downloading SMAP granule: {filename}")
@@ -536,7 +545,10 @@ class SMAPAcquirer(BaseAcquisitionHandler):
 
         granule_id = url.rstrip("/").split("/")[-1].replace(".h5", "")
         out_file = output_dir / f"{granule_id}_subset.nc"
-        if out_file.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False, dict_key='FORCE_DOWNLOAD'):
+        if out_file.exists() and not self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             return True
         self.logger.info(f"Writing SMAP subset: {out_file.name}")
         ds_out = xr.Dataset(

@@ -115,7 +115,10 @@ class SoilProcessor(BaseAttributeProcessor):
                 else:
                     # For distributed catchment
                     catchment = gpd.read_file(self.catchment_path)
-                    hru_id_field = self._get_config_value(lambda: self.config.paths.catchment_hruid, default='HRU_ID', dict_key='CATCHMENT_SHP_HRUID')
+                    hru_id_field = self._get_config_value(
+                        lambda: self.config.paths.catchment_hruid,
+                        dict_key='CATCHMENT_SHP_HRUID',
+                    )
 
                     for i, zonal_result in enumerate(zonal_out):
                         if i < len(catchment):
@@ -253,7 +256,10 @@ class SoilProcessor(BaseAttributeProcessor):
         else:
             # For distributed catchment
             catchment = gpd.read_file(self.catchment_path)
-            hru_id_field = self._get_config_value(lambda: self.config.paths.catchment_hruid, default='HRU_ID', dict_key='CATCHMENT_SHP_HRUID')
+            hru_id_field = self._get_config_value(
+                lambda: self.config.paths.catchment_hruid,
+                dict_key='CATCHMENT_SHP_HRUID',
+            )
 
             for i in range(len(catchment)):
                 hru_id = catchment.iloc[i][hru_id_field]
@@ -368,7 +374,10 @@ class SoilProcessor(BaseAttributeProcessor):
         else:
             # For distributed catchment
             catchment = gpd.read_file(self.catchment_path)
-            hru_id_field = self._get_config_value(lambda: self.config.paths.catchment_hruid, default='HRU_ID', dict_key='CATCHMENT_SHP_HRUID')
+            hru_id_field = self._get_config_value(
+                lambda: self.config.paths.catchment_hruid,
+                dict_key='CATCHMENT_SHP_HRUID',
+            )
 
             for i in range(len(catchment)):
                 hru_id = catchment.iloc[i][hru_id_field]
@@ -473,7 +482,10 @@ class SoilProcessor(BaseAttributeProcessor):
             else:
                 # For distributed catchment
                 catchment = gpd.read_file(self.catchment_path)
-                hru_id_field = self._get_config_value(lambda: self.config.paths.catchment_hruid, default='HRU_ID', dict_key='CATCHMENT_SHP_HRUID')
+                hru_id_field = self._get_config_value(
+                    lambda: self.config.paths.catchment_hruid,
+                    dict_key='CATCHMENT_SHP_HRUID',
+                )
 
                 for i, zonal_result in enumerate(zonal_out):
                     if i < len(catchment):

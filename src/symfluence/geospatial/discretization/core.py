@@ -127,13 +127,11 @@ class DomainDiscretizer(PathResolverMixin):
 
         self.catchment_path = self._get_config_value(
             lambda: self.config.paths.catchment_path,
-            default='default',
-            dict_key='CATCHMENT_PATH'
+            dict_key='CATCHMENT_PATH',
         )
         self.catchment_name = self._get_config_value(
             lambda: self.config.paths.catchment_name,
-            default='default',
-            dict_key='CATCHMENT_SHP_NAME'
+            dict_key='CATCHMENT_SHP_NAME',
         )
         if self.catchment_name == "default":
             discretization_method = self.domain_discretization
@@ -145,16 +143,8 @@ class DomainDiscretizer(PathResolverMixin):
             self.catchment_name = (
                 f"{self.domain_name}_HRUs_{method_suffix}.shp"
             )
-        self.gruId = self._get_config_value(
-            lambda: self.config.paths.catchment_gruid,
-            default='GRU_ID',
-            dict_key='CATCHMENT_SHP_GRUID'
-        )
-        self.hruId = self._get_config_value(
-            lambda: self.config.paths.catchment_hruid,
-            default='HRU_ID',
-            dict_key='CATCHMENT_SHP_HRUID'
-        )
+        self.gruId = self._get_config_value(lambda: self.config.paths.catchment_gruid, dict_key='CATCHMENT_SHP_GRUID')
+        self.hruId = self._get_config_value(lambda: self.config.paths.catchment_hruid, dict_key='CATCHMENT_SHP_HRUID')
 
         if self.catchment_path == "default":
             # Use backward-compatible path resolution
@@ -247,8 +237,7 @@ class DomainDiscretizer(PathResolverMixin):
             # Check if a custom catchment shapefile is provided
             catchment_name = self._get_config_value(
                 lambda: self.config.paths.catchment_name,
-                default='default',
-                dict_key='CATCHMENT_SHP_NAME'
+                dict_key='CATCHMENT_SHP_NAME',
             )
             if catchment_name != "default":
                 # Non-default name means the user is bringing their own HRU
@@ -258,8 +247,7 @@ class DomainDiscretizer(PathResolverMixin):
                 # raise a bare FileNotFoundError from deep inside geopandas.
                 catchment_path_cfg = self._get_config_value(
                     lambda: self.config.paths.catchment_path,
-                    default='default',
-                    dict_key='CATCHMENT_PATH'
+                    dict_key='CATCHMENT_PATH',
                 )
                 if catchment_path_cfg == "default":
                     catchment_subpath = self._get_catchment_subpath(catchment_name)
@@ -660,11 +648,7 @@ class DomainDiscretizer(PathResolverMixin):
         self.logger.info(f"Retained {len(hru_gdf)} HRUs after geometry validation")
 
         # Merge undersized HRUs (MIN_HRU_SIZE, km²) before any per-HRU statistic
-        min_hru_size = float(self._get_config_value(
-            lambda: self.config.domain.min_hru_size,
-            default=0.0,
-            dict_key='MIN_HRU_SIZE'
-        ) or 0.0)
+        min_hru_size = float(self._get_config_value(lambda: self.config.domain.min_hru_size, dict_key='MIN_HRU_SIZE') or 0.0)
         if min_hru_size > 0:
             hru_gdf = merge_small_hrus(hru_gdf, min_hru_size, self.logger)
 
@@ -797,7 +781,7 @@ class DomainDiscretizationRunner:
         domain_method = self.discretizer.domain_definition_method
         routing_delineation = self.discretizer._get_config_value(
             lambda: self.discretizer.config.domain.delineation.routing,
-            default="lumped"
+            dict_key='ROUTING_DELINEATION',
         )
 
         if domain_method == "lumped" and routing_delineation == "river_network":

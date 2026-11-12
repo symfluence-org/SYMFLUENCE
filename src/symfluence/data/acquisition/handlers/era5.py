@@ -523,7 +523,8 @@ class ERA5ARCOAcquirer(BaseAcquisitionHandler):
         lon_res = bbox_info["lon_resolution"]
 
         step = self._get_config_value(
-            lambda: self.config.forcing.era5.time_step_hours, default=1
+            lambda: self.config.forcing.era5.time_step_hours,
+            dict_key='ERA5_TIME_STEP_HOURS',
         )
         step = int(step)
 

@@ -58,8 +58,7 @@ class PRMSModelOptimizer(BaseModelOptimizer):
         """Get path to PRMS control file."""
         control_file = self._get_config_value(
             lambda: self.config.model.prms.control_file,
-            default='control.dat',
-            dict_key='PRMS_CONTROL_FILE'
+            dict_key='PRMS_CONTROL_FILE',
         )
         return self.prms_setup_dir / control_file
 

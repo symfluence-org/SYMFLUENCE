@@ -116,7 +116,7 @@ class HYPEWorker(BaseWorker):
         elif hasattr(self.config, 'model_dump'):
             cfg = self.config.model_dump()
 
-        exe_name = resolve_config_value(cfg, lambda: self.config.model.hype.exe, 'hype', 'HYPE_EXE')
+        exe_name = resolve_config_value(cfg, lambda: self.config.model.hype.exe, dict_key='HYPE_EXE')
 
         if Path(exe_name).is_absolute() and Path(exe_name).exists():
             return exe_name

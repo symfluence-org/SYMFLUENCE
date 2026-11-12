@@ -92,7 +92,7 @@ class OpenETAcquirer(BaseAcquisitionHandler):
         model = self._get_config_value(lambda: None, default='ensemble', dict_key='OPENET_MODEL')
         resolution = self._get_config_value(lambda: None, default='monthly', dict_key='OPENET_RESOLUTION')
         units = self._get_config_value(lambda: None, default='mm', dict_key='OPENET_UNITS')
-        force_download = self._get_config_value(lambda: self.config.data.force_download, default=False)
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
 
         # Build output filename
         start_str = self.start_date.strftime('%Y%m%d')

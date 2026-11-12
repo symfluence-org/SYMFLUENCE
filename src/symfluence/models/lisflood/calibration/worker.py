@@ -43,7 +43,11 @@ class LisfloodWorker(BaseWorker):
                 shutil.copytree(original_maps, target_maps)
 
             # Copy and patch settings XML
-            settings_file = resolve_config_value(config, lambda: config.model.lisflood.settings_file, "settings.xml", 'LISFLOOD_SETTINGS_FILE')
+            settings_file = resolve_config_value(
+                config,
+                lambda: config.model.lisflood.settings_file,
+                dict_key='LISFLOOD_SETTINGS_FILE',
+            )
             original_xml = original_settings / settings_file
             target_xml = settings_dir / settings_file
             if original_xml.exists() and original_xml != target_xml:
@@ -83,9 +87,17 @@ class LisfloodWorker(BaseWorker):
             if override:
                 settings_path = Path(override)
             else:
-                settings_file = resolve_config_value(config, lambda: config.model.lisflood.settings_file, "settings.xml", 'LISFLOOD_SETTINGS_FILE')
+                settings_file = resolve_config_value(
+                    config,
+                    lambda: config.model.lisflood.settings_file,
+                    dict_key='LISFLOOD_SETTINGS_FILE',
+                )
                 settings_path = Path(settings_dir) / settings_file
-            timeout = int(resolve_config_value(config, lambda: config.model.lisflood.timeout, 7200, 'LISFLOOD_TIMEOUT'))
+            timeout = int(resolve_config_value(
+                config,
+                lambda: config.model.lisflood.timeout,
+                dict_key='LISFLOOD_TIMEOUT',
+            ))
 
             env = dict(os.environ)
             from symfluence.models.lisflood.runner import _find_pcraster_site_packages

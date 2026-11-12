@@ -36,7 +36,7 @@ class MizuRouteConfigMixin:
         """Routing output variable name from config.model.mizuroute.routing_var."""
         return self._get_config_value(
             lambda: self.config.model.mizuroute.routing_var,
-            default='averageRoutedRunoff'
+            dict_key='SETTINGS_MIZU_ROUTING_VAR',
         )
 
     @property
@@ -44,7 +44,7 @@ class MizuRouteConfigMixin:
         """Routing output units from config.model.mizuroute.routing_units."""
         return self._get_config_value(
             lambda: self.config.model.mizuroute.routing_units,
-            default='m/s'
+            dict_key='SETTINGS_MIZU_ROUTING_UNITS',
         )
 
     @property
@@ -52,7 +52,7 @@ class MizuRouteConfigMixin:
         """Routing time step in seconds from config.model.mizuroute.routing_dt."""
         return int(self._get_config_value(
             lambda: self.config.model.mizuroute.routing_dt,
-            default=3600
+            dict_key='SETTINGS_MIZU_ROUTING_DT',
         ))
 
     @property

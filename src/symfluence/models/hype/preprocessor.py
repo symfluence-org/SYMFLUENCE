@@ -300,8 +300,7 @@ class HYPEPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         if band_shp is not None:
             band_table = load_elevation_band_table(band_shp)
             if band_table:
-                lapse = self._get_config_value(
-                    lambda: self.config.forcing.lapse_rate, default=0.0065)
+                lapse = self._get_config_value(lambda: self.config.forcing.lapse_rate, dict_key='LAPSE_RATE')
                 self.forcing_processor.set_elevation_bands(
                     band_table, lapse_rate=lapse)
                 self.logger.info(
@@ -326,7 +325,10 @@ class HYPEPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         Uses the template method pattern from BaseModelPreProcessor.
         """
         self.logger.info("Starting HYPE preprocessing")
-        if self._get_config_value(lambda: self.config.model.hype.cryosphere_constraints, default=False, dict_key='HYPE_CRYOSPHERE_CONSTRAINTS'):
+        if self._get_config_value(
+            lambda: self.config.model.hype.cryosphere_constraints,
+            dict_key='HYPE_CRYOSPHERE_CONSTRAINTS',
+        ):
             from .cryosphere import ensure_observations
             station = self._get_config_value(lambda: self.config.evaluation.lamah_ice.domain_id, dict_key='LAMAH_ICE_DOMAIN_ID') or self._get_config_value(lambda: self.config.data.streamflow_station_id, dict_key='STREAMFLOW_STATION_ID')
             if station is None:

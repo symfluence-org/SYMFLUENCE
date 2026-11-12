@@ -113,7 +113,7 @@ class RavenWorker(BaseWorker):
         return True
 
     def run_model(self, config, settings_dir, output_dir, **kwargs):
-        p = Path(resolve_config_value(config, lambda: config.model.raven.install_path, "default", 'RAVEN_INSTALL_PATH'))
+        p = Path(resolve_config_value(config, lambda: config.model.raven.install_path, dict_key='RAVEN_INSTALL_PATH'))
         exe = Path(config["SYMFLUENCE_DATA_DIR"]) / "installs/raven/bin/Raven" if str(p) == "default" else p / "Raven"
         out = Path(output_dir)
         out.mkdir(parents=True, exist_ok=True)
@@ -123,7 +123,7 @@ class RavenWorker(BaseWorker):
                 cwd=settings_dir,
                 stdout=log,
                 stderr=subprocess.STDOUT,
-                timeout=resolve_config_value(config, lambda: config.model.raven.timeout, 600, 'RAVEN_TIMEOUT'),
+                timeout=resolve_config_value(config, lambda: config.model.raven.timeout, dict_key='RAVEN_TIMEOUT'),
             )
         errors = out / "Raven_errors.txt"
         if result.returncode or (errors.exists() and "ERROR" in errors.read_text()):
@@ -146,13 +146,21 @@ class RavenWorker(BaseWorker):
         if len(pair) < 365:
             return {"KGE": -999.0}
         result = metrics.calculate_metrics(pair.iloc[:, 0].values, pair.iloc[:, 1].values)
-        if resolve_config_value(config, lambda: config.model.raven.glacier_constraints, False, 'RAVEN_GLACIER_CONSTRAINTS'):
+        if resolve_config_value(
+            config,
+            lambda: config.model.raven.glacier_constraints,
+            dict_key='RAVEN_GLACIER_CONSTRAINTS',
+        ):
             from .cryosphere import glacier_metrics
 
             result.update(glacier_metrics(
                 output_dir, project / "settings/RAVEN/geometry.json",
                 project / "data/observations/cryosphere/glacier_timeseries.csv",
-                config["CALIBRATION_PERIOD"], resolve_config_value(config, lambda: config.model.raven.glacier_mb_error_scale, 1.0, 'RAVEN_GLACIER_MB_ERROR_SCALE'),
+                config["CALIBRATION_PERIOD"], resolve_config_value(
+                    config,
+                    lambda: config.model.raven.glacier_mb_error_scale,
+                    dict_key='RAVEN_GLACIER_MB_ERROR_SCALE',
+                ),
             ))
         return result
 

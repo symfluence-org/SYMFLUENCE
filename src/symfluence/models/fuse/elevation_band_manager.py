@@ -209,7 +209,10 @@ class FuseElevationBandManager(ConfigMixin):
                 be matched to the catchment shapefile, or a unit without any
                 elevation information.
         """
-        spatial_mode = self._get_config_value(lambda: self.config.model.fuse.spatial_mode, default='lumped', dict_key='FUSE_SPATIAL_MODE')
+        spatial_mode = self._get_config_value(
+            lambda: self.config.model.fuse.spatial_mode,
+            dict_key='FUSE_SPATIAL_MODE',
+        )
         if spatial_mode == SpatialMode.LUMPED:
             mode = 'lumped'
         elif spatial_mode in (SpatialMode.SEMI_DISTRIBUTED, SpatialMode.DISTRIBUTED):

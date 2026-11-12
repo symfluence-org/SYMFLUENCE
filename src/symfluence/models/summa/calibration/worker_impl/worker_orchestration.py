@@ -92,7 +92,11 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
 
         if has_streamflow_target:
             domain_method = resolve_config_value(config, lambda: config.domain.definition_method, 'lumped', 'DOMAIN_DEFINITION_METHOD')
-            routing_delineation = resolve_config_value(config, lambda: config.domain.delineation.routing, 'lumped', 'ROUTING_DELINEATION')
+            routing_delineation = resolve_config_value(
+                config,
+                lambda: config.domain.delineation.routing,
+                dict_key='ROUTING_DELINEATION',
+            )
 
             if domain_method not in ['point', 'lumped'] or (domain_method == 'lumped' and routing_delineation == 'river_network'):
                 needs_routing = True
@@ -158,7 +162,7 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
 
         # Run SUMMA
         debug_info['stage'] = 'summa_execution'
-        summa_timeout = int(resolve_config_value(config, lambda: config.model.summa.timeout, 7200, 'SUMMA_TIMEOUT'))
+        summa_timeout = int(resolve_config_value(config, lambda: config.model.summa.timeout, dict_key='SUMMA_TIMEOUT'))
         logger.debug("Running SUMMA")
         summa_start = time.time()
         if not _run_summa_worker(summa_exe, file_manager, summa_dir, logger, debug_info, summa_settings_dir, timeout=summa_timeout, config=config):
@@ -498,7 +502,11 @@ def _glacier_constraint(summa_dir, config: Dict) -> Dict[str, float]:
 
     result = glacier_metrics(summa_dir, config['SUMMA_GLACIER_MB_OBSERVATIONS'],
                              resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD'),
-                             resolve_config_value(config, lambda: config.model.summa.glacier_mb_error_scale, 1.0, 'SUMMA_GLACIER_MB_ERROR_SCALE'))
+                             resolve_config_value(
+                                 config,
+                                 lambda: config.model.summa.glacier_mb_error_scale,
+                                 dict_key='SUMMA_GLACIER_MB_ERROR_SCALE',
+                             ))
     result['GLACIER_SCORE'] = result['glacier_score']
     return result
 

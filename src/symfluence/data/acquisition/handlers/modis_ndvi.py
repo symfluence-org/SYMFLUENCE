@@ -87,7 +87,10 @@ class MODISNDVIAcquirer(BaseEarthaccessAcquirer):
 
         processed_file = ndvi_dir / f"{self.domain_name}_MODIS_NDVI.nc"
 
-        if processed_file.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False):
+        if processed_file.exists() and not self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             self.logger.info(f"Using existing MODIS NDVI file: {processed_file}")
             return processed_file
 

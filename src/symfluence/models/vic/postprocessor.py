@@ -56,11 +56,7 @@ class VICPostProcessor(StandardModelPostProcessor):
 
     def _get_domain_file(self) -> Path:
         """VIC domain file (cell areas) written by the preprocessor."""
-        domain_file = self._get_config_value(
-            lambda: self.config.model.vic.domain_file,
-            default='vic_domain.nc',
-            dict_key='VIC_DOMAIN_FILE',
-        )
+        domain_file = self._get_config_value(lambda: self.config.model.vic.domain_file, dict_key='VIC_DOMAIN_FILE')
         return self.project_dir / 'settings' / 'VIC' / 'parameters' / domain_file
 
     def extract_streamflow(self) -> Optional[Path]:

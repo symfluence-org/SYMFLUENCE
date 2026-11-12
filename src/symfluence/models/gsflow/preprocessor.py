@@ -62,10 +62,12 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # groundwater-routing contribution (surface side identical to PRMS).
         self.distributed_gw = bool(self._get_config_value(
             lambda: self.config.model.gsflow.distributed_gw,
-            default=False, dict_key='GSFLOW_DISTRIBUTED_GW'))
+            dict_key='GSFLOW_DISTRIBUTED_GW',
+        ))
         self.gw_grid_n = int(self._get_config_value(
             lambda: self.config.model.gsflow.gw_grid_n,
-            default=10, dict_key='GSFLOW_GW_GRID_N'))
+            dict_key='GSFLOW_GW_GRID_N',
+        ))
         if self.distributed_gw:
             logger.info(f"GSFLOW distributed GW ON ({self.gw_grid_n}x{self.gw_grid_n} "
                         "MODFLOW grid, lumped PRMS surface)")
@@ -111,10 +113,7 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                       self.sim_output_dir / 'prms'):
                 d.mkdir(parents=True, exist_ok=True)
 
-            gsflow_mode = self._get_config_value(
-                lambda: self.config.model.gsflow.gsflow_mode,
-                default='COUPLED', dict_key='GSFLOW_MODE'
-            ).upper()
+            gsflow_mode = self._get_config_value(lambda: self.config.model.gsflow.gsflow_mode, dict_key='GSFLOW_MODE').upper()
             logger.info(f"GSFLOW preprocessing in {gsflow_mode} mode")
 
             start_date, end_date = self._get_simulation_dates()
@@ -251,7 +250,10 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         if glacier:
             put('glacier_flag', 1, 1)
             if not cfg.glacier_dynamics:
-                binary = Path(self._get_config_value(lambda: self.config.model.gsflow.install_path, default='default'))
+                binary = Path(self._get_config_value(
+                    lambda: self.config.model.gsflow.install_path,
+                    dict_key='GSFLOW_INSTALL_PATH',
+                ))
                 if str(binary) == 'default':
                     binary = Path(self.data_dir) / 'installs/gsflow/bin'
                 exe = binary / cfg.exe if binary.is_dir() else binary
@@ -764,7 +766,9 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             f.write("  CONSTANT  3.5\n")
             # THTS (saturated water content)
             thts = self._get_config_value(
-                lambda: self.config.model.gsflow.uzf_saturated_water_content, default=0.30)
+                lambda: self.config.model.gsflow.uzf_saturated_water_content,
+                dict_key='GSFLOW_UZF_SATURATED_WATER_CONTENT',
+            )
             if thts <= sy:
                 raise ConfigurationError('GSFLOW saturated water content must exceed specific yield')
             f.write(f"  CONSTANT  {thts:.8g}\n")
@@ -772,7 +776,9 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             ncells = nrow * ncol
             f.write(f"  {ncells}\n")               # NUZF1 (read FINF)
             recharge = self._get_config_value(
-                lambda: self.config.model.gsflow.initial_recharge, default=1.e-8)
+                lambda: self.config.model.gsflow.initial_recharge,
+                dict_key='GSFLOW_INITIAL_RECHARGE',
+            )
             f.write(f"  CONSTANT  {recharge:.10g}\n")  # FINF, m/day
             # Stress period 2 (TR) — reuse previous
             f.write("  -1\n")                       # NUZF1 < 0 = reuse

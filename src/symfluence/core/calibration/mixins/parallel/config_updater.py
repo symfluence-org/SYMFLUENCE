@@ -145,7 +145,10 @@ class ConfigurationUpdater(ConfigMixin):
     def _adjust_end_time_for_forcing(self, cal_end: str) -> str:
         """Adjust end time to align with forcing timestep."""
         try:
-            forcing_timestep = self._get_config_value(lambda: self.config.forcing.time_step_size, default=3600, dict_key='FORCING_TIME_STEP_SIZE')
+            forcing_timestep = self._get_config_value(
+                lambda: self.config.forcing.time_step_size,
+                dict_key='FORCING_TIME_STEP_SIZE',
+            )
             if forcing_timestep >= 3600:  # Hourly or coarser
                 end_dt = datetime.strptime(cal_end, '%Y-%m-%d')
                 cal_end = adjust_end_time_for_forcing(

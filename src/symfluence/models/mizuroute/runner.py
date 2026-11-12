@@ -100,7 +100,8 @@ class MizuRouteRunner(BaseModelRunner):  # type: ignore[misc]
             Rounding frequency string (e.g., 'h', 'min', 's') or None if disabled.
         """
         freq = self._get_config_value(
-            lambda: self.config.model.mizuroute.time_rounding_freq, default='h'
+            lambda: self.config.model.mizuroute.time_rounding_freq,
+            dict_key='MIZUROUTE_TIME_ROUNDING_FREQ',
         )
         if freq and freq.lower() == 'none':
             return None
@@ -367,7 +368,8 @@ class MizuRouteRunner(BaseModelRunner):  # type: ignore[misc]
             )
             settings_path = self.get_config_path('SETTINGS_MIZU_PATH', 'settings/mizuRoute/')
             control_file = self._get_config_value(
-                lambda: self.config.model.mizuroute.control_file, default='mizuroute.control'
+                lambda: self.config.model.mizuroute.control_file,
+                dict_key='SETTINGS_MIZU_CONTROL_FILE',
             )
 
             # Sane defaults for control file if not specified
@@ -401,8 +403,8 @@ class MizuRouteRunner(BaseModelRunner):  # type: ignore[misc]
 
             # Backup settings if required
             backup = self._get_config_value(
-                lambda: self.config.model.summa.backup_settings, default='no',
-                dict_key='EXPERIMENT_BACKUP_SETTINGS'
+                lambda: self.config.model.summa.backup_settings,
+                dict_key='EXPERIMENT_BACKUP_SETTINGS',
             )
             if backup == 'yes':
                 self.backup_settings(settings_path, backup_subdir="run_settings")

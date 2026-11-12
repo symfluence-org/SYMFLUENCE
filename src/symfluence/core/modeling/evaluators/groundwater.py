@@ -105,8 +105,7 @@ class GroundwaterEvaluator(ModelEvaluator):
 
         self.optimization_target = self._target_override_if_valid(('gw_depth', 'gw_grace')) or self._get_config_value(
             lambda: self.config.optimization.target,
-            default='streamflow',
-            dict_key='OPTIMIZATION_TARGET'
+            dict_key='OPTIMIZATION_TARGET',
         )
         if self.optimization_target not in ['gw_depth', 'gw_grace']:
             eval_var = self._get_config_value(

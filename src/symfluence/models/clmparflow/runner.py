@@ -61,16 +61,10 @@ class CLMParFlowRunner(BaseModelRunner):
         )
 
     def _get_timeout(self) -> int:
-        return self._get_config_value(
-            lambda: self.config.model.clmparflow.timeout,
-            default=7200,
-        )
+        return self._get_config_value(lambda: self.config.model.clmparflow.timeout, dict_key='CLMPARFLOW_TIMEOUT')
 
     def _get_num_procs(self) -> int:
-        return self._get_config_value(
-            lambda: self.config.model.clmparflow.num_procs,
-            default=1,
-        )
+        return self._get_config_value(lambda: self.config.model.clmparflow.num_procs, dict_key='CLMPARFLOW_NUM_PROCS')
 
     def _get_parflow_dir(self) -> Optional[str]:
         """Get PARFLOW_DIR for environment variable."""
@@ -127,7 +121,10 @@ class CLMParFlowRunner(BaseModelRunner):
 
             self.output_dir.mkdir(parents=True, exist_ok=True)
 
-            if self._get_config_value(lambda: self.config.model.clmparflow.basin_mode, default=False):
+            if self._get_config_value(
+                lambda: self.config.model.clmparflow.basin_mode,
+                dict_key='CLMPARFLOW_BASIN_MODE',
+            ):
                 return self._run_basin(self.output_dir)
 
             pf_exe = self._get_parflow_executable()

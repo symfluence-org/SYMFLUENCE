@@ -173,7 +173,6 @@ class ParFlowPlotter(BasePlotter):
 
         timestep_hours = float(self._get_config_value(
             lambda: self.config.model.parflow.timestep_hours,
-            default=1.0,
             dict_key='PARFLOW_TIMESTEP_HOURS',
         ))
         start_date = str(self._get_config_value(
@@ -192,34 +191,16 @@ class ParFlowPlotter(BasePlotter):
         )
         area_m2 = area_km2 * 1e6
 
-        top = float(self._get_config_value(
-            lambda: self.config.model.parflow.top, default=1500.0,
-            dict_key='PARFLOW_TOP',
-        ))
-        bot = float(self._get_config_value(
-            lambda: self.config.model.parflow.bot, default=1400.0,
-            dict_key='PARFLOW_BOT',
-        ))
+        top = float(self._get_config_value(lambda: self.config.model.parflow.top, dict_key='PARFLOW_TOP'))
+        bot = float(self._get_config_value(lambda: self.config.model.parflow.bot, dict_key='PARFLOW_BOT'))
         porosity = float(self._get_config_value(
-            lambda: self.config.model.parflow.porosity, default=0.4,
+            lambda: self.config.model.parflow.porosity,
             dict_key='PARFLOW_POROSITY',
         ))
-        dx = float(self._get_config_value(
-            lambda: self.config.model.parflow.dx, default=1000.0,
-            dict_key='PARFLOW_DX',
-        ))
-        dy = float(self._get_config_value(
-            lambda: self.config.model.parflow.dy, default=1000.0,
-            dict_key='PARFLOW_DY',
-        ))
-        k_sat = float(self._get_config_value(
-            lambda: self.config.model.parflow.k_sat, default=5.0,
-            dict_key='PARFLOW_K_SAT',
-        ))
-        dz = float(self._get_config_value(
-            lambda: self.config.model.parflow.dz, default=100.0,
-            dict_key='PARFLOW_DZ',
-        ))
+        dx = float(self._get_config_value(lambda: self.config.model.parflow.dx, dict_key='PARFLOW_DX'))
+        dy = float(self._get_config_value(lambda: self.config.model.parflow.dy, dict_key='PARFLOW_DY'))
+        k_sat = float(self._get_config_value(lambda: self.config.model.parflow.k_sat, dict_key='PARFLOW_K_SAT'))
+        dz = float(self._get_config_value(lambda: self.config.model.parflow.dz, dict_key='PARFLOW_DZ'))
 
         from symfluence.models.parflow.extractor import resolve_dump_interval_hours
         common_kwargs = dict(

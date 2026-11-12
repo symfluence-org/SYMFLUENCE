@@ -79,7 +79,10 @@ class MOD16ETAcquirer(BaseEarthaccessAcquirer):
         output_dir.mkdir(parents=True, exist_ok=True)
         processed_file = output_dir / f"{self.domain_name}_MOD16_ET.nc"
 
-        if processed_file.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False):
+        if processed_file.exists() and not self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             self.logger.info(f"Using existing MOD16 ET file: {processed_file}")
             return processed_file
 
@@ -456,7 +459,10 @@ class MOD16ETAcquirer(BaseEarthaccessAcquirer):
 
         output_file = output_dir / f"{self.domain_name}_{product_name}_raw.nc"
 
-        if output_file.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False):
+        if output_file.exists() and not self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             return output_file
 
         token = self._appeears_login(username, password)

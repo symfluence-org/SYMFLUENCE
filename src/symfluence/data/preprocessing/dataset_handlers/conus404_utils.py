@@ -713,8 +713,8 @@ class CONUS404Handler(BaseDatasetHandler):
             {
                 "geometry": geometries,
                 "ID": ids,
-                self._get_config_value(lambda: self.config.forcing.shape_lat_name, default='lat'): lats,
-                self._get_config_value(lambda: self.config.forcing.shape_lon_name, default='lon'): lons,
+                self._get_config_value(lambda: self.config.forcing.shape_lat_name, dict_key='FORCING_SHAPE_LAT_NAME'): lats,
+                self._get_config_value(lambda: self.config.forcing.shape_lon_name, dict_key='FORCING_SHAPE_LON_NAME'): lons,
             },
             crs="EPSG:4326",
         )

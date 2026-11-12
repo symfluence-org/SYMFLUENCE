@@ -284,7 +284,7 @@ class DataManager(BaseManager):
             # Check for USGS Groundwater download and ensure it's in additional_obs
             download_usgs_gw = self._get_config_value(
                 lambda: self.config.evaluation.usgs_gw.download,
-                False
+                dict_key='DOWNLOAD_USGS_GW',
             )
             if isinstance(download_usgs_gw, str):
                 download_usgs_gw = download_usgs_gw.lower() == 'true'
@@ -295,7 +295,7 @@ class DataManager(BaseManager):
             # Check for GRACE TWS and ensure it's in additional_obs
             download_grace = self._get_config_value(
                 lambda: self.config.evaluation.grace.download,
-                False
+                dict_key='DOWNLOAD_GRACE',
             )
             if isinstance(download_grace, str):
                 download_grace = download_grace.lower() == 'true'
@@ -306,7 +306,7 @@ class DataManager(BaseManager):
             # Check for MODIS Snow and ensure it's in additional_obs
             download_modis_snow = self._get_config_value(
                 lambda: self.config.evaluation.modis_snow.download,
-                False
+                dict_key='DOWNLOAD_MODIS_SNOW',
             )
             if download_modis_snow and 'modis_snow' not in [o.lower() for o in additional_obs]:
                 additional_obs.append('modis_snow')
@@ -314,7 +314,7 @@ class DataManager(BaseManager):
             # Check for SNOTEL download and ensure it's in additional_obs
             download_snotel = self._get_config_value(
                 lambda: self.config.evaluation.snotel.download,
-                False
+                dict_key='DOWNLOAD_SNOTEL',
             )
             if isinstance(download_snotel, str):
                 download_snotel = download_snotel.lower() == 'true'
@@ -323,10 +323,7 @@ class DataManager(BaseManager):
                 additional_obs.append('snotel')
 
             # Check for ISMN download and ensure it's in additional_obs
-            download_ismn = self._get_config_value(
-                lambda: self.config.data.download_ismn,
-                False
-            )
+            download_ismn = self._get_config_value(lambda: self.config.data.download_ismn, dict_key='DOWNLOAD_ISMN')
             if isinstance(download_ismn, str):
                 download_ismn = download_ismn.lower() == 'true'
 
@@ -650,7 +647,6 @@ class DataManager(BaseManager):
             # Run extended attribute processing based on profile
             attribute_profile = self._get_config_value(
                 lambda: self.config.domain.attribute_profile,
-                default='core',
                 dict_key='ATTRIBUTE_PROFILE',
             )
             if isinstance(attribute_profile, str) and attribute_profile.lower() != 'core':
@@ -719,7 +715,7 @@ class DataManager(BaseManager):
             # Integrate EM-Earth data if supplementation is enabled
             supplement_forcing = self._get_config_value(
                 lambda: self.config.forcing.supplement,
-                False
+                dict_key='SUPPLEMENT_FORCING',
             )
             if supplement_forcing:
                 self.logger.debug("Integrating EM-Earth data")
@@ -852,7 +848,7 @@ class DataManager(BaseManager):
         # Try explicit config value first
         catchment_name = self._get_config_value(
             lambda: self.config.paths.catchment_name,
-            'default'
+            dict_key='CATCHMENT_SHP_NAME',
         )
         if catchment_name != 'default':
             explicit_path = catchment_dir / catchment_name
@@ -923,7 +919,7 @@ class DataManager(BaseManager):
 
         supplement_forcing = self._get_config_value(
             lambda: self.config.forcing.supplement,
-            False
+            dict_key='SUPPLEMENT_FORCING',
         )
         if supplement_forcing:
             status['em_earth_acquired'] = (self.project_forcing_dir / 'raw_data_em_earth').exists()

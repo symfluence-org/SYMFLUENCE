@@ -86,19 +86,13 @@ class BaseGeofabricDelineator(ABC, PathResolverMixin):
         )
         self.max_retries = self._get_config_value(
             lambda: self.config.domain.delineation.max_retries,
-            default=3,
-            dict_key='MAX_RETRIES'
+            dict_key='MAX_RETRIES',
         )
         self.retry_delay = self._get_config_value(
             lambda: self.config.domain.delineation.retry_delay,
-            default=5,
-            dict_key='RETRY_DELAY'
+            dict_key='RETRY_DELAY',
         )
-        self.min_gru_size = self._get_config_value(
-            lambda: self.config.domain.min_gru_size,
-            default=0,
-            dict_key='MIN_GRU_SIZE'
-        )
+        self.min_gru_size = self._get_config_value(lambda: self.config.domain.min_gru_size, dict_key='MIN_GRU_SIZE')
         try:
             min_gru_size_set = float(self.min_gru_size or 0) > 0
         except (TypeError, ValueError):
@@ -128,11 +122,7 @@ class BaseGeofabricDelineator(ABC, PathResolverMixin):
             Path to TauDEM bin directory
         """
         # Try typed config first
-        taudem_dir = self._get_config_value(
-            lambda: self.config.paths.taudem_dir,
-            default='default',
-            dict_key='TAUDEM_DIR'
-        )
+        taudem_dir = self._get_config_value(lambda: self.config.paths.taudem_dir, dict_key='TAUDEM_DIR')
         if taudem_dir == "default":
             return str(self.data_dir / 'installs' / 'TauDEM' / 'bin')
         return str(taudem_dir)
@@ -181,7 +171,6 @@ class BaseGeofabricDelineator(ABC, PathResolverMixin):
         """
         method = self._get_config_value(
             lambda: self.config.domain.delineation.dem_conditioning_method,
-            default='none',
             dict_key='DEM_CONDITIONING_METHOD',
         )
         if isinstance(method, str):
@@ -208,12 +197,10 @@ class BaseGeofabricDelineator(ABC, PathResolverMixin):
 
             burn_depth = self._get_config_value(
                 lambda: self.config.domain.delineation.stream_burn_depth,
-                default=5.0,
                 dict_key='STREAM_BURN_DEPTH',
             )
             source = self._get_config_value(
                 lambda: self.config.domain.delineation.stream_burn_source,
-                default='auto',
                 dict_key='STREAM_BURN_SOURCE',
             )
 
@@ -257,7 +244,6 @@ class BaseGeofabricDelineator(ABC, PathResolverMixin):
         if source == 'custom':
             custom = self._get_config_value(
                 lambda: self.config.domain.delineation.stream_burn_custom_path,
-                default='default',
                 dict_key='STREAM_BURN_CUSTOM_PATH',
             )
             if custom and custom != 'default':
@@ -322,8 +308,7 @@ class BaseGeofabricDelineator(ABC, PathResolverMixin):
         """
         pour_point_path = self._get_config_value(
             lambda: self.config.paths.pour_point_path,
-            default='default',
-            dict_key='POUR_POINT_SHP_PATH'
+            dict_key='POUR_POINT_SHP_PATH',
         )
         if pour_point_path is None or pour_point_path == 'default':
             pour_point_path = self.project_dir / "shapefiles" / "pour_point"
@@ -332,8 +317,7 @@ class BaseGeofabricDelineator(ABC, PathResolverMixin):
 
         pour_point_name = self._get_config_value(
             lambda: self.config.paths.pour_point_name,
-            default='default',
-            dict_key='POUR_POINT_SHP_NAME'
+            dict_key='POUR_POINT_SHP_NAME',
         )
         if pour_point_name is None or pour_point_name == "default":
             pour_point_path = pour_point_path / f"{self.domain_name}_pourPoint.shp"
