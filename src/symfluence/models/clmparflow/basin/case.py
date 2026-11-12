@@ -97,6 +97,10 @@ class BasinParameters:
     # solver / start (defaults leave the run unchanged)
     residual_tol: float = 1e-6
     initial_pressure: Optional[str] = None  # PFB pressure field (same grid, nz and P x Q) for the first segment
+    # cell-wise maps (.npy, [ny, nx] with j = 0 at the south edge, like the grid arrays)
+    aquifer_k_map: Optional[str] = None  # multiplier of the aquifer K
+    soil_k_map: Optional[str] = None  # multiplier of the soil K (not glacier-bed cells)
+    k_tensor_map: Optional[str] = None  # bool: apply k_tensor only in these cells
 
     @property
     def nz(self) -> int:
@@ -112,7 +116,8 @@ class BasinParameters:
 
 
 OPTIONAL_DEFAULTS: Dict[str, object] = {'k_tensor': None, 'k_zone_factor': 1.0, 'k_zone_soil': False,
-                                        'lake_manning': None, 'residual_tol': 1e-6, 'initial_pressure': None}
+                                        'lake_manning': None, 'residual_tol': 1e-6, 'initial_pressure': None,
+                                        'aquifer_k_map': None, 'soil_k_map': None, 'k_tensor_map': None}
 
 
 def parflow_keys(grid: BasinGrid, params: BasinParameters, name: str, hours: int, P: int = 1, Q: int = 1,
@@ -250,6 +255,13 @@ def _zone(grid: BasinGrid, params: BasinParameters) -> Optional[np.ndarray]:
     return grid.kzone
 
 
+def _map(path: str, grid: BasinGrid) -> np.ndarray:
+    a = np.load(path)
+    if a.shape != grid.shape:
+        raise ConfigurationError(f'{path}: map shape {a.shape} is not the grid shape {grid.shape}')
+    return a
+
+
 def permeability(grid: BasinGrid, params: BasinParameters) -> np.ndarray:
     """3-D permeability [z, y, x] (z = 0 at the base): aquifer, soil in the 10 CLM layers, glacier bed; the
     K zone scales the aquifer (and optionally the soil of non-glacier cells) by ``k_zone_factor``."""
@@ -259,6 +271,13 @@ def permeability(grid: BasinGrid, params: BasinParameters) -> np.ndarray:
     K[nz - 10:] = params.soil_k
     if params.glacier_bed_k is not None:
         K[nz - 10:, grid.ice] = params.glacier_bed_k
+    if params.aquifer_k_map:
+        K[:nz - 10] *= _map(params.aquifer_k_map, grid)[None]
+    if params.soil_k_map:
+        m = _map(params.soil_k_map, grid)
+        if params.glacier_bed_k is not None:
+            m = np.where(grid.ice, 1.0, m)
+        K[nz - 10:] *= m[None]
     zone = _zone(grid, params)
     if zone is not None:
         K[:nz - 10, zone] *= params.k_zone_factor
@@ -274,10 +293,11 @@ def tensor_multipliers(grid: BasinGrid, params: BasinParameters) -> Tuple[np.nda
         raise ConfigurationError('the permeability tensor needs three multipliers (kx, ky, kz)')
     ny, nx = grid.shape
     nz = params.nz
+    where = _map(params.k_tensor_map, grid).astype(bool) if params.k_tensor_map else np.ones((ny, nx), bool)
     out = []
     for value in params.k_tensor:
         a = np.ones((nz, ny, nx))
-        a[:nz - 10] = float(value)
+        a[:nz - 10, where] = float(value)
         out.append(a)
     return out[0], out[1], out[2]
 

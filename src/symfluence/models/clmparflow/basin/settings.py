@@ -117,7 +117,9 @@ def basin_parameters(cfg) -> BasinParameters:
                            k_tensor=(float(tensor[0]), float(tensor[1]), float(tensor[2])) if tensor is not None else None,
                            k_zone_factor=float(cfg.basin_k_zone_factor), k_zone_soil=bool(cfg.basin_k_zone_soil),
                            lake_manning=cfg.basin_lake_manning, residual_tol=float(cfg.basin_residual_tol),
-                           initial_pressure=cfg.basin_initial_pressure or None)
+                           initial_pressure=cfg.basin_initial_pressure or None,
+                           aquifer_k_map=cfg.basin_aquifer_k_map or None, soil_k_map=cfg.basin_soil_k_map or None,
+                           k_tensor_map=cfg.basin_k_tensor_map or None)
 
 
 def water_years(start: str, end: str) -> List[int]:
