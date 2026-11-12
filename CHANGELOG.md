@@ -72,6 +72,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requires it.
 
 ### Changed
+- **SAC-SMA cryosphere replay scores with the engine's KGE/NSE**: `sacsma_cryosphere/replay.py` dropped its own
+  KGE/NSE formula for `core.metrics` (identical values to 1e-12 on real series). A constant simulation now scores
+  `None` instead of a finite KGE with r = 0. `replay.py` hashes its own source, so specs frozen against the
+  previous file must be refrozen (`implementation_hashes`); none existed outside the archived pre-port runs,
+  which already pinned older hashes. `MODEL_ID` stays `SACSMA_CRYOSPHERE_UNIFORM_HRU_V2`.
 - **Core metrics facade exports repaired**: `StreamflowMetrics` and
   `MetricTransformer`, already part of the documented metrics contract, are
   now available directly from `symfluence.core.metrics` as intended.

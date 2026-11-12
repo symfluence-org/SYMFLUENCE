@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, PositiveFloat, S
 
 from symfluence.core.exceptions import FileOperationError
 from symfluence.core.exceptions import ValidationError as SYMFLUENCEValidationError
+from symfluence.core.metrics.metrics_core import kge, nse
 
 
 class ReplayValidationError(SYMFLUENCEValidationError, ValueError):
@@ -200,23 +201,30 @@ def _period_end(period):
     return end
 
 
+def _finite_or_none(value):
+    value = float(value)
+    return value if np.isfinite(value) else None
+
+
 def _metrics(s, o):
+    # One KGE/NSE implementation for the whole engine (core.metrics); this
+    # module only keeps its replay-specific gates and JSON-safe output.
     valid = np.isfinite(o)
-    s = s[valid]
-    o = o[valid]
+    s = np.asarray(s, dtype=float)[valid]
+    o = np.asarray(o, dtype=float)[valid]
     if len(o) < 2 or o.std() == 0:
         return {"samples": len(o), "KGE": None, "NSE": None}
-    r = np.corrcoef(s, o)[0, 1] if s.std() > 0 else 0.0
-    a = s.std() / o.std()
-    b = s.mean() / o.mean()
+    k = kge(o, s, return_components=True)
+    assert isinstance(k, dict)  # return_components=True always returns the components
+    beta = _finite_or_none(k["beta"])
     return {
         "samples": len(o),
-        "KGE": float(1 - np.sqrt((r - 1) ** 2 + (a - 1) ** 2 + (b - 1) ** 2)),
-        "NSE": float(1 - np.sum((s - o) ** 2) / np.sum((o - o.mean()) ** 2)),
-        "r": float(r),
-        "alpha": float(a),
-        "beta": float(b),
-        "PBIAS": float(100 * (b - 1)),
+        "KGE": _finite_or_none(k["KGE"]),
+        "NSE": _finite_or_none(nse(o, s)),
+        "r": _finite_or_none(k["r"]),
+        "alpha": _finite_or_none(k["alpha"]),
+        "beta": beta,
+        "PBIAS": None if beta is None else 100 * (beta - 1),
     }
 
 
