@@ -174,7 +174,10 @@ class BaseAppEEARSAcquirer(BaseAcquisitionHandler):
                 out_path = output_dir / f"{prefix}_{file_name}"
 
                 # Skip if already exists
-                if out_path.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False, dict_key='FORCE_DOWNLOAD'):
+                if out_path.exists() and not self._get_config_value(
+                    lambda: self.config.data.force_download,
+                    dict_key='FORCE_DOWNLOAD',
+                ):
                     downloaded_files.append(out_path)
                     continue
 

@@ -53,7 +53,7 @@ class GRACEHandler(BaseObservationHandler):
             grace_dir = Path(grace_dir_cfg)
 
         # Check if we need to download
-        force_download = self._get_config_value(lambda: self.config.data.force_download, default=False)
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
         # Count only usable data files. An interrupted download leaves a
         # "<target>.nc.part" staging file behind (the acquirer's cleanup is
         # skipped on SIGKILL), and a bare .part satisfied the old

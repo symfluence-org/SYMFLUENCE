@@ -54,7 +54,7 @@ class DaymetHandler(BaseObservationHandler):
         """Acquire Daymet data via cloud acquisition."""
         daymet_dir = Path(self._get_config_value(lambda: None, default=self.project_observations_dir / "climate" / "daymet", dict_key='DAYMET_DIR'))
 
-        force_download = self._get_config_value(lambda: self.config.data.force_download, default=False)
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
         has_files = daymet_dir.exists() and (
             any(daymet_dir.glob("*.nc")) or any(daymet_dir.glob("*.csv"))
         )

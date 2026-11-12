@@ -68,14 +68,17 @@ class MODISLAIHandler(BaseObservationHandler):
         """Acquire MODIS LAI data via cloud acquisition."""
         lai_dir = Path(self._get_config_value(lambda: None, default=self.project_observations_dir / "vegetation" / "modis_lai", dict_key='MODIS_LAI_DIR'))
 
-        force_download = self._get_config_value(lambda: self.config.data.force_download, default=False)
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
 
         # Check for existing processed file first
         processed_file = (
             self.project_observations_dir / "vegetation" / "preprocessed"
             / f"{self.domain_name}_modis_lai_processed.csv"
         )
-        if processed_file.exists() and not self._get_config_value(lambda: self.config.system.force_run_all_steps, default=False):
+        if processed_file.exists() and not self._get_config_value(
+            lambda: self.config.system.force_run_all_steps,
+            dict_key='FORCE_RUN_ALL_STEPS',
+        ):
             self.logger.info(f"Using existing processed MODIS LAI: {processed_file}")
             return processed_file.parent
 
@@ -131,7 +134,10 @@ class MODISLAIHandler(BaseObservationHandler):
         output_file = output_dir / f"{self.domain_name}_modis_lai_processed.csv"
 
         # Check for existing processed file
-        if output_file.exists() and not self._get_config_value(lambda: self.config.system.force_run_all_steps, default=False):
+        if output_file.exists() and not self._get_config_value(
+            lambda: self.config.system.force_run_all_steps,
+            dict_key='FORCE_RUN_ALL_STEPS',
+        ):
             self.logger.info(f"Using existing processed file: {output_file}")
             return output_file
 

@@ -215,7 +215,10 @@ class ElevationProcessor(BaseAttributeProcessor):
                 is_lumped = self._get_config_value(lambda: self.config.domain.definition_method, dict_key='DOMAIN_DEFINITION_METHOD') == 'lumped'
                 if not is_lumped:
                     catchment = gpd.read_file(self.catchment_path)
-                    hru_id_field = self._get_config_value(lambda: self.config.paths.catchment_hruid, default='HRU_ID', dict_key='CATCHMENT_SHP_HRUID')
+                    hru_id_field = self._get_config_value(
+                        lambda: self.config.paths.catchment_hruid,
+                        dict_key='CATCHMENT_SHP_HRUID',
+                    )
                     hru_id = catchment.iloc[i][hru_id_field]
                     key_prefix = f"HRU_{hru_id}_"
                 else:

@@ -41,7 +41,7 @@ class OpenETHandler(BaseObservationHandler):
         """Acquire OpenET data via cloud acquisition."""
         openet_dir = Path(self._get_config_value(lambda: None, default=self.project_observations_dir / "et" / "openet", dict_key='OPENET_DIR'))
 
-        force_download = self._get_config_value(lambda: self.config.data.force_download, default=False)
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
         has_files = openet_dir.exists() and any(openet_dir.glob("openet_*.csv"))
 
         if not has_files or force_download:

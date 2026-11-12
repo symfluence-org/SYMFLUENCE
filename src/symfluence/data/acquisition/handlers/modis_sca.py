@@ -76,7 +76,10 @@ class MODISSCAAcquirer(BaseEarthaccessAcquirer):
         output_dir.mkdir(parents=True, exist_ok=True)
         merged_file = output_dir / f"{self.domain_name}_MODIS_SCA_merged.nc"
 
-        if merged_file.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False, dict_key='FORCE_DOWNLOAD'):
+        if merged_file.exists() and not self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             self.logger.info(f"Using existing merged SCA file: {merged_file}")
             return merged_file
 
@@ -101,7 +104,10 @@ class MODISSCAAcquirer(BaseEarthaccessAcquirer):
             return self._download_via_thredds(output_dir, products[0])
 
         # Check if user wants to use AppEEARS (legacy mode)
-        use_appeears = self._get_config_value(lambda: self.config.evaluation.modis_snow.use_appeears, default=False, dict_key='MODIS_SCA_USE_APPEEARS')
+        use_appeears = self._get_config_value(
+            lambda: self.config.evaluation.modis_snow.use_appeears,
+            dict_key='MODIS_SCA_USE_APPEEARS',
+        )
 
         product_files = {}
 
@@ -209,7 +215,10 @@ class MODISSCAAcquirer(BaseEarthaccessAcquirer):
 
         output_file = output_dir / f"{self.domain_name}_{product}_raw.nc"
 
-        if output_file.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False, dict_key='FORCE_DOWNLOAD'):
+        if output_file.exists() and not self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             return output_file
 
         self.logger.info(f"Processing {len(hdf_files)} {product} HDF files")
@@ -446,7 +455,10 @@ class MODISSCAAcquirer(BaseEarthaccessAcquirer):
 
         output_file = output_dir / f"{self.domain_name}_{product_name}_raw.nc"
 
-        if output_file.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False, dict_key='FORCE_DOWNLOAD'):
+        if output_file.exists() and not self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             self.logger.info(f"Using existing file: {output_file}")
             return output_file
 
@@ -607,8 +619,14 @@ class MODISSCAAcquirer(BaseEarthaccessAcquirer):
         """
         self.logger.info("Merging MOD10A1 and MYD10A1 products")
 
-        merge_strategy = self._get_config_value(lambda: self.config.evaluation.modis_snow.merge_strategy, default='max', dict_key='MODIS_SCA_MERGE_STRATEGY').lower()
-        cloud_filter = self._get_config_value(lambda: self.config.evaluation.modis_snow.cloud_filter, default=True, dict_key='MODIS_SCA_CLOUD_FILTER')
+        merge_strategy = self._get_config_value(
+            lambda: self.config.evaluation.modis_snow.merge_strategy,
+            dict_key='MODIS_SCA_MERGE_STRATEGY',
+        ).lower()
+        cloud_filter = self._get_config_value(
+            lambda: self.config.evaluation.modis_snow.cloud_filter,
+            dict_key='MODIS_SCA_CLOUD_FILTER',
+        )
 
         # Open datasets lazily with chunking to avoid OOM
         datasets = {}

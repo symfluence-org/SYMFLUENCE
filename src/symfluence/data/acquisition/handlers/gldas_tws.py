@@ -41,8 +41,9 @@ class GLDASAcquirer(BaseAcquisitionHandler):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         force_download = self._parse_bool(self._get_config_value(
-            lambda: self.config.data.force_download, default=False,
-            dict_key='FORCE_DOWNLOAD'))
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ))
 
         output_file = output_dir / "gldas_noah_tws_raw.csv"
         if output_file.exists() and not force_download:

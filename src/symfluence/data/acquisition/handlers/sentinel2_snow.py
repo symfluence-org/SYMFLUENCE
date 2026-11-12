@@ -66,7 +66,7 @@ class Sentinel2SnowAcquirer(BaseAcquisitionHandler):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         output_file = output_dir / f"{self.domain_name}_Sentinel2_snow.nc"
-        force = self._get_config_value(lambda: self.config.data.force_download, default=False)
+        force = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
 
         if output_file.exists() and not force:
             self.logger.info(f"Using existing Sentinel-2 snow file: {output_file}")

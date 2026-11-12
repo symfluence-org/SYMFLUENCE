@@ -76,7 +76,11 @@ class CloudForcingDownloader(ConfigMixin):
         self._config = coerce_config(config, warn=False)
         self.logger = logger
         self.dataset_name = resolve_config_value(config, lambda: config.forcing.dataset, '', 'FORCING_DATASET').upper()
-        self.supplement_data = resolve_config_value(config, lambda: config.forcing.supplement, False, 'SUPPLEMENT_FORCING')
+        self.supplement_data = resolve_config_value(
+            config,
+            lambda: config.forcing.supplement,
+            dict_key='SUPPLEMENT_FORCING',
+        )
 
     def download_forcing_data(self, output_dir: Path) -> Path:
         """Download forcing data based on configured dataset.

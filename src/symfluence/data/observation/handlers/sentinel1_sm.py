@@ -46,7 +46,7 @@ class Sentinel1SMHandler(BaseObservationHandler):
         """Acquire Sentinel-1 SM data via cloud acquisition."""
         s1_dir = Path(self._get_config_value(lambda: None, default=self.project_observations_dir / "soil_moisture" / "sentinel1", dict_key='SENTINEL1_SM_DIR'))
 
-        force_download = self._get_config_value(lambda: self.config.data.force_download, default=False)
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
         has_files = s1_dir.exists() and (
             any(s1_dir.glob("*.zip")) or
             any(s1_dir.glob("*.nc")) or

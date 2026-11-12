@@ -112,7 +112,7 @@ class SMOSSMAcquirer(BaseAcquisitionHandler):
         out_file_tgz = self._output_dir / f"smos_cds_{year}_{month:02d}.tar.gz"
 
         # Check for existing file
-        force = self._get_config_value(lambda: self.config.data.force_download, default=False)
+        force = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
         if out_file_zip.exists() and not force:
             return out_file_zip
         if out_file_tgz.exists() and not force:
