@@ -34,10 +34,13 @@ def _configured_list(value) -> List[str]:
 
 def _mizuroute_params(config) -> List[str]:
     """mizuRoute parameters under calibration (empty unless CALIBRATE_MIZUROUTE)."""
-    if not resolve_config_value(config, lambda: config.model.mizuroute.calibrate, False, 'CALIBRATE_MIZUROUTE'):
+    if not resolve_config_value(config, lambda: config.model.mizuroute.calibrate, dict_key='CALIBRATE_MIZUROUTE'):
         return []
     return _configured_list(resolve_config_value(
-        config, lambda: config.model.mizuroute.params_to_calibrate, 'velo,diff', 'MIZUROUTE_PARAMS_TO_CALIBRATE'))
+        config,
+        lambda: config.model.mizuroute.params_to_calibrate,
+        dict_key='MIZUROUTE_PARAMS_TO_CALIBRATE',
+    ))
 
 
 def _apply_parameters_worker(params: Dict, task_data: Dict, settings_dir: Path, logger, debug_info: Dict) -> bool:

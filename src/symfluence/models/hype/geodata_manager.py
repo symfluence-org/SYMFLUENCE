@@ -929,7 +929,11 @@ class HYPEGeoDataManager:
                 row['elev_mean'] = band['elev_mean']
                 row['glacier_fraction'] = (
                     band_glac[k] / band_areas[k] if band_areas[k] > 0 else 0.0)
-                if resolve_config_value(self.config, lambda: self.config.model.hype.preserve_icecap_volume, False, 'HYPE_PRESERVE_ICECAP_VOLUME'):
+                if resolve_config_value(
+                    self.config,
+                    lambda: self.config.model.hype.preserve_icecap_volume,
+                    dict_key='HYPE_PRESERVE_ICECAP_VOLUME',
+                ):
                     if resolve_config_value(self.config, lambda: self.config.model.hype.glacier_type, None, 'HYPE_GLACIER_TYPE') != 1:
                         raise ValidationError('HYPE_PRESERVE_ICECAP_VOLUME requires glacier type 1')
                     # HYPE defaults: V = exp(logvolcor) * 1.701 * A**1.25.
@@ -1136,7 +1140,11 @@ class HYPEGeoDataManager:
         if not lakes:
             return base_df, slc_df
         slc = int(slc_df['SLC'].max()) + 1
-        lake_row = {'landcover': int(resolve_config_value(self.config, lambda: self.config.model.hype.lake_landuse, 17, 'HYPE_LAKE_LANDUSE')), 'soil': 1, 'SLC': slc,
+        lake_row = {'landcover': int(resolve_config_value(
+            self.config,
+            lambda: self.config.model.hype.lake_landuse,
+            dict_key='HYPE_LAKE_LANDUSE',
+        )), 'soil': 1, 'SLC': slc,
                     'special': OLAKE_CLASS_MODEL}
         slc_df = pd.concat([slc_df, pd.DataFrame([lake_row])], ignore_index=True)
         land_cols = [c for c in base_df.columns if c.startswith('SLC_')]

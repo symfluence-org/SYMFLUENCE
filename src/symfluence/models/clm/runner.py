@@ -69,10 +69,7 @@ class CLMRunner(BaseModelRunner):
 
     def _get_run_timeout(self) -> int:
         """CLM timeout from config."""
-        return self._get_config_value(
-            lambda: self.config.model.clm.timeout,
-            default=3600,
-        )
+        return self._get_config_value(lambda: self.config.model.clm.timeout, dict_key='CLM_TIMEOUT')
 
     def _cleanup_stale_output(self, run_dir: Path) -> None:
         """Remove stale output/restart/rpointer files before a fresh run.

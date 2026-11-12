@@ -121,7 +121,11 @@ class FUSEWorker(BaseWorker):
 
             # Determine regionalization mode
             regionalization_method = config.get('PARAMETER_REGIONALIZATION', 'lumped') if config else 'lumped'
-            if config and resolve_config_value(config, lambda: config.model.fuse.use_transfer_functions, False, 'USE_TRANSFER_FUNCTIONS'):
+            if config and resolve_config_value(
+                config,
+                lambda: config.model.fuse.use_transfer_functions,
+                dict_key='USE_TRANSFER_FUNCTIONS',
+            ):
                 regionalization_method = 'transfer_function'
 
             # Update constraints file (skip in regionalization mode)
@@ -591,7 +595,11 @@ class FUSEWorker(BaseWorker):
             import subprocess
 
             # Get mizuRoute executable
-            mizuroute_install = resolve_config_value(config, lambda: config.model.mizuroute.install_path, 'default', 'MIZUROUTE_INSTALL_PATH')
+            mizuroute_install = resolve_config_value(
+                config,
+                lambda: config.model.mizuroute.install_path,
+                dict_key='MIZUROUTE_INSTALL_PATH',
+            )
             data_dir = resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR')
             mizuroute_exe = resolve_install_dir(
                 mizuroute_install, data_dir, 'installs/mizuRoute/route/bin'
@@ -618,7 +626,11 @@ class FUSEWorker(BaseWorker):
                 text=True,
                 encoding='utf-8',
                 errors='replace',
-                timeout=resolve_config_value(config, lambda: config.model.mizuroute.timeout, 3600, 'MIZUROUTE_TIMEOUT')
+                timeout=resolve_config_value(
+                    config,
+                    lambda: config.model.mizuroute.timeout,
+                    dict_key='MIZUROUTE_TIMEOUT',
+                )
             )
 
             if result.returncode != 0:

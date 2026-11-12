@@ -376,7 +376,11 @@ def _run_summa_worker(summa_exe: Path, file_manager: Path, summa_dir: Path, logg
             # Continue anyway, hoping it works or fails later
 
         # Check for intra-iteration parallel GRU execution
-        use_parallel = resolve_config_value(config, lambda: config.model.summa.use_parallel, False, 'SETTINGS_SUMMA_USE_PARALLEL_SUMMA') if config else False
+        use_parallel = resolve_config_value(
+            config,
+            lambda: config.model.summa.use_parallel,
+            dict_key='SETTINGS_SUMMA_USE_PARALLEL_SUMMA',
+        ) if config else False
         logger.debug(f"Parallel SUMMA check: config={config is not None}, use_parallel={use_parallel}, settings_dir={summa_settings_dir}")
         if use_parallel and summa_settings_dir is not None:
             from symfluence.models.summa.parallel_gru_execution import run_summa_gru_parallel
@@ -567,7 +571,11 @@ def _run_mizuroute_worker(task_data: Dict, mizuroute_dir: Path, logger, debug_in
 
         logger.debug(f"Found {len(expected_files)} SUMMA output files for mizuRoute")
         config = task_data['config']
-        mizu_timeout = int(resolve_config_value(config, lambda: config.model.mizuroute.timeout, 3600, 'MIZUROUTE_TIMEOUT'))
+        mizu_timeout = int(resolve_config_value(
+            config,
+            lambda: config.model.mizuroute.timeout,
+            dict_key='MIZUROUTE_TIMEOUT',
+        ))
 
         # Get mizuRoute executable (canonical keys first, then deprecated aliases)
         mizu_path = config.get('MIZUROUTE_INSTALL_PATH',
@@ -680,7 +688,11 @@ def _run_mizuroute_worker(task_data: Dict, mizuroute_dir: Path, logger, debug_in
 def _needs_mizuroute_routing_worker(config: Dict) -> bool:
     """Check if mizuRoute routing is needed"""
     domain_method = resolve_config_value(config, lambda: config.domain.definition_method, 'lumped', 'DOMAIN_DEFINITION_METHOD')
-    routing_delineation = resolve_config_value(config, lambda: config.domain.delineation.routing, 'lumped', 'ROUTING_DELINEATION')
+    routing_delineation = resolve_config_value(
+        config,
+        lambda: config.domain.delineation.routing,
+        dict_key='ROUTING_DELINEATION',
+    )
 
     if domain_method not in ['point', 'lumped']:
         return True

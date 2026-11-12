@@ -172,7 +172,10 @@ class LSTMPostProcessor(StandardModelPostProcessor):
             ds['gruId'] = (['gru'], np.array(hru_ids, dtype='int32'))
 
             # Use same var name as configured for routing if possible
-            routing_var = self._get_config_value(lambda: self.config.model.mizuroute.routing_var, default='averageRoutedRunoff')
+            routing_var = self._get_config_value(
+                lambda: self.config.model.mizuroute.routing_var,
+                dict_key='SETTINGS_MIZU_ROUTING_VAR',
+            )
             if routing_var == 'default':
                 routing_var = 'averageRoutedRunoff'
 

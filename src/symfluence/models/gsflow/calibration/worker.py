@@ -69,7 +69,11 @@ class GSFLOWWorker(StreamflowWorker):
             params = self._enforce_constraints(params)
             self._trial_params = dict(params)
             from ..parameter_files import apply_gsflow_parameters
-            apply_gsflow_parameters(settings_dir, params, resolve_config_value(config, lambda: config.model.gsflow.parameter_file, 'params.dat', 'GSFLOW_PARAMETER_FILE'))
+            apply_gsflow_parameters(settings_dir, params, resolve_config_value(
+                config,
+                lambda: config.model.gsflow.parameter_file,
+                dict_key='GSFLOW_PARAMETER_FILE',
+            ))
             return True
         except Exception as e:  # noqa: BLE001 — calibration resilience
             self.logger.error(f"Error applying GSFLOW parameters: {e}", exc_info=True)
@@ -124,12 +128,20 @@ class GSFLOWWorker(StreamflowWorker):
             # Localize control/NAM file paths for this trial:
             # data_file → local data.dat (copied in apply_parameters)
             # output paths → absolute paths into sim_dir
-            control_file = resolve_config_value(config, lambda: config.model.gsflow.control_file, 'gsflow.control', 'GSFLOW_CONTROL_FILE')
+            control_file = resolve_config_value(
+                config,
+                lambda: config.model.gsflow.control_file,
+                dict_key='GSFLOW_CONTROL_FILE',
+            )
             self._localize_control_paths(settings_dir, sim_dir, control_file)
             self._localize_nam_paths(settings_dir, sim_dir)
 
-            install_path = resolve_config_value(config, lambda: config.model.gsflow.install_path, 'default', 'GSFLOW_INSTALL_PATH')
-            exe_name = resolve_config_value(config, lambda: config.model.gsflow.exe, 'gsflow', 'GSFLOW_EXE')
+            install_path = resolve_config_value(
+                config,
+                lambda: config.model.gsflow.install_path,
+                dict_key='GSFLOW_INSTALL_PATH',
+            )
+            exe_name = resolve_config_value(config, lambda: config.model.gsflow.exe, dict_key='GSFLOW_EXE')
             gsflow_exe = resolve_install_executable(install_path, data_dir, 'installs/gsflow/bin', exe_name)
 
             # Windows builds land as <name>.exe even though the declared name
@@ -151,7 +163,7 @@ class GSFLOWWorker(StreamflowWorker):
             cmd = [str(gsflow_exe), str(control_path)]
             env = os.environ.copy()
             env['MallocStackLogging'] = '0'
-            timeout = resolve_config_value(config, lambda: config.model.gsflow.timeout, 7200, 'GSFLOW_TIMEOUT')
+            timeout = resolve_config_value(config, lambda: config.model.gsflow.timeout, dict_key='GSFLOW_TIMEOUT')
 
             try:
                 with open(sim_dir / 'gsflow_stdout.log', 'w') as out, \
@@ -297,7 +309,11 @@ class GSFLOWWorker(StreamflowWorker):
         calibration period, also when ``period`` overrides the streamflow
         window.
         """
-        if not resolve_config_value(config, lambda: config.model.gsflow.cryosphere_constraints, False, 'GSFLOW_CRYOSPHERE_CONSTRAINTS'):
+        if not resolve_config_value(
+            config,
+            lambda: config.model.gsflow.cryosphere_constraints,
+            dict_key='GSFLOW_CRYOSPHERE_CONSTRAINTS',
+        ):
             return {}
         from symfluence.models.prms.cryosphere import calculate_constraints
         sim_dir = Path(kwargs.get('sim_dir', output_dir))
@@ -308,11 +324,23 @@ class GSFLOWWorker(StreamflowWorker):
         param_dir = Path(settings_dir) if settings_dir else project_dir / 'settings' / 'GSFLOW'
         return calculate_constraints(
             statvar,
-            param_dir / resolve_config_value(config, lambda: config.model.gsflow.parameter_file, 'params.dat', 'GSFLOW_PARAMETER_FILE'),
+            param_dir / resolve_config_value(
+                config,
+                lambda: config.model.gsflow.parameter_file,
+                dict_key='GSFLOW_PARAMETER_FILE',
+            ),
             project_dir,
             resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD'),
-            resolve_config_value(config, lambda: config.model.gsflow.snow_cover_error_scale, 0.2, 'GSFLOW_SNOW_COVER_ERROR_SCALE'),
-            resolve_config_value(config, lambda: config.model.gsflow.glacier_mb_error_scale, 1.0, 'GSFLOW_GLACIER_MB_ERROR_SCALE'))
+            resolve_config_value(
+                config,
+                lambda: config.model.gsflow.snow_cover_error_scale,
+                dict_key='GSFLOW_SNOW_COVER_ERROR_SCALE',
+            ),
+            resolve_config_value(
+                config,
+                lambda: config.model.gsflow.glacier_mb_error_scale,
+                dict_key='GSFLOW_GLACIER_MB_ERROR_SCALE',
+            ))
 
     def _extract_streamflow_from_csv(self, csv_file: Path) -> Optional[pd.Series]:
         """Basin outlet streamflow (m3/s) from the GSFLOW budget CSV."""

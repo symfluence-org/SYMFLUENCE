@@ -194,7 +194,10 @@ class IGNACIOPostProcessor(BaseModelPostProcessor):
                 return ignacio.compare_with_wmfire
 
         # Check config dict
-        return self._get_config_value(lambda: self.config.model.ignacio.compare_with_wmfire, default=False)
+        return self._get_config_value(
+            lambda: self.config.model.ignacio.compare_with_wmfire,
+            dict_key='IGNACIO_COMPARE_WMFIRE',
+        )
 
     def _compare_with_wmfire(self, ignacio_perimeters: List[Path]) -> Optional[Dict[str, Any]]:
         """

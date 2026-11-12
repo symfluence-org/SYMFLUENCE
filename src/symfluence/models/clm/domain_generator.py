@@ -225,7 +225,7 @@ class CLMDomainGenerator:
 
         domain_file = self.pp._get_config_value(
             lambda: self.pp.config.model.clm.domain_file,
-            default='domain.nc', dict_key='CLM_DOMAIN_FILE'
+            dict_key='CLM_DOMAIN_FILE',
         )
         filepath = self.pp.params_dir / domain_file
         ds.to_netcdf(filepath, format='NETCDF4')

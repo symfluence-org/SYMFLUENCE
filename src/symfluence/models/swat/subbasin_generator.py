@@ -158,14 +158,12 @@ class SWATSubbasinGenerator:
         sub_lines.append(fmt_10f81(zeros10))
 
         # Line 21: PLAPS (precip lapse rate)
-        plaps = self.pp._get_config_value(
-            lambda: self.pp.config.model.swat.plaps, default=0.0)
+        plaps = self.pp._get_config_value(lambda: self.pp.config.model.swat.plaps, dict_key='SWAT_PLAPS')
         sub_lines.append(
             f"  {plaps:14.4f}    | PLAPS : Precip lapse rate [mm H2O/km]")
 
         # Line 22: TLAPS (temp lapse rate)
-        tlaps = self.pp._get_config_value(
-            lambda: self.pp.config.model.swat.tlaps, default=0.0)
+        tlaps = self.pp._get_config_value(lambda: self.pp.config.model.swat.tlaps, dict_key='SWAT_TLAPS')
         sub_lines.append(
             f"  {tlaps:14.4f}    | TLAPS : Temp lapse rate [deg C/km]")
 

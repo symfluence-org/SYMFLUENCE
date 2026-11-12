@@ -347,7 +347,7 @@ class FUSEPreProcessor(BaseModelPreProcessor, PETCalculatorMixin, GeospatialUtil
             ) or self._infer_spatial_mode_from_domain()
             subcatchment_dim = self._get_config_value(
                 lambda: self.config.model.fuse.subcatchment_dim,
-                default='longitude'
+                dict_key='FUSE_SUBCATCHMENT_DIM',
             )
 
             ds = self._load_forcing_dataset(ts_config)
@@ -428,10 +428,7 @@ class FUSEPreProcessor(BaseModelPreProcessor, PETCalculatorMixin, GeospatialUtil
         obs_ds = self._load_streamflow_observations(spatial_mode, ts_config, time_window)
         self.logger.info(f"PERF: Loading observations took {time.time() - t6:.2f}s")
 
-        pet_method = self._get_config_value(
-            lambda: self.config.forcing.pet_method,
-            default='oudin'
-        ).lower()
+        pet_method = self._get_config_value(lambda: self.config.forcing.pet_method, dict_key='PET_METHOD').lower()
         self.logger.debug(f"Using PET method: {pet_method}")
 
         t7 = time.time()
@@ -548,7 +545,7 @@ class FUSEPreProcessor(BaseModelPreProcessor, PETCalculatorMixin, GeospatialUtil
         # Determine target spatial dimension (latitude or longitude based on config)
         subcatchment_dim = self._get_config_value(
             lambda: self.config.model.fuse.subcatchment_dim,
-            default='longitude'
+            dict_key='FUSE_SUBCATCHMENT_DIM',
         )
 
         # Alignment time index (already in fuse_forcing.time but we need it as datetime for reindexing)

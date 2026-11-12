@@ -446,7 +446,11 @@ class CLMWorker(BaseWorker):
             self._cleanup_stale_output(output_dir)
 
             # Get executable
-            install_path = resolve_config_value(config, lambda: config.model.clm.install_path, 'default', 'CLM_INSTALL_PATH')
+            install_path = resolve_config_value(
+                config,
+                lambda: config.model.clm.install_path,
+                dict_key='CLM_INSTALL_PATH',
+            )
             if install_path == 'default':
                 # Installs are at SYMFLUENCE_CODE_DIR + _data/installs/clm
                 code_dir = Path(resolve_config_value(config, lambda: config.system.code_dir, '.', 'SYMFLUENCE_CODE_DIR'))
@@ -456,7 +460,7 @@ class CLMWorker(BaseWorker):
                     data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
                     install_path = str(data_dir.parent / 'installs' / 'clm')
 
-            exe_name = resolve_config_value(config, lambda: config.model.clm.exe, 'cesm.exe', 'CLM_EXE')
+            exe_name = resolve_config_value(config, lambda: config.model.clm.exe, dict_key='CLM_EXE')
             clm_exe = Path(install_path) / 'bin' / exe_name
             if not clm_exe.exists():
                 clm_exe = Path(install_path) / exe_name
@@ -714,7 +718,11 @@ class CLMWorker(BaseWorker):
             sim_series = pd.Series(streamflow_m3s, index=times)
 
             # Skip warmup
-            warmup_days = int(resolve_config_value(config, lambda: config.model.clm.warmup_days, 365, 'CLM_WARMUP_DAYS'))
+            warmup_days = int(resolve_config_value(
+                config,
+                lambda: config.model.clm.warmup_days,
+                dict_key='CLM_WARMUP_DAYS',
+            ))
             if warmup_days > 0 and len(sim_series) > warmup_days:
                 sim_series = sim_series.iloc[warmup_days:]
                 self.logger.debug(

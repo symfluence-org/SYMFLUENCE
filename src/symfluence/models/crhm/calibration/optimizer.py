@@ -56,11 +56,7 @@ class CRHMModelOptimizer(BaseModelOptimizer):
 
     def _get_final_file_manager_path(self) -> Path:
         """Get path to CRHM project file."""
-        prj_file = self._get_config_value(
-            lambda: self.config.model.crhm.project_file,
-            default='model.prj',
-            dict_key='CRHM_PROJECT_FILE'
-        )
+        prj_file = self._get_config_value(lambda: self.config.model.crhm.project_file, dict_key='CRHM_PROJECT_FILE')
         return self.crhm_setup_dir / prj_file
 
     def _create_parameter_manager(self):

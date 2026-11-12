@@ -69,7 +69,8 @@ class MESHConfigGenerator(ConfigMixin):
 
         time_window = self.get_simulation_time_window() if self.get_simulation_time_window else None
         spinup_days = int(self._get_config_value(
-            lambda: self.config.model.mesh.spinup_days, default=365, dict_key='MESH_SPINUP_DAYS'
+            lambda: self.config.model.mesh.spinup_days,
+            dict_key='MESH_SPINUP_DAYS',
         ))
 
         if time_window:
