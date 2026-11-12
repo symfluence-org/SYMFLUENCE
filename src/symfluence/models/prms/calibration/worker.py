@@ -18,20 +18,18 @@ import pandas as pd
 
 from symfluence.core.calibration.workers.base_worker import (
     MACOS_MALLOC_QUIET_ENV,
-    BaseWorker,
     run_worker_task,
 )
+from symfluence.core.calibration.workers.streamflow_worker import StreamflowWorker
 from symfluence.core.exceptions import ConfigurationError, ModelExecutionError
-from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
-from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.path_resolver import resolve_install_executable
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
 
 @R.workers.add('PRMS')
-class PRMSWorker(BaseWorker):
+class PRMSWorker(StreamflowWorker):
     """
     Worker for PRMS model calibration.
 
@@ -45,8 +43,6 @@ class PRMSWorker(BaseWorker):
         logger: Optional[logging.Logger] = None
     ):
         super().__init__(config, logger)
-
-    _streamflow_metrics = StreamflowMetrics()
 
     def apply_parameters(
         self,
@@ -316,95 +312,25 @@ class PRMSWorker(BaseWorker):
                 return exe_win
         return exe
 
-    def calculate_metrics(
+    def _find_statvar(self, output_dir: Path, config: Dict[str, Any], **kwargs) -> Path:
+        """This trial's statvar file: the run directory, then the settings directories."""
+        sim_dir = Path(kwargs.get('sim_dir', output_dir))
+        search_dirs = [sim_dir]
+        if kwargs.get('settings_dir'):
+            search_dirs.append(Path(kwargs['settings_dir']))
+        search_dirs.append(self._project_location(config)[0] / 'settings' / 'PRMS')
+        for directory in search_dirs:
+            matches = list(directory.glob('statvar*'))
+            if matches:
+                return matches[0]
+        raise ModelExecutionError(f"No PRMS statvar files found in {sim_dir}")
+
+    def read_simulated_streamflow(
         self,
         output_dir: Path,
         config: Dict[str, Any],
         **kwargs
-    ) -> Dict[str, Any]:
-        """
-        Calculate metrics from PRMS output.
-
-        Extracts streamflow from statvar output, loads observations,
-        aligns time series, and computes KGE/NSE.
-
-        Args:
-            output_dir: Directory containing model outputs
-            config: Configuration dictionary
-            **kwargs: Additional arguments
-
-        Returns:
-            Dictionary of metric names to values
-        """
-        try:
-            sim_dir = Path(kwargs.get('sim_dir', output_dir))
-            settings_dir = kwargs.get('settings_dir', None)
-
-            # Find statvar output - search multiple locations
-            output_files = list(sim_dir.glob('statvar*'))
-
-            if not output_files and settings_dir:
-                output_files = list(Path(settings_dir).glob('statvar*'))
-
-            if not output_files:
-                domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
-                data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
-                prms_settings = data_dir / f'domain_{domain_name}' / 'settings' / 'PRMS'
-                if prms_settings.exists():
-                    output_files = list(prms_settings.glob('statvar*'))
-
-            if not output_files:
-                self.logger.error(f"No PRMS statvar files found in {sim_dir}")
-                return {'kge': self.penalty_score, 'error': 'No output files'}
-
-            statvar_file = output_files[0]
-
-            # Extract streamflow from statvar
-            sim_series = self._extract_streamflow_from_statvar(statvar_file)
-            if sim_series is None or len(sim_series) == 0:
-                return {'kge': self.penalty_score, 'error': 'No streamflow data extracted'}
-
-            # Load observations
-            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
-            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
-            project_dir = data_dir / f'domain_{domain_name}'
-
-            obs_values, obs_index = self._streamflow_metrics.load_observations(
-                config, project_dir, domain_name, resample_freq='D'
-            )
-            if obs_values is None:
-                return {'kge': self.penalty_score, 'error': 'No observations'}
-
-            obs_series = pd.Series(obs_values, index=obs_index)
-
-            # Parse calibration period
-            cal_period_str = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
-            cal_period_tuple = split_period(cal_period_str, allow_extra=True)
-
-            # Align and calculate metrics
-            obs_aligned, sim_aligned = self._streamflow_metrics.align_timeseries(
-                sim_series, obs_series, calibration_period=cal_period_tuple
-            )
-
-            results = self._streamflow_metrics.calculate_metrics(
-                obs_aligned, sim_aligned, metrics=self._requested_metrics(config)
-            )
-            if resolve_config_value(config, lambda: config.model.prms.cryosphere_constraints, False, 'PRMS_CRYOSPHERE_CONSTRAINTS'):
-                from ..cryosphere import calculate_constraints
-                parameter_file = Path(settings_dir) / 'params.dat' if settings_dir else project_dir / 'settings/PRMS/params.dat'
-                results.update(calculate_constraints(
-                    statvar_file, parameter_file, project_dir, cal_period_str,
-                    resolve_config_value(config, lambda: config.model.prms.snow_cover_error_scale, 0.2, 'PRMS_SNOW_COVER_ERROR_SCALE'),
-                    resolve_config_value(config, lambda: config.model.prms.glacier_mb_error_scale, 1.0, 'PRMS_GLACIER_MB_ERROR_SCALE')))
-            return results
-
-        except Exception as e:  # noqa: BLE001 — calibration resilience
-            self.logger.error(f"Error calculating PRMS metrics: {e}", exc_info=True)
-            import traceback
-            self.logger.debug(traceback.format_exc())
-            return {'kge': self.penalty_score, 'error': str(e)}
-
-    def _extract_streamflow_from_statvar(self, statvar_file: Path) -> Optional[pd.Series]:
+    ) -> Optional[pd.Series]:
         """Basin streamflow (m3/s) from the PRMS statvar file.
 
         Uses the shared reader (:mod:`symfluence.models.prms.statvar`) so
@@ -412,11 +338,28 @@ class PRMSWorker(BaseWorker):
         variable (basin_cfs, else seg_outflow) from the same column.
         """
         from symfluence.models.prms.statvar import read_statvar_streamflow
-        try:
-            return read_statvar_streamflow(statvar_file).rename('PRMS_discharge_cms')
-        except (OSError, ModelExecutionError) as e:
-            self.logger.error(f"Error extracting PRMS streamflow: {e}", exc_info=True)
-            return None
+        statvar_file = self._find_statvar(output_dir, config, **kwargs)
+        return read_statvar_streamflow(statvar_file).rename('PRMS_discharge_cms')
+
+    def additional_metrics(
+        self,
+        output_dir: Path,
+        config: Dict[str, Any],
+        *,
+        project_dir: Path,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Snow-cover and glacier mass-balance scores when PRMS_CRYOSPHERE_CONSTRAINTS is on."""
+        if not resolve_config_value(config, lambda: config.model.prms.cryosphere_constraints, False, 'PRMS_CRYOSPHERE_CONSTRAINTS'):
+            return {}
+        from ..cryosphere import calculate_constraints
+        settings_dir = kwargs.get('settings_dir')
+        parameter_file = Path(settings_dir) / 'params.dat' if settings_dir else project_dir / 'settings/PRMS/params.dat'
+        return calculate_constraints(
+            self._find_statvar(output_dir, config, **kwargs), parameter_file, project_dir,
+            resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD'),
+            resolve_config_value(config, lambda: config.model.prms.snow_cover_error_scale, 0.2, 'PRMS_SNOW_COVER_ERROR_SCALE'),
+            resolve_config_value(config, lambda: config.model.prms.glacier_mb_error_scale, 1.0, 'PRMS_GLACIER_MB_ERROR_SCALE'))
 
     @staticmethod
     def evaluate_worker_function(task_data: Dict[str, Any]) -> Dict[str, Any]:

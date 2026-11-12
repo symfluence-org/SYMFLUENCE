@@ -52,6 +52,7 @@ src/symfluence/core/calibration/optimizers/base_model_optimizer.py:BaseModelOpti
 src/symfluence/core/calibration/optimizers/final_evaluation/runner.py:FinalEvaluationRunner._worker_period_metrics:except Exception as e:  # noqa: BLE001 — resilience in final eval
 src/symfluence/core/calibration/optimizers/final_evaluation/self_training.py:persist_run_evaluation:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/core/calibration/workers/base_worker.py:run_worker_task:except Exception as e:  # noqa: BLE001 — calibration resilience
+src/symfluence/core/calibration/workers/streamflow_worker.py:StreamflowWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/core/config/legacy_aliases.py:iter_legacy_flat_to_nested_aliases:except Exception:  # noqa: BLE001 — registry unavailable in stripped contexts
 src/symfluence/core/config/models/root.py:SymfluenceConfig.validate_model_requirements:except Exception as e:  # noqa: BLE001 — configuration resilience
 src/symfluence/core/exceptions.py:symfluence_error_handler:except Exception as e:  # noqa: BLE001 — error handler implementation
@@ -715,7 +716,6 @@ src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker._extract_streamf
 src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker._extract_streamflow_from_statvar:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker._run_model:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker.apply_parameters:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/gsflow/calibration/worker.py:GSFLOWWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/gsflow/extractor.py:GSFLOWResultExtractor._parse_statvar_file:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/gsflow/extractor.py:GSFLOWResultExtractor.extract_variable:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/gsflow/postprocessor.py:GSFLOWPostProcessor._extract_from_file:except Exception as e:  # noqa: BLE001 — model execution resilience
@@ -859,7 +859,6 @@ src/symfluence/models/mhm/calibration/parameter_manager.py:MHMParameterManager.g
 src/symfluence/models/mhm/calibration/parameter_manager.py:MHMParameterManager.update_namelist:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/mhm/calibration/worker.py:MHMWorker._update_namelist_file:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/mhm/calibration/worker.py:MHMWorker.apply_parameters:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/mhm/calibration/worker.py:MHMWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/mhm/calibration/worker.py:MHMWorker.run_model:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/mhm/extractor.py:MHMResultExtractor.extract_variable:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/models/mhm/postprocessor.py:MHMPostProcessor.extract_streamflow:except Exception as e:  # noqa: BLE001 — model execution resilience
@@ -965,11 +964,9 @@ src/symfluence/models/prms/calibration/optimizer.py:PRMSModelOptimizer.run_final
 src/symfluence/models/prms/calibration/parameter_manager.py:PRMSParameterManager.copy_params_to_worker_dir:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/prms/calibration/parameter_manager.py:PRMSParameterManager.get_initial_parameters:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/prms/calibration/parameter_manager.py:PRMSParameterManager.update_parameter_file:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/prms/calibration/worker.py:PRMSWorker._extract_streamflow_from_statvar:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/prms/calibration/worker.py:PRMSWorker._update_control_dat_paths:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/prms/calibration/worker.py:PRMSWorker._update_parameter_file:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/prms/calibration/worker.py:PRMSWorker.apply_parameters:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/prms/calibration/worker.py:PRMSWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/prms/calibration/worker.py:PRMSWorker.run_model:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/prms/postprocessor.py:PRMSPostProcessor._parse_statvar_file:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/prms/postprocessor.py:PRMSPostProcessor.extract_streamflow:except Exception as e:  # noqa: BLE001 — model execution resilience
@@ -1108,7 +1105,6 @@ src/symfluence/models/watflood/calibration/optimizer.py:WATFLOODModelOptimizer.r
 src/symfluence/models/watflood/calibration/parameter_manager.py:WATFLOODParameterManager.apply_parameters:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/watflood/calibration/worker.py:WATFLOODWorker._extract_streamflow:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/watflood/calibration/worker.py:WATFLOODWorker.apply_parameters:except Exception as e:  # noqa: BLE001 — calibration resilience
-src/symfluence/models/watflood/calibration/worker.py:WATFLOODWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/watflood/calibration/worker.py:WATFLOODWorker.run_model:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/models/watflood/extractor.py:WATFLOODResultExtractor._parse_tb0_file:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/models/watflood/extractor.py:WATFLOODResultExtractor.extract_variable:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error

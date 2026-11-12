@@ -19,24 +19,21 @@ import pandas as pd
 
 from symfluence.core.calibration.workers.base_worker import (
     MACOS_MALLOC_QUIET_ENV,
-    BaseWorker,
     run_worker_task,
 )
-from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.calibration.workers.streamflow_worker import StreamflowWorker
+from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.mixins.config import resolve_config_value
-from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
 
 @R.workers.add('WATFLOOD')
-class WATFLOODWorker(BaseWorker):
+class WATFLOODWorker(StreamflowWorker):
     """Worker for WATFLOOD model calibration."""
 
     def __init__(self, config: Optional[Dict[str, Any]] = None, logger: Optional[logging.Logger] = None):
         super().__init__(config, logger)
-
-    _streamflow_metrics = StreamflowMetrics()
 
     def apply_parameters(self, params: Dict[str, float], settings_dir: Path, **kwargs) -> bool:
         """Apply parameters to WATFLOOD .par file."""
@@ -204,53 +201,30 @@ class WATFLOODWorker(BaseWorker):
                 continue
         return None
 
-    def calculate_metrics(self, output_dir: Path, config: Dict[str, Any], **kwargs) -> Dict[str, Any]:
-        """Calculate metrics from WATFLOOD output."""
-        try:
-            sim_dir = Path(kwargs.get('sim_dir', output_dir))
+    def read_simulated_streamflow(
+        self,
+        output_dir: Path,
+        config: Dict[str, Any],
+        **kwargs
+    ) -> Optional[pd.Series]:
+        """Simulated streamflow (m3/s) from this trial's WATFLOOD output."""
+        sim_dir = Path(kwargs.get('sim_dir', output_dir))
 
-            # Prioritize CHARM daily CSV and numbered streamflow tb0 files
-            charm_csv = sim_dir / 'CHARM_dly.csv'
-            str_tb0 = sorted(sim_dir.glob('[0-9]*_str.tb0'))
-            if charm_csv.exists():
-                output_files = [charm_csv]
-            elif str_tb0:
-                output_files = str_tb0
-            else:
-                tb0_files = list(sim_dir.glob('spl*.tb0')) + list(sim_dir.glob('resin*.tb0'))
-                csv_files = list(sim_dir.glob('*.csv'))
-                output_files = tb0_files + csv_files
+        # Prioritize CHARM daily CSV and numbered streamflow tb0 files
+        charm_csv = sim_dir / 'CHARM_dly.csv'
+        str_tb0 = sorted(sim_dir.glob('[0-9]*_str.tb0'))
+        if charm_csv.exists():
+            output_files = [charm_csv]
+        elif str_tb0:
+            output_files = str_tb0
+        else:
+            tb0_files = list(sim_dir.glob('spl*.tb0')) + list(sim_dir.glob('resin*.tb0'))
+            csv_files = list(sim_dir.glob('*.csv'))
+            output_files = tb0_files + csv_files
 
-            if not output_files:
-                return {'kge': self.penalty_score, 'error': 'No output files'}
-
-            sim_series = self._extract_streamflow(output_files[0])
-            if sim_series is None or len(sim_series) == 0:
-                return {'kge': self.penalty_score, 'error': 'No streamflow data'}
-
-            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
-            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
-            project_dir = data_dir / f'domain_{domain_name}'
-
-            obs_values, obs_index = self._streamflow_metrics.load_observations(
-                config, project_dir, domain_name, resample_freq='D'
-            )
-            if obs_values is None:
-                return {'kge': self.penalty_score, 'error': 'No observations'}
-
-            obs_series = pd.Series(obs_values, index=obs_index)
-            cal_period_str = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
-            cal_period_tuple = split_period(cal_period_str, allow_extra=True)
-
-            obs_aligned, sim_aligned = self._streamflow_metrics.align_timeseries(
-                sim_series, obs_series, calibration_period=cal_period_tuple
-            )
-            return self._streamflow_metrics.calculate_metrics(
-                obs_aligned, sim_aligned, metrics=self._requested_metrics(config)
-            )
-        except Exception as e:  # noqa: BLE001 — calibration resilience
-            self.logger.error(f"Error calculating WATFLOOD metrics: {e}", exc_info=True)
-            return {'kge': self.penalty_score, 'error': str(e)}
+        if not output_files:
+            raise ModelExecutionError(f"No WATFLOOD output files found in {sim_dir}")
+        return self._extract_streamflow(output_files[0])
 
     def _extract_streamflow(self, output_file: Path) -> Optional[pd.Series]:
         """Extract streamflow from WATFLOOD output."""

@@ -14,7 +14,44 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
+from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.modeling.base import ModelResultExtractor
+
+#: Discharge variable names, in order of preference. mHM v5.13+ writes one
+#: variable per gauge instead (``Qsim_0000000001``); see read_mhm_discharge.
+DISCHARGE_VARIABLES = ('Qsim', 'Q', 'discharge', 'Qrouted')
+
+
+def read_mhm_discharge(output_file: Path) -> pd.Series:
+    """Simulated discharge (m3/s, datetime-indexed) from an mHM discharge file.
+
+    The one reader for mHM discharge: the calibration worker, the
+    postprocessor and :class:`MHMResultExtractor` all score and report the
+    series this returns. Picks the first of :data:`DISCHARGE_VARIABLES`, else
+    the first gauge-indexed ``Qsim_*`` variable, and the first gauge when the
+    variable carries a gauge dimension. mHM writes m3/s, so nothing is
+    converted.
+
+    Raises:
+        ModelExecutionError: the file holds no discharge variable.
+    """
+    import xarray as xr
+
+    with xr.open_dataset(output_file) as ds:
+        name = next((v for v in DISCHARGE_VARIABLES if v in ds.data_vars), None)
+        if name is None:
+            name = next((str(v) for v in ds.data_vars if str(v).startswith('Qsim')), None)
+        if name is None:
+            raise ModelExecutionError(
+                f"No discharge variable in {output_file}; has {list(ds.data_vars)}"
+            )
+        discharge = ds[name]
+        discharge = discharge.isel({d: 0 for d in discharge.dims if d != 'time'})
+        return pd.Series(
+            discharge.values.ravel(),
+            index=pd.to_datetime(ds['time'].values),
+            name=name,
+        )
 
 
 class MHMResultExtractor(ModelResultExtractor):
@@ -64,12 +101,7 @@ class MHMResultExtractor(ModelResultExtractor):
         - baseflow: Baseflow [mm/day]
         """
         variable_mapping = {
-            'streamflow': [
-                'Qsim',
-                'Q',
-                'discharge',
-                'Qrouted',
-            ],
+            'streamflow': list(DISCHARGE_VARIABLES),
             'et': [
                 'aET',
                 'PET',
@@ -209,8 +241,6 @@ class MHMResultExtractor(ModelResultExtractor):
         Returns:
             Time series of streamflow in m3/s
         """
-        import xarray as xr
-
         # Find discharge file
         patterns = self.get_output_file_patterns()['streamflow']
         output_file = None
@@ -225,29 +255,7 @@ class MHMResultExtractor(ModelResultExtractor):
                 f"No mHM discharge file found in {output_dir} matching {patterns}"
             )
 
-        ds = xr.open_dataset(output_file)
-
-        # Get discharge variable
-        discharge = None
-        for var in self.get_variable_names('streamflow'):
-            if var in ds.data_vars:
-                discharge = ds[var]
-                break
-
-        if discharge is None:
-            ds.close()
-            raise ValueError("Could not find discharge variable in mHM output")
-
-        # Handle spatial dimensions (select first gauge)
-        spatial_dims = [d for d in discharge.dims if d not in ['time']]
-        if spatial_dims:
-            discharge = discharge.isel({spatial_dims[0]: 0})
-
-        # Convert to series - already in m3/s
-        series = discharge.to_series()
-        ds.close()
-
-        return series
+        return read_mhm_discharge(output_file)
 
     def requires_unit_conversion(self, variable_type: str) -> bool:
         """Check if variable requires unit conversion.
