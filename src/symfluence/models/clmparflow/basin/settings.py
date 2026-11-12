@@ -105,13 +105,19 @@ def basin_parameters(cfg) -> BasinParameters:
     tensor = cfg.basin_k_tensor
     if tensor is not None and (len(tensor) != 3 or min(tensor) <= 0):
         raise ConfigurationError('CLMPARFLOW_BASIN_K_TENSOR needs three positive multipliers: [kx, ky, kz]')
-    return BasinParameters(soil_k=cfg.basin_soil_k, aquifer_k=cfg.basin_aquifer_k, manning=cfg.basin_manning,
+    dz = cfg.basin_dz_top_down
+    if dz is not None and (len(dz) < 11 or min(dz) <= 0):
+        raise ConfigurationError('CLMPARFLOW_BASIN_DZ_TOP_DOWN needs at least 11 positive layer thicknesses '
+                                 '(the top 10 are the CLM soil layers)')
+    extra = {'dz_top_down': [float(d) for d in dz]} if dz is not None else {}
+    return BasinParameters(**extra, aquifer_porosity=float(cfg.basin_aquifer_porosity), soil_k=cfg.basin_soil_k, aquifer_k=cfg.basin_aquifer_k, manning=cfg.basin_manning,
                            glacier_bed_k=cfg.basin_glacier_bed_k, precip_scale=cfg.basin_precip_scale,
                            ice_albedo=tuple(albedo) if albedo is not None else None,
                            initial_water_table_depth=cfg.basin_initial_water_table_depth,
                            k_tensor=(float(tensor[0]), float(tensor[1]), float(tensor[2])) if tensor is not None else None,
                            k_zone_factor=float(cfg.basin_k_zone_factor), k_zone_soil=bool(cfg.basin_k_zone_soil),
-                           lake_manning=cfg.basin_lake_manning)
+                           lake_manning=cfg.basin_lake_manning, residual_tol=float(cfg.basin_residual_tol),
+                           initial_pressure=cfg.basin_initial_pressure or None)
 
 
 def water_years(start: str, end: str) -> List[int]:

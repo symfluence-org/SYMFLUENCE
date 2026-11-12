@@ -124,6 +124,11 @@ class CLMParFlowConfig(BaseModel):
     basin_soil_k: float = Field(default=0.1, alias='CLMPARFLOW_BASIN_SOIL_K', gt=0)
     basin_aquifer_k: float = Field(default=1.0, alias='CLMPARFLOW_BASIN_AQUIFER_K', gt=0)
     basin_manning: float = Field(default=3e-6, alias='CLMPARFLOW_BASIN_MANNING', gt=0)
+    # Layer thicknesses top-down (m); the top 10 are CLM's soil layers. Unset: 14 layers, 70 m (BasinParameters).
+    basin_dz_top_down: Optional[List[float]] = Field(default=None, alias='CLMPARFLOW_BASIN_DZ_TOP_DOWN')
+    basin_aquifer_porosity: float = Field(default=0.25, alias='CLMPARFLOW_BASIN_AQUIFER_POROSITY', gt=0, lt=1)
+    basin_residual_tol: float = Field(default=1e-6, alias='CLMPARFLOW_BASIN_RESIDUAL_TOL', gt=0)
+    basin_initial_pressure: Optional[str] = Field(default=None, alias='CLMPARFLOW_BASIN_INITIAL_PRESSURE')
     basin_initial_water_table_depth: float = Field(default=3.0, alias='CLMPARFLOW_BASIN_INITIAL_WATER_TABLE_DEPTH', ge=0)
     basin_spinup_years: Optional[List[int]] = Field(default=None, alias='CLMPARFLOW_BASIN_SPINUP_YEARS')
     basin_first_water_year: Optional[int] = Field(default=None, alias='CLMPARFLOW_BASIN_FIRST_WATER_YEAR')

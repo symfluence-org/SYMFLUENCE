@@ -94,6 +94,9 @@ class BasinParameters:
     k_zone_factor: float = 1.0
     k_zone_soil: bool = False
     lake_manning: Optional[float] = None
+    # solver / start (defaults leave the run unchanged)
+    residual_tol: float = 1e-6
+    initial_pressure: Optional[str] = None  # PFB pressure field (same grid, nz and P x Q) for the first segment
 
     @property
     def nz(self) -> int:
@@ -109,7 +112,7 @@ class BasinParameters:
 
 
 OPTIONAL_DEFAULTS: Dict[str, object] = {'k_tensor': None, 'k_zone_factor': 1.0, 'k_zone_soil': False,
-                                        'lake_manning': None}
+                                        'lake_manning': None, 'residual_tol': 1e-6, 'initial_pressure': None}
 
 
 def parflow_keys(grid: BasinGrid, params: BasinParameters, name: str, hours: int, P: int = 1, Q: int = 1,
@@ -177,7 +180,7 @@ def parflow_keys(grid: BasinGrid, params: BasinParameters, name: str, hours: int
         'PhaseSources.water.Type': 'Constant', 'PhaseSources.water.GeomNames': 'domain',
         'PhaseSources.water.Geom.domain.Value': 0., 'KnownSolution': 'NoKnownSolution', 'Solver': 'Richards',
         'Solver.TerrainFollowingGrid': True, 'Solver.MaxIter': 10000000, 'Solver.Nonlinear.MaxIter': 100,
-        'Solver.Nonlinear.ResidualTol': 1e-6, 'Solver.Nonlinear.EtaChoice': 'EtaConstant',
+        'Solver.Nonlinear.ResidualTol': params.residual_tol, 'Solver.Nonlinear.EtaChoice': 'EtaConstant',
         'Solver.Nonlinear.EtaValue': .001, 'Solver.Nonlinear.UseJacobian': True,
         'Solver.Nonlinear.DerivativeEpsilon': 1e-16, 'Solver.Nonlinear.StepTol': 1e-20,
         'Solver.Nonlinear.Globalization': 'LineSearch', 'Solver.Linear.KrylovDimension': 70,
@@ -419,6 +422,10 @@ def write_segment(run: Path, name: str, grid: BasinGrid, params: BasinParameters
         ic = 'ic_press.pfb'
         for r in range(P * Q):
             shutil.copy(prev / f'clm.rst.00000.{r}', run / f'clm.rst.00000.{r}')
+    elif params.initial_pressure:  # warm subsurface start (e.g. a groundwater-only steady state), CLM cold start
+        shutil.copy(params.initial_pressure, run / 'ic_press.pfb')
+        shutil.copy(str(params.initial_pressure) + '.dist', run / 'ic_press.pfb.dist')
+        ic = 'ic_press.pfb'
     write_clm_files(run, grid, params, start, end, restart=prev is not None, ranks=P * Q)
     pfio.write_pfidb(run / f'{name}.pfidb', parflow_keys(grid, params, name, hours, P, Q, ic_file=ic))
     meta = dict(seg=name, start=start, end=end, hours=hours, prev=prev.name if prev else None, P=P, Q=Q,
