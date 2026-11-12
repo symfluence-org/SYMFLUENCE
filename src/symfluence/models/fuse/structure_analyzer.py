@@ -274,11 +274,7 @@ class FuseStructureAnalyzer(BaseStructureEnsembleAnalyzer):
 
     def _calculate_catchment_area(self) -> float:
         """Calculate total catchment area in km2."""
-        basin_name = self._get_config_value(
-            lambda: self.config.paths.river_basins_name,
-            default='default',
-            dict_key='RIVER_BASINS_NAME'
-        )
+        basin_name = self._get_config_value(lambda: self.config.paths.river_basins_name, dict_key='RIVER_BASINS_NAME')
         if basin_name == 'default':
             definition_method = self._get_config_value(
                 lambda: self.config.domain.definition_method,

@@ -67,8 +67,7 @@ class PRMSParameterManager(BaseParameterManager):
             default_calibration_parameters,
             is_prms5_mode,
         )
-        model_mode = self._get_config_value(
-            lambda: self.config.model.prms.model_mode, default='DAILY', dict_key='PRMS_MODEL_MODE')
+        model_mode = self._get_config_value(lambda: self.config.model.prms.model_mode, dict_key='PRMS_MODEL_MODE')
         default_names = default_calibration_parameters('DAILY')
 
         if prms_params_str is None:

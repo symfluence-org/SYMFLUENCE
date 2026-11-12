@@ -44,16 +44,20 @@ class CWatMWorker(StreamflowWorker):
             return False
 
         env = dict(os.environ)
-        install_path = resolve_config_value(config, lambda: config.model.cwatm.install_path, 'default', 'CWATM_INSTALL_PATH')
+        install_path = resolve_config_value(
+            config,
+            lambda: config.model.cwatm.install_path,
+            dict_key='CWATM_INSTALL_PATH',
+        )
         data_dir = resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR')
         cwatm_dir = resolve_install_dir(install_path, data_dir, 'installs/cwatm')
 
         env['PYTHONPATH'] = str(cwatm_dir)
 
-        exe_name = resolve_config_value(config, lambda: config.model.cwatm.exe, 'run_cwatm.py', 'CWATM_EXE')
+        exe_name = resolve_config_value(config, lambda: config.model.cwatm.exe, dict_key='CWATM_EXE')
         cmd = [sys.executable, str(cwatm_dir / exe_name), str(ini_path), '-q']
 
-        timeout = int(resolve_config_value(config, lambda: config.model.cwatm.timeout, 14400, 'CWATM_TIMEOUT'))
+        timeout = int(resolve_config_value(config, lambda: config.model.cwatm.timeout, dict_key='CWATM_TIMEOUT'))
         try:
             result = run_subprocess(
                 cmd, cwd=str(settings_dir), env=env,

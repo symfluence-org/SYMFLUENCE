@@ -93,7 +93,10 @@ class HYPEForcingAdapter(ForcingAdapter):
             Dict of conversion functions
         """
         # Determine timestep from config
-        timestep_hours = self._get_config_value(lambda: self.config.forcing.time_step_size, default=3600, dict_key='FORCING_TIME_STEP_SIZE') / 3600
+        timestep_hours = self._get_config_value(
+            lambda: self.config.forcing.time_step_size,
+            dict_key='FORCING_TIME_STEP_SIZE',
+        ) / 3600
 
         # Precipitation: kg m-2 s-1 to mm/timestep
         # 1 kg m-2 s-1 = 1 mm/s = 3600 mm/hr

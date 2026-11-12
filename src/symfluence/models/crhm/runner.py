@@ -50,7 +50,7 @@ class CRHMRunner(BaseModelRunner):
         """
         project_file_name = self._get_config_value(
             lambda: self.config.model.crhm.project_file,
-            default='model.prj',
+            dict_key='CRHM_PROJECT_FILE',
         )
         project_file = self.settings_dir / project_file_name
         obs_dir = str(self.crhm_forcing_dir) + os.sep
@@ -70,7 +70,4 @@ class CRHMRunner(BaseModelRunner):
 
     def _get_run_timeout(self) -> int:
         """CRHM timeout from config."""
-        return self._get_config_value(
-            lambda: self.config.model.crhm.timeout,
-            default=3600,
-        )
+        return self._get_config_value(lambda: self.config.model.crhm.timeout, dict_key='CRHM_TIMEOUT')

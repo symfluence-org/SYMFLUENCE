@@ -186,7 +186,6 @@ class MODFLOWPlotter(BasePlotter):
 
         sp_length = float(self._get_config_value(
             lambda: self.config.model.modflow.stress_period_length,
-            default=1.0,
             dict_key='MODFLOW_STRESS_PERIOD_LENGTH',
         ))
         start_date = str(self._get_config_value(
@@ -205,24 +204,15 @@ class MODFLOWPlotter(BasePlotter):
         )
         area_m2 = area_km2 * 1e6
 
-        top = float(self._get_config_value(
-            lambda: self.config.model.modflow.top, default=1500.0,
-            dict_key='MODFLOW_TOP',
-        ))
-        bot = float(self._get_config_value(
-            lambda: self.config.model.modflow.bot, default=1400.0,
-            dict_key='MODFLOW_BOT',
-        ))
+        top = float(self._get_config_value(lambda: self.config.model.modflow.top, dict_key='MODFLOW_TOP'))
+        bot = float(self._get_config_value(lambda: self.config.model.modflow.bot, dict_key='MODFLOW_BOT'))
         # Unset means mid-aquifer, as in the preprocessor's DRN package.
         drain_elev = self._get_config_value(
             lambda: self.config.model.modflow.drain_elevation, default=None,
             dict_key='MODFLOW_DRAIN_ELEVATION',
         )
         drain_elev = (top + bot) / 2.0 if drain_elev is None else float(drain_elev)
-        sy = float(self._get_config_value(
-            lambda: self.config.model.modflow.sy, default=0.15,
-            dict_key='MODFLOW_SY',
-        ))
+        sy = float(self._get_config_value(lambda: self.config.model.modflow.sy, dict_key='MODFLOW_SY'))
         cell_size = float(self._get_config_value(
             lambda: self.config.model.modflow.cell_size, default=1000.0,
             dict_key='MODFLOW_CELL_SIZE',

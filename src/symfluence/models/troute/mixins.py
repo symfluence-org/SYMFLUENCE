@@ -14,75 +14,72 @@ class TRouteConfigMixin:
 
     @property
     def troute_install_path(self) -> str:
-        return self._get_config_value(
-            lambda: self.config.model.troute.install_path, default='default'
-        )
+        return self._get_config_value(lambda: self.config.model.troute.install_path, dict_key='TROUTE_INSTALL_PATH')
 
     @property
     def troute_settings_path(self) -> str:
-        return self._get_config_value(
-            lambda: self.config.model.troute.settings_path, default='default'
-        )
+        return self._get_config_value(lambda: self.config.model.troute.settings_path, dict_key='SETTINGS_TROUTE_PATH')
 
     @property
     def troute_topology_file(self) -> str:
         return self._get_config_value(
-            lambda: self.config.model.troute.topology_file, default='troute_topology.nc'
+            lambda: self.config.model.troute.topology_file,
+            dict_key='SETTINGS_TROUTE_TOPOLOGY',
         )
 
     @property
     def troute_config_file(self) -> str:
         return self._get_config_value(
-            lambda: self.config.model.troute.config_file, default='troute_config.yml'
+            lambda: self.config.model.troute.config_file,
+            dict_key='SETTINGS_TROUTE_CONFIG_FILE',
         )
 
     @property
     def troute_dt_seconds(self) -> int:
         return self._get_config_value(
-            lambda: self.config.model.troute.dt_seconds, default=3600
+            lambda: self.config.model.troute.dt_seconds,
+            dict_key='SETTINGS_TROUTE_DT_SECONDS',
         )
 
     @property
     def troute_routing_method(self) -> str:
         return self._get_config_value(
-            lambda: self.config.model.troute.routing_method, default='muskingum_cunge'
+            lambda: self.config.model.troute.routing_method,
+            dict_key='TROUTE_ROUTING_METHOD',
         )
 
     @property
     def troute_from_model(self) -> str:
-        return self._get_config_value(
-            lambda: self.config.model.troute.from_model, default='SUMMA'
-        )
+        return self._get_config_value(lambda: self.config.model.troute.from_model, dict_key='TROUTE_FROM_MODEL')
 
     @property
     def troute_mannings_n(self) -> float:
-        return self._get_config_value(
-            lambda: self.config.model.troute.mannings_n, default=0.035
-        )
+        return self._get_config_value(lambda: self.config.model.troute.mannings_n, dict_key='TROUTE_MANNINGS_N')
 
     @property
     def troute_experiment_output(self) -> str:
         return self._get_config_value(
-            lambda: self.config.model.troute.experiment_output, default='default'
+            lambda: self.config.model.troute.experiment_output,
+            dict_key='EXPERIMENT_OUTPUT_TROUTE',
         )
 
     @property
     def troute_experiment_log(self) -> str:
         return self._get_config_value(
-            lambda: self.config.model.troute.experiment_log, default='default'
+            lambda: self.config.model.troute.experiment_log,
+            dict_key='EXPERIMENT_LOG_TROUTE',
         )
 
     @property
     def troute_hg_width_coeff(self) -> float:
         return self._get_config_value(
-            lambda: self.config.model.troute.hg_width_coeff, default=2.71
+            lambda: self.config.model.troute.hg_width_coeff,
+            dict_key='TROUTE_HG_WIDTH_COEFF',
         )
 
     @property
     def troute_hg_width_exp(self) -> float:
-        return self._get_config_value(
-            lambda: self.config.model.troute.hg_width_exp, default=0.557
-        )
+        return self._get_config_value(lambda: self.config.model.troute.hg_width_exp, dict_key='TROUTE_HG_WIDTH_EXP')
 
     @property
     def troute_make_outlet(self) -> str:

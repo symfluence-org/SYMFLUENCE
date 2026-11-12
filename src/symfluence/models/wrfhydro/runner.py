@@ -64,11 +64,11 @@ class WRFHydroRunner(BaseModelRunner):
         # Copy HRLDAS and hydro namelists
         namelist_name = self._get_config_value(
             lambda: self.config.model.wrfhydro.namelist_file,
-            default='namelist.hrldas',
+            dict_key='WRFHYDRO_NAMELIST_FILE',
         )
         hydro_name = self._get_config_value(
             lambda: self.config.model.wrfhydro.hydro_namelist,
-            default='hydro.namelist',
+            dict_key='WRFHYDRO_HYDRO_NAMELIST',
         )
         for name in [namelist_name, hydro_name]:
             src = self.settings_dir / name
@@ -123,7 +123,4 @@ class WRFHydroRunner(BaseModelRunner):
 
     def _get_run_timeout(self) -> int:
         """WRF-Hydro timeout from config."""
-        return self._get_config_value(
-            lambda: self.config.model.wrfhydro.timeout,
-            default=7200,
-        )
+        return self._get_config_value(lambda: self.config.model.wrfhydro.timeout, dict_key='WRFHYDRO_TIMEOUT')

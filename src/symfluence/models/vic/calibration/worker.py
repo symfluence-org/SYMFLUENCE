@@ -196,7 +196,11 @@ class VICWorker(BaseWorker):
                 # Recalculate Pfactor to match shifted elevations
                 if 'Pfactor' in ds and 'AreaFract' in ds:
                     config = self.config or {}
-                    pfactor_per_km = float(resolve_config_value(config, lambda: config.model.vic.pfactor_per_km, 0.0005, 'VIC_PFACTOR_PER_KM'))
+                    pfactor_per_km = float(resolve_config_value(
+                        config,
+                        lambda: config.model.vic.pfactor_per_km,
+                        dict_key='VIC_PFACTOR_PER_KM',
+                    ))
                     elevs = ds['elevation'].values
                     areas = ds['AreaFract'].values
                     mean_elev = float(np.nansum(elevs * areas) / np.nansum(areas))
@@ -418,8 +422,12 @@ class VICWorker(BaseWorker):
 
     def _get_vic_executable(self, config: Dict[str, Any], data_dir: Path) -> Path:
         """Get VIC executable path."""
-        install_path = resolve_config_value(config, lambda: config.model.vic.install_path, 'default', 'VIC_INSTALL_PATH')
-        exe_name = resolve_config_value(config, lambda: config.model.vic.exe, 'vic_image.exe', 'VIC_EXE')
+        install_path = resolve_config_value(
+            config,
+            lambda: config.model.vic.install_path,
+            dict_key='VIC_INSTALL_PATH',
+        )
+        exe_name = resolve_config_value(config, lambda: config.model.vic.exe, dict_key='VIC_EXE')
 
         return resolve_install_executable(install_path, data_dir, 'installs/vic/bin', exe_name)
 
@@ -432,7 +440,11 @@ class VICWorker(BaseWorker):
     ) -> Path:
         """Get or create a worker-specific global parameter file."""
         # First try to find existing global file
-        global_file_name = resolve_config_value(config, lambda: config.model.vic.global_param_file, 'vic_global.txt', 'VIC_GLOBAL_PARAM_FILE')
+        global_file_name = resolve_config_value(
+            config,
+            lambda: config.model.vic.global_param_file,
+            dict_key='VIC_GLOBAL_PARAM_FILE',
+        )
         original_global = vic_settings_dir / global_file_name
 
         if not original_global.exists():
@@ -521,7 +533,9 @@ class VICWorker(BaseWorker):
             data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             project_dir = data_dir / f'domain_{domain_name}'
             domain_file = resolve_config_value(
-                config, lambda: config.model.vic.domain_file, 'vic_domain.nc', 'VIC_DOMAIN_FILE'
+                config,
+                lambda: config.model.vic.domain_file,
+                dict_key='VIC_DOMAIN_FILE',
             )
             cell_area = load_vic_cell_area(project_dir / 'settings' / 'VIC' / 'parameters' / domain_file)
             try:

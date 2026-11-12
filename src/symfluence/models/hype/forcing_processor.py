@@ -35,7 +35,7 @@ def required_extra_obs(config: Dict[str, Any]) -> List[str]:
     names = []
     if resolve_config_value(config, lambda: config.model.hype.snowfall_fraction, None, 'HYPE_SNOWFALL_FRACTION'):
         names.append('SFobs')
-    if resolve_config_value(config, lambda: config.model.hype.snow_melt_model, 0, 'HYPE_SNOW_MELT_MODEL') == 2 or pet_model == 5:
+    if resolve_config_value(config, lambda: config.model.hype.snow_melt_model, dict_key='HYPE_SNOW_MELT_MODEL') == 2 or pet_model == 5:
         names.append('SWobs')
     if pet_model == 5:
         names += ['RHobs', 'Uobs']
@@ -473,7 +473,10 @@ class HYPEForcingProcessor(BaseForcingProcessor):
 
     def write_wind_obs(self, files: List[Path]) -> Path:
         """Daily mean wind speed at 2 m (FAO-56 eq. 47 log profile) as HYPE Uobs (m/s)."""
-        height = float(self._get_config_value(lambda: self.config.model.hype.wind_measurement_height, default=10.0, dict_key='HYPE_WIND_MEASUREMENT_HEIGHT'))
+        height = float(self._get_config_value(
+            lambda: self.config.model.hype.wind_measurement_height,
+            dict_key='HYPE_WIND_MEASUREMENT_HEIGHT',
+        ))
         wind = self._read_steps(files, 'wind_speed', ('ms-1', 'm/s'))
         if (wind.to_numpy() < 0).any():
             raise ValidationError('Negative wind forcing')
@@ -489,7 +492,10 @@ class HYPEForcingProcessor(BaseForcingProcessor):
         dry days get the unweighted mean so a later precipitation correction never
         meets an undefined fraction.
         """
-        snow_tw, rain_tw = (float(v) for v in self._get_config_value(lambda: self.config.model.hype.wet_bulb_snow_range, default=[0.0, 2.0], dict_key='HYPE_WET_BULB_SNOW_RANGE'))
+        snow_tw, rain_tw = (float(v) for v in self._get_config_value(
+            lambda: self.config.model.hype.wet_bulb_snow_range,
+            dict_key='HYPE_WET_BULB_SNOW_RANGE',
+        ))
         if not rain_tw > snow_tw:
             raise ValidationError('HYPE_WET_BULB_SNOW_RANGE must be increasing')
         t = self._read_steps(files, 'air_temperature', ('k',)) - 273.15

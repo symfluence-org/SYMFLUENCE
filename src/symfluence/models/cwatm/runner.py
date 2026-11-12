@@ -29,7 +29,7 @@ class CWatMRunner(BaseModelRunner):
 
         install_path = self._get_config_value(
             lambda: self.config.model.cwatm.install_path,
-            default='default',
+            dict_key='CWATM_INSTALL_PATH',
         )
         data_dir = self._get_config_value(
             lambda: self.config.system.data_dir,
@@ -37,16 +37,13 @@ class CWatMRunner(BaseModelRunner):
         )
         self.cwatm_dir = resolve_install_dir(install_path, data_dir, 'installs/cwatm')
 
-        exe_name = self._get_config_value(
-            lambda: self.config.model.cwatm.exe,
-            default='run_cwatm.py',
-        )
+        exe_name = self._get_config_value(lambda: self.config.model.cwatm.exe, dict_key='CWATM_EXE')
         self.runner_script = self.cwatm_dir / exe_name
 
     def run(self, **kwargs) -> Optional[Path]:
         config_file = self._get_config_value(
             lambda: self.config.model.cwatm.config_file,
-            default='settings.ini',
+            dict_key='CWATM_CONFIG_FILE',
         )
         ini_path = self.settings_dir / config_file
         if not ini_path.exists():
@@ -57,10 +54,7 @@ class CWatMRunner(BaseModelRunner):
 
         cmd = [sys.executable, str(self.runner_script), str(ini_path), '-q']
 
-        timeout = self._get_config_value(
-            lambda: self.config.model.cwatm.timeout,
-            default=14400,
-        )
+        timeout = self._get_config_value(lambda: self.config.model.cwatm.timeout, dict_key='CWATM_TIMEOUT')
 
         log_dir = self.get_simulation_dir('CWATM', self._get_experiment_id()) / 'logs'
         log_dir.mkdir(parents=True, exist_ok=True)

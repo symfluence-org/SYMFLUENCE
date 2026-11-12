@@ -103,11 +103,15 @@ class PIHMWorker(BaseWorker):
                     shutil.copy2(src, input_dir / src.name)
 
             # Get executable
-            install_path = resolve_config_value(config, lambda: config.model.pihm.install_path, 'default', 'PIHM_INSTALL_PATH')
+            install_path = resolve_config_value(
+                config,
+                lambda: config.model.pihm.install_path,
+                dict_key='PIHM_INSTALL_PATH',
+            )
             data_dir = resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR')
             install_path = str(resolve_install_dir(install_path, data_dir, 'installs/pihm'))
 
-            exe_name = resolve_config_value(config, lambda: config.model.pihm.exe, 'flux-pihm', 'PIHM_EXE')
+            exe_name = resolve_config_value(config, lambda: config.model.pihm.exe, dict_key='PIHM_EXE')
             # Search order: bin/<exe>, <exe>, bin/pihm, pihm
             pihm_exe = None
             for candidate in [
@@ -141,7 +145,7 @@ class PIHMWorker(BaseWorker):
             if epc_src.is_dir() and not epc_dst.exists():
                 shutil.copytree(epc_src, epc_dst)
 
-            timeout = int(resolve_config_value(config, lambda: config.model.pihm.timeout, 3600, 'PIHM_TIMEOUT'))
+            timeout = int(resolve_config_value(config, lambda: config.model.pihm.timeout, dict_key='PIHM_TIMEOUT'))
 
             # Run PIHM: pihm -o <project_name> <project_name>
             # PIHM internally prepends "output/" to the -o argument
@@ -200,7 +204,11 @@ class PIHMWorker(BaseWorker):
 
             river_flux = extractor.extract_variable(
                 pihm_output, 'river_flux',
-                outlet_segment=int(resolve_config_value(config, lambda: config.model.pihm.outlet_segment, 1, 'PIHM_OUTLET_SEGMENT')),
+                outlet_segment=int(resolve_config_value(
+                    config,
+                    lambda: config.model.pihm.outlet_segment,
+                    dict_key='PIHM_OUTLET_SEGMENT',
+                )),
             )
 
             if river_flux.empty:

@@ -75,7 +75,6 @@ class CoupledGWModelOptimizer(BaseModelOptimizer):
         if self.land_model_name == 'SUMMA':
             summa_fm = self._get_config_value(
                 lambda: self.config.model.summa.filemanager,
-                default='fileManager.txt',
                 dict_key='SETTINGS_SUMMA_FILEMANAGER',
             )
             if summa_fm == 'default':
@@ -210,7 +209,6 @@ class CoupledGWModelOptimizer(BaseModelOptimizer):
             if self.land_model_name == 'SUMMA':
                 fm_name = self._get_config_value(
                     lambda: self.config.model.summa.filemanager,
-                    default='fileManager.txt',
                     dict_key='SETTINGS_SUMMA_FILEMANAGER',
                 )
                 if fm_name == 'default':

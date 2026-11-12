@@ -92,7 +92,11 @@ class CRHMWorker(BaseWorker):
                 return False
 
             # Find project file
-            prj_file_name = resolve_config_value(config, lambda: config.model.crhm.project_file, 'model.prj', 'CRHM_PROJECT_FILE')
+            prj_file_name = resolve_config_value(
+                config,
+                lambda: config.model.crhm.project_file,
+                dict_key='CRHM_PROJECT_FILE',
+            )
             prj_file = settings_dir / prj_file_name
             if not prj_file.exists():
                 # Try to find any .prj file
@@ -225,7 +229,11 @@ class CRHMWorker(BaseWorker):
                 return False
 
             # Get project file
-            prj_file_name = resolve_config_value(config, lambda: config.model.crhm.project_file, 'model.prj', 'CRHM_PROJECT_FILE')
+            prj_file_name = resolve_config_value(
+                config,
+                lambda: config.model.crhm.project_file,
+                dict_key='CRHM_PROJECT_FILE',
+            )
             prj_file = settings_dir / prj_file_name
             if not prj_file.exists():
                 prj_files = list(settings_dir.glob('*.prj'))
@@ -296,8 +304,12 @@ class CRHMWorker(BaseWorker):
 
     def _get_crhm_executable(self, config: Dict[str, Any], data_dir: Path) -> Path:
         """Get CRHM executable path."""
-        install_path = resolve_config_value(config, lambda: config.model.crhm.install_path, 'default', 'CRHM_INSTALL_PATH')
-        exe_name = resolve_config_value(config, lambda: config.model.crhm.exe, 'crhm', 'CRHM_EXE')
+        install_path = resolve_config_value(
+            config,
+            lambda: config.model.crhm.install_path,
+            dict_key='CRHM_INSTALL_PATH',
+        )
+        exe_name = resolve_config_value(config, lambda: config.model.crhm.exe, dict_key='CRHM_EXE')
 
         exe = resolve_install_executable(install_path, data_dir, 'installs/crhm/bin', exe_name)
         # Windows builds produce <name>.exe even when the config declares a bare

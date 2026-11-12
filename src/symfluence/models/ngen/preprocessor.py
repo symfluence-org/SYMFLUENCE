@@ -72,7 +72,7 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # NGen-specific configuration (typed config)
         self.hru_id_col = self._get_config_value(
             lambda: self.config.paths.catchment_hruid,
-            default='HRU_ID'
+            dict_key='CATCHMENT_SHP_HRUID',
         )
 
         self._ngen_lib_paths = self._resolve_ngen_lib_paths()
@@ -90,7 +90,7 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # in the selection AND the .so/.dylib exists on disk.
         modules_selected_str = self._get_config_value(
             lambda: self.config.model.ngen.modules_selected,
-            default='SLOTH,PET,CFE',
+            dict_key='NGEN_MODULES_SELECTED',
         )
         _alias_map = {'SAC-SMA': 'SACSMA', 'SNOW-17': 'SNOW17', 'NOAH-OWP': 'NOAH'}
         _selected = set()
@@ -213,7 +213,7 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         lib_ext = ".dylib" if sys.platform == "darwin" else ".so"
         install_path = self._get_config_value(
             lambda: self.config.model.ngen.install_path,
-            default='default'
+            dict_key='NGEN_INSTALL_PATH',
         )
 
         # Module library names (shared across all resolution strategies)
@@ -448,11 +448,11 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         river_gdf = gpd.read_file(river_network_file)
         seg_id_col = self._get_config_value(
             lambda: self.config.paths.river_network_segid,
-            default='LINKNO'
+            dict_key='RIVER_NETWORK_SHP_SEGID',
         )
         downstream_col = self._get_config_value(
             lambda: self.config.paths.river_network_downsegid,
-            default='DSLINKNO'
+            dict_key='RIVER_NETWORK_SHP_DOWNSEGID',
         )
 
         nexus_features = []
@@ -709,12 +709,9 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # Validate temporal completeness before any transformation
         strategy = self._get_config_value(
             lambda: self.config.forcing.missing_data_strategy,
-            default='error'
+            dict_key='FORCING_MISSING_DATA_STRATEGY',
         )
-        max_gap = self._get_config_value(
-            lambda: self.config.forcing.max_gap_hours,
-            default=24
-        )
+        max_gap = self._get_config_value(lambda: self.config.forcing.max_gap_hours, dict_key='FORCING_MAX_GAP_HOURS')
         forcing_data, gap_report = fdp.validate_temporal_completeness(
             forcing_data,
             strategy=strategy,
@@ -1106,10 +1103,7 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         config_gen.generate_realization_config(forcing_file, self.project_dir, lib_paths=self._ngen_lib_paths)
 
         # Generate t-route config if routing is enabled
-        run_troute = self._get_config_value(
-            lambda: self.config.model.ngen.run_troute,
-            default=True
-        )
+        run_troute = self._get_config_value(lambda: self.config.model.ngen.run_troute, dict_key='NGEN_RUN_TROUTE')
         if run_troute:
             self._generate_troute_config(nexus_file)
 
@@ -1252,16 +1246,20 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             return None
 
         seg_id_col = self._get_config_value(
-            lambda: self.config.paths.river_network_segid, default='LINKNO'
+            lambda: self.config.paths.river_network_segid,
+            dict_key='RIVER_NETWORK_SHP_SEGID',
         )
         downstream_col = self._get_config_value(
-            lambda: self.config.paths.river_network_downsegid, default='DSLINKNO'
+            lambda: self.config.paths.river_network_downsegid,
+            dict_key='RIVER_NETWORK_SHP_DOWNSEGID',
         )
         length_col = self._get_config_value(
-            lambda: self.config.paths.river_network_length, default='Length'
+            lambda: self.config.paths.river_network_length,
+            dict_key='RIVER_NETWORK_SHP_LENGTH',
         )
         slope_col = self._get_config_value(
-            lambda: self.config.paths.river_network_slope, default='Slope'
+            lambda: self.config.paths.river_network_slope,
+            dict_key='RIVER_NETWORK_SHP_SLOPE',
         )
 
         # Get drainage area column (try common names)
@@ -1424,7 +1422,8 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
     def get_river_network_path(self) -> Path:
         """Get path to river network shapefile."""
         river_path = self._get_config_value(
-            lambda: self.config.paths.river_network_path, default='default'
+            lambda: self.config.paths.river_network_path,
+            dict_key='RIVER_NETWORK_SHP_PATH',
         )
         if river_path == 'default':
             river_path = self.project_dir / 'shapefiles' / 'river_network'
@@ -1432,7 +1431,8 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             river_path = Path(river_path)
 
         river_name = self._get_config_value(
-            lambda: self.config.paths.river_network_name, default='default'
+            lambda: self.config.paths.river_network_name,
+            dict_key='RIVER_NETWORK_SHP_NAME',
         )
         if river_name == 'default':
             domain_method = self.domain_definition_method

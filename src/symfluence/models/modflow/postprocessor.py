@@ -72,7 +72,6 @@ class MODFLOWPostProcessor(StandardModelPostProcessor):
 
             sp_length = self._get_config_value(
                 lambda: self.config.model.modflow.stress_period_length,
-                default=1.0,
                 dict_key='MODFLOW_STRESS_PERIOD_LENGTH',
             )
 

@@ -174,7 +174,8 @@ class MizuRouteRemapGenerator:
         """
         self.pp.logger.info("Remapping SUMMA catchments to routing catchments")
         routing_delineation = self.pp._get_config_value(
-            lambda: self.pp.config.domain.delineation.routing, default='lumped'
+            lambda: self.pp.config.domain.delineation.routing,
+            dict_key='ROUTING_DELINEATION',
         )
         if self.pp.domain_definition_method == 'lumped' and routing_delineation == 'river_network':
             self.pp.logger.info("Area-weighted mapping for SUMMA catchments to routing catchments")
@@ -182,23 +183,29 @@ class MizuRouteRemapGenerator:
             return
 
         hm_path_cfg = self.pp._get_config_value(
-            lambda: self.pp.config.paths.catchment_path, default='default'
+            lambda: self.pp.config.paths.catchment_path,
+            dict_key='CATCHMENT_PATH',
         )
         hm_name_cfg = self.pp._get_config_value(
-            lambda: self.pp.config.paths.catchment_name, default='default'
+            lambda: self.pp.config.paths.catchment_name,
+            dict_key='CATCHMENT_SHP_NAME',
         )
         rm_path_cfg = self.pp._get_config_value(
-            lambda: self.pp.config.paths.river_basins_path, default='default'
+            lambda: self.pp.config.paths.river_basins_path,
+            dict_key='RIVER_BASINS_PATH',
         )
         rm_name_cfg = self.pp._get_config_value(
-            lambda: self.pp.config.paths.river_basins_name, default='default'
+            lambda: self.pp.config.paths.river_basins_name,
+            dict_key='RIVER_BASINS_NAME',
         )
 
         intersect_path_value = self.pp._get_config_value(
-            lambda: self.pp.config.paths.intersect_routing_path, default='default'
+            lambda: self.pp.config.paths.intersect_routing_path,
+            dict_key='INTERSECT_ROUTING_PATH',
         )
         intersect_name = self.pp._get_config_value(
-            lambda: self.pp.config.paths.intersect_routing_name, default='default'
+            lambda: self.pp.config.paths.intersect_routing_name,
+            dict_key='INTERSECT_ROUTING_NAME',
         )
         if intersect_name == 'default':
             intersect_name = 'catchment_with_routing_basins.shp'

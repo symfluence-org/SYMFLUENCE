@@ -40,8 +40,7 @@ class NgenStreamflowTarget(StreamflowEvaluator):
         # Get configurable timestep (default 3600s = 1 hour)
         self._timestep_seconds = self._get_config_value(
             lambda: self.config.forcing.time_step_size,
-            default=3600,
-            dict_key='FORCING_TIME_STEP_SIZE'
+            dict_key='FORCING_TIME_STEP_SIZE',
         )
         # Get warm-up period in days (default 30 days for model spin-up)
         self._warmup_days = self._get_config_value(
@@ -354,7 +353,10 @@ class NgenStreamflowTarget(StreamflowEvaluator):
                 nexus_id = nexus_file.stem.replace('_output', '')
 
                 # Check config to skip conversion - this is the recommended explicit approach
-                is_flow_already = self._get_config_value(lambda: self.config.model.ngen.csv_output_is_flow, default=False)
+                is_flow_already = self._get_config_value(
+                    lambda: self.config.model.ngen.csv_output_is_flow,
+                    dict_key='NGEN_CSV_OUTPUT_IS_FLOW',
+                )
 
                 if is_flow_already:
                     # Explicit config: trust user setting, no conversion needed
