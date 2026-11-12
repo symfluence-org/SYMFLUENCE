@@ -22,6 +22,7 @@ from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 
+from symfluence.core.exceptions import ConfigurationError
 from symfluence.core.modeling.base import ModelResultExtractor
 
 
@@ -183,9 +184,12 @@ class WRFHydroResultExtractor(ModelResultExtractor):
                 f"No WRF-Hydro output files found in {output_dir}"
             )
 
-        return self._extract_ldasout_streamflow(
-            ldasout_files, catchment_area or 2210.0
-        )
+        if not catchment_area:
+            raise ConfigurationError(
+                "WRF-Hydro wrote no CHRTOUT files; deriving streamflow from LDASOUT "
+                "runoff needs catchment_area (km2)"
+            )
+        return self._extract_ldasout_streamflow(ldasout_files, catchment_area)
 
     def _extract_chrtout_streamflow(self, files: list) -> pd.Series:
         """Extract streamflow from CHRTOUT files."""

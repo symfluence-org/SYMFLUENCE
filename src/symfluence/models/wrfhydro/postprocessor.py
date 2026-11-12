@@ -152,12 +152,18 @@ class WRFHydroPostProcessor(StandardModelPostProcessor):
         """
         import netCDF4
 
-        catchment_area_km2 = self._get_config_value(
-            lambda: None,
-            default=2210.0,
-            dict_key='CATCHMENT_AREA_KM2'
+        from symfluence.core.metrics.streamflow_metrics import require_catchment_area_km2
+        catchment_area_km2 = require_catchment_area_km2(
+            self.config_dict, self.project_dir, self.domain_name,
+            configured_km2=self._get_config_value(
+                lambda: None, default=None, dict_key='CATCHMENT_AREA_KM2',
+            ) or self._get_config_value(
+                lambda: self.config.domain.catchment_area,
+                default=None,
+                dict_key='CATCHMENT_AREA',
+            ),
         )
-        area_m2 = float(catchment_area_km2) * 1e6
+        area_m2 = catchment_area_km2 * 1e6
 
         timestamps = []
         accum_values = []
