@@ -223,8 +223,7 @@ def test_prms_statvar_respects_counts_and_units(tmp_path):
                   "2 2000 1 2 0 0 0 1 2 3 0.1 200\n")
     q = read_statvar_streamflow(sv)
     assert q.tolist() == pytest.approx([100 * CFS_TO_CMS, 200 * CFS_TO_CMS])
-    worker = SimpleNamespace(logger=LOG)
-    assert PRMSWorker._extract_streamflow_from_statvar(worker, sv).tolist() == q.tolist()
+    assert PRMSWorker().read_simulated_streamflow(tmp_path, {}).tolist() == q.tolist()
     assert read_statvar_streamflow(sv, preferred=("seg_outflow",), element=2).iloc[0] == \
         pytest.approx(2 * CFS_TO_CMS)
 

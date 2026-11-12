@@ -17,15 +17,13 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 import pandas as pd
-import xarray as xr
 
 from symfluence.core.calibration.workers.base_worker import (
     MACOS_MALLOC_QUIET_ENV,
-    BaseWorker,
     run_worker_task,
 )
-from symfluence.core.exceptions import ConfigurationError
-from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.calibration.workers.streamflow_worker import StreamflowWorker
+from symfluence.core.exceptions import ConfigurationError, ModelExecutionError
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
@@ -40,7 +38,7 @@ _RESTART_KEYS = (r'mhm_file_RestartOut\(1\)', r'mrm_file_RestartOut\(1\)')
 
 
 @R.workers.add('MHM')
-class MHMWorker(BaseWorker):
+class MHMWorker(StreamflowWorker):
     """
     Worker for mHM model calibration.
 
@@ -63,8 +61,6 @@ class MHMWorker(BaseWorker):
         super().__init__(config, logger)
 
     # Shared utilities
-    _streamflow_metrics = StreamflowMetrics()
-
     def apply_parameters(
         self,
         params: Dict[str, float],
@@ -495,129 +491,44 @@ class MHMWorker(BaseWorker):
                 except (OSError, IOError):
                     pass
 
-    def calculate_metrics(
+    def read_simulated_streamflow(
         self,
         output_dir: Path,
         config: Dict[str, Any],
         **kwargs
-    ) -> Dict[str, Any]:
-        """
-        Calculate metrics from mHM output.
+    ) -> Optional[pd.Series]:
+        """Simulated discharge (m3/s) from this trial's mHM discharge file."""
+        from ..extractor import read_mhm_discharge
 
-        Args:
-            output_dir: Directory containing model outputs
-            config: Configuration dictionary
-            **kwargs: Additional arguments
+        sim_dir = Path(kwargs.get('sim_dir', output_dir))
+        settings_dir = kwargs.get('settings_dir')
 
-        Returns:
-            Dictionary of metric names to values
-        """
-        try:
-            sim_dir = Path(kwargs.get('sim_dir', output_dir))
-            settings_dir = kwargs.get('settings_dir', None)
+        # The mHM namelist may point its output at the settings directory.
+        search_dirs = [sim_dir]
+        if settings_dir:
+            search_dirs += [Path(settings_dir) / 'output', Path(settings_dir)]
+        search_dirs.append(self._project_location(config)[0] / 'settings' / 'MHM' / 'output')
 
-            # Find discharge output file - search multiple locations
-            output_files = list(sim_dir.glob('discharge*.nc'))
+        output_files: list = []
+        for directory in search_dirs:
+            output_files = list(directory.glob('discharge*.nc'))
+            if output_files:
+                break
+        if not output_files:
+            output_files = list(sim_dir.glob('*.nc'))
+        if not output_files:
+            raise ModelExecutionError(f"No mHM discharge files found in {sim_dir}")
 
-            if not output_files and settings_dir:
-                for subdir in [Path(settings_dir) / 'output', Path(settings_dir)]:
-                    output_files = list(subdir.glob('discharge*.nc'))
-                    if output_files:
-                        break
+        sim_series = read_mhm_discharge(output_files[0])
 
-            if not output_files:
-                # mHM namelist may point to settings/MHM/output directory
-                domain_name = config.get('DOMAIN_NAME', '')
-                data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
-                mhm_input_output = data_dir / f'domain_{domain_name}' / 'settings' / 'MHM' / 'output'
-                if mhm_input_output.exists():
-                    output_files = list(mhm_input_output.glob('discharge*.nc'))
-
-            if not output_files:
-                output_files = list(sim_dir.glob('*.nc'))
-
-            if not output_files:
-                self.logger.error(f"No mHM discharge files found in {sim_dir}")
-                return {'kge': self.penalty_score, 'error': 'No output files'}
-
-            sim_file = output_files[0]
-
-            # Extract discharge
-            ds = xr.open_dataset(sim_file)
-
-            # Find discharge variable (mHM v5.13+ uses Qsim_NNNNNNNNNN format)
-            discharge = None
-            for var in ['Qsim', 'Q', 'discharge', 'Qrouted']:
-                if var in ds:
-                    discharge = ds[var]
-                    break
-
-            if discharge is None:
-                # Check for gauge-indexed variables like Qsim_0000000001
-                qsim_vars = [v for v in ds.data_vars if v.startswith('Qsim')]
-                if qsim_vars:
-                    discharge = ds[qsim_vars[0]]
-
-            if discharge is None:
-                ds.close()
-                return {'kge': self.penalty_score, 'error': 'No discharge variable'}
-
-            # Handle spatial dimensions (take first gauge)
-            spatial_dims = [d for d in discharge.dims if d not in ['time']]
-            if spatial_dims:
-                discharge = discharge.isel({spatial_dims[0]: 0})
-
-            # mHM discharge is already in m3/s
-            times = pd.to_datetime(ds['time'].values)
-            streamflow_m3s = discharge.values.flatten()
-            ds.close()
-
-            sim_series = pd.Series(streamflow_m3s, index=times)
-
-            # Skip warmup period (worker-level).
-            # NOTE: mHM handles warmup internally via warming_Days in the
-            # namelist, so output already excludes the warmup period.
-            # MHM_WORKER_WARMUP_DAYS allows an optional extra skip if needed.
-            warmup_days = int(config.get('MHM_WORKER_WARMUP_DAYS', 0))
-            if warmup_days > 0 and len(sim_series) > warmup_days:
-                sim_series = sim_series.iloc[warmup_days:]
-                self.logger.debug(f"Skipped {warmup_days} warmup days for metric calculation")
-
-            # Load observations
-            domain_name = config.get('DOMAIN_NAME')
-            data_dir = Path(config.get('SYMFLUENCE_DATA_DIR', '.'))
-            project_dir = data_dir / f'domain_{domain_name}'
-
-            obs_values, obs_index = self._streamflow_metrics.load_observations(
-                config, project_dir, domain_name, resample_freq='D'
-            )
-            if obs_values is None:
-                return {'kge': self.penalty_score, 'error': 'No observations'}
-
-            obs_series = pd.Series(obs_values, index=obs_index)
-
-            # Parse calibration period from config
-            cal_period_str = config.get('CALIBRATION_PERIOD', '')
-            cal_period_tuple = None
-            if cal_period_str and ',' in str(cal_period_str):
-                parts = str(cal_period_str).split(',')
-                cal_period_tuple = (parts[0].strip(), parts[1].strip())
-
-            # Align and calculate metrics
-            obs_aligned, sim_aligned = self._streamflow_metrics.align_timeseries(
-                sim_series, obs_series, calibration_period=cal_period_tuple
-            )
-
-            results = self._streamflow_metrics.calculate_metrics(
-                obs_aligned, sim_aligned, metrics=self._requested_metrics(config)
-            )
-            return results
-
-        except Exception as e:  # noqa: BLE001 — calibration resilience
-            self.logger.error(f"Error calculating mHM metrics: {e}", exc_info=True)
-            import traceback
-            self.logger.debug(traceback.format_exc())
-            return {'kge': self.penalty_score, 'error': str(e)}
+        # mHM handles warmup internally via warming_Days in the namelist, so
+        # output already excludes the warmup period. MHM_WORKER_WARMUP_DAYS
+        # allows an optional extra skip if needed.
+        warmup_days = int(config.get('MHM_WORKER_WARMUP_DAYS', 0))
+        if warmup_days > 0 and len(sim_series) > warmup_days:
+            sim_series = sim_series.iloc[warmup_days:]
+            self.logger.debug(f"Skipped {warmup_days} warmup days for metric calculation")
+        return sim_series
 
     @staticmethod
     def evaluate_worker_function(task_data: Dict[str, Any]) -> Dict[str, Any]:
