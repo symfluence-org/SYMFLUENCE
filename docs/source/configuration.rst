@@ -412,6 +412,8 @@ Air temperature is not changed here; model preprocessors apply
 
 Notes:
 
+- The section can be written at the top level (as above, in nested or flat
+  configs) or as ``forcing: lapse:`` in a nested config.
 - The active settings are part of the remapping cache identity, so changing
   them regenerates the basin-averaged forcing (and the remapping weights)
   instead of reusing files written under other settings. The basin-averaged
