@@ -137,4 +137,5 @@ def chain_settings(cfg, time_start: str, time_end: str, num_procs: int) -> Chain
                          max_cycles=cfg.basin_max_spinup_cycles,
                          initial_state=_path(initial, Path()) if initial else None, P=max(1, num_procs), Q=1,
                          forcing_unit_variable=cfg.basin_forcing_unit_variable,
-                         forcing_names=dict(cfg.basin_forcing_variables or {}))
+                         forcing_names=dict(cfg.basin_forcing_variables or {}),
+                         segv_retries=cfg.segv_retries)

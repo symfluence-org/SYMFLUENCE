@@ -6181,6 +6181,12 @@ CLMPARFLOW_PARAMS_TO_CALIBRATE: "K_SAT,POROSITY,VG_ALPHA,VG_N,S_RES,MANNINGS_N,S
 #   Source:      CLMParFlowConfig (model_configs.py)
 CLMPARFLOW_TIMEOUT: 7200
 
+# CLMPARFLOW_SEGV_RETRIES — Reruns of a ParFlow-CLM run that ended in a segmentation fault (0 = no retry)
+#   Type:        int
+#   Default:     2
+#   Source:      CLMParFlowConfig (model_configs.py)
+CLMPARFLOW_SEGV_RETRIES: 2
+
 
 # 9.8. PIHM Model Configuration
 # ================================================================================
