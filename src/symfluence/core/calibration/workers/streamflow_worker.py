@@ -19,6 +19,7 @@ from abc import abstractmethod
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 
 from symfluence.core.exceptions import ModelExecutionError
@@ -149,7 +150,8 @@ class StreamflowWorker(BaseWorker):
                 calibration_period=split_period(period, allow_extra=True),
             )
             results: Dict[str, Any] = self._streamflow_metrics.calculate_metrics(
-                obs_aligned.values, sim_aligned.values, metrics=self._requested_metrics(config)
+                np.asarray(obs_aligned.values), np.asarray(sim_aligned.values),
+                metrics=self._requested_metrics(config)
             )
             results.update(self.additional_metrics(
                 output_dir, config, project_dir=project_dir,

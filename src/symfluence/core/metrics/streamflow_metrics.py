@@ -512,7 +512,7 @@ class StreamflowMetrics:
     ) -> Tuple[np.ndarray, np.ndarray]:
         """:meth:`align_series` as ``(obs, sim)`` numpy arrays."""
         obs_clean, sim_clean = self.align_series(sim, obs, calibration_period, min_overlap)
-        return obs_clean.values, sim_clean.values
+        return np.asarray(obs_clean.values), np.asarray(sim_clean.values)
 
     def align_series(
         self,
