@@ -385,12 +385,7 @@ class ModelComparisonDataLoadingMixin:
                 if "QRUNOFF" not in ds:
                     return None
                 qrunoff = ds["QRUNOFF"].values.squeeze()
-                area_m2 = float(
-                    self._get_config_value(
-                        lambda: self.config.domain.catchment_area,
-                        default=2210.0,
-                    )
-                ) * 1e6
+                area_m2 = self._require_basin_area_m2()
                 streamflow = qrunoff * area_m2 / 1000.0
                 time_idx = pd.DatetimeIndex(ds.time.values)
                 return pd.DataFrame({"CLM_discharge_cms": streamflow}, index=time_idx)
@@ -555,10 +550,7 @@ class ModelComparisonDataLoadingMixin:
                     )
                     if "QRUNOFF" in ds:
                         qrunoff = ds["QRUNOFF"].values.squeeze()
-                        area = basin_area_m2 or (
-                            float(self._get_config_value(lambda: self.config.domain.catchment_area, default=2210.0))
-                            * 1e6
-                        )
+                        area = basin_area_m2 or self._require_basin_area_m2()
                         streamflow = qrunoff * area / 1000.0
                         time_idx = pd.DatetimeIndex(ds.time.values)
                         results_df = pd.DataFrame(index=time_idx)
@@ -606,6 +598,14 @@ class ModelComparisonDataLoadingMixin:
         except (ImportError, AttributeError, IndexError) as e:
             self.logger.warning(f"Error loading observations: {e}")
             return None
+
+    def _require_basin_area_m2(self) -> float:
+        """Basin area (m2) from CATCHMENT_AREA or the domain shapefiles; raises ValueError if neither."""
+        from symfluence.core.metrics.streamflow_metrics import require_catchment_area_km2
+        return require_catchment_area_km2(
+            self.config_dict, self.project_dir, self.domain_name,
+            configured_km2=self._get_config_value(lambda: self.config.domain.catchment_area, default=None),
+        ) * 1e6
 
     def _get_basin_area_m2(self) -> Optional[float]:
         try:

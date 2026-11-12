@@ -194,11 +194,15 @@ class MODFLOWPlotter(BasePlotter):
             default='2000-01-01',
             dict_key='EXPERIMENT_TIME_START',
         ))
-        area_km2 = float(self._get_config_value(
-            lambda: self.config.domain.catchment_area,
-            default=2210.0,
-            dict_key='CATCHMENT_AREA',
-        ))
+        from symfluence.core.metrics.streamflow_metrics import require_catchment_area_km2
+        area_km2 = require_catchment_area_km2(
+            self.config_dict, self.project_dir, self.domain_name,
+            configured_km2=self._get_config_value(
+                lambda: self.config.domain.catchment_area,
+                default=None,
+                dict_key='CATCHMENT_AREA',
+            ),
+        )
         area_m2 = area_km2 * 1e6
 
         top = float(self._get_config_value(
@@ -209,10 +213,12 @@ class MODFLOWPlotter(BasePlotter):
             lambda: self.config.model.modflow.bot, default=1400.0,
             dict_key='MODFLOW_BOT',
         ))
-        drain_elev = float(self._get_config_value(
-            lambda: self.config.model.modflow.drain_elevation, default=1450.0,
+        # Unset means mid-aquifer, as in the preprocessor's DRN package.
+        drain_elev = self._get_config_value(
+            lambda: self.config.model.modflow.drain_elevation, default=None,
             dict_key='MODFLOW_DRAIN_ELEVATION',
-        ))
+        )
+        drain_elev = (top + bot) / 2.0 if drain_elev is None else float(drain_elev)
         sy = float(self._get_config_value(
             lambda: self.config.model.modflow.sy, default=0.15,
             dict_key='MODFLOW_SY',
