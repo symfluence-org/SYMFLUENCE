@@ -4941,6 +4941,13 @@ SETTINGS_SUMMA_SOILPROFILE: "FA"
 #   Description: Initial matric head for SUMMA cold state initialization
 SUMMA_INIT_MATRIC_HEAD: -1.0
 
+# SUMMA_REPAIR_INITIAL_STATE
+#   Type:        bool
+#   Default:     False
+#   Source:      SUMMAConfig (model_configs.py)
+#   Description: Before each run, thicken initial-state snow layers above SUMMA's 0.80 water fraction limit (mass kept)
+SUMMA_REPAIR_INITIAL_STATE: false
+
 
 # 8. FUSE Model Configuration
 # ================================================================================

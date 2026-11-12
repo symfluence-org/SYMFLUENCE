@@ -267,6 +267,24 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
         src = state.files[0]
         shutil.copy2(str(src), str(dst))
         self.logger.info("Loaded SUMMA state: %s -> %s", src, dst)
+        # A restart SUMMA wrote may hold a thin snow layer SUMMA refuses to
+        # start from; the copy is ours, so always repair it.
+        self._repair_initial_state(dst)
+
+    def _initial_state_path(self) -> Path:
+        """The initial-condition file SUMMA will read (named by the file manager)."""
+        from .calibration.parameter_files import resolve_settings_file_names
+
+        return self.settings_path / resolve_settings_file_names(self.config, self.settings_path).coldstate
+
+    def _repair_initial_state(self, path: Path) -> None:
+        """Thicken snow layers SUMMA's check_icond would refuse (mass-conserving)."""
+        from .restart_repair import repair_snow_restart
+
+        if not path.exists():
+            return
+        for note in repair_snow_restart(path):
+            self.logger.warning("Repaired SUMMA initial state %s: %s", path.name, note)
 
     # =========================================================================
     # SUMMA-Specific Methods
@@ -282,6 +300,11 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
         Delegates to appropriate execution method based on configuration.
         """
         self._unmonitored_slurm_job_id: Optional[str] = None
+
+        if self._get_config_value(
+            lambda: self.config.model.summa.repair_initial_state, default=False
+        ):
+            self._repair_initial_state(self._initial_state_path())
 
         # Check for point mode
         if self.domain_definition_method == 'point':

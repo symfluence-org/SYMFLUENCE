@@ -126,6 +126,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   layering guard forbids handler-module imports from outside `data/`.
 
 ### Fixed
+- **SUMMA restarts SUMMA refuses**: SUMMA can write a restart whose thin top snow layer has a total water
+  fraction (`liq + ice * 917/1000`) or ice fraction above 0.80, and then stops in `check_icond` when the
+  file is read back. `models/summa/restart_repair.py` thickens such layers to 0.79 keeping water, ice and
+  enthalpy, and rebuilds the interface/mid-point heights and snow depth. States loaded through
+  `SummaRunner.load_state` are always repaired; `SUMMA_REPAIR_INITIAL_STATE: true` also repairs the
+  file manager's `initConditionFile` before each run (off by default). Valid files are never rewritten.
 - **Wflow parallel calibration**: the Wflow worker now provides `evaluate_worker_function`; previously
   every parallel or async Wflow DDS run failed with "Subclasses must implement" and calibration ran
   serially. Final streamflow scoring of distributed Wflow reads the native outlet `output.csv` instead of
