@@ -53,13 +53,11 @@ class OptimizationAlgorithm(ConfigMixin, ABC):
         # Common algorithm parameters - use _get_config_value for typed access
         self.max_iterations = self._get_config_value(
             lambda: self.config.optimization.iterations,
-            default=100,
-            dict_key='NUMBER_OF_ITERATIONS'
+            dict_key='NUMBER_OF_ITERATIONS',
         )
         self.population_size = self._get_config_value(
             lambda: self.config.optimization.population_size,
-            default=30,
-            dict_key='POPULATION_SIZE'
+            dict_key='POPULATION_SIZE',
         )
         self.target_metric = self._get_config_value(
             lambda: self.config.optimization.metric,

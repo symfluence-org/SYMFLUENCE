@@ -172,7 +172,10 @@ class GRStreamflowTarget(StreamflowEvaluator):
             ValueError: If configured variable not found in file
         """
         with xr.open_dataset(sim_file) as ds:
-            routing_var = self._get_config_value(lambda: self.config.model.mizuroute.routing_var, default='q_routed')
+            routing_var = self._get_config_value(
+                lambda: self.config.model.mizuroute.routing_var,
+                dict_key='SETTINGS_MIZU_ROUTING_VAR',
+            )
             if routing_var in ('default', None, ''):
                 routing_var = 'q_routed'
 

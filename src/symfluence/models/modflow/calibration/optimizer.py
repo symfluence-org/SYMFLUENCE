@@ -169,7 +169,6 @@ class CoupledGWModelOptimizer(BaseModelOptimizer):
 
         algorithm = self._get_config_value(
             lambda: self.config.optimization.algorithm,
-            default='optimization',
             dict_key='ITERATIVE_OPTIMIZATION_ALGORITHM',
         ).lower()
 

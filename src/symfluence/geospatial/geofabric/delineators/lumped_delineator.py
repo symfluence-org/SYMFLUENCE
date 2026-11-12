@@ -1028,7 +1028,10 @@ class LumpedWatershedDelineator(BaseGeofabricDelineator):
 
             self.logger.debug(f"Updated watershed shapefile at: {watershed_shp_path}")
 
-            if self._get_config_value(lambda: self.config.domain.delineation.cleanup_intermediate_files, default=True, dict_key='CLEANUP_INTERMEDIATE_FILES'):
+            if self._get_config_value(
+                lambda: self.config.domain.delineation.cleanup_intermediate_files,
+                dict_key='CLEANUP_INTERMEDIATE_FILES',
+            ):
                 shutil.rmtree(self.interim_dir, ignore_errors=True)
                 self.logger.debug(f"Cleaned up intermediate files: {self.interim_dir}")
 

@@ -87,7 +87,10 @@ class FUSEPlotter(BasePlotter):
 
                         basin_path = self.project_dir / 'shapefiles' / 'river_basins' / basin_name
                         if not basin_path.exists():
-                            basin_path = Path(self._get_config_value(lambda: self.config.paths.river_basins_path, default='', dict_key='RIVER_BASINS_PATH'))
+                            basin_path = Path(self._get_config_value(
+                                lambda: self.config.paths.river_basins_path,
+                                dict_key='RIVER_BASINS_PATH',
+                            ))
 
                         if basin_path.exists():
                             basin_gdf = gpd.read_file(basin_path)

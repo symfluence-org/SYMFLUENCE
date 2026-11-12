@@ -78,7 +78,10 @@ class HYPEModelOptimizer(BaseModelOptimizer):
 
     def _setup_parallel_dirs(self) -> None:
         """Setup HYPE-specific parallel directories."""
-        algorithm = self._get_config_value(lambda: self.config.optimization.algorithm, default='optimization', dict_key='ITERATIVE_OPTIMIZATION_ALGORITHM').lower()
+        algorithm = self._get_config_value(
+            lambda: self.config.optimization.algorithm,
+            dict_key='ITERATIVE_OPTIMIZATION_ALGORITHM',
+        ).lower()
         base_dir = self._resolve_sim_base_dir(algorithm)
         self.parallel_dirs = self.setup_parallel_processing(
             base_dir.absolute(),

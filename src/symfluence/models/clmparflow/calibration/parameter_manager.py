@@ -152,8 +152,7 @@ class CLMParFlowParameterManager(BaseParameterManager):
         # Parse parameters to calibrate from config
         pf_params_str = self._get_config_value(
             lambda: self.config.model.clmparflow.params_to_calibrate,
-            default='K_SAT,POROSITY,VG_ALPHA,VG_N,S_RES,MANNINGS_N',
-            dict_key='CLMPARFLOW_PARAMS_TO_CALIBRATE'
+            dict_key='CLMPARFLOW_PARAMS_TO_CALIBRATE',
         )
         self.pf_params = [p.strip() for p in str(pf_params_str).split(',') if p.strip()]
 

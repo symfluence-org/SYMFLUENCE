@@ -124,7 +124,11 @@ class HYPEWorker(BaseWorker):
         # Honor the explicitly configured install path (as runner.py does).
         # Without this the worker ignores HYPE_INSTALL_PATH and falls through to
         # the bare exe name -> FileNotFoundError -> 100% calibration crashes.
-        install_path = resolve_config_value(cfg, lambda: self.config.model.hype.install_path, '', 'HYPE_INSTALL_PATH')
+        install_path = resolve_config_value(
+            cfg,
+            lambda: self.config.model.hype.install_path,
+            dict_key='HYPE_INSTALL_PATH',
+        )
         if install_path and install_path != 'default':
             ip = Path(install_path)
             for candidate in (ip / exe_name, ip):

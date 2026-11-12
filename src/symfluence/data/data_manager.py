@@ -431,8 +431,7 @@ class DataManager(BaseManager):
         plugin loop (tier 2) so it is not extracted twice — the backend is
         canonical. climaclass and any other plugins still run.
         """
-        data_access = str(self._get_config_value(
-            lambda: self.config.domain.data_access, default='MAF', dict_key='DATA_ACCESS')).lower()
+        data_access = str(self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS')).lower()
         if data_access != 'community':
             return
 
@@ -605,8 +604,7 @@ class DataManager(BaseManager):
         """
         if not provider:
             return False
-        data_access = str(self._get_config_value(
-            lambda: self.config.domain.data_access, default='MAF', dict_key='DATA_ACCESS')).lower()
+        data_access = str(self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS')).lower()
         if data_access != 'community':
             return False
         if not R.observation_backends.keys():

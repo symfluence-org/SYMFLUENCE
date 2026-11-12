@@ -51,10 +51,7 @@ class SSEBopHandler(BaseObservationHandler):
         Returns:
             Path to directory containing SSEBop files
         """
-        data_access = self._get_config_value(
-            lambda: self.config.domain.data_access,
-            default='local'
-        )
+        data_access = self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS')
         if isinstance(data_access, str):
             data_access = data_access.lower()
 

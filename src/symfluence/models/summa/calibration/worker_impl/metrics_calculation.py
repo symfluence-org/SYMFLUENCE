@@ -651,7 +651,11 @@ def _align_inline_timeseries(
     elif obs_period.index.tz is None and sim_period.index.tz is not None:
         obs_period.index = obs_period.index.tz_localize(sim_period.index.tz)
 
-    calibration_timestep = resolve_config_value(config, lambda: config.optimization.calibration_timestep, 'native', 'CALIBRATION_TIMESTEP').lower()
+    calibration_timestep = resolve_config_value(
+        config,
+        lambda: config.optimization.calibration_timestep,
+        dict_key='CALIBRATION_TIMESTEP',
+    ).lower()
     if calibration_timestep != 'native':
         obs_period = resample_to_timestep(obs_period, calibration_timestep, logger)
         sim_period = resample_to_timestep(sim_period, calibration_timestep, logger)

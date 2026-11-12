@@ -202,7 +202,10 @@ class MESHDrainageDatabase(ConfigMixin):
 
         # Build GRU_ID -> index mapping
         gru_to_idx = {int(gid): i for i, gid in enumerate(gru_ids)}
-        outlet_value = self._get_config_value(lambda: self.config.model.mesh.outlet_value, default=-9999, dict_key='MESH_OUTLET_VALUE')
+        outlet_value = self._get_config_value(
+            lambda: self.config.model.mesh.outlet_value,
+            dict_key='MESH_OUTLET_VALUE',
+        )
 
         # Build downstream GRU mapping
         gru_to_ds_gru = {}

@@ -157,7 +157,10 @@ class ControlFileWriter(ConfigurableMixin):
 
     def _write_parameters(self, cf: TextIO, mizu_config: Dict[str, Any]) -> None:
         """Write namelist parameters section."""
-        param_file = mizu_config.get('parameters_file', self._get_config_value(lambda: self.config.model.mizuroute.parameter_file, default='mizuRoute_params.nml'))
+        param_file = mizu_config.get('parameters_file', self._get_config_value(
+            lambda: self.config.model.mizuroute.parameter_file,
+            dict_key='SETTINGS_MIZU_PARAMETER_FILE',
+        ))
         cf.write("!\n! --- NAMELIST FILENAME \n")
         cf.write(f"<param_nml>             {param_file}    ! Spatially constant parameter namelist (should be stored in the ancil_dir) \n")
 
@@ -196,8 +199,7 @@ class ControlFileWriter(ConfigurableMixin):
         # Get output file frequency from config
         output_freq = self._get_config_value(
             lambda: self.config.model.mizuroute.output_freq,
-            default='yearly',
-            dict_key='SETTINGS_MIZU_OUTPUT_FREQ'
+            dict_key='SETTINGS_MIZU_OUTPUT_FREQ',
         )
 
         cf.write("!\n! --- DEFINE SIMULATION CONTROLS \n")
@@ -209,7 +211,10 @@ class ControlFileWriter(ConfigurableMixin):
 
     def _write_topology(self, cf: TextIO, mizu_config: Dict[str, Any]) -> None:
         """Write topology file section."""
-        topology_file = mizu_config.get('topology_file', self._get_config_value(lambda: self.config.model.mizuroute.topology_file, default='network_topology.nc'))
+        topology_file = mizu_config.get('topology_file', self._get_config_value(
+            lambda: self.config.model.mizuroute.topology_file,
+            dict_key='SETTINGS_MIZU_TOPOLOGY_FILE',
+        ))
 
         cf.write("!\n! --- DEFINE TOPOLOGY FILE \n")
         cf.write(f"<fname_ntopOld>         {topology_file}    ! Name of input netCDF for River Network \n")
@@ -352,7 +357,10 @@ class ControlFileWriter(ConfigurableMixin):
 
     def _write_remapping(self, cf: TextIO, mizu_config: Dict[str, Any]) -> None:
         """Write runoff remapping section."""
-        remap_file = mizu_config.get('remap_file', self._get_config_value(lambda: self.config.model.mizuroute.remap_file, default='runoff_remap.nc'))
+        remap_file = mizu_config.get('remap_file', self._get_config_value(
+            lambda: self.config.model.mizuroute.remap_file,
+            dict_key='SETTINGS_MIZU_REMAP_FILE',
+        ))
         remap_flag = (
             self._get_config_value(lambda: self.config.model.mizuroute.needs_remap, default=False) or
             self.needs_remap_lumped_distributed

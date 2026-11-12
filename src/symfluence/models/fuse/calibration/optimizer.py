@@ -145,8 +145,7 @@ class FUSEModelOptimizer(BaseModelOptimizer):
             # Get parameters to calibrate from config
             fuse_params_str = self._get_config_value(
                 lambda: self.config.model.fuse.params_to_calibrate,
-                default='',
-                dict_key='SETTINGS_FUSE_PARAMS_TO_CALIBRATE'
+                dict_key='SETTINGS_FUSE_PARAMS_TO_CALIBRATE',
             )
             if not fuse_params_str or fuse_params_str == 'default':
                 fuse_params_str = 'MAXWATR_1,MAXWATR_2,BASERTE,QB_POWR,TIMEDELAY,PERCRTE,FRACTEN,RTFRAC1,MBASE,MFMAX,MFMIN,PXTEMP,LAPSE'
@@ -521,7 +520,10 @@ class FUSEModelOptimizer(BaseModelOptimizer):
             True if mizuRoute routing should be used
         """
         # Check FUSE routing integration setting
-        routing_integration = self._get_config_value(lambda: self.config.model.fuse.routing_integration, default='none', dict_key='FUSE_ROUTING_INTEGRATION')
+        routing_integration = self._get_config_value(
+            lambda: self.config.model.fuse.routing_integration,
+            dict_key='FUSE_ROUTING_INTEGRATION',
+        )
 
         # If 'default', inherit from ROUTING_MODEL
         if routing_integration == 'default':
@@ -731,7 +733,10 @@ class FUSEModelOptimizer(BaseModelOptimizer):
 
     def _get_final_file_manager_path(self) -> Path:
         """Get path to FUSE file manager."""
-        fuse_fm = self._get_config_value(lambda: self.config.model.fuse.filemanager, default='fm_catch.txt', dict_key='SETTINGS_FUSE_FILEMANAGER')
+        fuse_fm = self._get_config_value(
+            lambda: self.config.model.fuse.filemanager,
+            dict_key='SETTINGS_FUSE_FILEMANAGER',
+        )
         if fuse_fm == 'default':
             fuse_fm = 'fm_catch.txt'
         return self.fuse_setup_dir / fuse_fm
@@ -815,7 +820,10 @@ class FUSEModelOptimizer(BaseModelOptimizer):
         # Transfer SCE-optimized non-calibrated params to para_def.nc before copying
         self._transfer_sce_to_para_def()
 
-        algorithm = self._get_config_value(lambda: self.config.optimization.algorithm, default='optimization', dict_key='ITERATIVE_OPTIMIZATION_ALGORITHM').lower()
+        algorithm = self._get_config_value(
+            lambda: self.config.optimization.algorithm,
+            dict_key='ITERATIVE_OPTIMIZATION_ALGORITHM',
+        ).lower()
         base_dir = self._resolve_sim_base_dir(algorithm)
         self.parallel_dirs = self.setup_parallel_processing(
             base_dir,

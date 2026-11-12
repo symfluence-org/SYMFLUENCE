@@ -61,11 +61,12 @@ class ErrorLogger:
         # PARAMS_KEEP_TRIALS is a convenience flag that enables 'failures' mode
         params_keep_trials = resolve_config_value(config, lambda: config.optimization.params_keep_trials, False, 'PARAMS_KEEP_TRIALS')
 
-        if params_keep_trials:
-            # PARAMS_KEEP_TRIALS enables failure logging by default
-            self.mode = resolve_config_value(config, lambda: config.optimization.error_logging_mode, 'failures', 'ERROR_LOGGING_MODE')
-        else:
-            self.mode = resolve_config_value(config, lambda: config.optimization.error_logging_mode, 'none', 'ERROR_LOGGING_MODE')
+        # PARAMS_KEEP_TRIALS turns failure logging on unless a mode was chosen.
+        # The schema default is 'none', so an unset mode arrives as 'none' from
+        # a validated config, not as a missing key.
+        self.mode = resolve_config_value(config, lambda: config.optimization.error_logging_mode, dict_key='ERROR_LOGGING_MODE')
+        if params_keep_trials and self.mode == 'none':
+            self.mode = 'failures'
 
         self.stop_on_failure = resolve_config_value(config, lambda: config.optimization.stop_on_model_failure, False, 'STOP_ON_MODEL_FAILURE')
 

@@ -81,7 +81,10 @@ class MODISSCAAcquirer(BaseEarthaccessAcquirer):
             return merged_file
 
         # Get products to download (strip version suffix for earthaccess)
-        products_config = self._get_config_value(lambda: self.config.evaluation.modis_snow.products, default=['MOD10A1', 'MYD10A1'], dict_key='MODIS_SCA_PRODUCTS')
+        products_config = self._get_config_value(
+            lambda: self.config.evaluation.modis_snow.products,
+            dict_key='MODIS_SCA_PRODUCTS',
+        )
         if isinstance(products_config, str):
             products_config = [p.strip() for p in products_config.split(',')]
 

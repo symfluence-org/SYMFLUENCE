@@ -295,7 +295,7 @@ class NoahMPWorker(BaseWorker):
             env = os.environ.copy()
             env['OMP_NUM_THREADS'] = '1'
 
-            timeout = int(resolve_config_value(config, lambda: config.model.noahmp.timeout, 600, 'NOAHMP_TIMEOUT'))
+            timeout = int(resolve_config_value(config, lambda: config.model.noahmp.timeout, dict_key='NOAHMP_TIMEOUT'))
 
             with open(output_dir / 'noahmp_stdout.log', 'w') as out, \
                  open(output_dir / 'noahmp_stderr.log', 'w') as err:

@@ -132,8 +132,8 @@ class BaseModelOptimizer(
 
         # Results directory - now includes model name to avoid overwrites between models
         algorithm = self._get_config_value(
-            lambda: self.config.optimization.algorithm, default='optimization',
-            dict_key='ITERATIVE_OPTIMIZATION_ALGORITHM'
+            lambda: self.config.optimization.algorithm,
+            dict_key='ITERATIVE_OPTIMIZATION_ALGORITHM',
         ).lower()
         model_name = self._get_model_name()
         self.results_dir = (
@@ -710,7 +710,8 @@ class BaseModelOptimizer(
                 obs_period = obs_period[(obs_period.index >= calib_period[0]) & (obs_period.index <= calib_period[1])]
 
             eval_timestep = str(self._get_config_value(
-                lambda: self.config.optimization.calibration_timestep, default='native'
+                lambda: self.config.optimization.calibration_timestep,
+                dict_key='CALIBRATION_TIMESTEP',
             )).lower()
             if eval_timestep != 'native' and hasattr(self.calibration_target, '_resample_to_timestep'):
                 obs_period = self.calibration_target._resample_to_timestep(obs_period, eval_timestep)
@@ -827,7 +828,8 @@ class BaseModelOptimizer(
     def _setup_parallel_dirs(self) -> None:
         """Setup parallel processing directories."""
         algorithm = self._get_config_value(
-            lambda: self.config.optimization.algorithm, default='optimization'
+            lambda: self.config.optimization.algorithm,
+            dict_key='ITERATIVE_OPTIMIZATION_ALGORITHM',
         ).lower()
 
         base_dir = self._resolve_sim_base_dir(algorithm)

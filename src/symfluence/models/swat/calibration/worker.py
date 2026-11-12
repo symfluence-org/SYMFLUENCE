@@ -497,7 +497,7 @@ class SWATWorker(BaseWorker):
                 'OPENBLAS_NUM_THREADS': '1',
             })
 
-            timeout = resolve_config_value(config, lambda: config.model.swat.timeout, 300, 'SWAT_TIMEOUT')
+            timeout = resolve_config_value(config, lambda: config.model.swat.timeout, dict_key='SWAT_TIMEOUT')
             stdout_file = work_dir / 'swat_stdout.log'
             stderr_file = work_dir / 'swat_stderr.log'
 

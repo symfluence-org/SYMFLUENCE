@@ -80,7 +80,7 @@ class SMAPAcquirer(BaseAcquisitionHandler):
 
         # NSIDC THREDDS NCSS endpoint
         thredds_base = self._get_config_value(lambda: None, default="https://n5eil01u.ecs.nsidc.org/thredds/ncss/grid", dict_key='SMAP_THREDDS_BASE')
-        product = self._get_config_value(lambda: self.config.evaluation.smap.product, default='SMAP_L4_SM_gph_v4', dict_key='SMAP_PRODUCT')
+        product = self._get_config_value(lambda: self.config.evaluation.smap.product, dict_key='SMAP_PRODUCT')
         if isinstance(product, str) and product.upper() == 'SPL4SMGP':
             product = 'SMAP_L4_SM_gph_v4'
 
@@ -192,11 +192,7 @@ class SMAPAcquirer(BaseAcquisitionHandler):
         lon_min, lon_max = sorted([self.bbox["lon_min"], self.bbox["lon_max"]])
 
         # Get product configuration
-        product = self._get_config_value(
-            lambda: self.config.evaluation.smap.product,
-            default='SPL3SMP_E',
-            dict_key='SMAP_PRODUCT'
-        )
+        product = self._get_config_value(lambda: self.config.evaluation.smap.product, dict_key='SMAP_PRODUCT')
         version = self._get_config_value(
             lambda: None,
             default='006',

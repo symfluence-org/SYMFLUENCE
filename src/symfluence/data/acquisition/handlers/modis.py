@@ -27,7 +27,10 @@ class MODISSnowAcquirer(BaseAcquisitionHandler):
         self.logger.info("Starting MODIS Snow Cover acquisition via THREDDS")
 
         # Configuration
-        product = self._get_config_value(lambda: self.config.evaluation.modis_snow.product, default='MOD10A1.006', dict_key='MODIS_SNOW_PRODUCT')
+        product = self._get_config_value(
+            lambda: self.config.evaluation.modis_snow.product,
+            dict_key='MODIS_SNOW_PRODUCT',
+        )
         thredds_base = self._get_config_value(lambda: None, default="https://ds.nccs.nasa.gov/thredds/ncss/grid", dict_key='MODIS_THREDDS_BASE')
 
         # BBox

@@ -45,7 +45,6 @@ class GSFLOWRunner(BaseModelRunner):
         """Build GSFLOW execution command."""
         control_file = self._get_config_value(
             lambda: self.config.model.gsflow.control_file,
-            default='control.dat',
             dict_key='GSFLOW_CONTROL_FILE',
         )
         control_path = self.setup_dir / control_file

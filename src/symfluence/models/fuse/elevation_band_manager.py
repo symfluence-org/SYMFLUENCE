@@ -228,7 +228,10 @@ class FuseElevationBandManager(ConfigMixin):
         unit_shape = tuple(len(spatial_coords[dim]) for dim in spatial_dims)
         units = self._unit_rows(catchment, spatial_dims, spatial_coords, mode)
 
-        n_bands = int(self._get_config_value(lambda: self.config.model.fuse.n_elevation_bands, default=5, dict_key='FUSE_N_ELEVATION_BANDS'))
+        n_bands = int(self._get_config_value(
+            lambda: self.config.model.fuse.n_elevation_bands,
+            dict_key='FUSE_N_ELEVATION_BANDS',
+        ))
         samples = self._unit_hypsometry_samples(catchment, units)
         if all(np.ptp(z) == 0 for z, _ in samples):
             # Only a mean elevation per unit: several bands would all sit at it.

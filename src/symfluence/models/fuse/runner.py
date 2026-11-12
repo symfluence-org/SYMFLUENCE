@@ -189,7 +189,7 @@ class FUSERunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, Miz
         """FUSE-specific override: default to q_routed instead of SUMMA's averageRoutedRunoff."""
         var = self._get_config_value(
             lambda: self.config.model.mizuroute.routing_var,
-            default='q_routed'
+            dict_key='SETTINGS_MIZU_ROUTING_VAR',
         )
         if var in ('default', None, '', 'averageRoutedRunoff'):
             return 'q_routed'
@@ -1209,7 +1209,7 @@ class FUSERunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, Miz
         try:
             fuse_fm = self._get_config_value(
                 lambda: self.config.model.fuse.filemanager,
-                default='fm_catch.txt'
+                dict_key='SETTINGS_FUSE_FILEMANAGER',
             )
             if fuse_fm == 'default':
                 fuse_fm = 'fm_catch.txt'
@@ -1338,7 +1338,7 @@ class FUSERunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, Miz
         # Construct command
         fuse_fm = self._get_config_value(
             lambda: self.config.model.fuse.filemanager,
-            default='fm_catch.txt'
+            dict_key='SETTINGS_FUSE_FILEMANAGER',
         )
         if fuse_fm == 'default':
             fuse_fm = 'fm_catch.txt'

@@ -254,14 +254,20 @@ class NgenParameterManager(BaseParameterManager):
 
         # CFE parameters
         if 'CFE' in self.modules_to_calibrate:
-            cfe_params_str = self._get_config_value(lambda: self.config.model.ngen.cfe_params_to_calibrate, default='maxsmc,satdk,bb,slop,Cgw,max_gw_storage,K_nash,K_lf,soil_depth', dict_key='NGEN_CFE_PARAMS_TO_CALIBRATE')
+            cfe_params_str = self._get_config_value(
+                lambda: self.config.model.ngen.cfe_params_to_calibrate,
+                dict_key='NGEN_CFE_PARAMS_TO_CALIBRATE',
+            )
             if cfe_params_str is None:
                 cfe_params_str = 'maxsmc,satdk,bb,slop,Cgw,max_gw_storage,K_nash,K_lf,soil_depth'
             params['CFE'] = [p.strip() for p in cfe_params_str.split(',') if p.strip()]
 
         # NOAH-OWP parameters
         if 'NOAH' in self.modules_to_calibrate:
-            noah_params_str = self._get_config_value(lambda: self.config.model.ngen.noah_params_to_calibrate, default='refkdt,slope,smcmax,dksat,bexp', dict_key='NGEN_NOAH_PARAMS_TO_CALIBRATE')
+            noah_params_str = self._get_config_value(
+                lambda: self.config.model.ngen.noah_params_to_calibrate,
+                dict_key='NGEN_NOAH_PARAMS_TO_CALIBRATE',
+            )
             if noah_params_str is None:
                 noah_params_str = 'refkdt,slope,smcmax,dksat,bexp'
             params['NOAH'] = [p.strip() for p in noah_params_str.split(',') if p.strip()]

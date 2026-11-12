@@ -484,7 +484,7 @@ class CLMWorker(BaseWorker):
 
             # Execute — use a short timeout since single-point CLM
             # finishes in ~7 min but can hang in ESMF finalization
-            timeout = int(resolve_config_value(config, lambda: config.model.clm.timeout, 900, 'CLM_TIMEOUT'))
+            timeout = int(resolve_config_value(config, lambda: config.model.clm.timeout, dict_key='CLM_TIMEOUT'))
             env = os.environ.copy()
             env.update({
                 'OMP_NUM_THREADS': '1',

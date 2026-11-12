@@ -91,7 +91,7 @@ class CoupledGWWorker(BaseWorker):
 
     def _use_dcoupler(self, config: Dict[str, Any]) -> bool:
         """Determine if dCoupler should be used for coupling."""
-        mode = resolve_config_value(config, lambda: config.model.coupling_mode, 'auto', 'COUPLING_MODE')
+        mode = resolve_config_value(config, lambda: config.model.coupling_mode, dict_key='COUPLING_MODE')
         if mode == 'dcoupler':
             return True
         if mode == 'sequential':
@@ -114,7 +114,11 @@ class CoupledGWWorker(BaseWorker):
 
         config = kwargs.get('config', self.config or {})
         modflow_param_names = set(MODFLOW_DEFAULT_BOUNDS.keys())
-        modflow_params_str = resolve_config_value(config, lambda: config.model.modflow.params_to_calibrate, '', 'MODFLOW_PARAMS_TO_CALIBRATE')
+        modflow_params_str = resolve_config_value(
+            config,
+            lambda: config.model.modflow.params_to_calibrate,
+            dict_key='MODFLOW_PARAMS_TO_CALIBRATE',
+        )
         if modflow_params_str:
             modflow_param_names.update(
                 p.strip() for p in str(modflow_params_str).split(',') if p.strip()

@@ -60,7 +60,7 @@ class MizuRouteConfigMixin:
         """Within-basin routing flag from config.model.mizuroute.within_basin."""
         return self._get_config_value(
             lambda: self.config.model.mizuroute.within_basin,
-            default=True
+            dict_key='SETTINGS_MIZU_WITHIN_BASIN',
         )
 
     # =========================================================================
@@ -106,17 +106,14 @@ class MizuRouteConfigMixin:
     @property
     def mizu_from_model(self) -> str:
         """Source model for routing input from config.model.mizuroute.from_model."""
-        return self._get_config_value(
-            lambda: self.config.model.mizuroute.from_model,
-            default='summa'
-        )
+        return self._get_config_value(lambda: self.config.model.mizuroute.from_model, dict_key='MIZU_FROM_MODEL')
 
     @property
     def mizu_needs_remap(self) -> bool:
         """Remap needed flag from config.model.mizuroute.needs_remap."""
         return self._get_config_value(
             lambda: self.config.model.mizuroute.needs_remap,
-            default=True
+            dict_key='SETTINGS_MIZU_NEEDS_REMAP',
         )
 
     @property
@@ -136,7 +133,7 @@ class MizuRouteConfigMixin:
         """Output frequency from config.model.mizuroute.output_freq."""
         return self._get_config_value(
             lambda: self.config.model.mizuroute.output_freq,
-            default='daily'
+            dict_key='SETTINGS_MIZU_OUTPUT_FREQ',
         )
 
     @property
@@ -170,10 +167,7 @@ class MizuRouteConfigMixin:
     @property
     def mizu_exe(self) -> str:
         """Executable name from config.model.mizuroute.exe."""
-        return self._get_config_value(
-            lambda: self.config.model.mizuroute.exe,
-            default='mizuroute'
-        )
+        return self._get_config_value(lambda: self.config.model.mizuroute.exe, dict_key='MIZUROUTE_EXE')
 
     @property
     def mizu_experiment_output(self) -> Optional[str]:

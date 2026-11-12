@@ -232,7 +232,9 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         from .basin_inputs import statvars
         cfg = self._gsflow_cfg()
         control = self.setup_dir / self._get_config_value(
-            lambda: self.config.model.gsflow.control_file, default='control.dat', dict_key='GSFLOW_CONTROL_FILE')
+            lambda: self.config.model.gsflow.control_file,
+            dict_key='GSFLOW_CONTROL_FILE',
+        )
         blocks = [b for b in control.read_text().split('####\n')]
         head, body = blocks[0], {b.split('\n', 1)[0]: b for b in blocks[1:]}
 
@@ -854,7 +856,8 @@ class GSFLOWPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
         control_name = self._get_config_value(
             lambda: self.config.model.gsflow.control_file,
-            default='control.dat', dict_key='GSFLOW_CONTROL_FILE')
+            dict_key='GSFLOW_CONTROL_FILE',
+        )
 
         out = self.setup_dir / control_name
 
