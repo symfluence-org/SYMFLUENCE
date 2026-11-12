@@ -48,6 +48,7 @@ from .hubeau import (
 )
 from .ims_snow import IMSSnowHandler
 from .jrc_water import JRCWaterHandler
+from .kiwis import KiWISStreamflowHandler
 from .lamah_ice import LamahIceStreamflowHandler
 from .modis_et import MODISETHandler
 from .modis_lai import MODISLAIHandler
@@ -112,6 +113,8 @@ __all__ = [
     "get_station_info",
     # JRC Global Surface Water
     "JRCWaterHandler",
+    # WISKI KiWebPortal share channel
+    "KiWISStreamflowHandler",
     # LamaH-Ice
     "LamahIceStreamflowHandler",
     # MODIS ET

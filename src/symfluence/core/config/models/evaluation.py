@@ -64,6 +64,32 @@ class HubeauConfig(BaseModel):
     )
 
 
+class KiWISConfig(BaseModel):
+    """WISKI KiWebPortal share-channel streamflow settings.
+
+    Consumed by :mod:`symfluence.data.observation.handlers.kiwis`
+    (``STREAMFLOW_DATA_PROVIDER: KIWIS``). The channel URL grants access to
+    whoever holds it: leave ``KIWIS_CHANNEL_URL`` unset in shared configs and
+    set the environment variable of the same name instead (likewise
+    ``KIWIS_TS_ID``).
+    """
+    model_config = FROZEN_CONFIG
+
+    channel_url: Optional[str] = Field(default=None, alias='KIWIS_CHANNEL_URL')
+    ts_id: Optional[str] = Field(default=None, alias='KIWIS_TS_ID')
+    interval_label: Literal['start', 'end'] = Field(
+        default='start', alias='KIWIS_INTERVAL_LABEL',
+        description="Stamp model-interval means at the interval start ([t, t+dt)) or end ((t-dt, t])",
+    )
+    min_coverage: float = Field(default=0.8, ge=0, le=1, alias='KIWIS_MIN_COVERAGE')
+    revise_days: float = Field(
+        default=3.0, ge=0, alias='KIWIS_REVISE_DAYS',
+        description='On update, refetch this far back from the newest stored value (recent values may be edited)',
+    )
+    timeout: float = Field(default=180.0, gt=0, alias='KIWIS_TIMEOUT')
+    retries: int = Field(default=2, ge=0, le=10, alias='KIWIS_RETRIES')
+
+
 class FluxNetConfig(BaseModel):
     """FluxNet observation data settings"""
     model_config = FROZEN_CONFIG
@@ -302,6 +328,7 @@ class EvaluationConfig(BaseModel):
     # Observation data sources
     streamflow: Optional[StreamflowConfig] = Field(default_factory=StreamflowConfig)
     hubeau: Optional[HubeauConfig] = Field(default_factory=HubeauConfig)
+    kiwis: Optional[KiWISConfig] = Field(default_factory=KiWISConfig)
     snotel: Optional[SNOTELConfig] = Field(default_factory=SNOTELConfig)
     fluxnet: Optional[FluxNetConfig] = Field(default_factory=FluxNetConfig)
     usgs_gw: Optional[USGSGWConfig] = Field(default_factory=USGSGWConfig)
