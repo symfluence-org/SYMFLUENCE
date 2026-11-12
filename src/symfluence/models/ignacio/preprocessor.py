@@ -19,6 +19,7 @@ from typing import Any, Dict, Optional
 
 import yaml
 
+from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.modeling.base.base_preprocessor import BaseModelPreProcessor
 from symfluence.core.modeling.model_ready.forcing_reader import (
     forcing_timestep_seconds,
@@ -217,14 +218,16 @@ class IGNACIOPreProcessor(BaseModelPreProcessor):
         """
         Prepare weather station data for FWI calculation.
 
-        Converts ERA5 forcing data to IGNACIO weather station CSV format
-        if no station data is provided.
+        Uses the configured station CSV if it exists, otherwise converts the
+        project's forcing. Synthetic weather is generated only when the project
+        holds no forcing at all; forcing that exists but cannot be converted
+        raises instead of being silently replaced by made-up weather.
 
         Args:
             ignacio_config: IGNACIO configuration dictionary
 
         Returns:
-            Path to weather CSV or None
+            Path to weather CSV
         """
         station_path = ignacio_config.get('station_path')
         if station_path and station_path != 'default':
@@ -232,150 +235,162 @@ class IGNACIOPreProcessor(BaseModelPreProcessor):
             if station_path.exists():
                 self.logger.info(f"Using weather station data: {station_path}")
                 return station_path
+            raise ModelExecutionError(
+                f"IGNACIO_STATION_PATH does not exist: {station_path}")
 
-        # Try to convert ERA5 forcing data to IGNACIO weather format
         weather_csv = self._convert_era5_to_weather_csv(ignacio_config)
         if weather_csv:
             return weather_csv
 
-        # Generate static weather as fallback (IGNACIO requires weather file)
-        self.logger.info("Generating static weather data for IGNACIO")
+        self.logger.warning(
+            "No forcing found for IGNACIO: generating SYNTHETIC weather "
+            "(random diurnal cycle, not observed or reanalysis data). "
+            "Fire spread and FWI from this run are not physically meaningful; "
+            "set IGNACIO_STATION_PATH or acquire forcing for real weather.")
         return self._generate_static_weather_csv(ignacio_config)
+
+    def _find_weather_forcing_files(self) -> list:
+        """Forcing files to convert: this run's basin forcing first, then legacy dirs."""
+        # Only the forcing remapped onto this run's HRUs (issue #339).
+        basin_files = (self._select_run_forcing(sorted(self.forcing_basin_path.glob('*.nc')))
+                       if self.forcing_basin_path.exists() else [])
+
+        forcing_dataset = self._get_config_value(
+            lambda: self.config.forcing.dataset, default='ERA5', dict_key='FORCING_DATASET')
+        # Store-first basin-averaged forcing, then legacy merged/raw dirs.
+        forcing_dirs = [
+            self.forcing_basin_path,
+            self.project_forcing_dir / 'merged_path',
+            self.project_forcing_dir / 'raw_data',
+        ]
+
+        for forcing_dir in forcing_dirs:
+            if not forcing_dir.exists():
+                continue
+            # Files matching the configured dataset first (CARRA, ERA5, ...).
+            matched = list(forcing_dir.glob(f'*{forcing_dataset}*.nc'))
+            if forcing_dir == self.forcing_basin_path:
+                dataset_files = set(matched)
+                matched = [f for f in basin_files if f in dataset_files]
+            if matched:
+                self.logger.info(f"Using {forcing_dataset} forcing from: {forcing_dir.name}")
+                return sorted(matched)
+        # Fall back to any .nc files if no dataset-specific match.
+        for forcing_dir in forcing_dirs:
+            if forcing_dir.exists():
+                found = (list(basin_files) if forcing_dir == self.forcing_basin_path
+                         else list(forcing_dir.glob('*.nc')))
+                if found:
+                    self.logger.info(f"Using forcing from: {forcing_dir.name}")
+                    return sorted(found)
+        return []
+
+    @staticmethod
+    def _relative_humidity_percent(ds, temp_c):
+        """Relative humidity in % from RH or from specific humidity + pressure."""
+        import numpy as np
+
+        if 'relative_humidity' in ds:
+            rh = ds['relative_humidity'].values.astype(float)
+            if str(ds['relative_humidity'].attrs.get('units', '%')).strip() in ('1', 'fraction', '-'):
+                rh = rh * 100.0
+            return np.clip(rh, 0, 100)
+        if 'specific_humidity' in ds and 'surface_air_pressure' in ds:
+            q = ds['specific_humidity'].values
+            p = ds['surface_air_pressure'].values
+            e = q * p / (0.622 + 0.378 * q)
+            es = 611.2 * np.exp(17.67 * temp_c / (temp_c + 243.5))
+            return np.clip(100.0 * e / es, 0, 100)
+        return None
 
     def _convert_era5_to_weather_csv(self, ignacio_config: Dict) -> Optional[Path]:
         """
-        Convert ERA5 forcing data to IGNACIO weather station CSV format.
+        Convert the project's forcing to IGNACIO weather station CSV format.
 
-        IGNACIO expects columns: HOURLY, TEMP, RH, WS, WD, PRECIP
-        ERA5 provides: airtemp, spechum, windspd, pptrate, airpres
+        IGNACIO expects columns: HOURLY, TEMP, RH, WS, WD, PRECIP. Every file
+        must provide air temperature, humidity (relative, or specific humidity
+        plus surface pressure), wind speed and precipitation; a missing variable
+        or unreadable file raises rather than being filled with constants.
 
         Args:
             ignacio_config: IGNACIO configuration dictionary
 
         Returns:
-            Path to generated weather CSV or None
+            Path to the generated weather CSV, or None when the project has no
+            forcing files at all.
+
+        Raises:
+            ModelExecutionError: forcing exists but cannot be converted.
         """
-        # Only the forcing remapped onto this run's HRUs (issue #339).
-        basin_files = (self._select_run_forcing(sorted(self.forcing_basin_path.glob('*.nc')))
-                       if self.forcing_basin_path.exists() else [])
+        import numpy as np
+        import pandas as pd
 
-        try:
-            import numpy as np
-            import pandas as pd
-
-            # Find forcing files matching the configured dataset.
-            # Search all forcing directories, filtering by dataset name
-            # (e.g. CARRA, ERA5) when multiple datasets coexist.
-            forcing_dataset = self._get_config_value(lambda: self.config.forcing.dataset, default='ERA5', dict_key='FORCING_DATASET')
-            # Store-first basin-averaged forcing, then legacy merged/raw dirs.
-            forcing_dirs = [
-                self.forcing_basin_path,
-                self.project_forcing_dir / 'merged_path',
-                self.project_forcing_dir / 'raw_data',
-            ]
-
-            nc_files = []
-            for forcing_dir in forcing_dirs:
-                if not forcing_dir.exists():
-                    continue
-                # Look for files matching the configured dataset first
-                matched = list(forcing_dir.glob(f'*{forcing_dataset}*.nc'))
-                if forcing_dir == self.forcing_basin_path:
-                    dataset_files = set(matched)
-                    matched = [f for f in basin_files if f in dataset_files]
-                if matched:
-                    nc_files = matched
-                    self.logger.info(f"Using {forcing_dataset} forcing from: {forcing_dir.name}")
-                    break
-            # Fall back to any .nc files if no dataset-specific match
-            if not nc_files:
-                for forcing_dir in forcing_dirs:
-                    if forcing_dir.exists():
-                        found = (list(basin_files) if forcing_dir == self.forcing_basin_path
-                                 else list(forcing_dir.glob('*.nc')))
-                        if found:
-                            nc_files = found
-                            self.logger.info(f"Using forcing from: {forcing_dir.name}")
-                            break
-
-            if not nc_files:
-                self.logger.warning("No forcing files found")
-                return None
-
-            self.logger.info(f"Found {len(nc_files)} forcing files")
-
-            chunks = []
-            for nc_file in sorted(nc_files):
-                try:
-                    ds = open_canonical_forcing([nc_file])
-
-                    if 'hru' in ds.dims:
-                        ds = ds.mean(dim='hru')
-
-                    times = pd.to_datetime(ds.time.values)
-                    n = len(times)
-                    dt_seconds = forcing_timestep_seconds(ds)
-
-                    temp_c = (ds['air_temperature'].values - 273.15
-                              if 'air_temperature' in ds
-                              else np.full(n, 20.0))
-
-                    if 'specific_humidity' in ds and 'surface_air_pressure' in ds:
-                        q = ds['specific_humidity'].values
-                        p = ds['surface_air_pressure'].values
-                        e = q * p / (0.622 + 0.378 * q)
-                        es = 611.2 * np.exp(17.67 * temp_c / (temp_c + 243.5))
-                        rh = np.clip(100.0 * e / es, 0, 100)
-                    else:
-                        rh = np.full(n, 50.0)
-
-                    ws_kmh = (ds['wind_speed'].values * 3.6
-                              if 'wind_speed' in ds
-                              else np.full(n, 10.0))
-
-                    wd = np.random.uniform(0, 360, n)
-
-                    precip_mm = (ds['precipitation_flux'].values * dt_seconds
-                                 if 'precipitation_flux' in ds
-                                 else np.zeros(n))
-
-                    chunks.append(pd.DataFrame({
-                        'HOURLY': times.strftime('%d/%m/%Y %H:%M'),
-                        'TEMP': temp_c,
-                        'RH': rh,
-                        'WS': ws_kmh,
-                        'WD': wd,
-                        'PRECIP': precip_mm,
-                    }))
-
-                    ds.close()
-                except Exception as exc:  # noqa: BLE001 — model execution resilience
-                    self.logger.warning(f"Could not load {nc_file}: {exc}", exc_info=True)
-
-            if not chunks:
-                return None
-
-            weather_df = pd.concat(chunks, ignore_index=True)
-
-            # Save to CSV
-            weather_csv = self.ignacio_input_dir / 'era5_weather_stations.csv'
-            weather_df.to_csv(weather_csv, index=False)
-
-            all_times = pd.to_datetime(weather_df['HOURLY'], dayfirst=True)
-            self.logger.info(f"Converted forcing to weather CSV: {weather_csv}")
-            self.logger.info(f"  Time range: {all_times.iloc[0]} to {all_times.iloc[-1]}")
-            self.logger.info(f"  Records: {len(weather_df)}")
-
-            return weather_csv
-
-        except ImportError as e:
-            self.logger.warning(f"Cannot convert ERA5 data (missing dependency): {e}")
+        nc_files = self._find_weather_forcing_files()
+        if not nc_files:
+            self.logger.warning("No forcing files found for IGNACIO weather")
             return None
-        except Exception as e:  # noqa: BLE001 — model execution resilience
-            self.logger.error(f"Error converting ERA5 to weather CSV: {e}", exc_info=True)
-            import traceback
-            self.logger.debug(traceback.format_exc())
-            return None
+        self.logger.info(f"Found {len(nc_files)} forcing files")
+
+        # Canonical forcing has no wind direction; draw it reproducibly from the
+        # run's seed (FWI does not use it; spread does, so say so once).
+        rng = np.random.default_rng(int(ignacio_config.get('random_seed', 42) or 42))
+        wd_warned = False
+
+        chunks = []
+        for nc_file in nc_files:
+            try:
+                ds = open_canonical_forcing([nc_file])
+            except (OSError, ValueError) as exc:
+                raise ModelExecutionError(
+                    f"Cannot read IGNACIO forcing file {nc_file}: {exc}") from exc
+            with ds:
+                if 'hru' in ds.dims:
+                    ds = ds.mean(dim='hru')
+
+                times = pd.to_datetime(ds.time.values)
+                dt_seconds = forcing_timestep_seconds(ds)
+
+                temp_c = (ds['air_temperature'].values - 273.15
+                          if 'air_temperature' in ds else None)
+                rh = (self._relative_humidity_percent(ds, temp_c)
+                      if temp_c is not None else None)
+                missing = [name for name, value in (
+                    ('air_temperature', temp_c),
+                    ('relative_humidity or specific_humidity + surface_air_pressure', rh),
+                    ('wind_speed', ds['wind_speed'] if 'wind_speed' in ds else None),
+                    ('precipitation_flux', ds['precipitation_flux'] if 'precipitation_flux' in ds else None),
+                ) if value is None]
+                if missing:
+                    raise ModelExecutionError(
+                        f"IGNACIO forcing {nc_file.name} lacks {', '.join(missing)}; "
+                        "fire weather needs all of them (set IGNACIO_STATION_PATH "
+                        "to use station data instead)")
+
+                if not wd_warned:
+                    self.logger.warning(
+                        "Forcing has no wind direction: IGNACIO WD is drawn uniformly "
+                        "at random (seeded by IGNACIO_RANDOM_SEED)")
+                    wd_warned = True
+
+                chunks.append(pd.DataFrame({
+                    'HOURLY': times.strftime('%d/%m/%Y %H:%M'),
+                    'TEMP': temp_c,
+                    'RH': rh,
+                    'WS': ds['wind_speed'].values * 3.6,  # m/s -> km/h
+                    'WD': rng.uniform(0, 360, len(times)),
+                    'PRECIP': ds['precipitation_flux'].values * dt_seconds,  # mm per step
+                }))
+
+        weather_df = pd.concat(chunks, ignore_index=True)
+
+        weather_csv = self.ignacio_input_dir / 'era5_weather_stations.csv'
+        weather_df.to_csv(weather_csv, index=False)
+
+        all_times = pd.to_datetime(weather_df['HOURLY'], dayfirst=True)
+        self.logger.info(f"Converted forcing to weather CSV: {weather_csv}")
+        self.logger.info(f"  Time range: {all_times.iloc[0]} to {all_times.iloc[-1]}")
+        self.logger.info(f"  Records: {len(weather_df)}")
+        return weather_csv
 
     def _generate_static_weather_csv(self, ignacio_config: Dict) -> Path:
         """
@@ -394,6 +409,8 @@ class IGNACIOPreProcessor(BaseModelPreProcessor):
 
         import numpy as np
         import pandas as pd
+
+        rng = np.random.default_rng(int(ignacio_config.get('random_seed', 42) or 42))
 
         # Get simulation date from config or use default
         ignition_date = ignacio_config.get('ignition_date')
@@ -415,7 +432,7 @@ class IGNACIOPreProcessor(BaseModelPreProcessor):
         days = np.array([(t - start).days for t in times])
 
         # Temperature: diurnal cycle 10-30°C with some day-to-day variation
-        base_temp = 20 + 5 * np.random.randn(len(set(days)))[days]
+        base_temp = 20 + 5 * rng.standard_normal(len(set(days)))[days]
         diurnal_temp = 10 * np.sin((hours - 6) * np.pi / 12)
         temp_c = base_temp + diurnal_temp
         temp_c = np.clip(temp_c, 5, 35)
@@ -425,20 +442,20 @@ class IGNACIOPreProcessor(BaseModelPreProcessor):
         rh = np.clip(rh, 20, 95)
 
         # Wind speed: higher during afternoon, 5-25 km/h
-        base_ws = 10 + 5 * np.random.randn(len(set(days)))[days]
+        base_ws = 10 + 5 * rng.standard_normal(len(set(days)))[days]
         diurnal_ws = 5 * np.sin((hours - 8) * np.pi / 12)
         ws_kmh = base_ws + diurnal_ws
         ws_kmh = np.clip(ws_kmh, 2, 40)
 
         # Wind direction: slowly varying, mostly westerly (240-300°)
-        wd = 270 + 30 * np.sin(days * 0.5) + 20 * np.random.randn(len(times))
+        wd = 270 + 30 * np.sin(days * 0.5) + 20 * rng.standard_normal(len(times))
         wd = wd % 360
 
         # Precipitation: occasional, mostly zero
         precip_mm = np.zeros(len(times))
         # Add some rain events (low probability)
-        rain_mask = np.random.random(len(times)) < 0.02
-        precip_mm[rain_mask] = np.random.exponential(2, int(np.sum(rain_mask)))
+        rain_mask = rng.random(len(times)) < 0.02
+        precip_mm[rain_mask] = rng.exponential(2, int(np.sum(rain_mask)))
 
         # Create DataFrame
         weather_df = pd.DataFrame({

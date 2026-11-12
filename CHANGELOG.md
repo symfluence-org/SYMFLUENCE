@@ -133,6 +133,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   layering guard forbids handler-module imports from outside `data/`.
 
 ### Fixed
+- **IGNACIO no longer runs fire spread on made-up weather after a forcing error**: forcing that exists but cannot
+  be read, or lacks air temperature, humidity (RH, or specific humidity + pressure), wind speed or precipitation,
+  now fails preprocessing instead of filling 20 °C / 50 % RH / 10 km/h / no rain or falling back to synthetic
+  weather; a missing `IGNACIO_STATION_PATH` raises. Synthetic weather is used only when the project has no forcing
+  at all, with a warning, and it and the forcing wind direction (absent from forcing) are seeded by
+  `IGNACIO_RANDOM_SEED`, so runs are reproducible. Relative humidity in the forcing is used directly.
 - **Wflow parallel calibration**: the Wflow worker now provides `evaluate_worker_function`; previously
   every parallel or async Wflow DDS run failed with "Subclasses must implement" and calibration ran
   serially. Final streamflow scoring of distributed Wflow reads the native outlet `output.csv` instead of
