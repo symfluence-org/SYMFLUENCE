@@ -20,6 +20,7 @@ from hydrobm.calculate import calc_bm
 
 from symfluence.core.mixins import ConfigMixin
 from symfluence.core.mixins.project import ProjectContextMixin, resolve_data_subdir
+from symfluence.core.path_resolver import PathResolverMixin
 from symfluence.data.observation.paths import first_existing_path, streamflow_observation_candidates
 
 
@@ -193,7 +194,7 @@ class Benchmarker(ConfigMixin):
             self.logger.error(f"Error saving benchmark results: {str(e)}")
             raise
 
-class BenchmarkPreprocessor(ProjectContextMixin):
+class BenchmarkPreprocessor(PathResolverMixin, ProjectContextMixin):
     def __init__(self, config: dict, logger):
         self.config = config
         self.logger = logger
@@ -266,8 +267,9 @@ class BenchmarkPreprocessor(ProjectContextMixin):
     def _load_forcing_data(self) -> pd.DataFrame:
         """Load and process forcing data, returning hourly dataframe."""
         forcing_path = resolve_data_subdir(self.project_dir, 'forcing') / "basin_averaged_data"
-        # Use open_mfdataset to load all netCDF files at once efficiently
-        combined_ds = xr.open_mfdataset(list(forcing_path.glob("*.nc")), combine='nested', concat_dim='time', data_vars='minimal', coords='minimal', compat='override').sortby('time')
+        # Only this run's forcing: the store can hold several HRU sets of the domain (issue #339).
+        files = self._select_run_forcing(sorted(forcing_path.glob("*.nc")))
+        combined_ds = xr.open_mfdataset(files, combine='nested', concat_dim='time', data_vars='minimal', coords='minimal', compat='override').sortby('time')
         # Average across HRUs
         averaged_ds = combined_ds.mean(dim='hru')
 

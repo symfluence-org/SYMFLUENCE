@@ -7434,6 +7434,14 @@ PRMS_FORCING_MODE: station
 #   Source:      PRMSConfig (models/prms/config_schema.py)
 PRMS_HRU_FORCING_PATH: null
 
+# Discretization of the forcing to read from PRMS_HRU_FORCING_PATH when it
+# holds forcing for more than one HRU set (e.g. elevation).
+# PRMS_HRU_FORCING_DISCRETIZATION
+#   Type:        str | None
+#   Default:     null
+#   Source:      PRMSConfig (models/prms/config_schema.py)
+PRMS_HRU_FORCING_DISCRETIZATION: null
+
 # Source hruId for each PRMS HRU in PRMS order, e.g. [1, 2, 3, 3, 4, 5] when
 # band 3 is split into land and glacier HRUs. Default: 1..nhru.
 # PRMS_HRU_FORCING_MAP
@@ -7685,6 +7693,14 @@ GSFLOW_FORCING_MODE: station
 #   Default:     null
 #   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
 GSFLOW_HRU_FORCING_PATH: null
+
+# Discretization of the forcing to read from GSFLOW_HRU_FORCING_PATH when it
+# holds forcing for more than one HRU set (e.g. elevation).
+# GSFLOW_HRU_FORCING_DISCRETIZATION
+#   Type:        str | None
+#   Default:     null
+#   Source:      GSFLOWConfig (models/gsflow/config_schema.py)
+GSFLOW_HRU_FORCING_DISCRETIZATION: null
 
 # Elevation-band lower bound (m) -> source hruId; each HRU uses its band
 # (nearest band outside the mapped range).

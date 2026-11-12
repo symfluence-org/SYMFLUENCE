@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Sequence
+from typing import Dict, List, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -42,11 +42,16 @@ def hru_source_ids(elev: Sequence[float], band_size: float, band_ids: Dict[int, 
     return out
 
 
-def load_hru_forcing(path: Path, source_ids: Sequence[int], start: datetime, end: datetime) -> Dict[str, pd.DataFrame]:
+def load_hru_forcing(path: Path, source_ids: Sequence[int], start: datetime, end: datetime,
+                     discretization: Optional[str] = None) -> Dict[str, pd.DataFrame]:
     """Daily per-HRU forcing (precip mm, tmax/tmin C, swrad Langley) from
-    canonical forcing with an ``hru`` dimension, in ``source_ids`` order."""
+    canonical forcing with an ``hru`` dimension, in ``source_ids`` order.
+
+    *discretization* picks one HRU set when the folder holds several (issue #339)."""
+    from symfluence.core.modeling.forcing_naming import select_hru_forcing_folder
     from symfluence.core.modeling.model_ready.forcing_reader import forcing_timestep_seconds, open_canonical_forcing
-    files = sorted(Path(path).glob('*.nc'))
+    files = select_hru_forcing_folder(sorted(Path(path).glob('*.nc')), discretization,
+                                      'GSFLOW_HRU_FORCING_DISCRETIZATION')
     if not files:
         raise FileOperationError(f'No per-HRU forcing NetCDF in {path}')
     names = {'precipitation_flux': 'precip', 'air_temperature': 'temp', 'surface_downwelling_shortwave_flux': 'swrad'}

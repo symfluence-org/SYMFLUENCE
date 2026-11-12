@@ -42,7 +42,7 @@ import subprocess
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -66,6 +66,10 @@ MET_VARIABLES = ('DSWR', 'DLWR', 'APCP', 'Temp', 'UGRD', 'VGRD', 'Press', 'SPFH'
 DEFAULT_FORCING_NAMES = {'DSWR': 'SWRadAtm', 'DLWR': 'LWRadAtm', 'APCP': 'pptrate', 'Temp': 'airtemp',
                          'UGRD': 'windspd', 'Press': 'airpres', 'SPFH': 'spechum'}
 
+
+
+# A forcing file, a directory of them, or an explicit selection of files.
+ForcingSource = Union[Path, Sequence[Path]]
 
 @dataclass
 class BasinParameters:
@@ -203,10 +207,18 @@ def parflow_keys(grid: BasinGrid, params: BasinParameters, name: str, hours: int
     return k
 
 
-def open_forcing(path: Path):
-    """Open the unit forcing: one NetCDF file, or every ``*.nc`` in a directory (e.g. SYMFLUENCE basin-averaged)."""
+def open_forcing(path: ForcingSource):
+    """Open the unit forcing: one NetCDF file, a list of files, or every ``*.nc`` in a directory.
+
+    A list is what :func:`~.settings.basin_forcing_files` selects from the shared basin-averaged store.
+    """
     import xarray as xr
 
+    if not isinstance(path, (str, Path)):
+        files = [Path(p) for p in path]
+        if not files:
+            raise FileOperationError('no NetCDF forcing files given')
+        return xr.open_mfdataset(files, combine='by_coords')
     path = Path(path)
     if path.is_dir():
         files = sorted(path.glob('*.nc'))
@@ -297,7 +309,7 @@ def write_static(run: Path, grid: BasinGrid, params: BasinParameters, parflow_di
         raise ModelExecutionError(f'pfmask-to-pfsol failed: {r.stdout}{r.stderr}')
 
 
-def write_forcing(out: Path, grid: BasinGrid, params: BasinParameters, forcing_file: Path, start: str, end: str,
+def write_forcing(out: Path, grid: BasinGrid, params: BasinParameters, forcing_file: ForcingSource, start: str, end: str,
                   unit_variable: str = 'unit_id', names: Optional[Dict[str, str]] = None, P: int = 1,
                   Q: int = 1) -> int:
     """Write CLM 3-D met files (24 h each) for [start, end); returns the number of hours.
@@ -391,7 +403,7 @@ def run_parflow(run: Path, name: str, parflow_dir: Path, ranks: int, mpirun: Opt
 
 
 def write_segment(run: Path, name: str, grid: BasinGrid, params: BasinParameters, parflow_dir: Path,
-                  forcing_file: Path, start: str, end: str, prev: Optional[Path] = None, P: int = 1, Q: int = 1,
+                  forcing_file: ForcingSource, start: str, end: str, prev: Optional[Path] = None, P: int = 1, Q: int = 1,
                   forcing_unit_variable: str = 'unit_id', forcing_names: Optional[Dict[str, str]] = None) -> Dict:
     """Write every input of one segment into ``run`` (emptied first); returns its metadata."""
     shutil.rmtree(run, ignore_errors=True)
@@ -416,7 +428,7 @@ def write_segment(run: Path, name: str, grid: BasinGrid, params: BasinParameters
 
 
 def run_segment(run: Path, name: str, grid: BasinGrid, params: BasinParameters, parflow_dir: Path,
-                forcing_file: Path, start: str, end: str, prev: Optional[Path] = None, P: int = 1, Q: int = 1,
+                forcing_file: ForcingSource, start: str, end: str, prev: Optional[Path] = None, P: int = 1, Q: int = 1,
                 keep_forcing: bool = False, mpirun: Optional[str] = None, timeout: Optional[int] = None,
                 forcing_unit_variable: str = 'unit_id', forcing_names: Optional[Dict[str, str]] = None) -> Dict:
     """Write and run one segment; raises if ParFlow does not finish. Forcing and CLM output folders are removed."""
