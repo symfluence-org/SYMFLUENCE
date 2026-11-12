@@ -21,6 +21,8 @@ def test_summa_failure_raises_in_every_mode(mode, success):
         run=MagicMock(return_value=output),
         run_summa_point=MagicMock(return_value=output),
         run_parallel_summa=MagicMock(return_value=output),
+        _initial_state_path=MagicMock(),
+        _repair_initial_state=MagicMock(),
     )
     if success:
         assert SummaRunner.run_summa(runner) == output

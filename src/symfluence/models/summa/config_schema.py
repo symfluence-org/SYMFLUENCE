@@ -83,6 +83,10 @@ class SUMMAConfig(BaseModel):
     monitor_slurm_job: bool = Field(default=True, alias='MONITOR_SLURM_JOB')
     soilprofile: str = Field(default='FA', alias='SETTINGS_SUMMA_SOILPROFILE')
     init_matric_head: float = Field(default=-1.0, alias='SUMMA_INIT_MATRIC_HEAD')
+    # Repair the configured initial-condition file before each run when it holds snow
+    # layers SUMMA's check_icond would refuse (see restart_repair.py).  Off by default
+    # because it rewrites a file in the settings directory in place.
+    repair_initial_state: bool = Field(default=False, alias='SUMMA_REPAIR_INITIAL_STATE')
     # Regionalization settings
     parameter_regionalization: str = Field(default='lumped', alias='PARAMETER_REGIONALIZATION')
     transfer_function_attributes_path: Optional[str] = Field(default=None, alias='TRANSFER_FUNCTION_ATTRIBUTES')
