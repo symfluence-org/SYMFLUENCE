@@ -8,7 +8,12 @@ Default variable mappings, units, and parameter values for MESH model.
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Union
+import csv
+import re
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Union
+
+from ..errors import MESHConfigurationError
 
 # ---------------------------------------------------------------------------
 # Shared spatial-mode predicates
@@ -134,6 +139,11 @@ class MESHConfigDefaults:
         "longwave_radiation": 'W/m^2',
     }
 
+    # Land-cover classifications the class ids of the land-cover statistics
+    # can be in. The ids alone do not say which one (both use 1..17), so the
+    # classification is resolved by detect_landcover_classification().
+    LANDCOVER_CLASSIFICATIONS = ('nalcms', 'igbp')
+
     # NALCMS 2020 landcover classes (integer keys for meshflow compatibility)
     LANDCOVER_CLASSES: Dict[int, str] = {
         1: 'Temperate or sub-polar needleleaf forest',
@@ -202,6 +212,168 @@ class MESHConfigDefaults:
         18: 'water',      # Water
         19: 'barrenland', # Snow and Ice (glacier surfaces, not open water)
     }
+
+    # IGBP classes of MODIS MCD12Q1 (LC_Type1), the land cover the framework's
+    # own acquisition delivers (LAND_CLASS_SOURCE: modis). Names are worded so
+    # that meshflow's short label and its first-word test for water/wetland
+    # (which switches interflow off) behave as they do for the NALCMS names.
+    IGBP_LANDCOVER_CLASSES: Dict[int, str] = {
+        1: 'Evergreen needleleaf forest',
+        2: 'Evergreen broadleaf forest',
+        3: 'Deciduous needleleaf forest',
+        4: 'Deciduous broadleaf forest',
+        5: 'Mixed forest',
+        6: 'Closed shrubland',
+        7: 'Open shrubland',
+        8: 'Woody savanna',
+        9: 'Savanna',
+        10: 'Grassland',
+        11: 'Wetland',
+        12: 'Cropland',
+        13: 'Urban and built-up',
+        14: 'Cropland natural vegetation mosaic',
+        15: 'Snow and Ice',
+        16: 'Barren or sparsely vegetated',
+        17: 'Water bodies',
+    }
+
+    # IGBP to CLASS parameter type, following the choices of the NALCMS table
+    # (mixed forest -> broadleaf, shrubland -> grass, snow and ice -> barrenland).
+    IGBP_GRU_MAPPING: Dict[int, str] = {
+        1: 'needleleaf',  # Evergreen needleleaf forest
+        2: 'broadleaf',   # Evergreen broadleaf forest
+        3: 'needleleaf',  # Deciduous needleleaf forest
+        4: 'broadleaf',   # Deciduous broadleaf forest
+        5: 'broadleaf',   # Mixed forest
+        6: 'grass',       # Closed shrubland
+        7: 'grass',       # Open shrubland
+        8: 'grass',       # Woody savanna
+        9: 'grass',       # Savanna
+        10: 'grass',      # Grassland
+        11: 'wetland',    # Permanent wetland
+        12: 'crops',      # Cropland
+        13: 'urban',      # Urban and built-up
+        14: 'crops',      # Cropland / natural vegetation mosaic
+        15: 'barrenland', # Permanent snow and ice (glacier surfaces, not open water)
+        16: 'barrenland', # Barren or sparsely vegetated
+        17: 'water',      # Water bodies
+    }
+
+    @classmethod
+    def landcover_classes_for(cls, classification: str) -> Dict[int, str]:
+        """Class id -> class name of a land-cover classification."""
+        return {'nalcms': cls.LANDCOVER_CLASSES, 'igbp': cls.IGBP_LANDCOVER_CLASSES}[
+            cls._known_classification(classification)]
+
+    @classmethod
+    def gru_mapping_for(cls, classification: str) -> Dict[int, str]:
+        """Class id -> CLASS parameter type of a land-cover classification."""
+        return {'nalcms': cls.FULL_GRU_MAPPING, 'igbp': cls.IGBP_GRU_MAPPING}[
+            cls._known_classification(classification)]
+
+    @classmethod
+    def _known_classification(cls, classification: str) -> str:
+        name = str(classification).strip().lower()
+        name = {'modis': 'igbp'}.get(name, name)
+        if name not in cls.LANDCOVER_CLASSIFICATIONS:
+            raise MESHConfigurationError(
+                f"Unknown MESH land-cover classification {classification!r}; "
+                f"MESH_LANDCOVER_CLASSIFICATION must be one of {list(cls.LANDCOVER_CLASSIFICATIONS)}")
+        return name
+
+    @classmethod
+    def detect_landcover_classification(
+        cls,
+        landcover_csv: Optional[Union[str, Path]],
+        configured: Optional[str] = 'default',
+        land_class_source: Optional[str] = 'modis',
+    ) -> str:
+        """Which classification the class ids of a land-cover statistics CSV are in.
+
+        - ``MESH_LANDCOVER_CLASSIFICATION`` (*configured*), when set, decides.
+        - ``IGBP_<id>`` columns are what the framework's own zonal statistics
+          write, whatever the raster. With ``LAND_CLASS_SOURCE: modis`` (the
+          default acquisition, MODIS MCD12Q1) the ids are IGBP. Any other
+          source has ids this module has no table for: an error.
+        - ``frac_<id>`` columns are the gistool/meshflow convention of a
+          prepared NALCMS table: NALCMS, as these files have always been read.
+
+        Anything else (no class columns, both kinds, no file) is an error
+        rather than a guess: the two classifications share the ids 1..17 with
+        different meanings (15 is cropland in NALCMS, snow and ice in IGBP).
+        """
+        if configured is not None and str(configured).strip().lower() not in ('', 'default'):
+            return cls._known_classification(str(configured))
+
+        hint = ("set MESH_LANDCOVER_CLASSIFICATION to one of "
+                f"{list(cls.LANDCOVER_CLASSIFICATIONS)}")
+        if not landcover_csv or not Path(landcover_csv).exists():
+            raise MESHConfigurationError(
+                f"Land-cover statistics file not found ({landcover_csv}); cannot tell which "
+                f"classification its class ids are in — {hint}")
+        with open(landcover_csv, newline='', encoding='utf-8') as handle:
+            header = next(csv.reader(handle), [])
+        igbp = [c for c in header if re.fullmatch(r'IGBP_\d+', c.strip())]
+        frac = [c for c in header if re.fullmatch(r'frac_\d+', c.strip())]
+        if igbp and frac:
+            raise MESHConfigurationError(
+                f"{landcover_csv} has both IGBP_* and frac_* class columns; {hint}")
+        if igbp:
+            source = str(land_class_source or 'modis').strip().lower()
+            if source != 'modis':
+                raise MESHConfigurationError(
+                    f"{landcover_csv} holds class ids of LAND_CLASS_SOURCE '{source}', for which "
+                    f"MESH has no class table; {hint} if the ids follow one of them, or supply "
+                    f"MESH_LANDCOVER_CLASSES and MESH_GRU_MAPPING")
+            return 'igbp'
+        if frac:
+            return 'nalcms'
+        raise MESHConfigurationError(
+            f"{landcover_csv} has no IGBP_<id> or frac_<id> class columns; {hint}")
+
+    @classmethod
+    def check_class_ids(cls, class_ids: List[int], classification: str,
+                        known: Optional[Dict[int, Any]] = None) -> None:
+        """Raise when the data holds class ids the classification does not define."""
+        known = known if known is not None else cls.landcover_classes_for(classification)
+        unknown = sorted(c for c in class_ids if c not in known)
+        if unknown:
+            raise MESHConfigurationError(
+                f"Land-cover class ids {unknown} are not {classification.upper()} classes "
+                f"(known: {sorted(known)}). Set MESH_LANDCOVER_CLASSIFICATION if the "
+                f"classification was detected wrongly, or supply MESH_LANDCOVER_CLASSES "
+                f"and MESH_GRU_MAPPING for these ids")
+
+    @staticmethod
+    def find_landcover_stats(
+        get: Callable[[str, Any], Any], attributes_dir: Optional[Path],
+    ) -> Optional[Path]:
+        """The land-cover statistics CSV the MESH preprocessor reads, if it exists.
+
+        ``get(key, default)`` returns a MESH config value, or *default* when it
+        is unset or ``'default'``. Lookup order: ``MESH_LANDCOVER_STATS_PATH``;
+        ``MESH_LANDCOVER_STATS_DIR``/``MESH_LANDCOVER_STATS_FILE`` (default
+        ``<attributes>/gistool-outputs`` and the legacy statistics name); any
+        ``*landcover*.csv`` in that directory.
+        """
+        explicit = get('MESH_LANDCOVER_STATS_PATH', None)
+        if explicit and Path(explicit).exists():
+            return Path(explicit)
+        directory = get('MESH_LANDCOVER_STATS_DIR', None)
+        if directory is None:
+            if attributes_dir is None:
+                return None
+            directory = Path(attributes_dir) / 'gistool-outputs'
+        directory = Path(directory)
+        candidate = directory / get(
+            'MESH_LANDCOVER_STATS_FILE', 'modified_domain_stats_NA_NALCMS_landcover_2020_30m.csv')
+        if candidate.exists():
+            return candidate
+        if directory.exists():
+            others = sorted(directory.glob('*landcover*.csv'))
+            if others:
+                return others[0]
+        return None
 
     # MESH variable name mappings
     MESH_VAR_NAMES: Dict[str, str] = {
@@ -367,20 +539,23 @@ class MESHConfigDefaults:
         return 730
 
     @classmethod
-    def get_gru_mapping_for_classes(cls, detected_classes: list) -> Dict[int, str]:
+    def get_gru_mapping_for_classes(cls, detected_classes: list, classification: str = 'nalcms') -> Dict[int, str]:
         """
         Get GRU mapping filtered to only include detected classes.
 
         Args:
             detected_classes: List of GRU class numbers present in data
+            classification: Land-cover classification of those numbers
+                ('nalcms' or 'igbp')
 
         Returns:
             Filtered GRU mapping dictionary
         """
+        mapping = cls.gru_mapping_for(classification)
         if detected_classes:
-            return {k: cls.FULL_GRU_MAPPING.get(k, 'needleleaf')
+            return {k: mapping.get(k, 'needleleaf')
                     for k in detected_classes}
-        return cls.FULL_GRU_MAPPING
+        return mapping
 
     @classmethod
     def get_default_settings(

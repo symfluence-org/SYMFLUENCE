@@ -51,7 +51,9 @@ class WflowPostProcessor(StandardModelPostProcessor):
         return toml_path.exists() and is_runoff_flux_output(toml_path)
 
     def _convert_mm_dt_to_cms(self, series):
-        """Lumped runoff (mm per model step) -> routed discharge in m³/s.
+        """Lumped output (a ``Q`` series, or the whole CSV table so that the
+        subsurface and river-fraction columns are included) -> routed
+        discharge in m³/s.
 
         Same function as the calibration worker: unit conversion with the
         TOML's own step, then the ROUTE_* post-hoc routing recorded beside the
@@ -106,7 +108,8 @@ class WflowPostProcessor(StandardModelPostProcessor):
                     return None
                 streamflow = df[q_col]
                 if needs_conversion:
-                    streamflow = self._convert_mm_dt_to_cms(streamflow)
+                    # whole table: the lumped outflow sums several columns
+                    streamflow = self._convert_mm_dt_to_cms(df)
                 streamflow = self._align_time_labels(streamflow)
                 streamflow.index.name = 'datetime'
                 if self.resample_frequency:

@@ -434,12 +434,38 @@ class MESHPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             sim_start_date = '2001-01-01 00:00:00'
             sim_end_date = '2010-12-31 23:00:00'
 
-        # Get GRU mapping
-        gru_mapping = MESHConfigDefaults.get_gru_mapping_for_classes(detected_gru_classes)
+        # Which classification the class ids are in decides their names and
+        # CLASS parameter types: the same id means different land cover in
+        # NALCMS and IGBP (15 is cropland in one, snow and ice in the other).
+        user_classes = _get_mesh_config_value('MESH_LANDCOVER_CLASSES', None)
+        user_gru_mapping = _get_mesh_config_value('MESH_GRU_MAPPING', None)
+        if user_classes is not None and user_gru_mapping is not None:
+            # Names and types both supplied: no built-in table is used.
+            all_landcover_classes = user_classes
+            gru_mapping = user_gru_mapping
+        else:
+            classification = MESHConfigDefaults.detect_landcover_classification(
+                landcover_path,
+                self._get_config_value(
+                    lambda: self.config.model.mesh.landcover_classification,
+                    default='default', dict_key='MESH_LANDCOVER_CLASSIFICATION'),
+                self._get_config_value(
+                    lambda: self.config.domain.land_class_source,
+                    default='modis', dict_key='LAND_CLASS_SOURCE'),
+            )
+            self.logger.info(
+                f"MESH land-cover classification: {classification.upper()} "
+                f"(class ids {detected_gru_classes})")
+            all_landcover_classes = (
+                user_classes if user_classes is not None
+                else MESHConfigDefaults.landcover_classes_for(classification))
+            MESHConfigDefaults.check_class_ids(
+                detected_gru_classes, classification, all_landcover_classes)
+            gru_mapping = MESHConfigDefaults.get_gru_mapping_for_classes(
+                detected_gru_classes, classification)
 
         # Filter landcover_classes to only include detected classes
         # This prevents meshflow NGRU dimension mismatch errors
-        all_landcover_classes = _get_mesh_config_value('MESH_LANDCOVER_CLASSES', MESHConfigDefaults.LANDCOVER_CLASSES)
         if detected_gru_classes:
             landcover_classes = {k: v for k, v in all_landcover_classes.items() if k in detected_gru_classes}
             self.logger.debug(f"Filtered landcover_classes to detected classes: {list(landcover_classes.keys())}")
@@ -487,31 +513,22 @@ class MESHPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         Returns:
             Path to the landcover statistics CSV file.
         """
-        landcover_stats_path = _get_config_value('MESH_LANDCOVER_STATS_PATH', None)
+        found = MESHConfigDefaults.find_landcover_stats(_get_config_value, self.project_attributes_dir)
+        if found is not None:
+            if _get_config_value('MESH_LANDCOVER_STATS_PATH', None) is None:
+                self.logger.info(f"Using landcover file: {found.name}")
+            return str(found)
 
-        if landcover_stats_path:
-            path = Path(landcover_stats_path)
-            if path.exists():
-                return str(path)
-
-        landcover_file = _get_config_value(
-            'MESH_LANDCOVER_STATS_FILE',
-            'modified_domain_stats_NA_NALCMS_landcover_2020_30m.csv',
-        )
         landcover_dir = Path(
             _get_config_value(
                 'MESH_LANDCOVER_STATS_DIR',
                 self.project_attributes_dir / 'gistool-outputs',
             )
         )
-        landcover_path = landcover_dir / landcover_file
-
-        # If the default file doesn't exist, look for any landcover CSV in the directory
-        if not landcover_path.exists() and landcover_dir.exists():
-            landcover_csvs = list(landcover_dir.glob('*landcover*.csv'))
-            if landcover_csvs:
-                self.logger.info(f"Using alternative landcover file: {landcover_csvs[0].name}")
-                return str(landcover_csvs[0])
+        landcover_path = landcover_dir / _get_config_value(
+            'MESH_LANDCOVER_STATS_FILE',
+            'modified_domain_stats_NA_NALCMS_landcover_2020_30m.csv',
+        )
 
         # If still not found, create a minimal landcover CSV file
         if not landcover_path.exists():

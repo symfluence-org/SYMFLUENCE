@@ -161,3 +161,136 @@ def test_oudin_is_unchanged():
     np.testing.assert_array_equal(
         pet, PETCalculatorMixin.oudin_pet_numpy(temp, np.asarray(times.dayofyear), 64.0))
     assert not hasattr(WflowPreProcessor, '_estimate_pet_hamon')
+
+
+# --- Lumped Q is the whole outflow of the cell --------------------------------
+#
+# One-cell Wflow.jl 1.0.4 run (daily and 3-hourly, 4 years): P - ET - dS equals
+# net_runoff + river lateral inflow + lateral subsurface flow to 1e-12 mm per
+# step; net runoff alone was 93 % of it.
+
+LAT = 64.0
+#: Wflow's own area of a 0.01 degree cell at 64 degN (utils.jl lattometres).
+WFLOW_CELL_AREA = 545477.588
+
+
+def _full_toml(step, extra=''):
+    text = _toml(step)
+    for header, (parameter, _) in ld.LUMPED_OUTFLOW_COLUMNS.items():
+        text += f'[[output.csv.column]]\nheader = "{header}"\nparameter = "{parameter}"\nreducer = "mean"\n'
+    return text + extra
+
+
+def _full_domain(tmp_path, step=10800, n=48):
+    """A lumped run whose TOML and CSV carry the three outflow columns."""
+    settings, out, config, mm = _domain(tmp_path, step=step, n=n)
+    (settings / 'wflow_sbm.toml').write_text(_full_toml(step))
+    cell = np.full((3, 3), np.nan)
+    cell[1, 1] = AREA
+    xr.Dataset(
+        {'wflow_cellarea': (('y', 'x'), cell),
+         'wflow_subcatch': (('y', 'x'), np.where(np.isnan(cell), np.nan, 1.0)),
+         'KsatVer': (('y', 'x'), np.where(np.isnan(cell), np.nan, 250.0))},
+        coords={'y': [LAT - 0.01, LAT, LAT + 0.01], 'x': [-19.01, -19.0, -18.99]},
+    ).to_netcdf(settings / 'wflow_staticmaps.nc')
+    river = 0.002 + 0.001 * np.cos(np.arange(n) / 7.0)        # m3/s on the Wflow cell
+    ssf = 30.0 + 5.0 * np.sin(np.arange(n) / 11.0)            # m3/d on the Wflow cell
+    table = pd.DataFrame({'Q': mm.values, 'Q_river_inflow': river, 'Q_subsurface': ssf}, index=mm.index)
+    table.rename_axis('time').to_csv(out / 'output.csv')
+    return settings, out, config, table
+
+
+def test_wflow_cell_area_follows_wflow_not_the_basin_area(tmp_path):
+    settings, _, _, _ = _full_domain(tmp_path)
+    toml = settings / 'wflow_sbm.toml'
+    area = ld.wflow_cell_area_m2(settings / 'wflow_staticmaps.nc', toml)
+    assert area == pytest.approx(WFLOW_CELL_AREA, rel=1e-6)
+    toml.write_text(_full_toml(10800, '[model]\ncell_length_in_meter__flag = true\n'))
+    assert ld.wflow_cell_area_m2(settings / 'wflow_staticmaps.nc', toml) == pytest.approx(1e-4)
+
+
+@pytest.mark.parametrize('step', [10800, 86400])
+def test_lumped_outflow_adds_river_fraction_and_subsurface_flow(tmp_path, step):
+    settings, _, _, table = _full_domain(tmp_path, step=step)
+    total = ld.lumped_outflow_mm_per_step(table, settings / 'wflow_sbm.toml', settings / 'wflow_staticmaps.nc')
+    river_mm = table['Q_river_inflow'] * step / WFLOW_CELL_AREA * 1000.0             # m3/s -> mm/step
+    ssf_mm = table['Q_subsurface'] * (step / 86400.0) / WFLOW_CELL_AREA * 1000.0     # m3/d -> mm/step
+    np.testing.assert_allclose(total.values, (table['Q'] + river_mm + ssf_mm).values, rtol=1e-6)
+    assert (total > table['Q']).all()
+
+    q = ld.lumped_discharge_cms(table, settings / 'wflow_sbm.toml', settings / 'wflow_staticmaps.nc')
+    np.testing.assert_allclose(q.values, total.values * AREA / (step * 1000.0), rtol=1e-12)
+
+
+def test_worker_and_postprocessor_both_use_the_full_outflow(tmp_path):
+    settings, out, config, table = _full_domain(tmp_path)
+    expected = ld.lumped_discharge_cms(table, settings / 'wflow_sbm.toml', settings / 'wflow_staticmaps.nc')
+    net_only = table['Q'] * AREA / (10800 * 1000.0)
+    assert (expected > net_only).all()
+
+    scored = WflowWorker(config, logging.getLogger('w'))._load_simulated_streamflow(out, config)
+    np.testing.assert_allclose(scored.values, expected.values, rtol=1e-9)
+    saved = {}
+    _postprocessor(tmp_path, saved).extract_streamflow()
+    np.testing.assert_allclose(saved['WFLOW_discharge_cms'].values, scored.values, rtol=1e-12)
+
+
+def test_settings_from_before_the_columns_keep_net_runoff_and_say_so(tmp_path, caplog):
+    settings, _, _, mm = _domain(tmp_path)
+    ld._warned_legacy_tomls.clear()
+    with caplog.at_level(logging.WARNING, logger=ld.logger.name):
+        total = ld.lumped_outflow_mm_per_step(mm.rename('Q'), settings / 'wflow_sbm.toml',
+                                              settings / 'wflow_staticmaps.nc')
+        ld.lumped_outflow_mm_per_step(mm.rename('Q'), settings / 'wflow_sbm.toml',
+                                      settings / 'wflow_staticmaps.nc')
+    np.testing.assert_array_equal(total.values, mm.values)
+    warnings = [r for r in caplog.records if 'Regenerate the Wflow settings' in r.getMessage()]
+    assert len(warnings) == 1          # once per TOML, not once per calibration iteration
+
+
+def test_declared_columns_missing_from_the_output_are_an_error(tmp_path):
+    settings, _, _, table = _full_domain(tmp_path)
+    toml, static = settings / 'wflow_sbm.toml', settings / 'wflow_staticmaps.nc'
+    with pytest.raises(ConfigurationError, match='does not contain'):
+        ld.lumped_outflow_mm_per_step(table[['Q', 'Q_river_inflow']], toml, static)
+    with pytest.raises(ConfigurationError, match='does not contain'):
+        ld.lumped_outflow_mm_per_step(table['Q'], toml, static)
+    toml.write_text(_toml(10800) + '[[output.csv.column]]\nheader = "Q_subsurface"\n'
+                    'parameter = "subsurface_water__volume_flow_rate"\nreducer = "mean"\n')
+    with pytest.raises(ConfigurationError, match='needs both'):
+        ld.lumped_outflow_mm_per_step(table, toml, static)
+
+
+def test_more_than_one_active_cell_is_not_a_lumped_run(tmp_path):
+    settings, _, _, _ = _full_domain(tmp_path)
+    static = settings / 'wflow_staticmaps.nc'
+    with xr.open_dataset(static) as ds:
+        ds = ds.load()
+    ds['wflow_subcatch'][0, 0] = 1.0
+    ds.to_netcdf(static)
+    with pytest.raises(ConfigurationError, match='exactly one active cell'):
+        ld.wflow_cell_area_m2(static, settings / 'wflow_sbm.toml')
+
+
+@pytest.mark.parametrize('mode, expected', [('lumped', True), ('distributed', False)])
+def test_generated_toml_writes_the_outflow_columns_in_lumped_mode_only(tmp_path, mode, expected):
+    import tomllib
+    from datetime import datetime
+
+    pre = WflowPreProcessor.__new__(WflowPreProcessor)
+    pre.logger = logging.getLogger('wflow-pre')
+    pre.spatial_mode = mode
+    pre.settings_dir = tmp_path / 'settings'
+    pre.forcing_out_dir = tmp_path / 'forcing'
+    pre.settings_dir.mkdir()
+    values = {'SYMFLUENCE_DATA_DIR': str(tmp_path), 'DOMAIN_NAME': 'test', 'FORCING_TIME_STEP_SIZE': 86400}
+    pre._get_config_value = lambda accessor, default=None, dict_key=None: values.get(dict_key, default)
+    pre._get_simulation_dates = lambda: (datetime(2020, 1, 1), datetime(2020, 12, 31))
+    pre._soil_layer_thickness = lambda: [100, 300, 800]
+    pre._generate_toml_config()
+
+    toml = pre.settings_dir / 'wflow_sbm.toml'
+    columns = {c['header']: c['parameter'] for c in tomllib.loads(toml.read_text())['output']['csv']['column']}
+    assert ld.is_runoff_flux_output(toml) is expected
+    for header, (parameter, _) in ld.LUMPED_OUTFLOW_COLUMNS.items():
+        assert (columns.get(header) == parameter) is expected
