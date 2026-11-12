@@ -66,7 +66,7 @@ def discretize(discretizer: "DomainDiscretizer") -> Optional[object]:
 
     aspect_class_number = int(discretizer._get_config_value(
         lambda: discretizer.config.domain.aspect_class_number,
-        default=8
+        dict_key='ASPECT_CLASS_NUMBER',
     ))
 
     if not aspect_raster.exists():

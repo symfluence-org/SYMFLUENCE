@@ -84,8 +84,7 @@ class ModelEvaluator(ConfigurableMixin, ABC):
         # Parse calibration/evaluation timestep (with dict_key fallback for worker dicts)
         self.eval_timestep = self._get_config_value(
             lambda: self.config.optimization.calibration_timestep,
-            default='native',
-            dict_key='CALIBRATION_TIMESTEP'
+            dict_key='CALIBRATION_TIMESTEP',
         ).lower()
         if self.eval_timestep not in ['native', 'hourly', 'daily']:
             self.logger.warning(

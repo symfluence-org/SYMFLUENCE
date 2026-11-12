@@ -381,7 +381,11 @@ def _run_summa_worker(summa_exe: Path, file_manager: Path, summa_dir: Path, logg
         if use_parallel and summa_settings_dir is not None:
             from symfluence.models.summa.parallel_gru_execution import run_summa_gru_parallel
 
-            num_parallel = int(resolve_config_value(config, lambda: config.model.summa.cpus_per_task, 8, 'SETTINGS_SUMMA_CPUS_PER_TASK'))
+            num_parallel = int(resolve_config_value(
+                config,
+                lambda: config.model.summa.cpus_per_task,
+                dict_key='SETTINGS_SUMMA_CPUS_PER_TASK',
+            ))
             logger.debug(f"Launching parallel SUMMA with {num_parallel} processes")
             result = run_summa_gru_parallel(
                 summa_exe=Path(summa_exe_str),

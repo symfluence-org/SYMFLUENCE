@@ -44,9 +44,7 @@ class SMAPHandler(BaseObservationHandler):
 
     def acquire(self) -> Path:
         """Locate SMAP data."""
-        data_access = self._get_config_value(
-            lambda: self.config.domain.data_access, default='local'
-        ).lower()
+        data_access = self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS').lower()
 
         smap_path = self._get_config_value(
             lambda: self.config.evaluation.smap.path, default='default'
@@ -168,9 +166,7 @@ class ISMNHandler(BaseObservationHandler):
 
     def acquire(self) -> Path:
         """Locate or download ISMN data."""
-        data_access = self._get_config_value(
-            lambda: self.config.domain.data_access, default='local'
-        ).lower()
+        data_access = self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS').lower()
 
         ismn_path = self._get_config_value(
             lambda: self.config.evaluation.ismn.path, default='default'
@@ -358,9 +354,7 @@ class ESACCISMHandler(BaseObservationHandler):
             esa_dir = self.project_observations_dir / "soil_moisture" / "esa_cci"
         esa_dir.mkdir(parents=True, exist_ok=True)
 
-        data_access = self._get_config_value(
-            lambda: self.config.domain.data_access, default='local'
-        ).lower()
+        data_access = self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS').lower()
         force_download = self._get_config_value(
             lambda: self.config.data.force_download, default=False
         )
@@ -473,9 +467,7 @@ class SMOSSMHandler(BaseObservationHandler):
             smos_dir = self.project_observations_dir / "soil_moisture" / "smos"
         smos_dir.mkdir(parents=True, exist_ok=True)
 
-        data_access = self._get_config_value(
-            lambda: self.config.domain.data_access, default='local'
-        ).lower()
+        data_access = self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS').lower()
         force_download = self._get_config_value(
             lambda: self.config.data.force_download, default=False
         )
@@ -618,9 +610,7 @@ class ASCATSMHandler(BaseObservationHandler):
             ascat_dir = self.project_observations_dir / "soil_moisture" / "ascat"
         ascat_dir.mkdir(parents=True, exist_ok=True)
 
-        data_access = self._get_config_value(
-            lambda: self.config.domain.data_access, default='local'
-        ).lower()
+        data_access = self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS').lower()
         force_download = self._get_config_value(
             lambda: self.config.data.force_download, default=False
         )

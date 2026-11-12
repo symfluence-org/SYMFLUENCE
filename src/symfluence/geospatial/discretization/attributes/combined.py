@@ -220,7 +220,7 @@ def _get_raster_info_for_attributes(
                 )
                 aspect_class_number = int(discretizer._get_config_value(
                     lambda: discretizer.config.domain.aspect_class_number,
-                    default=8
+                    dict_key='ASPECT_CLASS_NUMBER',
                 ))
                 aspect_raster = calculate_aspect(
                     dem_raster,

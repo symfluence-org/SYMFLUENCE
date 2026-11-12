@@ -847,7 +847,8 @@ class SummaAttributesManager(ConfigurableMixin):
         elev_column = 'elev_mean'
 
         connect_hrus = self._get_config_value(
-            lambda: self.config.model.summa.connect_hrus, default='no'
+            lambda: self.config.model.summa.connect_hrus,
+            dict_key='SETTINGS_SUMMA_CONNECT_HRUS',
         )
         do_downHRUindex = connect_hrus == 'yes'
 

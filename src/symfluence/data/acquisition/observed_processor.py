@@ -333,8 +333,7 @@ class ObservedDataProcessor(ConfigMixin):
                 return
             from symfluence.core.registries import R
             from symfluence.data.observation.registry import ObservationRegistry
-            backend = str(self._get_config_value(
-                lambda: self.config.domain.data_access, default='MAF', dict_key='DATA_ACCESS')).lower()
+            backend = str(self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS')).lower()
             key = self.data_provider.lower()
             # ── ObservationBackend protocol tier (contract 0.2.0) ─────────
             # Backend-first under DATA_ACCESS: community: providers claimed

@@ -52,7 +52,7 @@ class MODISSnowHandler(BaseObservationHandler):
 
     def acquire(self) -> Path:
         """Locate or download MODIS snow data."""
-        data_access = self._get_config_value(lambda: self.config.domain.data_access, default='local').lower()
+        data_access = self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS').lower()
         snow_dir = Path(self._get_config_value(lambda: None, default=self.project_observations_dir / "snow", dict_key='MODIS_SNOW_DIR'))
 
         if not snow_dir.exists():
@@ -372,7 +372,7 @@ class MODISSCAHandler(MODISSnowHandler):
 
     def acquire(self) -> Path:
         """Acquire merged MODIS SCA data."""
-        data_access = self._get_config_value(lambda: self.config.domain.data_access, default='local').lower()
+        data_access = self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS').lower()
         snow_dir = Path(self._get_config_value(lambda: None, default=self.project_observations_dir / "snow", dict_key='MODIS_SNOW_DIR'))
 
         if not snow_dir.exists():

@@ -165,7 +165,10 @@ class GridDelineator(BaseGeofabricDelineator):
         self.logger.info(f"Saved grid network to: {river_network_path}")
 
         # Cleanup intermediate files if requested
-        if self._get_config_value(lambda: self.config.domain.delineation.cleanup_intermediate_files, default=True, dict_key='CLEANUP_INTERMEDIATE_FILES'):
+        if self._get_config_value(
+            lambda: self.config.domain.delineation.cleanup_intermediate_files,
+            dict_key='CLEANUP_INTERMEDIATE_FILES',
+        ):
             self.cleanup()
 
         return river_network_path, river_basins_path

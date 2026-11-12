@@ -87,7 +87,10 @@ class SUMMAParameterManager(BaseParameterManager):
         self._profiler_ctx = ProfilerContext("summa_parameter_manager")
 
         # Parse parameter lists from config
-        local_params_raw = self._get_config_value(lambda: self.config.model.summa.params_to_calibrate, default='', dict_key='PARAMS_TO_CALIBRATE') or ''
+        local_params_raw = self._get_config_value(
+            lambda: self.config.model.summa.params_to_calibrate,
+            dict_key='PARAMS_TO_CALIBRATE',
+        ) or ''
         basin_params_raw = self._get_config_value(lambda: None, default='', dict_key='BASIN_PARAMS_TO_CALIBRATE') or ''
         self.local_params = [p.strip() for p in str(local_params_raw).split(',') if p.strip()]
         self.basin_params = [p.strip() for p in str(basin_params_raw).split(',') if p.strip()]

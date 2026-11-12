@@ -365,8 +365,7 @@ class BaseGeofabricDelineator(ABC, PathResolverMixin):
         """
         if self._get_config_value(
             lambda: self.config.domain.delineation.cleanup_intermediate_files,
-            default=True,
-            dict_key='CLEANUP_INTERMEDIATE_FILES'
+            dict_key='CLEANUP_INTERMEDIATE_FILES',
         ):
             if hasattr(self, 'interim_dir') and self.interim_dir.exists():
                 shutil.rmtree(self.interim_dir.parent, ignore_errors=True)

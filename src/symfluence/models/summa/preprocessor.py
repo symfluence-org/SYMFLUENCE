@@ -122,7 +122,7 @@ class SummaPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         self.forcing_measurement_height = float(
             self._get_config_value(
                 lambda: self.config.forcing.measurement_height,
-                3.0  # Default measurement height
+                dict_key='FORCING_MEASUREMENT_HEIGHT',
             )
         )
 

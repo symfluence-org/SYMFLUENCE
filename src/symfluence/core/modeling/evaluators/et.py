@@ -200,8 +200,7 @@ class ETEvaluator(ModelEvaluator):
         # Observation source configuration
         self.obs_source = str(self._get_config_value(
             lambda: self.config.evaluation.et.obs_source,
-            default='mod16',
-            dict_key='ET_OBS_SOURCE'
+            dict_key='ET_OBS_SOURCE',
         )).lower()
         if self.obs_source not in self.SUPPORTED_SOURCES:
             self.logger.warning(

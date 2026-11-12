@@ -308,7 +308,8 @@ class StreamflowEvaluator(ModelEvaluator):
             default='', dict_key='HYDROLOGICAL_MODEL')
         spatial_mode = self._get_config_value(
             lambda: self.config.model.wflow.spatial_mode,
-            default='', dict_key='WFLOW_SPATIAL_MODE')
+            dict_key='WFLOW_SPATIAL_MODE',
+        )
         return str(model).upper() == 'WFLOW' and spatial_mode == 'distributed'
 
     def extract_simulated_data(self, sim_files: List[Path], **kwargs) -> pd.Series:

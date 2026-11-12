@@ -377,7 +377,7 @@ class VICWorker(BaseWorker):
             env['MallocStackLogging'] = '0'
 
             # Run with timeout
-            timeout = resolve_config_value(config, lambda: config.model.vic.timeout, 300, 'VIC_TIMEOUT')
+            timeout = resolve_config_value(config, lambda: config.model.vic.timeout, dict_key='VIC_TIMEOUT')
 
             stdout_file = vic_output_dir / 'vic_stdout.log'
             stderr_file = vic_output_dir / 'vic_stderr.log'

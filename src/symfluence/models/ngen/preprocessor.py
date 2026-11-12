@@ -140,7 +140,7 @@ class NgenPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             # Get the ET fallback configuration
             self._noah_et_fallback = self._get_config_value(
                 lambda: self.config.model.ngen.noah_et_fallback,
-                default='EVAPOTRANS'
+                dict_key='NGEN_NOAH_ET_FALLBACK',
             )
             valid_fallbacks = ['EVAPOTRANS', 'ETRAN', 'ECAN', 'QSEVA']
             if self._noah_et_fallback not in valid_fallbacks:

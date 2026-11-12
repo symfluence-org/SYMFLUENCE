@@ -186,7 +186,7 @@ class SummaConfigManager(PathResolverMixin):
 
             # Ensure TWS variables are in outputControl if doing TWS optimization
             # Check both primary and secondary targets for multi-objective calibration
-            target = (self._get_config_value(lambda: self.config.optimization.target, default='', dict_key='OPTIMIZATION_TARGET') or '').lower()
+            target = (self._get_config_value(lambda: self.config.optimization.target, dict_key='OPTIMIZATION_TARGET') or '').lower()
             target2 = (self._get_config_value(lambda: self.config.optimization.nsga2.secondary_target, default='', dict_key='OPTIMIZATION_TARGET2') or '').lower()
             tws_targets = ['tws', 'grace', 'grace_tws', 'total_storage', 'stor_grace']
             if target in tws_targets or target2 in tws_targets:

@@ -161,8 +161,7 @@ class MESHParameterFixer(ConfigMixin):
         """Remove GRUs below the minimum fraction threshold."""
         min_fraction = float(self._get_config_value(
             lambda: self.config.model.mesh.gru_min_total,
-            default=0.05,
-            dict_key='MESH_GRU_MIN_TOTAL'
+            dict_key='MESH_GRU_MIN_TOTAL',
         ))
         keep_mask = self._ddb.remove_small_grus(min_fraction)
         if keep_mask is not None:
@@ -192,7 +191,7 @@ class MESHParameterFixer(ConfigMixin):
         """Trim empty GRU columns from drainage database."""
         min_total = float(self._get_config_value(
             lambda: self.config.model.mesh.gru_min_total,
-            default=0.02, dict_key='MESH_GRU_MIN_TOTAL'
+            dict_key='MESH_GRU_MIN_TOTAL',
         ))
         return self._ddb.trim_empty_gru_columns(min_total)
 

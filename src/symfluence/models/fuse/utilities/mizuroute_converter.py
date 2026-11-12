@@ -148,7 +148,11 @@ class FuseToMizurouteConverter:
 
     def _get_routing_var_name(self, config: Dict[str, Any]) -> str:
         """Get the routing variable name from config."""
-        routing_var = resolve_config_value(config, lambda: config.model.mizuroute.routing_var, 'q_routed', 'SETTINGS_MIZU_ROUTING_VAR')
+        routing_var = resolve_config_value(
+            config,
+            lambda: config.model.mizuroute.routing_var,
+            dict_key='SETTINGS_MIZU_ROUTING_VAR',
+        )
         if routing_var in ('default', None, ''):
             routing_var = 'q_routed'
         return routing_var

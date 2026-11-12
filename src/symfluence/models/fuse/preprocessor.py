@@ -824,8 +824,8 @@ class FUSEPreProcessor(BaseModelPreProcessor, PETCalculatorMixin, GeospatialUtil
             'INPUT_PATH': str(self.project_forcing_dir / 'FUSE_input') + '/',
             'OUTPUT_PATH': str(self.get_simulation_dir('FUSE')) + '/',
             'MAXN': str(self._get_config_value(
-                lambda: self.config.optimization.iterations, dict_key='NUMBER_OF_ITERATIONS',
-                default=100
+                lambda: self.config.optimization.iterations,
+                dict_key='NUMBER_OF_ITERATIONS',
             )),
             'FMODEL_ID': fuse_id,
             'M_DECISIONS': f"fuse_zDecisions_{fuse_id}.txt"

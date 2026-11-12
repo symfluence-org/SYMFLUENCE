@@ -364,7 +364,7 @@ class AcquisitionService(ConfigurableMixin):
         """Acquire geospatial attributes including DEM, soil, and land cover data."""
         self.logger.info("Starting attribute acquisition")
 
-        data_access = self._get_config_value(lambda: self.config.domain.data_access, default='MAF').upper()
+        data_access = self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS').upper()
         dem_source = self._get_config_value(lambda: self.config.domain.dem_source, default='copdem90').lower()
 
         dem_dir = resolve_data_subdir(self.project_dir, 'attributes') / 'elevation' / 'dem'
@@ -944,7 +944,7 @@ class AcquisitionService(ConfigurableMixin):
                         )
                     return
 
-        data_access = self._get_config_value(lambda: self.config.domain.data_access, default='MAF').upper()
+        data_access = self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS').upper()
         forcing_dataset = self._get_config_value(lambda: self.config.forcing.dataset, default='').upper()
 
         # Compute effective forcing time step locally (never mutate shared config).
@@ -1178,8 +1178,7 @@ class AcquisitionService(ConfigurableMixin):
         """
         if not provider:
             return None
-        data_access = str(self._get_config_value(
-            lambda: self.config.domain.data_access, default='MAF', dict_key='DATA_ACCESS')).lower()
+        data_access = str(self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS')).lower()
         if data_access != 'community':
             return None
         from symfluence.core.registries import R
@@ -1513,7 +1512,10 @@ class AcquisitionService(ConfigurableMixin):
 
         # Check for MOD16 ET (based on ET_OBS_SOURCE or OPTIMIZATION_TARGET)
         et_obs_source = str(self._get_config_value(lambda: self.config.evaluation.et.obs_source, default='', dict_key='ET_OBS_SOURCE')).lower()
-        optimization_target = str(self._get_config_value(lambda: self.config.optimization.target, default='', dict_key='OPTIMIZATION_TARGET')).lower()
+        optimization_target = str(self._get_config_value(
+            lambda: self.config.optimization.target,
+            dict_key='OPTIMIZATION_TARGET',
+        )).lower()
         if et_obs_source in ('mod16', 'modis', 'modis_et', 'mod16a2'):
             if 'MODIS_ET' not in additional_obs and 'MOD16' not in additional_obs:
                 additional_obs.append('MODIS_ET')

@@ -59,7 +59,7 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
         # otherwise the symfluence root's effective level). Never ERROR-gated:
         # that used to hide worker failures.
         config = task_data.get('config', {})
-        level_name = str(resolve_config_value(config, lambda: config.system.log_level, '', 'LOG_LEVEL') or '').upper()
+        level_name = str(resolve_config_value(config, lambda: config.system.log_level, dict_key='LOG_LEVEL') or '').upper()
         level = getattr(logging, level_name, None) if level_name else None
         if not isinstance(level, int):
             level = None
@@ -198,7 +198,11 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
             debug_info['stage'] = 'lumped_to_distributed_conversion'
             config = task_data['config']
             domain_method = resolve_config_value(config, lambda: config.domain.definition_method, 'lumped', 'DOMAIN_DEFINITION_METHOD')
-            routing_delineation = resolve_config_value(config, lambda: config.domain.delineation.routing, 'river_network', 'ROUTING_DELINEATION')
+            routing_delineation = resolve_config_value(
+                config,
+                lambda: config.domain.delineation.routing,
+                dict_key='ROUTING_DELINEATION',
+            )
 
             # ONLY convert if domain is lumped but routing expects a network
             if domain_method in ['lumped', 'point'] and routing_delineation == 'river_network':

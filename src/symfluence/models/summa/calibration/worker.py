@@ -326,7 +326,7 @@ class SUMMAWorker(BaseWorker):
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=resolve_config_value(config, lambda: config.model.summa.timeout, 600, 'SUMMA_TIMEOUT')
+                timeout=resolve_config_value(config, lambda: config.model.summa.timeout, dict_key='SUMMA_TIMEOUT')
             )
 
             return result.returncode == 0

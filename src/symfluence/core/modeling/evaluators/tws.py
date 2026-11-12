@@ -329,8 +329,7 @@ class TWSEvaluator(ModelEvaluator):
                     # integrate: mm/s * seconds -> mm per timestep, then cumulative sum over time
                     dt = self._get_config_value(
                         lambda: self.config.forcing.time_step_size,
-                        default=1,
-                        dict_key='FORCING_TIME_STEP_SIZE'
+                        dict_key='FORCING_TIME_STEP_SIZE',
                     )
                     if hasattr(total_tws, 'sel') or hasattr(total_tws, 'dims'):
                         total_tws = (total_tws * dt).cumsum(dim=time_coord)

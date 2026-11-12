@@ -209,8 +209,7 @@ class SoilMoistureEvaluator(ModelEvaluator):
         elif self.optimization_target == 'sm_ismn':
             self.target_depth = self._get_config_value(
                 lambda: self.config.evaluation.ismn.target_depth_m,
-                default='auto',
-                dict_key='ISMN_TARGET_DEPTH_M'
+                dict_key='ISMN_TARGET_DEPTH_M',
             )
             self.temporal_aggregation = self._get_config_value(
                 lambda: self.config.evaluation.ismn.temporal_aggregation,

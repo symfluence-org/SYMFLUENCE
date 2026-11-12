@@ -22,7 +22,7 @@ from symfluence.core.logging_utils import log_once
 from symfluence.core.metrics.metric_transformer import MetricTransformer
 from symfluence.core.metrics.penalty import is_failure_sentinel, is_penalty, sanitize_score
 from symfluence.core.metrics.streamflow_metrics import StreamflowMetrics
-from symfluence.core.mixins.config import resolve_config_value
+from symfluence.core.mixins.config import SCHEMA_DEFAULT, resolve_config_value
 from symfluence.core.mixins.logging import _class_logger_name
 
 logger = logging.getLogger(__name__)
@@ -307,7 +307,7 @@ class BaseWorker(ABC):
     def _get_config_value(
         self,
         typed_accessor: Any = None,
-        default: Any = None,
+        default: Any = SCHEMA_DEFAULT,
         dict_key: Optional[str] = None
     ) -> Any:
         """Get config value with typed accessor + dict fallback.

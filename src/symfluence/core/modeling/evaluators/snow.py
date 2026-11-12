@@ -89,8 +89,7 @@ class SnowEvaluator(ModelEvaluator):
 
             calib_var = self._get_config_value(
                 lambda: self.config.optimization.calibration_variable,
-                default='swe',
-                dict_key='CALIBRATION_VARIABLE'
+                dict_key='CALIBRATION_VARIABLE',
             )
             self.logger.debug(f"Snow evaluator init: target={opt_target}, calib_var={calib_var}")
             self.optimization_target = (opt_target or calib_var).lower()
@@ -99,8 +98,7 @@ class SnowEvaluator(ModelEvaluator):
             # Check if OPTIMIZATION_TARGET contains swe/sca/snow_depth keywords
             opt_target = self._get_config_value(
                 lambda: self.config.optimization.target,
-                default='',
-                dict_key='OPTIMIZATION_TARGET'
+                dict_key='OPTIMIZATION_TARGET',
             ).lower()
             if opt_target in ['swe', 'sca', 'snow_depth']:
                 self.optimization_target = opt_target
@@ -108,8 +106,7 @@ class SnowEvaluator(ModelEvaluator):
                 # Fall back to CALIBRATION_VARIABLE
                 calibration_var = self._get_config_value(
                     lambda: self.config.optimization.calibration_variable,
-                    default='',
-                    dict_key='CALIBRATION_VARIABLE'
+                    dict_key='CALIBRATION_VARIABLE',
                 ).lower()
                 if 'swe' in calibration_var or 'snow' in calibration_var:
                     self.optimization_target = 'swe'

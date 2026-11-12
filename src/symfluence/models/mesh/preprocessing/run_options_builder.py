@@ -142,7 +142,7 @@ class RunOptionsConfigBuilder(ConfigMixin):
 
             enable_frozen = self._get_config_value(
                 lambda: self.config.model.mesh.enable_frozen_soil,
-                default=False, dict_key="MESH_ENABLE_FROZEN_SOIL"
+                dict_key='MESH_ENABLE_FROZEN_SOIL',
             )
             frozen_flag = "1" if enable_frozen else "0"
             if enable_frozen:
@@ -156,7 +156,7 @@ class RunOptionsConfigBuilder(ConfigMixin):
                 (r'PBSMFLAG\s+\w+', 'PBSMFLAG              off'),
                 (r'FROZENSOILINFILFLAG\s+\d+', f'FROZENSOILINFILFLAG   {frozen_flag}'),
                 (r'RUNMODE\s+\w+', f'RUNMODE               {runmode}'),
-                (r'METRICSSPINUP\s+\d+', f'METRICSSPINUP         {int(self._get_config_value(lambda: self.config.model.mesh.spinup_days, default=730, dict_key="MESH_SPINUP_DAYS"))}'),
+                (r'METRICSSPINUP\s+\d+', f'METRICSSPINUP         {int(self._get_config_value(lambda: self.config.model.mesh.spinup_days, dict_key="MESH_SPINUP_DAYS"))}'),
                 (r'DIAGNOSEMODE\s+\w+', 'DIAGNOSEMODE          off'),
                 (r'SHDFILEFLAG\s+\w+', 'SHDFILEFLAG           nc_subbasin pad_outlets'),
                 (r'BASINFORCINGFLAG\s+\w+', 'BASINFORCINGFLAG      nc_subbasin'),

@@ -76,7 +76,8 @@ class RHESSysModelOptimizer(BaseModelOptimizer):
     def _setup_parallel_dirs(self) -> None:
         """Setup RHESSys-specific parallel directories."""
         algorithm = self._get_config_value(
-            lambda: self.config.optimization.algorithm, default='optimization'
+            lambda: self.config.optimization.algorithm,
+            dict_key='ITERATIVE_OPTIMIZATION_ALGORITHM',
         ).lower()
         base_dir = self._resolve_sim_base_dir(algorithm)
 

@@ -140,9 +140,7 @@ class MizuRouteRunner(BaseModelRunner):  # type: ignore[misc]
         """
         # Determine which model's output to process
         models_raw = self.hydrological_model or ''
-        mizu_from = self._get_config_value(
-            lambda: self.config.model.mizuroute.from_model, default=''
-        )
+        mizu_from = self._get_config_value(lambda: self.config.model.mizuroute.from_model, dict_key='MIZU_FROM_MODEL')
 
         # Combine models and filter out 'DEFAULT' or empty strings
         all_models = f"{models_raw},{mizu_from}".split(',')
@@ -375,7 +373,8 @@ class MizuRouteRunner(BaseModelRunner):  # type: ignore[misc]
             # Sane defaults for control file if not specified
             if not control_file or control_file == 'default':
                 mizu_from = self._get_config_value(
-                    lambda: self.config.model.mizuroute.from_model, default=''
+                    lambda: self.config.model.mizuroute.from_model,
+                    dict_key='MIZU_FROM_MODEL',
                 ).upper()
                 if mizu_from == 'GR':
                     control_file = 'mizuRoute_control_GR.txt'

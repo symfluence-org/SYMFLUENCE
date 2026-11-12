@@ -35,7 +35,7 @@ class WSCStreamflowHandler(BaseObservationHandler):
 
     def acquire(self) -> Path:
         self.logger.debug("WSCStreamflowHandler.acquire called")
-        data_access = self._get_config_value(lambda: self.config.domain.data_access, default='local', dict_key='DATA_ACCESS')
+        data_access = self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS')
         download_enabled = self._get_config_value(lambda: self.config.evaluation.streamflow.download_wsc, default=False, dict_key='DOWNLOAD_WSC_DATA')
         station_id = self._get_config_value(lambda: self.config.evaluation.streamflow.station_id, dict_key='STATION_ID')
 

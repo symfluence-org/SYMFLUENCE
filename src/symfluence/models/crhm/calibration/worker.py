@@ -250,7 +250,7 @@ class CRHMWorker(BaseWorker):
             env = os.environ.copy()
 
             # Run with timeout
-            timeout = resolve_config_value(config, lambda: config.model.crhm.timeout, 300, 'CRHM_TIMEOUT')
+            timeout = resolve_config_value(config, lambda: config.model.crhm.timeout, dict_key='CRHM_TIMEOUT')
 
             stdout_file = crhm_output_dir / 'crhm_stdout.log'
             stderr_file = crhm_output_dir / 'crhm_stderr.log'
