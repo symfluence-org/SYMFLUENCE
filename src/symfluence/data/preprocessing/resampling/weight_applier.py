@@ -65,6 +65,11 @@ class RemappingWeightApplier(ConfigMixin):
         self.cached_target_shp_wgs84: Optional[Path] = None
         self.cached_hru_field: Optional[str] = None
 
+        # Elevation corrections of the ``lapse`` section (set by the resampler;
+        # None or inactive leaves remapped files untouched).
+        self.elevation_corrections = None
+        self._elevation_differences: dict = {}
+
     def set_shapefile_cache(
         self,
         target_shp_wgs84: Path,
@@ -80,6 +85,27 @@ class RemappingWeightApplier(ConfigMixin):
         self.cached_target_shp_wgs84 = target_shp_wgs84
         self.cached_hru_field = hru_field
         self.logger.debug(f"Cached shapefile: {target_shp_wgs84}, HRU field: {hru_field}")
+
+    def _apply_elevation_corrections(self, temp_dir: Path, remap_file: Path) -> None:
+        """Apply the active ``lapse`` corrections to the staged remapped file(s)."""
+        settings = self.elevation_corrections
+        if settings is None or not settings.active:
+            return
+        from .elevation_correction import (
+            apply_elevation_corrections,
+            find_intersection_table,
+            hru_elevation_differences,
+        )
+        key = str(remap_file)
+        if key not in self._elevation_differences:
+            hru_field = self.cached_hru_field or self._get_config_value(
+                lambda: self.config.paths.catchment_hruid, default='HRU_ID',
+                dict_key='CATCHMENT_SHP_HRUID')
+            self._elevation_differences[key] = hru_elevation_differences(
+                find_intersection_table(remap_file), hru_field, self.logger)
+        for candidate in temp_dir.glob('*.nc'):
+            apply_elevation_corrections(
+                candidate, self._elevation_differences[key], settings, self.logger)
 
     def apply_weights(
         self,
@@ -147,8 +173,9 @@ class RemappingWeightApplier(ConfigMixin):
                 if 'empty' in stdout.lower() or 'empty' in stderr.lower():
                     self.logger.warning(f"{worker_str}EASYMORE reported 'empty' for {file.name}")
 
-                # Find and move output file
-                # Stamp provenance before atomic publication, never afterward.
+                # Elevation corrections and provenance go onto the staged file,
+                # before atomic publication, never afterward.
+                self._apply_elevation_corrections(temp_dir, remap_file)
                 if manifest:
                     from netCDF4 import Dataset
 

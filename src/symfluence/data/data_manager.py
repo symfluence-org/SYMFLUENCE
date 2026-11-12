@@ -410,25 +410,6 @@ class DataManager(BaseManager):
 
             self.logger.info("Observed data processing completed successfully")
 
-    def _warn_unapplied_lapse_corrections(self) -> None:
-        """Warn when ``lapse`` asks for elevation corrections nothing applies."""
-        lapse = self._get_config_value(lambda: self.config.forcing.lapse, default=None)
-        if lapse is None:
-            return
-        toggles = ('pressure', 'humidity', 'longwave', 'shortwave', 'precipitation', 'wind')
-        if isinstance(lapse, dict):
-            requested = [name for name in toggles if lapse.get(name)]
-        else:
-            requested = [name for name in toggles if getattr(lapse, name, False)]
-        if requested:
-            self.logger.warning(
-                "The 'lapse' configuration requests elevation corrections for "
-                f"{', '.join(requested)}, but model-agnostic elevation correction is not "
-                "implemented: these corrections are NOT applied to the forcing. Only the "
-                "temperature lapse rate (APPLY_LAPSE_RATE / LAPSE_RATE) is applied, by the "
-                "model preprocessors that support it."
-            )
-
     def _run_community_attribute_pipeline(self) -> None:
         """Run community attribute backends + the entry-point plugin seam.
 
@@ -694,13 +675,6 @@ class DataManager(BaseManager):
                 fr.run_resampling()
             except (FileNotFoundError, DataAcquisitionError) as e:
                 self.logger.warning(f"Forcing resampling skipped (no forcing data): {e}")
-
-            # The per-variable elevation corrections of the ``lapse`` config
-            # section (pressure, humidity, longwave, shortwave, precipitation,
-            # wind) were to be applied here by a processor that was never added
-            # to the code base; the hook imported a module that does not exist
-            # and did nothing. Say so instead of silently ignoring the request.
-            self._warn_unapplied_lapse_corrections()
 
             # Visualize preprocessed forcing if available
             if self.reporting_manager:

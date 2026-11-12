@@ -88,27 +88,33 @@ class ERA5Config(BaseModel):
 
 
 class LapseRateConfig(BaseModel):
-    """Configuration for elevation-dependent variable corrections.
+    """Elevation corrections of remapped forcing (the ``lapse`` section).
 
-    Per-variable toggles control which corrections are applied beyond
-    the master ``apply_lapse_rate`` / ``lapse_rate`` temperature toggle.
-    All optional corrections default to OFF.
+    Applied by the forcing remapper to the basin-averaged files, using the
+    difference between each HRU's elevation and the area-weighted elevation of
+    the forcing cells it overlaps. Air temperature is not changed here: model
+    preprocessors apply ``APPLY_LAPSE_RATE`` / ``LAPSE_RATE``. All corrections
+    default to off. Changing any setting regenerates the remapped forcing.
+    Not applied by point-scale extraction (point domains, single-cell grids).
     """
     model_config = FROZEN_CONFIG
 
-    # Per-variable toggles (all default OFF except temperature via master toggle)
-    pressure: bool = False
-    humidity: bool = False
-    longwave: bool = False
-    shortwave: bool = False
-    precipitation: bool = False
-    wind: bool = False
+    pressure: bool = Field(default=False, description='Hypsometric pressure correction')
+    humidity: bool = Field(
+        default=False,
+        description='Recompute specific humidity conserving relative humidity')
+    longwave: bool = Field(default=False, description='Additive longwave gradient (lw_gradient)')
+    shortwave: bool = Field(default=False, description='Scale shortwave by 1 + sw_gradient * dz')
+    precipitation: bool = Field(
+        default=False, description='Scale precipitation by 1 + precip_gradient * dz')
+    wind: bool = Field(default=False, description='Scale wind speed by 1 + wind_gradient * dz')
 
-    # Configurable gradient parameters
-    lw_gradient: float = -0.029       # W/m² per m elevation (-2.9 W/m² per 100m)
-    sw_gradient: float = 0.00002      # fractional per m (+2% per km)
-    precip_gradient: float = 0.00004  # fractional per m (+4% per 100m)
-    wind_gradient: float = 0.0        # disabled even when wind=True
+    lw_gradient: float = Field(
+        default=-0.029, description='W m-2 per m of elevation (-2.9 W m-2 per 100 m)')
+    sw_gradient: float = Field(default=0.00002, description='Fraction per m (+2% per km)')
+    precip_gradient: float = Field(default=0.0004, description='Fraction per m (+4% per 100 m)')
+    wind_gradient: float = Field(
+        default=0.0, description='Fraction per m; 0 leaves wind unchanged even when wind is on')
 
 
 class ForcingConfig(BaseModel):
