@@ -152,7 +152,7 @@ class BaseAcquisitionHandler(ABC, ConfigurableMixin, CoordinateUtilsMixin):
             True if file exists and should be skipped, False otherwise
         """
         if force is None:
-            force = self._get_config_value(lambda: self.config.data.force_download, default=False)
+            force = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
 
         if path.exists() and not force:
             self.logger.info(f"Using existing file: {path}")

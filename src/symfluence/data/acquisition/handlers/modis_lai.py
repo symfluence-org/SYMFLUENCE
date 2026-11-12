@@ -84,7 +84,10 @@ class MODISLAIAcquirer(BaseEarthaccessAcquirer):
         output_dir.mkdir(parents=True, exist_ok=True)
         processed_file = output_dir / f"{self.domain_name}_MODIS_LAI.nc"
 
-        if processed_file.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False):
+        if processed_file.exists() and not self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             self.logger.info(f"Using existing MODIS LAI file: {processed_file}")
             return processed_file
 

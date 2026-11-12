@@ -50,7 +50,11 @@ def _perform_em_earth_remapping_logic(input_file: Path, output_file: Path, basin
             basins_gdf = basins_gdf.to_crs('EPSG:4326')
 
         # Get basin ID column
-        basin_id_col = resolve_config_value(config, lambda: config.paths.river_basin_rm_gruid, 'GRU_ID', 'RIVER_BASIN_SHP_RM_GRUID')
+        basin_id_col = resolve_config_value(
+            config,
+            lambda: config.paths.river_basin_rm_gruid,
+            dict_key='RIVER_BASIN_SHP_RM_GRUID',
+        )
 
         if basin_id_col not in basins_gdf.columns:
             raise ValueError(f"Basin ID column '{basin_id_col}' not found in shapefile")
@@ -286,7 +290,10 @@ class EMEarthIntegrator(ConfigMixin):
             files_to_process = []
             for em_file in em_earth_files:
                 output_file = remapped_dir / f"remapped_{em_file.name}"
-                if not output_file.exists() or self._get_config_value(lambda: self.config.system.force_run_all_steps, default=False, dict_key='FORCE_RUN_ALL_STEPS'):
+                if not output_file.exists() or self._get_config_value(
+                    lambda: self.config.system.force_run_all_steps,
+                    dict_key='FORCE_RUN_ALL_STEPS',
+                ):
                     files_to_process.append(em_file)
 
             if not files_to_process:

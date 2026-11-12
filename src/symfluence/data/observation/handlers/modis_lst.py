@@ -57,7 +57,7 @@ class MODISLSTHandler(BaseObservationHandler):
         """Acquire MODIS LST data via cloud acquisition."""
         lst_dir = Path(self._get_config_value(lambda: None, default=self.project_observations_dir / "temperature" / "modis_lst", dict_key='MODIS_LST_DIR'))
 
-        force_download = self._get_config_value(lambda: self.config.data.force_download, default=False)
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
         has_files = lst_dir.exists() and (
             any(lst_dir.glob("*LST*.nc")) or any(lst_dir.glob("*LST*.tif"))
         )

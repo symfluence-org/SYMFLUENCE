@@ -129,7 +129,8 @@ class HubEauStreamflowHandler(BaseObservationHandler):
         # (The first term used to be a non-existent path that always yielded
         # its default True, so DOWNLOAD_HUBEAU_DATA: False was ignored.)
         download_enabled = self._get_config_value(
-            lambda: self.config.evaluation.hubeau.download, default=True, dict_key='DOWNLOAD_HUBEAU_DATA'
+            lambda: self.config.evaluation.hubeau.download,
+            dict_key='DOWNLOAD_HUBEAU_DATA',
         )
 
         raw_dir = self.project_observations_dir / "streamflow" / "raw_data"
@@ -180,7 +181,8 @@ class HubEauStreamflowHandler(BaseObservationHandler):
 
         # Prefer daily processed data (more reliable, QC'd)
         use_daily = self._get_config_value(
-            lambda: self.config.evaluation.hubeau.use_daily, default=True
+            lambda: self.config.evaluation.hubeau.use_daily,
+            dict_key='HUBEAU_USE_DAILY',
         )
 
         if use_daily:
@@ -439,7 +441,8 @@ class HubEauWaterLevelHandler(BaseObservationHandler):
             return self.project_observations_dir / "waterlevel" / "raw_data"
 
         download_enabled = self._get_config_value(
-            lambda: self.config.evaluation.hubeau.download, default=True
+            lambda: self.config.evaluation.hubeau.download,
+            dict_key='DOWNLOAD_HUBEAU_DATA',
         )
 
         raw_dir = self.project_observations_dir / "waterlevel" / "raw_data"

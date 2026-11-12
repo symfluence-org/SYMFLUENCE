@@ -134,9 +134,7 @@ class NWM3RetrospectiveAcquirer(BaseAcquisitionHandler):
             / f"{self.domain_name}_NWM3_{output_type}_{start.year}-{end.year}.nc"
         )
 
-        force = self._get_config_value(
-            lambda: self.config.data.force_download, default=False
-        )
+        force = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
         if self._skip_if_exists(output_file, force):
             return output_file
 

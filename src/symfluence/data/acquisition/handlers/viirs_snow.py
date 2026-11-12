@@ -82,7 +82,7 @@ class VIIRSSnowAcquirer(BaseEarthaccessAcquirer):
 
         # Check for existing processed file
         output_file = output_dir / f"{self.domain_name}_VIIRS_snow.nc"
-        force_download = self._get_config_value(lambda: self.config.data.force_download, default=False)
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
 
         if output_file.exists() and not force_download:
             self.logger.info(f"Using existing VIIRS snow file: {output_file}")
