@@ -91,7 +91,7 @@ class HYPEConfig(BaseModel):
     )
     # Process options written to info.txt (None = config_manager defaults apply)
     infiltration_model: Optional[int] = Field(
-        default=None, alias='HYPE_INFILTRATION_MODEL',
+        default=3, alias='HYPE_INFILTRATION_MODEL',
         description='HYPE infiltration model option (info.txt modeloption)'
     )
     pet_model: Optional[int] = Field(
@@ -99,15 +99,15 @@ class HYPEConfig(BaseModel):
         description='HYPE potential evapotranspiration model option'
     )
     frozen_soil_model: Optional[int] = Field(
-        default=None, alias='HYPE_FROZEN_SOIL_MODEL',
+        default=2, alias='HYPE_FROZEN_SOIL_MODEL',
         description='HYPE frozen soil model option'
     )
     snow_evaporation: Optional[int] = Field(
-        default=None, alias='HYPE_SNOW_EVAPORATION',
+        default=0, alias='HYPE_SNOW_EVAPORATION',
         description='HYPE snow evaporation option'
     )
     deep_ground: Optional[int] = Field(
-        default=None, alias='HYPE_DEEP_GROUND',
+        default=0, alias='HYPE_DEEP_GROUND',
         description='HYPE deep groundwater option'
     )
     groundwater_export: Optional[bool] = Field(
@@ -117,11 +117,11 @@ class HYPEConfig(BaseModel):
                     'GROUNDWATER_MODEL is MODFLOW'
     )
     surface_runoff: Optional[int] = Field(
-        default=None, alias='HYPE_SURFACE_RUNOFF',
+        default=0, alias='HYPE_SURFACE_RUNOFF',
         description='HYPE surface runoff option'
     )
     soil_init_wet: Optional[bool] = Field(
-        default=None, alias='HYPE_SOIL_INIT_WET',
+        default=False, alias='HYPE_SOIL_INIT_WET',
         description='Initialize soil moisture at field capacity'
     )
     soil_layer_depths: Optional[List[float]] = Field(

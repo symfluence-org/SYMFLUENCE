@@ -393,11 +393,11 @@ class MultiGaugeConfig(BaseModel):
         description='Gauge IDs to exclude from multi-gauge calibration'
     )
     aggregation: Optional[str] = Field(
-        default=None, alias='MULTI_GAUGE_AGGREGATION',
+        default='mean', alias='MULTI_GAUGE_AGGREGATION',
         description="Aggregation of per-gauge scores: 'mean', 'median' or 'weighted'"
     )
     min_gauges: Optional[int] = Field(
-        default=None, alias='MULTI_GAUGE_MIN_GAUGES',
+        default=5, alias='MULTI_GAUGE_MIN_GAUGES',
         description='Minimum number of usable gauges required'
     )
     max_distance: Optional[float] = Field(
@@ -413,7 +413,7 @@ class MultiGaugeConfig(BaseModel):
         description='Minimum specific discharge for a gauge to be used'
     )
     min_overlap_days: Optional[int] = Field(
-        default=None, alias='MULTI_GAUGE_MIN_OVERLAP_DAYS',
+        default=10, alias='MULTI_GAUGE_MIN_OVERLAP_DAYS',
         description='Minimum days of obs/sim overlap for a gauge to be used'
     )
     kge_floor: Optional[float] = Field(
@@ -455,7 +455,7 @@ class OptimizationConfig(BaseModel):
                     "warm-start files and model defaults."
     )
     skip_warm_start: Optional[bool] = Field(
-        default=None,
+        default=True,
         alias='SKIP_WARM_START',
         description='Skip warm-starting from previous best parameters. Unset defaults to '
                     'true (no warm start), so calibrations are reproducible regardless of '
@@ -477,17 +477,17 @@ class OptimizationConfig(BaseModel):
         description="Likelihood for uncertainty-aware metrics (e.g. 'gaussian')"
     )
     model_error_base: Optional[float] = Field(
-        default=None,
+        default=0.0,
         alias='MODEL_ERROR_BASE',
         description='Additive model error term for likelihood evaluation'
     )
     model_error_fraction: Optional[float] = Field(
-        default=None,
+        default=0.0,
         alias='MODEL_ERROR_FRACTION',
         description='Model error as a fraction of simulated value'
     )
     transfer_function_type: Optional[str] = Field(
-        default=None,
+        default='linear',
         alias='TRANSFER_FUNCTION_TYPE',
         description="Regionalization transfer function form (e.g. 'linear')"
     )

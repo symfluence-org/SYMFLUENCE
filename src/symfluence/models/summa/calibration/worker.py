@@ -434,8 +434,16 @@ class SUMMAWorker(BaseWorker):
             obs_dir = resolve_config_value(config, lambda: config.optimization.multi_gauge.obs_dir, None, 'MULTI_GAUGE_OBS_DIR')
             gauge_ids = resolve_config_value(config, lambda: config.optimization.multi_gauge.gauge_ids, None, 'MULTI_GAUGE_IDS')
             exclude_ids = resolve_config_value(config, lambda: config.optimization.multi_gauge.exclude_ids, [], 'MULTI_GAUGE_EXCLUDE_IDS')
-            aggregation = resolve_config_value(config, lambda: config.optimization.multi_gauge.aggregation, 'mean', 'MULTI_GAUGE_AGGREGATION')
-            min_gauges = resolve_config_value(config, lambda: config.optimization.multi_gauge.min_gauges, 5, 'MULTI_GAUGE_MIN_GAUGES')
+            aggregation = resolve_config_value(
+                config,
+                lambda: config.optimization.multi_gauge.aggregation,
+                dict_key='MULTI_GAUGE_AGGREGATION',
+            )
+            min_gauges = resolve_config_value(
+                config,
+                lambda: config.optimization.multi_gauge.min_gauges,
+                dict_key='MULTI_GAUGE_MIN_GAUGES',
+            )
 
             # Auto-generate gauge mapping if not configured
             if not gauge_mapping_path:
@@ -482,7 +490,11 @@ class SUMMAWorker(BaseWorker):
                 if val is not None:
                     filter_config[key] = float(val)
 
-            min_overlap = int(resolve_config_value(config, lambda: config.optimization.multi_gauge.min_overlap_days, 10, 'MULTI_GAUGE_MIN_OVERLAP_DAYS'))
+            min_overlap = int(resolve_config_value(
+                config,
+                lambda: config.optimization.multi_gauge.min_overlap_days,
+                dict_key='MULTI_GAUGE_MIN_OVERLAP_DAYS',
+            ))
             kge_floor = resolve_config_value(config, lambda: config.optimization.multi_gauge.kge_floor, None, 'MULTI_GAUGE_KGE_FLOOR')
             if kge_floor is not None:
                 kge_floor = float(kge_floor)

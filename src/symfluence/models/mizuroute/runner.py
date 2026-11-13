@@ -413,7 +413,7 @@ class MizuRouteRunner(BaseModelRunner):  # type: ignore[misc]
 
             mizu_num_threads = self._get_config_value(
                 lambda: self.config.model.mizuroute.num_threads,
-                default=1, dict_key='MIZUROUTE_NUM_THREADS',
+                dict_key='MIZUROUTE_NUM_THREADS',
             )
             mizu_env = {**__import__('os').environ, 'OMP_NUM_THREADS': str(mizu_num_threads)}
             self.logger.debug(f'Running mizuRoute with command: {" ".join(mizu_command)} (OMP_NUM_THREADS={mizu_num_threads})')

@@ -55,7 +55,7 @@ class NGENConfig(BaseModel):
     )
     active_catchment_id: Optional[str] = Field(default=None, alias='NGEN_ACTIVE_CATCHMENT_ID')
     realization: Optional[str] = Field(
-        default=None, alias='SETTINGS_NGEN_REALIZATION',
+        default='realization_config.json', alias='SETTINGS_NGEN_REALIZATION',
         description='Realization config filename (default realization_config.json)'
     )
     calibration_nexus_id: Optional[str] = Field(

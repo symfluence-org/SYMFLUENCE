@@ -83,7 +83,10 @@ class NgenModelOptimizer(BaseModelOptimizer):
 
     def _get_final_file_manager_path(self) -> Path:
         """Get path to NGEN realization file (similar to file manager)."""
-        ngen_realization = self._get_config_value(lambda: self.config.model.ngen.realization, default='realization_config.json', dict_key='SETTINGS_NGEN_REALIZATION')
+        ngen_realization = self._get_config_value(
+            lambda: self.config.model.ngen.realization,
+            dict_key='SETTINGS_NGEN_REALIZATION',
+        )
         if ngen_realization == 'default':
             ngen_realization = 'realization_config.json'
         return self.ngen_setup_dir / ngen_realization

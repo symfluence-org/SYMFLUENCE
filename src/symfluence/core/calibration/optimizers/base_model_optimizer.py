@@ -1299,7 +1299,7 @@ class BaseModelOptimizer(
         # optimization directory, which makes results depend on machine history.
         skip_warm_start = self._get_config_value(
             lambda: self.config.optimization.skip_warm_start,
-            default=True, dict_key='SKIP_WARM_START'
+            dict_key='SKIP_WARM_START',
         )
         initial_params_dict = self._get_config_initial_guess()
         try:
