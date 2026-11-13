@@ -66,9 +66,12 @@ class GRModelOptimizer(BaseModelOptimizer):
     def _check_routing_needed(self) -> bool:
         """Determine if routing is needed based on configuration."""
         # Use SpatialOrchestrator logic (checking if distributed mode and routing is enabled)
-        routing_integration = self._get_config_value(lambda: self.config.model.gr.routing_integration, default='none', dict_key='GR_ROUTING_INTEGRATION')
+        routing_integration = self._get_config_value(
+            lambda: self.config.model.gr.routing_integration,
+            dict_key='GR_ROUTING_INTEGRATION',
+        )
         global_routing = self._get_config_value(lambda: self.config.model.routing_model, default='none', dict_key='ROUTING_MODEL')
-        spatial_mode = self._get_config_value(lambda: self.config.model.gr.spatial_mode, default='auto', dict_key='GR_SPATIAL_MODE')
+        spatial_mode = self._get_config_value(lambda: self.config.model.gr.spatial_mode, dict_key='GR_SPATIAL_MODE')
 
         # Handle 'auto' mode - resolve from DOMAIN_DEFINITION_METHOD
         if spatial_mode in (None, 'auto', 'default'):

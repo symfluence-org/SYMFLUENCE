@@ -227,7 +227,7 @@ class VICPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                 elev_diff = elevations[b] - mean_elev
                 pfactor_per_km = self._get_config_value(
                     lambda: self.config.model.vic.pfactor_per_km,
-                    default=0.0005
+                    dict_key='VIC_PFACTOR_PER_KM',
                 )
                 pfactors[b] = 1.0 + pfactor_per_km * elev_diff
 
@@ -266,10 +266,7 @@ class VICPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         """
         logger.info("Generating VIC domain file...")
 
-        domain_file = self._get_config_value(
-            lambda: self.config.model.vic.domain_file,
-            default='vic_domain.nc'
-        )
+        domain_file = self._get_config_value(lambda: self.config.model.vic.domain_file, dict_key='VIC_DOMAIN_FILE')
         domain_path = self.params_dir / domain_file
 
         props = self._get_catchment_properties()
@@ -421,17 +418,11 @@ class VICPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         """
         logger.info("Generating VIC parameter file...")
 
-        params_file = self._get_config_value(
-            lambda: self.config.model.vic.params_file,
-            default='vic_params.nc'
-        )
+        params_file = self._get_config_value(lambda: self.config.model.vic.params_file, dict_key='VIC_PARAMS_FILE')
         params_path = self.params_dir / params_file
 
         # Load domain to get coordinates
-        domain_file = self._get_config_value(
-            lambda: self.config.model.vic.domain_file,
-            default='vic_domain.nc'
-        )
+        domain_file = self._get_config_value(lambda: self.config.model.vic.domain_file, dict_key='VIC_DOMAIN_FILE')
         domain_path = self.params_dir / domain_file
 
         if not domain_path.exists():
@@ -481,10 +472,7 @@ class VICPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         nroot = 2      # Root zones
 
         # Compute elevation bands from DEM
-        n_snow_bands = self._get_config_value(
-            lambda: self.config.model.vic.n_snow_bands,
-            default=10
-        )
+        n_snow_bands = self._get_config_value(lambda: self.config.model.vic.n_snow_bands, dict_key='VIC_N_SNOW_BANDS')
         band_data = self._compute_elevation_bands(n_bands=n_snow_bands)
         nband = len(band_data['elevations'])
 
@@ -706,10 +694,7 @@ class VICPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         start_date, end_date = self._get_simulation_dates()
 
         # Load domain to get coordinates
-        domain_file = self._get_config_value(
-            lambda: self.config.model.vic.domain_file,
-            default='vic_domain.nc'
-        )
+        domain_file = self._get_config_value(lambda: self.config.model.vic.domain_file, dict_key='VIC_DOMAIN_FILE')
         domain_path = self.params_dir / domain_file
 
         if not domain_path.exists():
@@ -870,7 +855,7 @@ class VICPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         """Forcing step VIC expects: one snow-model step (= MODEL_STEPS_PER_DAY)."""
         steps_per_day = self._get_config_value(
             lambda: self.config.model.vic.model_steps_per_day,
-            default=24
+            dict_key='VIC_STEPS_PER_DAY',
         )
         return 86400.0 / float(steps_per_day)
 
@@ -1020,7 +1005,7 @@ class VICPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
         global_file = self._get_config_value(
             lambda: self.config.model.vic.global_param_file,
-            default='vic_global.txt'
+            dict_key='VIC_GLOBAL_PARAM_FILE',
         )
         global_path = self.settings_dir / global_file
 
@@ -1029,28 +1014,16 @@ class VICPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # Get config values
         model_steps_per_day = self._get_config_value(
             lambda: self.config.model.vic.model_steps_per_day,
-            default=24
+            dict_key='VIC_STEPS_PER_DAY',
         )
-        full_energy = self._get_config_value(
-            lambda: self.config.model.vic.full_energy,
-            default=True
-        )
-        frozen_soil = self._get_config_value(
-            lambda: self.config.model.vic.frozen_soil,
-            default=True
-        )
+        full_energy = self._get_config_value(lambda: self.config.model.vic.full_energy, dict_key='VIC_FULL_ENERGY')
+        frozen_soil = self._get_config_value(lambda: self.config.model.vic.frozen_soil, dict_key='VIC_FROZEN_SOIL')
         output_prefix = self._get_config_value(
             lambda: self.config.model.vic.output_prefix,
-            default='vic_output'
+            dict_key='VIC_OUTPUT_PREFIX',
         )
-        domain_file = self._get_config_value(
-            lambda: self.config.model.vic.domain_file,
-            default='vic_domain.nc'
-        )
-        params_file = self._get_config_value(
-            lambda: self.config.model.vic.params_file,
-            default='vic_params.nc'
-        )
+        domain_file = self._get_config_value(lambda: self.config.model.vic.domain_file, dict_key='VIC_DOMAIN_FILE')
+        params_file = self._get_config_value(lambda: self.config.model.vic.params_file, dict_key='VIC_PARAMS_FILE')
 
         # Build global parameter file content
         lines = [

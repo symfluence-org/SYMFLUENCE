@@ -69,11 +69,14 @@ class ISMNAcquirer(BaseAcquisitionHandler):
     def download(self, output_dir: Path) -> Path:
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        force_download = bool(self._get_config_value(lambda: self.config.data.force_download, default=False, dict_key='FORCE_DOWNLOAD'))
+        force_download = bool(self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ))
         if any(output_dir.glob("*.csv")) and not force_download:
             return output_dir
 
-        api_base = self._get_config_value(lambda: self.config.evaluation.ismn.api_base, default='https://ismn.earth/dataviewer', dict_key='ISMN_API_BASE').rstrip("/")
+        api_base = self._get_config_value(lambda: self.config.evaluation.ismn.api_base, dict_key='ISMN_API_BASE').rstrip("/")
         metadata_url = self._get_config_value(lambda: self.config.evaluation.ismn.metadata_url, dict_key='ISMN_METADATA_URL') or "https://ismn.earth/static/dataviewer/network_station_details.json"
         variable_list_url = self._get_config_value(lambda: self.config.evaluation.ismn.variable_list_url, dict_key='ISMN_VARIABLE_LIST_URL')
         if not variable_list_url:
@@ -357,7 +360,10 @@ class ISMNAcquirer(BaseAcquisitionHandler):
         if radius_km:
             stations = stations[stations["distance_km"] <= float(radius_km)]
 
-        max_stations = int(self._get_config_value(lambda: self.config.evaluation.ismn.max_stations, default=3, dict_key='ISMN_MAX_STATIONS'))
+        max_stations = int(self._get_config_value(
+            lambda: self.config.evaluation.ismn.max_stations,
+            dict_key='ISMN_MAX_STATIONS',
+        ))
         stations = stations.sort_values("distance_km").head(max_stations)
         return stations
 

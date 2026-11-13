@@ -177,7 +177,9 @@ class SummaConfigManager(PathResolverMixin):
                 dict_key='SUMMA_ADDITIONAL_OUTPUTS')
             if additional_outputs:
                 output_path = settings_path / self._get_config_value(
-                    lambda: self.config.model.summa.output, default='outputControl.txt')
+                    lambda: self.config.model.summa.output,
+                    dict_key='SETTINGS_SUMMA_OUTPUT',
+                )
                 lines = output_path.read_text().splitlines()
                 # Replace configured variables, retaining the rest of the template.
                 lines = [line for line in lines if line.split('|')[0].strip() not in additional_outputs]
@@ -197,7 +199,10 @@ class SummaConfigManager(PathResolverMixin):
 
                     required_vars = ['scalarSWE', 'scalarCanopyWat', 'scalarTotalSoilWat', 'scalarAquiferStorage']
                     # Get from config if specified
-                    storage_str = self._get_config_value(lambda: self.config.evaluation.tws.storage_components, default='', dict_key='TWS_STORAGE_COMPONENTS')
+                    storage_str = self._get_config_value(
+                        lambda: self.config.evaluation.tws.storage_components,
+                        dict_key='TWS_STORAGE_COMPONENTS',
+                    )
                     if storage_str:
                         required_vars = [v.strip() for v in storage_str.split(',') if v.strip()]
 
@@ -417,7 +422,10 @@ class SummaConfigManager(PathResolverMixin):
             },
         }
 
-        choice = self._get_config_value(lambda: self.config.model.summa.soilprofile, default='FA', dict_key='SETTINGS_SUMMA_SOILPROFILE')
+        choice = self._get_config_value(
+            lambda: self.config.model.summa.soilprofile,
+            dict_key='SETTINGS_SUMMA_SOILPROFILE',
+        )
         mLayerDepth  = soil_setups[choice]["mLayerDepth"]
         iLayerHeight = soil_setups[choice]["iLayerHeight"]
 
@@ -425,7 +433,10 @@ class SummaConfigManager(PathResolverMixin):
         ifcToto = len(iLayerHeight)
         midSoil = midToto
         nSoil   = midToto
-        MatricHead = self._get_config_value(lambda: self.config.model.summa.init_matric_head, default=-1.0, dict_key='SUMMA_INIT_MATRIC_HEAD')
+        MatricHead = self._get_config_value(
+            lambda: self.config.model.summa.init_matric_head,
+            dict_key='SUMMA_INIT_MATRIC_HEAD',
+        )
 
         # States
         states = {
@@ -574,7 +585,10 @@ class SummaConfigManager(PathResolverMixin):
             gru_var[:] = gru_ids
 
             # Create variables for specified trial parameters
-            if self._get_config_value(lambda: self.config.model.summa.trialparam_n, default=0, dict_key='SETTINGS_SUMMA_TRIALPARAM_N') != 0:
+            if self._get_config_value(
+                lambda: self.config.model.summa.trialparam_n,
+                dict_key='SETTINGS_SUMMA_TRIALPARAM_N',
+            ) != 0:
                 for var_name, val in all_tp.items():
                     tp_var = tp.createVariable(var_name, 'f8', 'hru', fill_value=False)
                     tp_var[:] = val

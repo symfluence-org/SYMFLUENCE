@@ -288,11 +288,7 @@ class SubcatchmentProcessor(ConfigMixin):
             # Create log file for this subcatchment
             log_file = subcat_output_dir / 'fuse_run.log'
 
-            timeout = self._get_config_value(
-                lambda: self.config.model.fuse.timeout,
-                default=3600,
-                dict_key='FUSE_TIMEOUT',
-            )
+            timeout = self._get_config_value(lambda: self.config.model.fuse.timeout, dict_key='FUSE_TIMEOUT')
 
             with open(log_file, 'w', encoding='utf-8', errors='replace') as f:
                 result = run_subprocess(
@@ -342,8 +338,7 @@ class SubcatchmentProcessor(ConfigMixin):
         # Extract data for this subcatchment based on coordinate system
         subcatchment_dim = self._get_config_value(
             lambda: self.config.model.fuse.subcatchment_dim,
-            default='longitude',
-            dict_key='FUSE_SUBCATCHMENT_DIM'
+            dict_key='FUSE_SUBCATCHMENT_DIM',
         )
 
         try:
@@ -643,11 +638,7 @@ class SubcatchmentProcessor(ConfigMixin):
         Returns:
             Path: Directory containing catchment shapefiles.
         """
-        catchment_path = self._get_config_value(
-            lambda: self.config.paths.catchment_path,
-            default='default',
-            dict_key='CATCHMENT_PATH'
-        )
+        catchment_path = self._get_config_value(lambda: self.config.paths.catchment_path, dict_key='CATCHMENT_PATH')
         if catchment_path == 'default':
             return self.project_dir / 'shapefiles' / 'catchment'
         return Path(catchment_path)

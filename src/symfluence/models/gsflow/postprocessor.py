@@ -40,7 +40,7 @@ class GSFLOWPostProcessor(StandardModelPostProcessor):
             config = self.config if isinstance(self.config, dict) else {
                 'SETTINGS_GSFLOW_PATH': self._get_config_value(
                     lambda: self.config.model.gsflow.settings_path,
-                    default='default', dict_key='SETTINGS_GSFLOW_PATH'
+                    dict_key='SETTINGS_GSFLOW_PATH',
                 )
             }
             streamflow = self.extract_streamflow_from_dir(self.sim_dir, config)

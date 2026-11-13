@@ -133,14 +133,22 @@ class WRFHydroWorker(StreamflowWorker):
             success = True
 
             # Update hydro.namelist
-            hydro_file = resolve_config_value(config, lambda: config.model.wrfhydro.hydro_namelist, 'hydro.namelist', 'WRFHYDRO_HYDRO_NAMELIST')
+            hydro_file = resolve_config_value(
+                config,
+                lambda: config.model.wrfhydro.hydro_namelist,
+                dict_key='WRFHYDRO_HYDRO_NAMELIST',
+            )
             hydro_path = settings_dir / hydro_file
             if hydro_params and hydro_path.exists():
                 if not self._update_namelist_file(hydro_path, hydro_params):
                     success = False
 
             # Update namelist.hrldas
-            hrldas_file = resolve_config_value(config, lambda: config.model.wrfhydro.namelist_file, 'namelist.hrldas', 'WRFHYDRO_NAMELIST_FILE')
+            hrldas_file = resolve_config_value(
+                config,
+                lambda: config.model.wrfhydro.namelist_file,
+                dict_key='WRFHYDRO_NAMELIST_FILE',
+            )
             hrldas_path = settings_dir / hrldas_file
             if hrldas_params and hrldas_path.exists():
                 if not self._update_namelist_file(hrldas_path, hrldas_params):
@@ -442,7 +450,11 @@ class WRFHydroWorker(StreamflowWorker):
 
             # Fix OUTDIR in namelist.hrldas to point to worker directory
             # (prevents output files from being written to the original input dir)
-            hrldas_file = resolve_config_value(config, lambda: config.model.wrfhydro.namelist_file, 'namelist.hrldas', 'WRFHYDRO_NAMELIST_FILE')
+            hrldas_file = resolve_config_value(
+                config,
+                lambda: config.model.wrfhydro.namelist_file,
+                dict_key='WRFHYDRO_NAMELIST_FILE',
+            )
             worker_hrldas = wrfhydro_output_dir / hrldas_file
             if worker_hrldas.exists():
                 self._update_namelist_path(
@@ -468,7 +480,7 @@ class WRFHydroWorker(StreamflowWorker):
             env = os.environ.copy()
             env['MallocStackLogging'] = '0'
 
-            timeout = resolve_config_value(config, lambda: config.model.wrfhydro.timeout, 7200, 'WRFHYDRO_TIMEOUT')
+            timeout = resolve_config_value(config, lambda: config.model.wrfhydro.timeout, dict_key='WRFHYDRO_TIMEOUT')
 
             stdout_file = wrfhydro_output_dir / 'wrfhydro_stdout.log'
             stderr_file = wrfhydro_output_dir / 'wrfhydro_stderr.log'
@@ -530,8 +542,12 @@ class WRFHydroWorker(StreamflowWorker):
 
     def _get_wrfhydro_executable(self, config: Dict[str, Any], data_dir: Path) -> Path:
         """Get WRF-Hydro executable path."""
-        install_path = resolve_config_value(config, lambda: config.model.wrfhydro.install_path, 'default', 'WRFHYDRO_INSTALL_PATH')
-        exe_name = resolve_config_value(config, lambda: config.model.wrfhydro.exe, 'wrf_hydro.exe', 'WRFHYDRO_EXE')
+        install_path = resolve_config_value(
+            config,
+            lambda: config.model.wrfhydro.install_path,
+            dict_key='WRFHYDRO_INSTALL_PATH',
+        )
+        exe_name = resolve_config_value(config, lambda: config.model.wrfhydro.exe, dict_key='WRFHYDRO_EXE')
 
         return resolve_install_executable(install_path, data_dir, 'installs/wrfhydro/bin', exe_name)
 

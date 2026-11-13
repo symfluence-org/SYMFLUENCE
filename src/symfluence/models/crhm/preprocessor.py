@@ -60,8 +60,7 @@ class CRHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # Get CRHM-specific settings
         self.spatial_mode = self._get_config_value(
             lambda: self.config.model.crhm.spatial_mode,
-            default='lumped',
-            dict_key='CRHM_SPATIAL_MODE'
+            dict_key='CRHM_SPATIAL_MODE',
         )
         logger.info(f"CRHM spatial mode: {self.spatial_mode}")
 
@@ -73,14 +72,14 @@ class CRHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # catchments, which a lumped (single mean-elevation) HRU cannot capture.
         self.use_elev_bands = bool(self._get_config_value(
             lambda: self.config.model.crhm.elevation_bands,
-            default=False,
-            dict_key='CRHM_ELEVATION_BANDS'
+            dict_key='CRHM_ELEVATION_BANDS',
         ))
         self.elev_band_size = float(self._get_config_value(
             lambda: self.config.model.crhm.elevation_band_size,
             default=self._get_config_value(
                 lambda: self.config.domain.elevation_band_size,
-                default=200.0, dict_key='ELEVATION_BAND_SIZE'),
+                dict_key='ELEVATION_BAND_SIZE',
+            ),
             dict_key='CRHM_ELEVATION_BAND_SIZE'
         ))
         if self.use_elev_bands:
@@ -92,8 +91,7 @@ class CRHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # angle, so this sharpens elevation-band melt timing. Requires bands.
         self.use_terrain_radiation = bool(self._get_config_value(
             lambda: self.config.model.crhm.terrain_radiation,
-            default=False,
-            dict_key='CRHM_TERRAIN_RADIATION'
+            dict_key='CRHM_TERRAIN_RADIATION',
         ))
         if self.use_terrain_radiation:
             logger.info("CRHM terrain radiation ON (per-band slope/aspect from DEM)")
@@ -316,7 +314,7 @@ class CRHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
         obs_file = self._get_config_value(
             lambda: self.config.model.crhm.observation_file,
-            default='forcing.obs'
+            dict_key='CRHM_OBSERVATION_FILE',
         )
         obs_path = self.crhm_forcing_dir / obs_file
 
@@ -748,15 +746,12 @@ class CRHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         if 'Qe_subl_from_SWE' in calibrated:
             raise ValidationError('Qe_subl_from_SWE is a native integer switch; use sublimation_from_swe instead of continuous calibration.')
 
-        prj_file = self._get_config_value(
-            lambda: self.config.model.crhm.project_file,
-            default='model.prj'
-        )
+        prj_file = self._get_config_value(lambda: self.config.model.crhm.project_file, dict_key='CRHM_PROJECT_FILE')
         prj_path = self.settings_dir / prj_file
 
         obs_file = self._get_config_value(
             lambda: self.config.model.crhm.observation_file,
-            default='forcing.obs'
+            dict_key='CRHM_OBSERVATION_FILE',
         )
 
         start_date, end_date = self._get_simulation_dates()
@@ -928,7 +923,9 @@ class CRHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         _write_param('ebsm', 'delay_melt', _hru_val(0))
         _write_param('ebsm', 'nfactor', _hru_val(0))
         explicit_sublimation = self._get_config_value(
-            lambda: self.config.model.crhm.sublimation_from_swe, default=False)
+            lambda: self.config.model.crhm.sublimation_from_swe,
+            dict_key='CRHM_SUBLIMATION_FROM_SWE',
+        )
         _write_param('ebsm', 'Qe_subl_from_SWE', _hru_val(int(explicit_sublimation)))
         _write_param('ebsm', 'tfactor', _hru_val(0))
         _write_param('ebsm', 'Use_QnD', _hru_val(0))
@@ -990,7 +987,10 @@ class CRHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # Write it directly to avoid collision with the Shared fetch key.
         lines.append("pbsm fetch <300 to 10000.0>")
         lines.append(_hru_val(1500))
-        blowing_snow = self._get_config_value(lambda: self.config.model.crhm.blowing_snow, default=True)
+        blowing_snow = self._get_config_value(
+            lambda: self.config.model.crhm.blowing_snow,
+            dict_key='CRHM_BLOWING_SNOW',
+        )
         _write_param('pbsm', 'inhibit_bs', _hru_val(int(not blowing_snow)))
         _write_param('pbsm', 'inhibit_subl', _hru_val(int(not blowing_snow)))
         _write_param('pbsm', 'N_S', _hru_val(320))

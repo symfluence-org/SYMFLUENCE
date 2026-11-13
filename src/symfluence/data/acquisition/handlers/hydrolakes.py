@@ -110,8 +110,7 @@ class HydroLAKESAcquirer(BaseAcquisitionHandler):
 
         if out_gpkg.exists() and not self._get_config_value(
             lambda: self.config.data.force_download,
-            default=False,
-            dict_key="FORCE_DOWNLOAD",
+            dict_key='FORCE_DOWNLOAD',
         ):
             self.logger.debug(f"HydroLAKES data already exists: {out_gpkg}")
             return lake_dir

@@ -58,7 +58,4 @@ class MHMRunner(BaseModelRunner):
 
     def _get_run_timeout(self) -> int:
         """mHM timeout from config."""
-        return self._get_config_value(
-            lambda: self.config.model.mhm.timeout,
-            default=3600,
-        )
+        return self._get_config_value(lambda: self.config.model.mhm.timeout, dict_key='MHM_TIMEOUT')

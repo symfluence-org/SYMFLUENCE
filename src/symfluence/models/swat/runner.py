@@ -144,7 +144,4 @@ class SWATRunner(BaseModelRunner):
 
     def _get_run_timeout(self) -> int:
         """SWAT timeout from config."""
-        return self._get_config_value(
-            lambda: self.config.model.swat.timeout,
-            default=3600,
-        )
+        return self._get_config_value(lambda: self.config.model.swat.timeout, dict_key='SWAT_TIMEOUT')

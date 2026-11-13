@@ -311,10 +311,12 @@ class BaseObservationHandler(ABC, ConfigurableMixin, CoordinateUtilsMixin):
         #    on config.paths (NOT config.domain — a common source of silent
         #    fall-through to defaults).
         catchment_path_cfg = self._get_config_value(
-            lambda: self.config.paths.catchment_path, default='default', dict_key='CATCHMENT_PATH'
+            lambda: self.config.paths.catchment_path,
+            dict_key='CATCHMENT_PATH',
         )
         catchment_name_cfg = self._get_config_value(
-            lambda: self.config.paths.catchment_name, default='default', dict_key='CATCHMENT_SHP_NAME'
+            lambda: self.config.paths.catchment_name,
+            dict_key='CATCHMENT_SHP_NAME',
         )
         if catchment_path_cfg and catchment_path_cfg != 'default':
             base_dir = Path(catchment_path_cfg)

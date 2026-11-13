@@ -223,7 +223,7 @@ class FUSERunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, Miz
 
         fuse_timestep = int(self._get_config_value(
             lambda: self.config.model.fuse.output_timestep_seconds,
-            default=86400
+            dict_key='FUSE_OUTPUT_TIMESTEP_SECONDS',
         ))
         conversion_factor = 1.0 / (1000.0 * fuse_timestep)
         dataset[routing_var] = dataset[routing_var] * conversion_factor
@@ -371,7 +371,7 @@ class FUSERunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, Miz
         """
         routing_integration = self._get_config_value(
             lambda: self.config.model.fuse.routing_integration,
-            default='default'
+            dict_key='FUSE_ROUTING_INTEGRATION',
         )
 
         # When FUSE_ROUTING_INTEGRATION is 'default', infer from ROUTING_MODEL
@@ -511,11 +511,7 @@ class FUSERunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, Miz
 
             env = self._build_fuse_env()
 
-            timeout = self._get_config_value(
-                lambda: self.config.model.fuse.timeout,
-                default=3600,
-                dict_key='FUSE_TIMEOUT',
-            )
+            timeout = self._get_config_value(lambda: self.config.model.fuse.timeout, dict_key='FUSE_TIMEOUT')
 
             with open(log_file, 'w', encoding='utf-8', errors='replace') as f:
                 result = run_subprocess(
@@ -856,7 +852,7 @@ class FUSERunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, Miz
             # Also check optimization target from config
             optimization_target = self._get_config_value(
                 lambda: self.config.optimization.target,
-                default='streamflow'
+                dict_key='OPTIMIZATION_TARGET',
             )
             if optimization_target in ['swe', 'sca', 'snow_depth', 'snow']:
                 return True
@@ -868,7 +864,7 @@ class FUSERunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, Miz
             # Fall back to checking config
             optimization_target = self._get_config_value(
                 lambda: self.config.optimization.target,
-                default='streamflow'
+                dict_key='OPTIMIZATION_TARGET',
             )
             return optimization_target in ['swe', 'sca', 'snow_depth', 'snow']
 
@@ -1367,11 +1363,7 @@ class FUSERunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, Miz
                 cwd=self.setup_dir,  # Run from settings directory where input_info.txt lives
                 check=False,  # Don't raise, we'll return boolean
                 success_message="FUSE execution completed",
-                timeout=self._get_config_value(
-                    lambda: self.config.model.fuse.timeout,
-                    default=3600,
-                    dict_key='FUSE_TIMEOUT',
-                ),
+                timeout=self._get_config_value(lambda: self.config.model.fuse.timeout, dict_key='FUSE_TIMEOUT'),
             )
             self.logger.debug(f"FUSE return code: {result.return_code}")
 
@@ -1571,7 +1563,7 @@ class FUSERunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, Miz
             # Check if FUSE internal calibration should run (independent of external optimization)
             run_internal_calibration = self._get_config_value(
                 lambda: self.config.model.fuse.run_internal_calibration,
-                default=True
+                dict_key='FUSE_RUN_INTERNAL_CALIBRATION',
             )
 
             if run_internal_calibration:

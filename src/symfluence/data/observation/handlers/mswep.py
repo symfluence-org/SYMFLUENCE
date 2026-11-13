@@ -43,7 +43,7 @@ class MSWEPHandler(BaseObservationHandler):
         """Acquire MSWEP data via cloud acquisition."""
         mswep_dir = Path(self._get_config_value(lambda: None, default=self.project_observations_dir / "precipitation" / "mswep", dict_key='MSWEP_DIR'))
 
-        force_download = self._get_config_value(lambda: self.config.data.force_download, default=False)
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
         has_files = mswep_dir.exists() and any(mswep_dir.glob("*.nc"))
 
         if not has_files or force_download:

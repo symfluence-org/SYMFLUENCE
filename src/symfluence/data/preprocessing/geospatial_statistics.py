@@ -428,7 +428,8 @@ class GeospatialStatistics(ConfigurableMixin):
 
         # Resolve paths using PathManager with backward compatibility
         self.catchment_name = self._get_config_value(
-            lambda: self.config.paths.catchment_name, default='default'
+            lambda: self.config.paths.catchment_name,
+            dict_key='CATCHMENT_SHP_NAME',
         )
         if self.catchment_name == 'default':
             discretization = str(self._get_config_value(
@@ -439,7 +440,7 @@ class GeospatialStatistics(ConfigurableMixin):
         # Use backward-compatible catchment path resolution
         self.catchment_path = self.paths.get_catchment_dir(self.catchment_name)
 
-        dem_name = self._get_config_value(lambda: self.config.paths.dem_name, default='default')
+        dem_name = self._get_config_value(lambda: self.config.paths.dem_name, dict_key='DEM_NAME')
         if dem_name == "default":
             dem_name = f"domain_{self.paths.domain_name}_elv.tif"
 
@@ -500,8 +501,8 @@ class GeospatialStatistics(ConfigurableMixin):
 
     def _zone_id_columns(self) -> tuple[str, str]:
         """Names of the HRU and GRU id columns of the catchment shapefile."""
-        hru_col = self._get_config_value(lambda: self.config.paths.catchment_hruid, default='HRU_ID')
-        gru_col = self._get_config_value(lambda: self.config.paths.catchment_gruid, default='GRU_ID')
+        hru_col = self._get_config_value(lambda: self.config.paths.catchment_hruid, dict_key='CATCHMENT_SHP_HRUID')
+        gru_col = self._get_config_value(lambda: self.config.paths.catchment_gruid, dict_key='CATCHMENT_SHP_GRUID')
         return str(hru_col or 'HRU_ID'), str(gru_col or 'GRU_ID')
 
     def _layer_signature(self, gdf: gpd.GeoDataFrame) -> Dict[str, Any]:
@@ -681,7 +682,8 @@ class GeospatialStatistics(ConfigurableMixin):
         # Get the output path and check if the file already exists
         intersect_path = self.paths.resolve('INTERSECT_DEM_PATH', 'shapefiles/catchment_intersection/with_dem')
         intersect_name = self._get_config_value(
-            lambda: self.config.paths.intersect_dem_name, default='default'
+            lambda: self.config.paths.intersect_dem_name,
+            dict_key='INTERSECT_DEM_NAME',
         )
         if intersect_name == 'default':
             intersect_name = 'catchment_with_dem.shp'
@@ -734,7 +736,10 @@ class GeospatialStatistics(ConfigurableMixin):
                 )
             elif n_catchments > 50_000:
                 # Medium-large: use index-based chunking
-                chunk_size = self._get_config_value(lambda: self.config.data.elev_chunk_size, default=10_000)
+                chunk_size = self._get_config_value(
+                    lambda: self.config.data.elev_chunk_size,
+                    dict_key='ELEV_CHUNK_SIZE',
+                )
                 self.logger.info(f"Using INDEX CHUNKING strategy ({chunk_size:,} catchments/chunk)")
                 elev_means = self._process_elevation_index_chunks(
                     catchment_gdf_projected, elev_means, chunk_size, checkpoint_dir
@@ -821,7 +826,10 @@ class GeospatialStatistics(ConfigurableMixin):
 
         # Create tile grid - aim for ~50k catchments per tile
         n_catchments = len(gdf)
-        target_per_tile = self._get_config_value(lambda: self.config.data.elev_tile_target, default=50_000)
+        target_per_tile = self._get_config_value(
+            lambda: self.config.data.elev_tile_target,
+            dict_key='ELEV_TILE_TARGET',
+        )
         self._validate_checkpoints(checkpoint_dir, gdf, f"tiles:{target_per_tile}")
         n_tiles_approx = max(1, n_catchments // target_per_tile)
 
@@ -1009,7 +1017,10 @@ class GeospatialStatistics(ConfigurableMixin):
         """Calculate soil statistics with output file checking and CRS alignment"""
         # Get the output path and check if the file already exists
         intersect_path = self.paths.resolve('INTERSECT_SOIL_PATH', 'shapefiles/catchment_intersection/with_soilgrids')
-        intersect_name = self._get_config_value(lambda: self.config.paths.intersect_soil_name, default='default')
+        intersect_name = self._get_config_value(
+            lambda: self.config.paths.intersect_soil_name,
+            dict_key='INTERSECT_SOIL_NAME',
+        )
         if intersect_name == 'default':
             intersect_name = 'catchment_with_soilclass.shp'
         output_file = intersect_path / intersect_name
@@ -1023,7 +1034,7 @@ class GeospatialStatistics(ConfigurableMixin):
 
         self.logger.info("Calculating soil statistics")
         catchment_gdf = gpd.read_file(self.catchment_path / self.catchment_name)
-        soil_name = self._get_config_value(lambda: self.config.paths.soil_class_name, default='default')
+        soil_name = self._get_config_value(lambda: self.config.paths.soil_class_name, dict_key='SOIL_CLASS_NAME')
         if soil_name == 'default':
             soil_name = f"domain_{self._get_config_value(lambda: self.config.domain.name)}_soil_classes.tif"
         soil_raster = self.soil_path / soil_name
@@ -1119,7 +1130,10 @@ class GeospatialStatistics(ConfigurableMixin):
         """Calculate land statistics with output file checking and CRS alignment"""
         # Get the output path and check if the file already exists
         intersect_path = self.paths.resolve('INTERSECT_LAND_PATH', 'shapefiles/catchment_intersection/with_landclass')
-        intersect_name = self._get_config_value(lambda: self.config.paths.intersect_land_name, default='default')
+        intersect_name = self._get_config_value(
+            lambda: self.config.paths.intersect_land_name,
+            dict_key='INTERSECT_LAND_NAME',
+        )
         if intersect_name == 'default':
             intersect_name = 'catchment_with_landclass.shp'
 
@@ -1134,7 +1148,7 @@ class GeospatialStatistics(ConfigurableMixin):
 
         self.logger.info("Calculating land statistics")
         catchment_gdf = gpd.read_file(self.catchment_path / self.catchment_name)
-        land_name = self._get_config_value(lambda: self.config.domain.land_class_name, default='default')
+        land_name = self._get_config_value(lambda: self.config.domain.land_class_name, dict_key='LAND_CLASS_NAME')
         if land_name == 'default':
             land_name = f"domain_{self._get_config_value(lambda: self.config.domain.name)}_land_classes.tif"
         land_raster = self.land_path / land_name
@@ -1229,7 +1243,10 @@ class GeospatialStatistics(ConfigurableMixin):
 
         # Check soil stats
         intersect_soil_path = self.paths.resolve('INTERSECT_SOIL_PATH', 'shapefiles/catchment_intersection/with_soilgrids')
-        intersect_soil_name = self._get_config_value(lambda: self.config.paths.intersect_soil_name, default='default')
+        intersect_soil_name = self._get_config_value(
+            lambda: self.config.paths.intersect_soil_name,
+            dict_key='INTERSECT_SOIL_NAME',
+        )
         if intersect_soil_name == 'default':
             intersect_soil_name = 'catchment_with_soilclass.shp'
 
@@ -1247,7 +1264,10 @@ class GeospatialStatistics(ConfigurableMixin):
 
         # Check land stats
         intersect_land_path = self.paths.resolve('INTERSECT_LAND_PATH', 'shapefiles/catchment_intersection/with_landclass')
-        intersect_land_name = self._get_config_value(lambda: self.config.paths.intersect_land_name, default='default')
+        intersect_land_name = self._get_config_value(
+            lambda: self.config.paths.intersect_land_name,
+            dict_key='INTERSECT_LAND_NAME',
+        )
         if intersect_land_name == 'default':
             intersect_land_name = 'catchment_with_landclass.shp'
 
@@ -1265,7 +1285,10 @@ class GeospatialStatistics(ConfigurableMixin):
 
         # Check elevation stats
         intersect_dem_path = self.paths.resolve('INTERSECT_DEM_PATH', 'shapefiles/catchment_intersection/with_dem')
-        intersect_dem_name = self._get_config_value(lambda: self.config.paths.intersect_dem_name, default='default')
+        intersect_dem_name = self._get_config_value(
+            lambda: self.config.paths.intersect_dem_name,
+            dict_key='INTERSECT_DEM_NAME',
+        )
         if intersect_dem_name == 'default':
             intersect_dem_name = 'catchment_with_dem.shp'
 

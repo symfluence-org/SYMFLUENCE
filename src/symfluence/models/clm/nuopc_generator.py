@@ -54,7 +54,6 @@ def _resolve_cesm_inputdata(preprocessor) -> Path:
     """
     configured = preprocessor._get_config_value(
         lambda: preprocessor.config.model.clm.cesm_inputdata_path,
-        default='default',
         dict_key='CLM_CESM_INPUTDATA_PATH',
     )
     if configured and str(configured).strip().lower() != 'default':
@@ -130,20 +129,17 @@ class CLMNuopcGenerator:
 
         hist_nhtfrq = self.pp._get_config_value(
             lambda: self.pp.config.model.clm.hist_nhtfrq,
-            default=-24, dict_key='CLM_HIST_NHTFRQ'
+            dict_key='CLM_HIST_NHTFRQ',
         )
-        hist_mfilt = self.pp._get_config_value(
-            lambda: self.pp.config.model.clm.hist_mfilt,
-            default=365, dict_key='CLM_HIST_MFILT'
-        )
+        hist_mfilt = self.pp._get_config_value(lambda: self.pp.config.model.clm.hist_mfilt, dict_key='CLM_HIST_MFILT')
 
         params_file = self.pp._get_config_value(
             lambda: self.pp.config.model.clm.params_file,
-            default='clm5_params.nc', dict_key='CLM_PARAMS_FILE'
+            dict_key='CLM_PARAMS_FILE',
         )
         surfdata_file = self.pp._get_config_value(
             lambda: self.pp.config.model.clm.surfdata_file,
-            default='surfdata_clm.nc', dict_key='CLM_SURFDATA_FILE'
+            dict_key='CLM_SURFDATA_FILE',
         )
 
         mesh_path = str(self.pp.params_dir / 'esmf_mesh.nc')

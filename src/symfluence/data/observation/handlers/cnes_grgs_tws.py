@@ -33,8 +33,7 @@ class CNESGRGSHandler(BaseObservationHandler):
         """Locate CNES/GRGS data or download if needed."""
         data_dir = Path(self._get_config_value(lambda: None, default=self.project_observations_dir / "tws" / "cnes_grgs", dict_key='CNES_GRGS_DATA_DIR'))
 
-        force_download = self._get_config_value(
-            lambda: self.config.data.force_download, default=False)
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
 
         has_files = data_dir.exists() and any(data_dir.iterdir())
 

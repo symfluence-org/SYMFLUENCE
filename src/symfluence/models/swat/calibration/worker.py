@@ -571,8 +571,12 @@ class SWATWorker(StreamflowWorker):
 
     def _get_swat_executable(self, config: Dict[str, Any], data_dir: Path) -> Path:
         """Get SWAT executable path."""
-        install_path = resolve_config_value(config, lambda: config.model.swat.install_path, 'default', 'SWAT_INSTALL_PATH')
-        exe_name = resolve_config_value(config, lambda: config.model.swat.exe, 'swat_rel.exe', 'SWAT_EXE')
+        install_path = resolve_config_value(
+            config,
+            lambda: config.model.swat.install_path,
+            dict_key='SWAT_INSTALL_PATH',
+        )
+        exe_name = resolve_config_value(config, lambda: config.model.swat.exe, dict_key='SWAT_EXE')
 
         return resolve_install_executable(install_path, data_dir, 'installs/swat/bin', exe_name)
 
@@ -622,7 +626,7 @@ class SWATWorker(StreamflowWorker):
         # SWAT output.rch already starts AFTER the NYSKIP warmup period
         # (file.cio NYSKIP is set to warmup_years by the preprocessor).
         # We must NOT skip warmup again; just offset the start date.
-        warmup_years = int(resolve_config_value(config, lambda: config.model.swat.warmup_years, 2, 'SWAT_WARMUP_YEARS'))
+        warmup_years = int(resolve_config_value(config, lambda: config.model.swat.warmup_years, dict_key='SWAT_WARMUP_YEARS'))
         output_start_date = start_date + pd.DateOffset(years=warmup_years)
         dates = pd.date_range(start=output_start_date, periods=len(flow_data), freq='D')
         sim_series = pd.Series(flow_data, index=dates)

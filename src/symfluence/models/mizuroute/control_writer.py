@@ -141,7 +141,10 @@ class ControlFileWriter(ConfigurableMixin):
             model_output = Path(model_output)
 
         # Get mizuRoute output directory
-        mizu_output = self._get_config_value(lambda: self.config.model.mizuroute.experiment_output, default='default')
+        mizu_output = self._get_config_value(
+            lambda: self.config.model.mizuroute.experiment_output,
+            dict_key='EXPERIMENT_OUTPUT_MIZUROUTE',
+        )
         if mizu_output == 'default' or not mizu_output:
             mizu_output = self.project_dir / f"simulations/{self.experiment_id}" / 'mizuRoute'
         else:
@@ -192,8 +195,7 @@ class ControlFileWriter(ConfigurableMixin):
         # Get routing scheme from config (default to IRF for proper river routing)
         route_opt = self._get_config_value(
             lambda: self.config.model.mizuroute.output_vars,
-            default='1',
-            dict_key='SETTINGS_MIZU_OUTPUT_VARS'
+            dict_key='SETTINGS_MIZU_OUTPUT_VARS',
         )
 
         # Get output file frequency from config
@@ -362,7 +364,10 @@ class ControlFileWriter(ConfigurableMixin):
             dict_key='SETTINGS_MIZU_REMAP_FILE',
         ))
         remap_flag = (
-            self._get_config_value(lambda: self.config.model.mizuroute.needs_remap, default=False) or
+            self._get_config_value(
+                lambda: self.config.model.mizuroute.needs_remap,
+                dict_key='SETTINGS_MIZU_NEEDS_REMAP',
+            ) or
             self.needs_remap_lumped_distributed
         )
 
@@ -380,6 +385,9 @@ class ControlFileWriter(ConfigurableMixin):
 
     def _write_miscellaneous(self, cf: TextIO, mizu_config: Dict[str, Any]) -> None:
         """Write miscellaneous settings section."""
-        within_basin = mizu_config.get('within_basin', self._get_config_value(lambda: self.config.model.mizuroute.within_basin, default=0))
+        within_basin = mizu_config.get('within_basin', self._get_config_value(
+            lambda: self.config.model.mizuroute.within_basin,
+            dict_key='SETTINGS_MIZU_WITHIN_BASIN',
+        ))
         cf.write("!\n! --- MISCELLANEOUS \n")
         cf.write(f"<doesBasinRoute>        {within_basin}    ! Hillslope routing options. 0 -> no (already routed by SUMMA), 1 -> use IRF \n")

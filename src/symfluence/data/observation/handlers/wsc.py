@@ -36,7 +36,10 @@ class WSCStreamflowHandler(BaseObservationHandler):
     def acquire(self) -> Path:
         self.logger.debug("WSCStreamflowHandler.acquire called")
         data_access = self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS')
-        download_enabled = self._get_config_value(lambda: self.config.evaluation.streamflow.download_wsc, default=False, dict_key='DOWNLOAD_WSC_DATA')
+        download_enabled = self._get_config_value(
+            lambda: self.config.evaluation.streamflow.download_wsc,
+            dict_key='DOWNLOAD_WSC_DATA',
+        )
         station_id = self._get_config_value(lambda: self.config.evaluation.streamflow.station_id, dict_key='STATION_ID')
 
         # If this handler is being invoked at all, the workflow has
@@ -85,7 +88,8 @@ class WSCStreamflowHandler(BaseObservationHandler):
             # registry processing loop. Reuse the already-downloaded raw CSV
             # instead of re-hitting the GeoMet API, unless force_download.
             force_download = self._get_config_value(
-                lambda: self.config.data.force_download, default=False, dict_key='FORCE_DOWNLOAD'
+                lambda: self.config.data.force_download,
+                dict_key='FORCE_DOWNLOAD',
             )
             if raw_file.exists() and not force_download:
                 self.logger.info(f"Using existing WSC data: {raw_file}")

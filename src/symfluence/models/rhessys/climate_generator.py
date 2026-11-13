@@ -619,7 +619,11 @@ class RHESSysClimateGenerator:
                 centroid_proj = gdf_proj.geometry.centroid.iloc[0]
                 centroid_ll = gpd.GeoSeries([centroid_proj], crs=utm_crs).to_crs("EPSG:4326").iloc[0]
                 lon, lat = float(centroid_ll.x), float(centroid_ll.y)
-                elev_col = resolve_config_value(self.config, lambda: self.config.paths.catchment_elev, 'elev_mean', 'CATCHMENT_SHP_ELEV')
+                elev_col = resolve_config_value(
+                    self.config,
+                    lambda: self.config.paths.catchment_elev,
+                    dict_key='CATCHMENT_SHP_ELEV',
+                )
                 if elev_col in gdf.columns:
                     elev = float(gdf[elev_col].iloc[0])
             except (FileNotFoundError, KeyError, IndexError, ValueError):

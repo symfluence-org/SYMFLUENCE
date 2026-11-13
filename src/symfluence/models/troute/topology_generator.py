@@ -35,7 +35,8 @@ class TRouteTopologyGenerator(BaseTopologyGenerator):
 
     def get_topology_output_path(self) -> Path:
         topology_name = self.pp._get_config_value(
-            lambda: self.pp.config.model.troute.topology_file, default='troute_topology.nc'
+            lambda: self.pp.config.model.troute.topology_file,
+            dict_key='SETTINGS_TROUTE_TOPOLOGY',
         )
         return self.pp.setup_dir / topology_name
 
@@ -61,7 +62,8 @@ class TRouteTopologyGenerator(BaseTopologyGenerator):
 
             # Manning's n (uniform)
             mannings_n = self.pp._get_config_value(
-                lambda: self.pp.config.model.troute.mannings_n, default=0.035
+                lambda: self.pp.config.model.troute.mannings_n,
+                dict_key='TROUTE_MANNINGS_N',
             )
             self._write_var(ncid, 'n', 'f8', 'link', np.full(topology_data.num_seg, float(mannings_n)), 'Mannings roughness coefficient')
 
@@ -142,7 +144,8 @@ class TRouteTopologyGenerator(BaseTopologyGenerator):
             self._write_var(ncid, 'hru_area_m2', 'f8', 'nhru', topology_data.hru_areas, 'HRU area', 'm^2')
 
             mannings_n = self.pp._get_config_value(
-                lambda: self.pp.config.model.troute.mannings_n, default=0.035
+                lambda: self.pp.config.model.troute.mannings_n,
+                dict_key='TROUTE_MANNINGS_N',
             )
             self._write_var(ncid, 'n', 'f8', 'link', np.full(topology_data.num_seg, float(mannings_n)), 'Mannings roughness coefficient')
 
@@ -176,10 +179,12 @@ class TRouteTopologyGenerator(BaseTopologyGenerator):
     def _write_channel_width(self, ncid, topology_data: TopologyData, shp_river=None) -> None:
         """Compute channel width from hydraulic geometry: W = a * A^b."""
         hg_a = float(self.pp._get_config_value(
-            lambda: self.pp.config.model.troute.hg_width_coeff, default=2.71
+            lambda: self.pp.config.model.troute.hg_width_coeff,
+            dict_key='TROUTE_HG_WIDTH_COEFF',
         ))
         hg_b = float(self.pp._get_config_value(
-            lambda: self.pp.config.model.troute.hg_width_exp, default=0.557
+            lambda: self.pp.config.model.troute.hg_width_exp,
+            dict_key='TROUTE_HG_WIDTH_EXP',
         ))
 
         da_km2 = None

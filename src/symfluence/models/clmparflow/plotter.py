@@ -98,36 +98,18 @@ class CLMParFlowPlotter(BasePlotter):
 
         timestep_hours = float(self._get_config_value(
             lambda: self.config.model.clmparflow.timestep_hours,
-            default=1.0, dict_key='CLMPARFLOW_TIMESTEP_HOURS',
+            dict_key='CLMPARFLOW_TIMESTEP_HOURS',
         ))
         start_date = str(self._get_config_value(
             lambda: self.config.domain.time_start,
             default='2000-01-01', dict_key='EXPERIMENT_TIME_START',
         ))
-        k_sat = float(self._get_config_value(
-            lambda: self.config.model.clmparflow.k_sat,
-            default=5.0, dict_key='CLMPARFLOW_K_SAT',
-        ))
-        dx = float(self._get_config_value(
-            lambda: self.config.model.clmparflow.dx,
-            default=1000.0, dict_key='CLMPARFLOW_DX',
-        ))
-        dy = float(self._get_config_value(
-            lambda: self.config.model.clmparflow.dy,
-            default=1000.0, dict_key='CLMPARFLOW_DY',
-        ))
-        dz = float(self._get_config_value(
-            lambda: self.config.model.clmparflow.dz,
-            default=2.0, dict_key='CLMPARFLOW_DZ',
-        ))
-        top = float(self._get_config_value(
-            lambda: self.config.model.clmparflow.top,
-            default=2.0, dict_key='CLMPARFLOW_TOP',
-        ))
-        bot = float(self._get_config_value(
-            lambda: self.config.model.clmparflow.bot,
-            default=0.0, dict_key='CLMPARFLOW_BOT',
-        ))
+        k_sat = float(self._get_config_value(lambda: self.config.model.clmparflow.k_sat, dict_key='CLMPARFLOW_K_SAT'))
+        dx = float(self._get_config_value(lambda: self.config.model.clmparflow.dx, dict_key='CLMPARFLOW_DX'))
+        dy = float(self._get_config_value(lambda: self.config.model.clmparflow.dy, dict_key='CLMPARFLOW_DY'))
+        dz = float(self._get_config_value(lambda: self.config.model.clmparflow.dz, dict_key='CLMPARFLOW_DZ'))
+        top = float(self._get_config_value(lambda: self.config.model.clmparflow.top, dict_key='CLMPARFLOW_TOP'))
+        bot = float(self._get_config_value(lambda: self.config.model.clmparflow.bot, dict_key='CLMPARFLOW_BOT'))
 
         from symfluence.models.parflow.extractor import resolve_dump_interval_hours
         common_kwargs = dict(

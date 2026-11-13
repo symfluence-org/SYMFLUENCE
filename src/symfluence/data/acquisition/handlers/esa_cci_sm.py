@@ -90,9 +90,15 @@ class ESACCISMAcquirer(BaseAcquisitionHandler, RetryMixin, ChunkedDownloadMixin)
         out_file_tgz = self._output_dir / f"{self.domain_name}_ESA_CCI_SM_{year}{month:02d}.tar.gz"
 
         # Check for existing file
-        if out_file_zip.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False, dict_key='FORCE_DOWNLOAD'):
+        if out_file_zip.exists() and not self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             return out_file_zip
-        if out_file_tgz.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False, dict_key='FORCE_DOWNLOAD'):
+        if out_file_tgz.exists() and not self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             return out_file_tgz
 
         # Build CDS request

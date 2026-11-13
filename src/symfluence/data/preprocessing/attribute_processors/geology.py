@@ -212,7 +212,10 @@ class GeologyProcessor(BaseAttributeProcessor):
             else:
                 # For distributed catchment, process each HRU
                 catchment = gpd.read_file(self.catchment_path)
-                hru_id_field = self._get_config_value(lambda: self.config.paths.catchment_hruid, default='HRU_ID', dict_key='CATCHMENT_SHP_HRUID')
+                hru_id_field = self._get_config_value(
+                    lambda: self.config.paths.catchment_hruid,
+                    dict_key='CATCHMENT_SHP_HRUID',
+                )
 
                 # Ensure CRS match
                 if glhymps.crs != catchment.crs:
@@ -495,7 +498,10 @@ class GeologyProcessor(BaseAttributeProcessor):
             else:
                 # For distributed catchment, process each HRU
                 catchment = gpd.read_file(self.catchment_path)
-                hru_id_field = self._get_config_value(lambda: self.config.paths.catchment_hruid, default='HRU_ID', dict_key='CATCHMENT_SHP_HRUID')
+                hru_id_field = self._get_config_value(
+                    lambda: self.config.paths.catchment_hruid,
+                    dict_key='CATCHMENT_SHP_HRUID',
+                )
 
                 # Ensure CRS match
                 if geo_map.crs != catchment.crs:

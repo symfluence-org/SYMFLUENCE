@@ -43,7 +43,7 @@ class PRMSRunner(BaseModelRunner):
         """Build PRMS execution command with control file."""
         control_name = self._get_config_value(
             lambda: self.config.model.prms.control_file,
-            default='control.dat',
+            dict_key='PRMS_CONTROL_FILE',
         )
         control_file = self.settings_dir / control_name
         return [str(self.prms_exe), '-C', str(control_file)]
@@ -54,7 +54,4 @@ class PRMSRunner(BaseModelRunner):
 
     def _get_run_timeout(self) -> int:
         """PRMS timeout from config."""
-        return self._get_config_value(
-            lambda: self.config.model.prms.timeout,
-            default=3600,
-        )
+        return self._get_config_value(lambda: self.config.model.prms.timeout, dict_key='PRMS_TIMEOUT')
