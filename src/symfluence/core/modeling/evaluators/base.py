@@ -171,8 +171,7 @@ class ModelEvaluator(ConfigurableMixin, ABC):
         """First stamp after EVALUATION_SPINUP_YEARS, counted from the simulation start."""
         spinup_years = self._get_config_value(
             lambda: self.config.evaluation.spinup_years,
-            default=0,
-            dict_key='EVALUATION_SPINUP_YEARS'
+            dict_key='EVALUATION_SPINUP_YEARS',
         )
         try:
             spinup_years = int(float(spinup_years))
@@ -880,8 +879,7 @@ class ModelEvaluator(ConfigurableMixin, ABC):
         """Align simulation and observation series after dropping spinup years."""
         spinup_years = self._get_config_value(
             lambda: self.config.evaluation.spinup_years,
-            default=0,
-            dict_key='EVALUATION_SPINUP_YEARS'
+            dict_key='EVALUATION_SPINUP_YEARS',
         )
         try:
             spinup_years = int(float(spinup_years))

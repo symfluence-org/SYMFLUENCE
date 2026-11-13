@@ -852,14 +852,12 @@ class LumpedWatershedDelineator(BaseGeofabricDelineator):
 
             threshold = self._get_config_value(
                 lambda: self.config.domain.delineation.stream_threshold,
-                default=5000,
-                dict_key='STREAM_THRESHOLD'
+                dict_key='STREAM_THRESHOLD',
             )
 
             max_distance = self._get_config_value(
                 lambda: self.config.domain.delineation.move_outlets_max_distance,
-                default=200,
-                dict_key='MOVE_OUTLETS_MAX_DISTANCE'
+                dict_key='MOVE_OUTLETS_MAX_DISTANCE',
             )
 
             steps = [

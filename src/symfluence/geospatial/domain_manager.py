@@ -500,12 +500,12 @@ class DomainManager(ConfigurableMixin):
         # Validate subset configuration
         subset_from_geofabric = self._get_config_value(
             lambda: self.config.domain.subset_from_geofabric,
-            default=False
+            dict_key='SUBSET_FROM_GEOFABRIC',
         )
         if subset_from_geofabric:
             geofabric_type = self._get_config_value(
                 lambda: self.config.domain.delineation.geofabric_type,
-                default='na'
+                dict_key='GEOFABRIC_TYPE',
             )
             ok = geofabric_type not in ('na', '', None)
             if not ok:
@@ -520,10 +520,7 @@ class DomainManager(ConfigurableMixin):
             lambda: self.config.domain.definition_method
         )
         if domain_method == 'distributed':
-            grid_source = self._get_config_value(
-                lambda: self.config.domain.grid_source,
-                default='generate'
-            )
+            grid_source = self._get_config_value(lambda: self.config.domain.grid_source, dict_key='GRID_SOURCE')
             valid_grid_sources = ['generate', 'native']
             ok = grid_source in valid_grid_sources
             if not ok:

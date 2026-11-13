@@ -24,6 +24,7 @@ from shapely.geometry import box
 
 import symfluence.models.summa as summa_package
 from symfluence.core.exceptions import ModelExecutionError
+from symfluence.core.mixins.config import SCHEMA_DEFAULT, fallback_default
 from symfluence.models.summa.attributes_manager import (
     FLAT_ASPECT_DEG,
     SummaAttributesManager,
@@ -45,7 +46,8 @@ def _manager(tmp_path: Path) -> SummaAttributesManager:
     mgr.project_dir = tmp_path
     mgr.setup_dir = tmp_path / 'settings'
     mgr.setup_dir.mkdir(exist_ok=True)
-    mgr._get_config_value = lambda accessor=None, default=None, **kwargs: 'HRU_ID' if default is None else default
+    mgr._get_config_value = lambda accessor=None, default=SCHEMA_DEFAULT, dict_key=None, **kwargs: (
+        fallback_default(default, dict_key) or 'HRU_ID')
     mgr._get_default_path = lambda key, default: tmp_path / default
     return mgr
 

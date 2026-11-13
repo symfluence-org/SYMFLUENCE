@@ -6,6 +6,7 @@ from types import SimpleNamespace as NS
 import pytest
 
 from symfluence.core.exceptions import ConfigurationError
+from symfluence.core.mixins.config import SCHEMA_DEFAULT, fallback_default
 from symfluence.models.prms.preprocessor import PRMSPreProcessor
 
 PROPS=dict(lat=64.,lon=-19.,elev=700.,area_km2=1145.,slope=5.,aspect=0.)
@@ -23,7 +24,7 @@ def test_prms_soil_defaults_preserve_depths(tmp_path,mode):
     p=object.__new__(PRMSPreProcessor);p.settings_dir=tmp_path;p.use_obs_solar=True
     p.config=NS(model=NS(prms=NS(nhru=5,model_mode=mode,parameter_overrides={},routing_segments=1,
                                   separate_glacier_depletion_curve=False,forcing_mode='station')))
-    p._get_config_value=lambda getter,default=None,**kw:default
+    p._get_config_value=lambda getter,default=SCHEMA_DEFAULT,dict_key=None,**kw:fallback_default(default,dict_key)
     p._get_catchment_properties=lambda:PROPS
     p._get_dominant_classes=lambda:dict(cov_type=0,soil_type=2)
     p._generate_parameter_file();v=values(tmp_path/'params.dat')

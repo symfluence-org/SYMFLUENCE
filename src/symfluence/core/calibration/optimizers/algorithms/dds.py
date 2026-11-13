@@ -68,7 +68,7 @@ class DDSAlgorithm(OptimizationAlgorithm):
         # Per-run RNG (OptimizationAlgorithm._new_rng): never the process-global stream.
         self._rng = self._new_rng()
         # DDS perturbation range (default 0.2, higher values explore more)
-        r = self._get_config_value(lambda: self.config.optimization.dds.r, default=0.2, dict_key='DDS_R')
+        r = self._get_config_value(lambda: self.config.optimization.dds.r, dict_key='DDS_R')
 
         # Minimum perturbation probability to ensure exploration even late in optimization
         p_min = self._get_config_value(
@@ -98,7 +98,7 @@ class DDSAlgorithm(OptimizationAlgorithm):
         # Stagnation detection settings
         stagnation_threshold = self._get_config_value(
             lambda: self.config.optimization.dds.stagnation_threshold,
-            default=100, dict_key='DDS_STAGNATION_THRESHOLD'
+            dict_key='DDS_STAGNATION_THRESHOLD',
         )
         iterations_since_improvement = 0
         n_improvements = 0

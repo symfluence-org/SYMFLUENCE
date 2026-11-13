@@ -319,7 +319,7 @@ class OptimizationManager(BaseManager):
         # Get the optimization algorithm from config
         opt_algorithm = self._get_config_value(
             lambda: self.config.optimization.algorithm,
-            'PSO'
+            dict_key='ITERATIVE_OPTIMIZATION_ALGORITHM',
         )
 
         try:
@@ -336,8 +336,7 @@ class OptimizationManager(BaseManager):
             if 'FUSE' in hydrological_models:
                 use_internal = self._get_config_value(
                     lambda: self.config.model.fuse.run_internal_calibration,
-                    default=True,
-                    dict_key='FUSE_RUN_INTERNAL_CALIBRATION'
+                    dict_key='FUSE_RUN_INTERNAL_CALIBRATION',
                 )
                 multi_gauge = self._get_config_value(
                     lambda: self.config.optimization.multi_gauge.calibration,
@@ -668,7 +667,7 @@ class OptimizationManager(BaseManager):
         )
         algorithm = self._get_config_value(
             lambda: self.config.optimization.algorithm,
-            'PSO'
+            dict_key='ITERATIVE_OPTIMIZATION_ALGORITHM',
         ).lower()
 
         status = {
@@ -676,7 +675,7 @@ class OptimizationManager(BaseManager):
             'optimization_algorithm': algorithm.upper(),
             'optimization_metric': self._get_config_value(
                 lambda: self.config.optimization.metric,
-                'KGE'
+                dict_key='OPTIMIZATION_METRIC',
             ),
             'optimization_dir': str(self.project_dir / "optimization"),
             'results_exist': False,

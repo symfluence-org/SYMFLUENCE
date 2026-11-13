@@ -4,6 +4,7 @@ from __future__ import annotations
 import numpy as np
 import xarray as xr
 
+from symfluence.core.mixins.config import SCHEMA_DEFAULT, fallback_default
 from symfluence.models.vic.preprocessor import VICPreProcessor
 
 
@@ -11,7 +12,7 @@ def test_generated_library_reserves_bare_soil(tmp_path):
     pre = object.__new__(VICPreProcessor)
     pre.params_dir = tmp_path
     pre.domain_name = 'test'
-    pre._get_config_value = lambda *args, default=None, **kwargs: default
+    pre._get_config_value = lambda *args, default=SCHEMA_DEFAULT, dict_key=None, **kwargs: fallback_default(default, dict_key)
     pre._get_catchment_properties = lambda: {'elev': 700.}
     pre._compute_elevation_bands = lambda n_bands: {'elevations': [600.,800.], 'area_fracs':[.5,.5], 'pfactors':[1.,1.]}
     xr.Dataset({'mask':(('lat','lon'),[[1]])},coords={'lat':[64.], 'lon':[-19.]}).to_netcdf(tmp_path/'vic_domain.nc')

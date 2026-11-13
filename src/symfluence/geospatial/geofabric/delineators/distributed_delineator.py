@@ -57,7 +57,10 @@ class GeofabricDelineator(BaseGeofabricDelineator):
         self.reporting_manager = reporting_manager
 
         # Stream delineation method
-        self.delineation_method = self._get_config_value(lambda: self.config.domain.delineation.method, default='stream_threshold', dict_key='DELINEATION_METHOD').lower()
+        self.delineation_method = self._get_config_value(
+            lambda: self.config.domain.delineation.method,
+            dict_key='DELINEATION_METHOD',
+        ).lower()
 
         # Validate method
         valid_methods = ['stream_threshold', 'curvature', 'slope_area', 'multi_scale']
@@ -130,7 +133,6 @@ class GeofabricDelineator(BaseGeofabricDelineator):
             if mask_ocean is None:
                 mask_ocean = self._get_config_value(
                     lambda: self.config.domain.delineation.delineate_coastal_watersheds,
-                    default=False,
                     dict_key='DELINEATE_COASTAL_WATERSHEDS',
                 )
             sea_level = self._get_config_value(
@@ -252,7 +254,10 @@ class GeofabricDelineator(BaseGeofabricDelineator):
             subset_basins_path, subset_rivers_path = self._get_output_paths()
 
             # Subset by pour point if requested
-            if self._get_config_value(lambda: self.config.domain.delineation.delineate_by_pourpoint, default=True, dict_key='DELINEATE_BY_POURPOINT'):
+            if self._get_config_value(
+                lambda: self.config.domain.delineation.delineate_by_pourpoint,
+                dict_key='DELINEATE_BY_POURPOINT',
+            ):
                 # Ensure CRS consistency
                 basins, rivers, pour_point = CRSUtils.ensure_crs_consistency(
                     basins, rivers, pour_point, self.logger

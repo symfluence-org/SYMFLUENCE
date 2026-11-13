@@ -543,8 +543,7 @@ class PathResolverMixin(ConfigurableMixin):
         if catchment_name is None or catchment_name == 'default':
             catchment_name = self._get_config_value(
                 lambda: self.config.paths.catchment_name,
-                default='default',
-                dict_key='CATCHMENT_SHP_NAME'
+                dict_key='CATCHMENT_SHP_NAME',
             )
 
         if catchment_name is None or catchment_name == 'default':
@@ -578,8 +577,7 @@ class PathResolverMixin(ConfigurableMixin):
         """
         from symfluence.core.modeling.forcing_naming import resolve_forcing_files
 
-        hru_field = self._get_config_value(
-            lambda: self.config.paths.catchment_hruid, default='HRU_ID', dict_key='CATCHMENT_SHP_HRUID')
+        hru_field = self._get_config_value(lambda: self.config.paths.catchment_hruid, dict_key='CATCHMENT_SHP_HRUID')
         catchment = self._get_catchment_file_path()
         return resolve_forcing_files(
             forcing_files, self.domain_discretization, catchment, hru_field, pattern)
@@ -597,11 +595,10 @@ class PathResolverMixin(ConfigurableMixin):
         back to the river_basins outline. Returns None when not found unless
         ``required``. See :func:`find_basin_shapefile`.
         """
-        explicit_path = self._get_config_value(
-            lambda: self.config.paths.catchment_path, default='default', dict_key='CATCHMENT_PATH'
-        )
+        explicit_path = self._get_config_value(lambda: self.config.paths.catchment_path, dict_key='CATCHMENT_PATH')
         explicit_name = self._get_config_value(
-            lambda: self.config.paths.catchment_name, default='default', dict_key='CATCHMENT_SHP_NAME'
+            lambda: self.config.paths.catchment_name,
+            dict_key='CATCHMENT_SHP_NAME',
         )
         return find_basin_shapefile(
             self.project_dir / "shapefiles",

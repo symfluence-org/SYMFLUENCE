@@ -18,6 +18,7 @@ import pytest
 import xarray as xr
 
 from symfluence.core.exceptions import ConfigurationError
+from symfluence.core.mixins.config import SCHEMA_DEFAULT, fallback_default
 from symfluence.models.wflow import lumped_discharge as ld
 from symfluence.models.wflow.calibration.parameter_manager import WflowParameterManager
 from symfluence.models.wflow.calibration.worker import WflowWorker
@@ -56,7 +57,7 @@ def _postprocessor(tmp_path, saved):
     post = WflowPostProcessor.__new__(WflowPostProcessor)
     post.logger = logging.getLogger('wflow-post')
     post.project_dir = tmp_path / 'domain_test'
-    post._get_config_value = lambda accessor, default=None, dict_key=None: default
+    post._get_config_value = lambda accessor, default=SCHEMA_DEFAULT, dict_key=None: fallback_default(default, dict_key)
     post._get_output_dir = lambda: tmp_path / 'domain_test' / 'simulations' / 'run_1' / 'WFLOW'
     post._align_time_labels = lambda q: q
     post.resample_frequency = None
@@ -141,7 +142,8 @@ def _pre(method, step_seconds):
     pre = WflowPreProcessor.__new__(WflowPreProcessor)
     pre.logger = logging.getLogger('wflow-pre')
     values = {'WFLOW_PET_METHOD': method, 'FORCING_TIME_STEP_SIZE': step_seconds}
-    pre._get_config_value = lambda accessor, default=None, dict_key=None: values.get(dict_key, default)
+    pre._get_config_value = lambda accessor, default=SCHEMA_DEFAULT, dict_key=None: (
+        values[dict_key] if dict_key in values else fallback_default(default, dict_key))
     return pre
 
 
@@ -284,7 +286,8 @@ def test_generated_toml_writes_the_outflow_columns_in_lumped_mode_only(tmp_path,
     pre.forcing_out_dir = tmp_path / 'forcing'
     pre.settings_dir.mkdir()
     values = {'SYMFLUENCE_DATA_DIR': str(tmp_path), 'DOMAIN_NAME': 'test', 'FORCING_TIME_STEP_SIZE': 86400}
-    pre._get_config_value = lambda accessor, default=None, dict_key=None: values.get(dict_key, default)
+    pre._get_config_value = lambda accessor, default=SCHEMA_DEFAULT, dict_key=None: (
+        values[dict_key] if dict_key in values else fallback_default(default, dict_key))
     pre._get_simulation_dates = lambda: (datetime(2020, 1, 1), datetime(2020, 12, 31))
     pre._soil_layer_thickness = lambda: [100, 300, 800]
     pre._generate_toml_config()

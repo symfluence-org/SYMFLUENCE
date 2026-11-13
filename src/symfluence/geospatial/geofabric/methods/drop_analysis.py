@@ -58,10 +58,22 @@ class DropAnalysisMethod(ConfigMixin):
             self.logger.info("Running drop analysis to optimize stream threshold")
 
             # Get parameters
-            min_threshold = self._get_config_value(lambda: self.config.domain.delineation.drop_analysis_min_threshold, default=100, dict_key='DROP_ANALYSIS_MIN_THRESHOLD')
-            max_threshold = self._get_config_value(lambda: self.config.domain.delineation.drop_analysis_max_threshold, default=10000, dict_key='DROP_ANALYSIS_MAX_THRESHOLD')
-            num_thresholds = self._get_config_value(lambda: self.config.domain.delineation.drop_analysis_num_thresholds, default=10, dict_key='DROP_ANALYSIS_NUM_THRESHOLDS')
-            use_log_spacing = self._get_config_value(lambda: self.config.domain.delineation.drop_analysis_log_spacing, default=True, dict_key='DROP_ANALYSIS_LOG_SPACING')
+            min_threshold = self._get_config_value(
+                lambda: self.config.domain.delineation.drop_analysis_min_threshold,
+                dict_key='DROP_ANALYSIS_MIN_THRESHOLD',
+            )
+            max_threshold = self._get_config_value(
+                lambda: self.config.domain.delineation.drop_analysis_max_threshold,
+                dict_key='DROP_ANALYSIS_MAX_THRESHOLD',
+            )
+            num_thresholds = self._get_config_value(
+                lambda: self.config.domain.delineation.drop_analysis_num_thresholds,
+                dict_key='DROP_ANALYSIS_NUM_THRESHOLDS',
+            )
+            use_log_spacing = self._get_config_value(
+                lambda: self.config.domain.delineation.drop_analysis_log_spacing,
+                dict_key='DROP_ANALYSIS_LOG_SPACING',
+            )
 
             # Generate threshold values to test
             if use_log_spacing:

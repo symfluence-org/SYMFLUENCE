@@ -56,7 +56,10 @@ class StreamThresholdMethod(ConfigMixin):
             mpi_prefix: MPI command prefix
         """
         # Determine threshold
-        if self._get_config_value(lambda: self.config.domain.delineation.use_drop_analysis, default=False, dict_key='USE_DROP_ANALYSIS'):
+        if self._get_config_value(
+            lambda: self.config.domain.delineation.use_drop_analysis,
+            dict_key='USE_DROP_ANALYSIS',
+        ):
             from .drop_analysis import DropAnalysisMethod
             drop_analyzer = DropAnalysisMethod(
                 self.taudem, self.config, self.logger, self.interim_dir, self.reporting_manager
@@ -67,12 +70,21 @@ class StreamThresholdMethod(ConfigMixin):
                 threshold = optimal_threshold
                 self.logger.info(f"Using threshold from drop analysis: {threshold}")
             else:
-                threshold = self._get_config_value(lambda: self.config.domain.delineation.stream_threshold, default=5000, dict_key='STREAM_THRESHOLD')
+                threshold = self._get_config_value(
+                    lambda: self.config.domain.delineation.stream_threshold,
+                    dict_key='STREAM_THRESHOLD',
+                )
                 self.logger.warning(f"Drop analysis failed. Using configured threshold: {threshold}")
         else:
-            threshold = self._get_config_value(lambda: self.config.domain.delineation.stream_threshold, default=5000, dict_key='STREAM_THRESHOLD')
+            threshold = self._get_config_value(
+                lambda: self.config.domain.delineation.stream_threshold,
+                dict_key='STREAM_THRESHOLD',
+            )
 
-        max_distance = self._get_config_value(lambda: self.config.domain.delineation.move_outlets_max_distance, default=200, dict_key='MOVE_OUTLETS_MAX_DISTANCE')
+        max_distance = self._get_config_value(
+            lambda: self.config.domain.delineation.move_outlets_max_distance,
+            dict_key='MOVE_OUTLETS_MAX_DISTANCE',
+        )
 
         steps = [
             f"{mpi_prefix}{self.taudem_dir}/gridnet -p {self.interim_dir}/elv-fdir.tif -plen {self.interim_dir}/elv-plen.tif -tlen {self.interim_dir}/elv-tlen.tif -gord {self.interim_dir}/elv-gord.tif",

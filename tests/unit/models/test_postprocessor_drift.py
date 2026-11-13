@@ -17,17 +17,18 @@ import pytest
 import xarray as xr
 
 from symfluence.core.exceptions import ConfigurationError, EvaluationError
+from symfluence.core.mixins.config import SCHEMA_DEFAULT, fallback_default
 
 pytestmark = [pytest.mark.unit, pytest.mark.quick]
 LOG = logging.getLogger("test")
 
 
-def _cfg_value(accessor=None, default=None, dict_key=None):
+def _cfg_value(accessor=None, default=SCHEMA_DEFAULT, dict_key=None):
     try:
         value = accessor()
     except (AttributeError, KeyError, TypeError):
         value = None
-    return default if value is None else value
+    return fallback_default(default, dict_key) if value is None else value
 
 
 # 1. ParFlow / CLM-ParFlow dump interval -------------------------------------

@@ -84,9 +84,7 @@ def topology_candidates_from_config(config: Any, near: Optional[Path] = None) ->
         data_dir = resolve_config_value(config, lambda: config.system.data_dir, None, 'SYMFLUENCE_DATA_DIR')
         if domain and data_dir:
             project_dir = Path(data_dir) / f"domain_{domain}"
-    name = resolve_config_value(
-        config, lambda: config.model.mizuroute.topology, 'topology.nc', 'SETTINGS_MIZU_TOPOLOGY'
-    ) if config is not None else 'topology.nc'
+    name = resolve_config_value(config, lambda: config.model.mizuroute.topology, dict_key='SETTINGS_MIZU_TOPOLOGY') if config is not None else 'topology.nc'
     if not name or name == 'default':
         name = 'topology.nc'
     return topology_candidates(project_dir, name, near=near)

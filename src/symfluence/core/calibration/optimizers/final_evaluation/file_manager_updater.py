@@ -160,7 +160,10 @@ class FileManagerUpdater(ConfigMixin):
             Adjusted end time string
         """
         try:
-            forcing_timestep_seconds = self._get_config_value(lambda: self.config.forcing.time_step_size, default=3600, dict_key='FORCING_TIME_STEP_SIZE')
+            forcing_timestep_seconds = self._get_config_value(
+                lambda: self.config.forcing.time_step_size,
+                dict_key='FORCING_TIME_STEP_SIZE',
+            )
             adjusted = adjust_end_time_for_forcing(end_time_str, forcing_timestep_seconds)
             if adjusted != end_time_str:
                 self.logger.info(
