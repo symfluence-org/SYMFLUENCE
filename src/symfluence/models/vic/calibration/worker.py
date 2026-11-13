@@ -20,11 +20,10 @@ import xarray as xr
 
 from symfluence.core.calibration.workers.base_worker import (
     MACOS_MALLOC_QUIET_ENV,
-    BaseWorker,
     run_worker_task,
 )
+from symfluence.core.calibration.workers.streamflow_worker import StreamflowWorker
 from symfluence.core.exceptions import ModelExecutionError, ValidationError
-from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.path_resolver import resolve_install_executable
@@ -34,7 +33,7 @@ from symfluence.models.vic.constants import target_snow_constants
 
 
 @R.workers.add('VIC')
-class VICWorker(BaseWorker):
+class VICWorker(StreamflowWorker):
     """
     Worker for VIC model calibration.
 
@@ -56,7 +55,6 @@ class VICWorker(BaseWorker):
         super().__init__(config, logger)
 
     # Shared utilities
-    _streamflow_metrics = StreamflowMetrics()
 
     def apply_parameters(
         self,
@@ -475,116 +473,85 @@ class VICWorker(BaseWorker):
                 except (OSError, IOError):
                     pass
 
-    def calculate_metrics(
+    def scoring_period(self, config: Dict[str, Any], **kwargs):
+        """The scoring window; a malformed or reversed period fails the trial."""
+        period = (kwargs.get('period')
+                  or resolve_config_value(config, lambda: config.domain.calibration_period, None, 'CALIBRATION_PERIOD')
+                  or config.get('domain', {}).get('calibration_period'))
+        if not period:
+            return None
+        parts = split_period(period)
+        if parts is None:
+            raise ValidationError('Invalid VIC scoring period')
+        start, end = pd.Timestamp(parts[0]), pd.Timestamp(parts[1])
+        if pd.isna(start) or pd.isna(end) or start > end:
+            raise ValidationError('Invalid VIC scoring period')
+        return start, end
+
+    def read_simulated_streamflow(
         self,
         output_dir: Path,
         config: Dict[str, Any],
         **kwargs
-    ) -> Dict[str, Any]:
-        """
-        Calculate metrics from VIC output.
+    ) -> Optional[pd.Series]:
+        """Basin discharge (m3/s) from this trial's VIC fluxes, warm-up removed."""
+        sim_dir = Path(kwargs.get('sim_dir', output_dir))
 
-        Args:
-            output_dir: Directory containing model outputs
-            config: Configuration dictionary
-            **kwargs: Additional arguments
+        # Find output file
+        output_files = list(sim_dir.glob('*fluxes*.nc'))
+        if not output_files:
+            output_files = list(sim_dir.glob('vic_output*.nc'))
+        if not output_files:
+            output_files = list(sim_dir.glob('*.nc'))
 
-        Returns:
-            Dictionary of metric names to values
-        """
+        if not output_files:
+            self.logger.error(f"No VIC output files found in {sim_dir}")
+            raise ModelExecutionError('No output files')
+
+        sim_file = output_files[0]
+
+        # Extract streamflow
+        ds = xr.open_dataset(sim_file)
+
+        # Basin-mean runoff + baseflow depth: the same area-weighted
+        # aggregation the postprocessor uses for the results CSV.
+        from symfluence.models.vic.extractor import (
+            basin_mean_vic_runoff,
+            load_vic_cell_area,
+        )
+        domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+        data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
+        project_dir = data_dir / f'domain_{domain_name}'
+        domain_file = resolve_config_value(
+            config, lambda: config.model.vic.domain_file, 'vic_domain.nc', 'VIC_DOMAIN_FILE'
+        )
+        cell_area = load_vic_cell_area(project_dir / 'settings' / 'VIC' / 'parameters' / domain_file)
         try:
-            sim_dir = Path(kwargs.get('sim_dir', output_dir))
-
-            # Find output file
-            output_files = list(sim_dir.glob('*fluxes*.nc'))
-            if not output_files:
-                output_files = list(sim_dir.glob('vic_output*.nc'))
-            if not output_files:
-                output_files = list(sim_dir.glob('*.nc'))
-
-            if not output_files:
-                self.logger.error(f"No VIC output files found in {sim_dir}")
-                return {'kge': self.penalty_score, 'error': 'No output files'}
-
-            sim_file = output_files[0]
-
-            # Extract streamflow
-            ds = xr.open_dataset(sim_file)
-
-            # Basin-mean runoff + baseflow depth: the same area-weighted
-            # aggregation the postprocessor uses for the results CSV.
-            from symfluence.models.vic.extractor import (
-                basin_mean_vic_runoff,
-                load_vic_cell_area,
-            )
-            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
-            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
-            project_dir = data_dir / f'domain_{domain_name}'
-            domain_file = resolve_config_value(
-                config, lambda: config.model.vic.domain_file, 'vic_domain.nc', 'VIC_DOMAIN_FILE'
-            )
-            cell_area = load_vic_cell_area(project_dir / 'settings' / 'VIC' / 'parameters' / domain_file)
-            try:
-                total_runoff = basin_mean_vic_runoff(ds, cell_area).values
-            except ModelExecutionError:
-                ds.close()
-                return {'kge': self.penalty_score, 'error': 'No runoff variable'}
-
-            times = pd.to_datetime(ds['time'].values)
+            total_runoff = basin_mean_vic_runoff(ds, cell_area).values
+        except ModelExecutionError:
             ds.close()
+            raise ModelExecutionError('No runoff variable') from None
 
-            # Convert to m³/s using catchment area
-            area_km2 = self._streamflow_metrics.get_catchment_area(
-                config, project_dir, domain_name, source='shapefile'
-            )
-            area_m2 = area_km2 * 1e6
+        times = pd.to_datetime(ds['time'].values)
+        ds.close()
 
-            # mm/day -> m³/s
-            streamflow_m3s = total_runoff * area_m2 / 1000 / 86400
-            sim_series = pd.Series(streamflow_m3s, index=times)
+        # Convert to m³/s using catchment area
+        area_km2 = self._streamflow_metrics.get_catchment_area(
+            config, project_dir, domain_name, source='shapefile'
+        )
+        area_m2 = area_km2 * 1e6
 
-            # Skip warmup period to avoid spinup artifacts contaminating metrics.
-            # VIC starts with INIT_STATE FALSE, so the first N days are unreliable.
-            warmup_days = int(config.get('VIC_WARMUP_DAYS', 365))
-            if warmup_days > 0 and len(sim_series) > warmup_days:
-                sim_series = sim_series.iloc[warmup_days:]
-                self.logger.debug(f"Skipped {warmup_days} warmup days for metric calculation")
+        # mm/day -> m³/s
+        streamflow_m3s = total_runoff * area_m2 / 1000 / 86400
+        sim_series = pd.Series(streamflow_m3s, index=times)
 
-            # Load observations
-            obs_values, obs_index = self._streamflow_metrics.load_observations(
-                config, project_dir, domain_name, resample_freq='D'
-            )
-            if obs_values is None:
-                return {'kge': self.penalty_score, 'error': 'No observations'}
-
-            obs_series = pd.Series(obs_values, index=obs_index)
-
-            period = kwargs.get('period') or resolve_config_value(config, lambda: config.domain.calibration_period, None, 'CALIBRATION_PERIOD') or config.get('domain', {}).get('calibration_period')
-            calibration_period = None
-            if period:
-                parts = split_period(period)
-                if parts is None:
-                    raise ValidationError('Invalid VIC scoring period')
-                start, end = pd.Timestamp(parts[0]), pd.Timestamp(parts[1])
-                if pd.isna(start) or pd.isna(end) or start > end:
-                    raise ValidationError('Invalid VIC scoring period')
-                calibration_period = (start, end)
-
-            # Align and calculate metrics
-            obs_aligned, sim_aligned = self._streamflow_metrics.align_timeseries(
-                sim_series, obs_series, calibration_period=calibration_period
-            )
-
-            results = self._streamflow_metrics.calculate_metrics(
-                obs_aligned, sim_aligned, metrics=self._requested_metrics(config)
-            )
-            return results
-
-        except Exception as e:  # noqa: BLE001 — calibration resilience
-            self.logger.error(f"Error calculating VIC metrics: {e}", exc_info=True)
-            import traceback
-            self.logger.debug(traceback.format_exc())
-            return {'kge': self.penalty_score, 'error': str(e)}
+        # Skip warmup period to avoid spinup artifacts contaminating metrics.
+        # VIC starts with INIT_STATE FALSE, so the first N days are unreliable.
+        warmup_days = int(config.get('VIC_WARMUP_DAYS', 365))
+        if warmup_days > 0 and len(sim_series) > warmup_days:
+            sim_series = sim_series.iloc[warmup_days:]
+            self.logger.debug(f"Skipped {warmup_days} warmup days for metric calculation")
+        return sim_series
 
     @staticmethod
     def evaluate_worker_function(task_data: Dict[str, Any]) -> Dict[str, Any]:

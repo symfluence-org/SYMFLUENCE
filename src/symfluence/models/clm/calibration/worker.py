@@ -22,18 +22,17 @@ import xarray as xr
 
 from symfluence.core.calibration.workers.base_worker import (
     MACOS_MALLOC_QUIET_ENV,
-    BaseWorker,
     run_worker_task,
 )
+from symfluence.core.calibration.workers.streamflow_worker import StreamflowWorker
+from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.logging_utils import log_once
-from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
-from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.registries import R
 
 
 @R.workers.add('CLM')
-class CLMWorker(BaseWorker):
+class CLMWorker(StreamflowWorker):
     """
     Worker for CLM5 model calibration.
 
@@ -49,7 +48,6 @@ class CLMWorker(BaseWorker):
     ):
         super().__init__(config, logger)
 
-    _streamflow_metrics = StreamflowMetrics()
 
     def apply_parameters(
         self,
@@ -654,101 +652,64 @@ class CLMWorker(BaseWorker):
             self.logger.debug(traceback.format_exc())
             return False
 
-    def calculate_metrics(
+    def read_simulated_streamflow(
         self,
         output_dir: Path,
-        config: Dict,
-        **kwargs,
-    ) -> Dict:
-        """
-        Calculate streamflow metrics from CLM output.
+        config: Dict[str, Any],
+        **kwargs
+    ) -> Optional[pd.Series]:
+        """Basin discharge (m3/s) from this trial's CLM history files, warm-up removed."""
+        output_dir = Path(output_dir)
 
-        Extracts QRUNOFF (mm/s), converts to m3/s, aligns with
-        observations, and computes KGE/NSE.
-        """
-        try:
-            output_dir = Path(output_dir)
+        # Find and open history files
+        hist_files = sorted(output_dir.glob('*.clm2.h0.*.nc'))
+        if not hist_files:
+            raise ModelExecutionError('No CLM output')
 
-            # Find and open history files
-            hist_files = sorted(output_dir.glob('*.clm2.h0.*.nc'))
-            if not hist_files:
-                return {'kge': self.penalty_score, 'error': 'No CLM output'}
+        import warnings
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', category=FutureWarning)
+            ds = xr.open_mfdataset(hist_files, combine='by_coords')
 
-            import warnings
-            with warnings.catch_warnings():
-                warnings.filterwarnings('ignore', category=FutureWarning)
-                ds = xr.open_mfdataset(hist_files, combine='by_coords')
-
-            # Extract QRUNOFF
-            if 'QRUNOFF' in ds:
-                qrunoff = ds['QRUNOFF']
-            elif 'QOVER' in ds and 'QDRAI' in ds:
-                qrunoff = ds['QOVER'] + ds['QDRAI']
-            else:
-                ds.close()
-                return {
-                    'kge': self.penalty_score,
-                    'error': 'No runoff variable',
-                }
-
-            # Squeeze spatial dims
-            for dim in list(qrunoff.dims):
-                if dim != 'time' and qrunoff.sizes[dim] == 1:
-                    qrunoff = qrunoff.squeeze(dim)
-
-            total_runoff = qrunoff.values.flatten()
-            times = pd.to_datetime(ds['time'].values)
+        # Extract QRUNOFF
+        if 'QRUNOFF' in ds:
+            qrunoff = ds['QRUNOFF']
+        elif 'QOVER' in ds and 'QDRAI' in ds:
+            qrunoff = ds['QOVER'] + ds['QDRAI']
+        else:
             ds.close()
+            raise ModelExecutionError('No runoff variable')
 
-            # Convert mm/s → m3/s
-            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
-            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
-            project_dir = data_dir / f'domain_{domain_name}'
+        # Squeeze spatial dims
+        for dim in list(qrunoff.dims):
+            if dim != 'time' and qrunoff.sizes[dim] == 1:
+                qrunoff = qrunoff.squeeze(dim)
 
-            area_km2 = self._streamflow_metrics.get_catchment_area(
-                config, project_dir, domain_name, source='shapefile'
+        total_runoff = qrunoff.values.flatten()
+        times = pd.to_datetime(ds['time'].values)
+        ds.close()
+
+        # Convert mm/s → m3/s
+        domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+        data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
+        project_dir = data_dir / f'domain_{domain_name}'
+
+        area_km2 = self._streamflow_metrics.get_catchment_area(
+            config, project_dir, domain_name, source='shapefile'
+        )
+        area_m2 = area_km2 * 1e6
+        streamflow_m3s = total_runoff * area_m2 / 1000.0
+
+        sim_series = pd.Series(streamflow_m3s, index=times)
+
+        # Skip warmup
+        warmup_days = int(resolve_config_value(config, lambda: config.model.clm.warmup_days, 365, 'CLM_WARMUP_DAYS'))
+        if warmup_days > 0 and len(sim_series) > warmup_days:
+            sim_series = sim_series.iloc[warmup_days:]
+            self.logger.debug(
+                f"Skipped {warmup_days} warmup days"
             )
-            area_m2 = area_km2 * 1e6
-            streamflow_m3s = total_runoff * area_m2 / 1000.0
-
-            sim_series = pd.Series(streamflow_m3s, index=times)
-
-            # Skip warmup
-            warmup_days = int(resolve_config_value(config, lambda: config.model.clm.warmup_days, 365, 'CLM_WARMUP_DAYS'))
-            if warmup_days > 0 and len(sim_series) > warmup_days:
-                sim_series = sim_series.iloc[warmup_days:]
-                self.logger.debug(
-                    f"Skipped {warmup_days} warmup days"
-                )
-
-            # Load observations
-            obs_values, obs_index = self._streamflow_metrics.load_observations(
-                config, project_dir, domain_name, resample_freq='D'
-            )
-            if obs_values is None:
-                return {'kge': self.penalty_score, 'error': 'No observations'}
-
-            obs_series = pd.Series(obs_values, index=obs_index)
-
-            # Align over calibration period only (not evaluation)
-            cal_period_str = resolve_config_value(config, lambda: config.domain.calibration_period, None, 'CALIBRATION_PERIOD')
-            calibration_period = split_period(cal_period_str)
-
-            obs_aligned, sim_aligned = self._streamflow_metrics.align_timeseries(
-                sim_series, obs_series,
-                calibration_period=calibration_period,
-            )
-
-            results = self._streamflow_metrics.calculate_metrics(
-                obs_aligned, sim_aligned, metrics=self._requested_metrics(config)
-            )
-            return results
-
-        except Exception as e:  # noqa: BLE001 — calibration resilience
-            self.logger.error(f"Error calculating CLM metrics: {e}", exc_info=True)
-            import traceback
-            self.logger.debug(traceback.format_exc())
-            return {'kge': self.penalty_score, 'error': str(e)}
+        return sim_series
 
     def _cleanup_stale_output(self, output_dir: Path) -> None:
         """Remove ALL stale output/restart files before a new run.

@@ -20,19 +20,18 @@ import pandas as pd
 
 from symfluence.core.calibration.workers.base_worker import (
     MACOS_MALLOC_QUIET_ENV,
-    BaseWorker,
     run_worker_task,
 )
-from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.calibration.workers.streamflow_worker import StreamflowWorker
+from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.mixins.config import resolve_config_value
-from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.path_resolver import resolve_install_executable
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
 
 @R.workers.add('WRFHYDRO')
-class WRFHydroWorker(BaseWorker):
+class WRFHydroWorker(StreamflowWorker):
     """
     Worker for WRF-Hydro model calibration.
 
@@ -47,7 +46,6 @@ class WRFHydroWorker(BaseWorker):
     ):
         super().__init__(config, logger)
 
-    _streamflow_metrics = StreamflowMetrics()
 
     def apply_parameters(
         self,
@@ -546,151 +544,105 @@ class WRFHydroWorker(BaseWorker):
                 except (OSError, IOError):
                     pass
 
-    def calculate_metrics(
+    def read_simulated_streamflow(
         self,
         output_dir: Path,
         config: Dict[str, Any],
         **kwargs
-    ) -> Dict[str, Any]:
-        """
-        Calculate metrics from WRF-Hydro output.
+    ) -> Optional[pd.Series]:
+        """Daily outlet discharge (m3/s) from this trial's CHRTOUT (else LDASOUT) files."""
+        import xarray as xr
 
-        Extracts streamflow from CHRTOUT NetCDF files, loads observations,
-        aligns time series, and computes KGE/NSE.
+        sim_dir = Path(kwargs.get('sim_dir', output_dir))
+        settings_dir = kwargs.get('settings_dir', None)
 
-        Args:
-            output_dir: Directory containing model outputs
-            config: Configuration dictionary
-            **kwargs: Additional arguments
+        # Find CHRTOUT output files
+        output_files = sorted(sim_dir.glob('*CHRTOUT*'))
 
-        Returns:
-            Dictionary of metric names to values
-        """
-        try:
-            import xarray as xr
+        if not output_files and settings_dir:
+            output_files = sorted(Path(settings_dir).glob('*CHRTOUT*'))
 
-            sim_dir = Path(kwargs.get('sim_dir', output_dir))
-            settings_dir = kwargs.get('settings_dir', None)
+        if not output_files:
+            domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
+            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
+            wrfhydro_output = data_dir / f'domain_{domain_name}' / 'simulations'
+            if wrfhydro_output.exists():
+                output_files = sorted(wrfhydro_output.rglob('*CHRTOUT*'))
 
-            # Find CHRTOUT output files
-            output_files = sorted(sim_dir.glob('*CHRTOUT*'))
-
+        if not output_files:
+            # Fallback: try LDASOUT files (standalone/no-routing mode)
+            output_files = sorted(sim_dir.glob('*LDASOUT*'))
             if not output_files and settings_dir:
-                output_files = sorted(Path(settings_dir).glob('*CHRTOUT*'))
-
+                output_files = sorted(Path(settings_dir).glob('*LDASOUT*'))
             if not output_files:
                 domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
                 data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
                 wrfhydro_output = data_dir / f'domain_{domain_name}' / 'simulations'
                 if wrfhydro_output.exists():
-                    output_files = sorted(wrfhydro_output.rglob('*CHRTOUT*'))
+                    output_files = sorted(wrfhydro_output.rglob('*LDASOUT*'))
 
             if not output_files:
-                # Fallback: try LDASOUT files (standalone/no-routing mode)
-                output_files = sorted(sim_dir.glob('*LDASOUT*'))
-                if not output_files and settings_dir:
-                    output_files = sorted(Path(settings_dir).glob('*LDASOUT*'))
-                if not output_files:
-                    domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
-                    data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
-                    wrfhydro_output = data_dir / f'domain_{domain_name}' / 'simulations'
-                    if wrfhydro_output.exists():
-                        output_files = sorted(wrfhydro_output.rglob('*LDASOUT*'))
+                self.logger.error(f"No WRF-Hydro CHRTOUT or LDASOUT files found in {sim_dir}")
+                raise ModelExecutionError('No output files')
 
-                if not output_files:
-                    self.logger.error(f"No WRF-Hydro CHRTOUT or LDASOUT files found in {sim_dir}")
-                    return {'kge': self.penalty_score, 'error': 'No output files'}
+            # Extract streamflow from LDASOUT (accumulated runoff)
+            sim_series = self._extract_ldasout_streamflow(output_files, config)
+            if sim_series is None:
+                raise ModelExecutionError('LDASOUT extraction failed')
+        else:
+            # Extract streamflow from CHRTOUT files
+            dates = []
+            flows = []
+            for chrt_file in output_files:
+                try:
+                    ds = xr.open_dataset(chrt_file)
+                    flow_var = None
+                    for var in ['streamflow', 'q_lateral', 'qSfcLatRunoff', 'qBucket']:
+                        if var in ds:
+                            flow_var = var
+                            break
 
-                # Extract streamflow from LDASOUT (accumulated runoff)
-                sim_series = self._extract_ldasout_streamflow(output_files, config)
-                if sim_series is None:
-                    return {'kge': self.penalty_score, 'error': 'LDASOUT extraction failed'}
-            else:
-                # Extract streamflow from CHRTOUT files
-                dates = []
-                flows = []
-                for chrt_file in output_files:
-                    try:
-                        ds = xr.open_dataset(chrt_file)
-                        flow_var = None
-                        for var in ['streamflow', 'q_lateral', 'qSfcLatRunoff', 'qBucket']:
-                            if var in ds:
-                                flow_var = var
-                                break
-
-                        if flow_var is None:
-                            ds.close()
-                            continue
-
-                        flow_data = ds[flow_var]
-
-                        spatial_dims = [d for d in flow_data.dims if d not in ['time', 'reference_time']]
-                        if spatial_dims:
-                            flow_data = flow_data.isel({spatial_dims[0]: -1})
-
-                        if 'time' in ds:
-                            time_val = pd.to_datetime(ds['time'].values)
-                            if hasattr(time_val, '__len__'):
-                                for t, v in zip(time_val, flow_data.values.flatten()):
-                                    dates.append(t)
-                                    flows.append(float(v))
-                            else:
-                                dates.append(time_val)
-                                flows.append(float(flow_data.values.flatten()[0]))
-                        else:
-                            fname = chrt_file.name
-                            try:
-                                time_str = fname.split('.')[0]
-                                date = pd.Timestamp(time_str[:8])
-                                dates.append(date)
-                                flows.append(float(flow_data.values.flatten()[0]))
-                            except (ValueError, IndexError):
-                                pass
-
+                    if flow_var is None:
                         ds.close()
-
-                    except Exception as e:  # noqa: BLE001 — calibration resilience
-                        self.logger.debug(f"Error reading {chrt_file}: {e}", exc_info=True)
                         continue
 
-                if not dates:
-                    return {'kge': self.penalty_score, 'error': 'No streamflow data extracted'}
+                    flow_data = ds[flow_var]
 
-                sim_series = pd.Series(flows, index=dates, name='WRFHYDRO_discharge_cms')
-                sim_series = sim_series.resample('D').mean()
+                    spatial_dims = [d for d in flow_data.dims if d not in ['time', 'reference_time']]
+                    if spatial_dims:
+                        flow_data = flow_data.isel({spatial_dims[0]: -1})
 
-            # Load observations
-            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
-            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
-            project_dir = data_dir / f'domain_{domain_name}'
+                    if 'time' in ds:
+                        time_val = pd.to_datetime(ds['time'].values)
+                        if hasattr(time_val, '__len__'):
+                            for t, v in zip(time_val, flow_data.values.flatten()):
+                                dates.append(t)
+                                flows.append(float(v))
+                        else:
+                            dates.append(time_val)
+                            flows.append(float(flow_data.values.flatten()[0]))
+                    else:
+                        fname = chrt_file.name
+                        try:
+                            time_str = fname.split('.')[0]
+                            date = pd.Timestamp(time_str[:8])
+                            dates.append(date)
+                            flows.append(float(flow_data.values.flatten()[0]))
+                        except (ValueError, IndexError):
+                            pass
 
-            obs_values, obs_index = self._streamflow_metrics.load_observations(
-                config, project_dir, domain_name, resample_freq='D'
-            )
-            if obs_values is None:
-                return {'kge': self.penalty_score, 'error': 'No observations'}
+                    ds.close()
 
-            obs_series = pd.Series(obs_values, index=obs_index)
+                except Exception as e:  # noqa: BLE001 — calibration resilience
+                    self.logger.debug(f"Error reading {chrt_file}: {e}", exc_info=True)
+                    continue
 
-            # Parse calibration period
-            cal_period_str = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
-            cal_period_tuple = split_period(cal_period_str, allow_extra=True)
+            if not dates:
+                raise ModelExecutionError('No streamflow data extracted')
 
-            # Align and calculate metrics
-            obs_aligned, sim_aligned = self._streamflow_metrics.align_timeseries(
-                sim_series, obs_series, calibration_period=cal_period_tuple
-            )
-
-            results = self._streamflow_metrics.calculate_metrics(
-                obs_aligned, sim_aligned, metrics=self._requested_metrics(config)
-            )
-            return results
-
-        except Exception as e:  # noqa: BLE001 — calibration resilience
-            self.logger.error(f"Error calculating WRF-Hydro metrics: {e}", exc_info=True)
-            import traceback
-            self.logger.debug(traceback.format_exc())
-            return {'kge': self.penalty_score, 'error': str(e)}
+            sim_series = pd.Series(flows, index=dates, name='WRFHYDRO_discharge_cms')
+            sim_series = sim_series.resample('D').mean()
+        return sim_series
 
     def _extract_ldasout_streamflow(
         self,

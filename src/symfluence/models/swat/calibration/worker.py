@@ -19,10 +19,10 @@ from typing import Any, Dict, Optional
 import numpy as np
 import pandas as pd
 
-from symfluence.core.calibration.workers.base_worker import BaseWorker, run_worker_task
-from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.calibration.workers.base_worker import run_worker_task
+from symfluence.core.calibration.workers.streamflow_worker import StreamflowWorker
+from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.mixins.config import resolve_config_value
-from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.path_resolver import resolve_install_executable
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
@@ -59,7 +59,7 @@ def _fsync_directory(target_dir: Path) -> None:
 
 
 @R.workers.add('SWAT')
-class SWATWorker(BaseWorker):
+class SWATWorker(StreamflowWorker):
     """
     Worker for SWAT model calibration.
 
@@ -82,7 +82,6 @@ class SWATWorker(BaseWorker):
         super().__init__(config, logger)
 
     # Shared utilities
-    _streamflow_metrics = StreamflowMetrics()
 
     def apply_parameters(
         self,
@@ -587,99 +586,51 @@ class SWATWorker(BaseWorker):
                     except (OSError, IOError):
                         pass
 
-    def calculate_metrics(
+    def read_simulated_streamflow(
         self,
         output_dir: Path,
         config: Dict[str, Any],
         **kwargs
-    ) -> Dict[str, Any]:
-        """
-        Calculate metrics from SWAT output.rch.
+    ) -> Optional[pd.Series]:
+        """Daily outlet discharge (m3/s) from this trial's SWAT output.rch."""
+        sim_dir = Path(kwargs.get('sim_dir', output_dir))
+        output_rch = sim_dir / 'output.rch'
 
-        Parses the fixed-width output.rch file, extracts FLOW_OUTcms
-        for the outlet reach, and computes KGE/NSE against observations.
+        if not output_rch.exists():
+            self.logger.error(f"output.rch not found in {sim_dir}")
+            raise ModelExecutionError('No output.rch')
 
-        Args:
-            output_dir: Directory containing model outputs
-            config: Configuration dictionary
-            **kwargs: Additional arguments
+        # Parse output.rch for outlet reach streamflow
+        flow_data = self._parse_output_rch(output_rch, reach_id=1)
 
-        Returns:
-            Dictionary of metric names to values
-        """
+        if flow_data is None or len(flow_data) == 0:
+            raise ModelExecutionError('No flow data parsed')
+
+        # Get simulation start date
         try:
-            sim_dir = Path(kwargs.get('sim_dir', output_dir))
-            output_rch = sim_dir / 'output.rch'
-
-            if not output_rch.exists():
-                self.logger.error(f"output.rch not found in {sim_dir}")
-                return {'kge': self.penalty_score, 'error': 'No output.rch'}
-
-            # Parse output.rch for outlet reach streamflow
-            flow_data = self._parse_output_rch(output_rch, reach_id=1)
-
-            if flow_data is None or len(flow_data) == 0:
-                return {'kge': self.penalty_score, 'error': 'No flow data parsed'}
-
-            # Get simulation start date
-            try:
-                start_str = (
-                    resolve_config_value(config, lambda: config.domain.time_start, None, 'EXPERIMENT_TIME_START')
-                    or config.get('TIME_START')
-                )
-                if start_str is None and hasattr(config, 'domain'):
-                    start_str = config.domain.time_start
-                start_date = pd.to_datetime(start_str).normalize() if start_str else pd.to_datetime('2000-01-01')
-            except (AttributeError, TypeError):
-                start_date = pd.to_datetime('2000-01-01')
-
-            # Build time series
-            # SWAT output.rch already starts AFTER the NYSKIP warmup period
-            # (file.cio NYSKIP is set to warmup_years by the preprocessor).
-            # We must NOT skip warmup again; just offset the start date.
-            warmup_years = int(resolve_config_value(config, lambda: config.model.swat.warmup_years, 2, 'SWAT_WARMUP_YEARS'))
-            output_start_date = start_date + pd.DateOffset(years=warmup_years)
-            dates = pd.date_range(start=output_start_date, periods=len(flow_data), freq='D')
-            sim_series = pd.Series(flow_data, index=dates)
-            self.logger.debug(
-                f"SWAT output dates: {sim_series.index[0]} to {sim_series.index[-1]} "
-                f"({len(sim_series)} days, warmup={warmup_years}yr already skipped by NYSKIP)"
+            start_str = (
+                resolve_config_value(config, lambda: config.domain.time_start, None, 'EXPERIMENT_TIME_START')
+                or config.get('TIME_START')
             )
+            if start_str is None and hasattr(config, 'domain'):
+                start_str = config.domain.time_start
+            start_date = pd.to_datetime(start_str).normalize() if start_str else pd.to_datetime('2000-01-01')
+        except (AttributeError, TypeError):
+            start_date = pd.to_datetime('2000-01-01')
 
-            # Load observations
-            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
-            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
-            project_dir = data_dir / f'domain_{domain_name}'
-
-            obs_values, obs_index = self._streamflow_metrics.load_observations(
-                config, project_dir, domain_name, resample_freq='D'
-            )
-            if obs_values is None:
-                return {'kge': self.penalty_score, 'error': 'No observations'}
-
-            obs_series = pd.Series(obs_values, index=obs_index)
-
-            # Restrict scoring to the configured calibration window; the final
-            # evaluation swaps EVALUATION_PERIOD into this key to score the
-            # held-out window from the same full-period run.
-            cal_period_str = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
-            cal_period_tuple = split_period(cal_period_str, allow_extra=True)
-
-            # Align and calculate metrics
-            obs_aligned, sim_aligned = self._streamflow_metrics.align_timeseries(
-                sim_series, obs_series, calibration_period=cal_period_tuple
-            )
-
-            results = self._streamflow_metrics.calculate_metrics(
-                obs_aligned, sim_aligned, metrics=self._requested_metrics(config)
-            )
-            return results
-
-        except Exception as e:  # noqa: BLE001 — calibration resilience
-            self.logger.error(f"Error calculating SWAT metrics: {e}", exc_info=True)
-            import traceback
-            self.logger.debug(traceback.format_exc())
-            return {'kge': self.penalty_score, 'error': str(e)}
+        # Build time series
+        # SWAT output.rch already starts AFTER the NYSKIP warmup period
+        # (file.cio NYSKIP is set to warmup_years by the preprocessor).
+        # We must NOT skip warmup again; just offset the start date.
+        warmup_years = int(resolve_config_value(config, lambda: config.model.swat.warmup_years, 2, 'SWAT_WARMUP_YEARS'))
+        output_start_date = start_date + pd.DateOffset(years=warmup_years)
+        dates = pd.date_range(start=output_start_date, periods=len(flow_data), freq='D')
+        sim_series = pd.Series(flow_data, index=dates)
+        self.logger.debug(
+            f"SWAT output dates: {sim_series.index[0]} to {sim_series.index[-1]} "
+            f"({len(sim_series)} days, warmup={warmup_years}yr already skipped by NYSKIP)"
+        )
+        return sim_series
 
     def _parse_output_rch(
         self,
