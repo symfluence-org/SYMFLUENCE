@@ -228,7 +228,7 @@ class HYPEConfigManager(ConfigMixin):
         # Resolve configurable model options
         infilt_opt = self._get_config_value(
             lambda: self.config.model.hype.infiltration_model,
-            default=3, dict_key='HYPE_INFILTRATION_MODEL',
+            dict_key='HYPE_INFILTRATION_MODEL',
         )
         petmodel_opt = self._get_config_value(
             lambda: self.config.model.hype.pet_model,
@@ -236,15 +236,15 @@ class HYPEConfigManager(ConfigMixin):
         )
         frozensoil_opt = self._get_config_value(
             lambda: self.config.model.hype.frozen_soil_model,
-            default=2, dict_key='HYPE_FROZEN_SOIL_MODEL',
+            dict_key='HYPE_FROZEN_SOIL_MODEL',
         )
         snowevap_opt = self._get_config_value(
             lambda: self.config.model.hype.snow_evaporation,
-            default=0, dict_key='HYPE_SNOW_EVAPORATION',
+            dict_key='HYPE_SNOW_EVAPORATION',
         )
         deepground_opt = self._get_config_value(
             lambda: self.config.model.hype.deep_ground,
-            default=0, dict_key='HYPE_DEEP_GROUND',
+            dict_key='HYPE_DEEP_GROUND',
         )
         from .geodata_manager import groundwater_export_enabled
         groundwater_export = groundwater_export_enabled(self.config)
@@ -254,11 +254,11 @@ class HYPEConfigManager(ConfigMixin):
             deepground_opt = 1
         surfrunoff_opt = self._get_config_value(
             lambda: self.config.model.hype.surface_runoff,
-            default=0, dict_key='HYPE_SURFACE_RUNOFF',
+            dict_key='HYPE_SURFACE_RUNOFF',
         )
         soiliniwet_opt = 'y' if self._get_config_value(
             lambda: self.config.model.hype.soil_init_wet,
-            default=False, dict_key='HYPE_SOIL_INIT_WET',
+            dict_key='HYPE_SOIL_INIT_WET',
         ) else 'n'
 
         # Build info.txt content

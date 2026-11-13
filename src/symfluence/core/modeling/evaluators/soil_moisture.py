@@ -195,11 +195,7 @@ class SoilMoistureEvaluator(ModelEvaluator):
                 dict_key='SM_DEPTH_TOLERANCE'
             )
         elif self.optimization_target == 'sm_smap':
-            self.smap_layer = self._get_config_value(
-                lambda: self.config.evaluation.smap.layer,
-                default='surface_sm',
-                dict_key='SMAP_LAYER'
-            )
+            self.smap_layer = self._get_config_value(lambda: self.config.evaluation.smap.layer, dict_key='SMAP_LAYER')
             self.temporal_aggregation = self._get_config_value(
                 lambda: None,
                 default='daily_mean',

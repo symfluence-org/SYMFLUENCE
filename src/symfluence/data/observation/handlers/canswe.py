@@ -97,8 +97,7 @@ class CanSWEHandler(BaseObservationHandler):
         """
         download_enabled = self._get_config_value(
             lambda: self.config.evaluation.canswe.download,
-            default=True,
-            dict_key='DOWNLOAD_CANSWE'
+            dict_key='DOWNLOAD_CANSWE',
         )
         if isinstance(download_enabled, str):
             download_enabled = download_enabled.lower() == 'true'
@@ -290,8 +289,7 @@ class CanSWEHandler(BaseObservationHandler):
         # Get minimum observations threshold
         min_obs = self._get_config_value(
             lambda: self.config.evaluation.canswe.min_observations,
-            default=10,
-            dict_key='CANSWE_MIN_OBSERVATIONS'
+            dict_key='CANSWE_MIN_OBSERVATIONS',
         )
 
         # Filter out stations with too few observations

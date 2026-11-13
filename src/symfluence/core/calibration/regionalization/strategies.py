@@ -356,7 +356,11 @@ class RegionalizationFactory:
                 param_bounds=param_bounds, n_units=n_units, attributes=attributes,
                 param_config=param_config,
                 b_bounds=resolve_config_value(config, lambda: config.optimization.transfer_function_b_bounds, (-1.0, 1.0), 'TRANSFER_FUNCTION_B_BOUNDS'),
-                transfer_function_type=resolve_config_value(config, lambda: config.optimization.transfer_function_type, 'linear', 'TRANSFER_FUNCTION_TYPE'),
+                transfer_function_type=resolve_config_value(
+                    config,
+                    lambda: config.optimization.transfer_function_type,
+                    dict_key='TRANSFER_FUNCTION_TYPE',
+                ),
                 log_transform_attrs=resolve_config_value(config, lambda: config.optimization.transfer_function_log_attrs, None, 'TRANSFER_FUNCTION_LOG_ATTRS'),
                 logger=logger,
             )

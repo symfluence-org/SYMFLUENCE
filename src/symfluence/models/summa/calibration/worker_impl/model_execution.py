@@ -616,7 +616,11 @@ def _run_mizuroute_worker(task_data: Dict, mizuroute_dir: Path, logger, debug_in
 
         # Set OpenMP thread count for mizuRoute (if compiled with OpenMP)
         mizu_env = os.environ.copy()
-        mizu_num_threads = str(resolve_config_value(config, lambda: config.model.mizuroute.num_threads, 1, 'MIZUROUTE_NUM_THREADS'))
+        mizu_num_threads = str(resolve_config_value(
+            config,
+            lambda: config.model.mizuroute.num_threads,
+            dict_key='MIZUROUTE_NUM_THREADS',
+        ))
         mizu_env['OMP_NUM_THREADS'] = mizu_num_threads
 
         logger.debug(f"Executing mizuRoute command: {cmd_str} (OMP_NUM_THREADS={mizu_num_threads})")

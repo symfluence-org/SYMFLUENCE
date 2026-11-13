@@ -773,8 +773,7 @@ class ModelEvaluator(ConfigurableMixin, ABC):
             # Get model error configuration
             model_error_fraction = self._get_config_value(
                 lambda: self.config.optimization.model_error_fraction,
-                default=0.0,
-                dict_key='MODEL_ERROR_FRACTION'
+                dict_key='MODEL_ERROR_FRACTION',
             )
             try:
                 model_error_fraction = float(model_error_fraction)
@@ -783,8 +782,7 @@ class ModelEvaluator(ConfigurableMixin, ABC):
 
             model_error_base = self._get_config_value(
                 lambda: self.config.optimization.model_error_base,
-                default=0.0,
-                dict_key='MODEL_ERROR_BASE'
+                dict_key='MODEL_ERROR_BASE',
             )
             try:
                 model_error_base = float(model_error_base)

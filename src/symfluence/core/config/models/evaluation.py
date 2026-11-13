@@ -80,11 +80,11 @@ class USGSGWConfig(BaseModel):
     download: bool = Field(default=False, alias='DOWNLOAD_USGS_GW')
     station: Optional[str] = Field(default=None, alias='USGS_STATION')
     auto_align: Optional[bool] = Field(
-        default=None, alias='GW_AUTO_ALIGN',
+        default=True, alias='GW_AUTO_ALIGN',
         description='Auto-align simulated and observed groundwater depth datums'
     )
     base_depth: Optional[float] = Field(
-        default=None, alias='GW_BASE_DEPTH',
+        default=50.0, alias='GW_BASE_DEPTH',
         description='Reference depth (m) for groundwater depth conversion'
     )
 
@@ -101,7 +101,7 @@ class SMAPConfig(BaseModel):
     surface_depth_m: float = Field(default=0.05, alias='SMAP_SURFACE_DEPTH_M')
     rootzone_depth_m: float = Field(default=1.0, alias='SMAP_ROOTZONE_DEPTH_M')
     layer: Optional[str] = Field(
-        default=None, alias='SMAP_LAYER',
+        default='surface_sm', alias='SMAP_LAYER',
         description="SMAP soil-moisture layer to evaluate (e.g. 'surface', 'rootzone')"
     )
 
@@ -167,11 +167,11 @@ class CanSWEConfig(BaseModel):
     """CanSWE Canadian snow water equivalent observation settings"""
     model_config = FROZEN_CONFIG
 
-    download: Optional[bool] = Field(default=None, alias='DOWNLOAD_CANSWE')
+    download: Optional[bool] = Field(default=True, alias='DOWNLOAD_CANSWE')
     path: Optional[str] = Field(default=None, alias='CANSWE_PATH')
     version: Optional[str] = Field(default=None, alias='CANSWE_VERSION')
     min_observations: Optional[int] = Field(
-        default=None, alias='CANSWE_MIN_OBSERVATIONS',
+        default=10, alias='CANSWE_MIN_OBSERVATIONS',
         description='Minimum observation count for a CanSWE station to be used'
     )
 
