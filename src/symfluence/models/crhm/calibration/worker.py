@@ -16,18 +16,18 @@ from typing import Any, Dict, Optional
 
 import pandas as pd
 
-from symfluence.core.calibration.workers.base_worker import BaseWorker, run_worker_task
-from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.calibration.workers.base_worker import run_worker_task
+from symfluence.core.calibration.workers.streamflow_worker import StreamflowWorker
+from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.mixins.project import resolve_data_subdir
-from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.path_resolver import resolve_install_executable
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
 
 @R.workers.add('CRHM')
-class CRHMWorker(BaseWorker):
+class CRHMWorker(StreamflowWorker):
     """
     Worker for CRHM model calibration.
 
@@ -50,7 +50,6 @@ class CRHMWorker(BaseWorker):
         super().__init__(config, logger)
 
     # Shared utilities
-    _streamflow_metrics = StreamflowMetrics()
 
     def apply_parameters(
         self,
@@ -331,126 +330,81 @@ class CRHMWorker(BaseWorker):
                 except (OSError, IOError):
                     pass
 
-    def calculate_metrics(
+    def read_simulated_streamflow(
         self,
         output_dir: Path,
         config: Dict[str, Any],
         **kwargs
-    ) -> Dict[str, Any]:
-        """
-        Calculate metrics from CRHM output.
+    ) -> Optional[pd.Series]:
+        """Daily outlet discharge (m3/s) from this trial's CRHM output, warm-up removed."""
+        sim_dir = Path(kwargs.get('sim_dir', output_dir))
 
-        Args:
-            output_dir: Directory containing model outputs
-            config: Configuration dictionary
-            **kwargs: Additional arguments
+        # Find output file (CRHM produces .txt or .csv)
+        output_files = list(sim_dir.glob('CRHM_output*.txt'))
+        if not output_files:
+            output_files = list(sim_dir.glob('*output*.csv'))
+        if not output_files:
+            output_files = list(sim_dir.glob('*.csv'))
+        if not output_files:
+            output_files = list(sim_dir.glob('*.txt'))
 
-        Returns:
-            Dictionary of metric names to values
-        """
-        try:
-            sim_dir = Path(kwargs.get('sim_dir', output_dir))
+        # Also search settings_dir if provided
+        settings_dir = kwargs.get('settings_dir')
+        if not output_files and settings_dir:
+            sd = Path(settings_dir)
+            for subdir in [sd / 'output', sd]:
+                output_files = list(subdir.glob('CRHM_output*.txt'))
+                if not output_files:
+                    output_files = list(subdir.glob('*.csv'))
+                if output_files:
+                    break
 
-            # Find output file (CRHM produces .txt or .csv)
-            output_files = list(sim_dir.glob('CRHM_output*.txt'))
-            if not output_files:
-                output_files = list(sim_dir.glob('*output*.csv'))
-            if not output_files:
-                output_files = list(sim_dir.glob('*.csv'))
-            if not output_files:
-                output_files = list(sim_dir.glob('*.txt'))
+        if not output_files:
+            self.logger.error(f"No CRHM output files found in {sim_dir}")
+            raise ModelExecutionError('No output files')
 
-            # Also search settings_dir if provided
-            settings_dir = kwargs.get('settings_dir')
-            if not output_files and settings_dir:
-                sd = Path(settings_dir)
-                for subdir in [sd / 'output', sd]:
-                    output_files = list(subdir.glob('CRHM_output*.txt'))
-                    if not output_files:
-                        output_files = list(subdir.glob('*.csv'))
-                    if output_files:
-                        break
+        sim_file = output_files[0]
 
-            if not output_files:
-                self.logger.error(f"No CRHM output files found in {sim_dir}")
-                return {'kge': self.penalty_score, 'error': 'No output files'}
+        # Extract streamflow - handle both CSV and tab-separated TXT
+        if sim_file.suffix == '.txt':
+            df = pd.read_csv(sim_file, sep='\t', parse_dates=True, index_col=0,
+                             skiprows=[1], encoding='latin-1')  # Skip units row
+        else:
+            df = pd.read_csv(sim_file, parse_dates=True, index_col=0,
+                             encoding='latin-1')
 
-            sim_file = output_files[0]
-
-            # Extract streamflow - handle both CSV and tab-separated TXT
-            if sim_file.suffix == '.txt':
-                df = pd.read_csv(sim_file, sep='\t', parse_dates=True, index_col=0,
-                                 skiprows=[1], encoding='latin-1')  # Skip units row
-            else:
-                df = pd.read_csv(sim_file, parse_dates=True, index_col=0,
-                                 encoding='latin-1')
-
-            # Find flow column (CRHM uses 'basinflow(1)' for basin outlet flow)
-            flow_col = None
-            for col in df.columns:
-                col_lower = col.lower()
-                if 'basinflow' in col_lower or 'basin_flow' in col_lower:
+        # Find flow column (CRHM uses 'basinflow(1)' for basin outlet flow)
+        flow_col = None
+        for col in df.columns:
+            col_lower = col.lower()
+            if 'basinflow' in col_lower or 'basin_flow' in col_lower:
+                flow_col = col
+                break
+        if flow_col is None:
+            for col in ['flow', 'Flow', 'discharge', 'Discharge', 'Q', 'flow_cms']:
+                if col in df.columns:
                     flow_col = col
                     break
-            if flow_col is None:
-                for col in ['flow', 'Flow', 'discharge', 'Discharge', 'Q', 'flow_cms']:
-                    if col in df.columns:
-                        flow_col = col
-                        break
-            if flow_col is None:
-                flow_cols = [c for c in df.columns if 'flow' in c.lower()]
-                if flow_cols:
-                    flow_col = flow_cols[0]
+        if flow_col is None:
+            flow_cols = [c for c in df.columns if 'flow' in c.lower()]
+            if flow_cols:
+                flow_col = flow_cols[0]
 
-            if flow_col is None:
-                return {'kge': self.penalty_score, 'error': 'No flow variable in output'}
+        if flow_col is None:
+            raise ModelExecutionError('No flow variable in output')
 
-            # CRHM basinflow is m^3/interval, end-labelled -> m^3/s,
-            # start-labelled (shared with the postprocessor), then daily mean.
-            from symfluence.models.crhm.extractor import basinflow_to_cms
-            sim_series = basinflow_to_cms(df[flow_col])
-            sim_series = sim_series.resample('D').mean()
+        # CRHM basinflow is m^3/interval, end-labelled -> m^3/s,
+        # start-labelled (shared with the postprocessor), then daily mean.
+        from symfluence.models.crhm.extractor import basinflow_to_cms
+        sim_series = basinflow_to_cms(df[flow_col])
+        sim_series = sim_series.resample('D').mean()
 
-            # Skip warmup period
-            warmup_days = int(config.get('CRHM_WARMUP_DAYS', 365))
-            if warmup_days > 0 and len(sim_series) > warmup_days:
-                sim_series = sim_series.iloc[warmup_days:]
-                self.logger.debug(f"Skipped {warmup_days} warmup days for metric calculation")
-
-            # Load observations
-            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
-            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
-            project_dir = data_dir / f'domain_{domain_name}'
-
-            obs_values, obs_index = self._streamflow_metrics.load_observations(
-                config, project_dir, domain_name, resample_freq='D'
-            )
-            if obs_values is None:
-                return {'kge': self.penalty_score, 'error': 'No observations'}
-
-            obs_series = pd.Series(obs_values, index=obs_index)
-
-            # Restrict scoring to the configured calibration window; the final
-            # evaluation swaps EVALUATION_PERIOD into this key to score the
-            # held-out window from the same full-period run.
-            cal_period_str = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
-            cal_period_tuple = split_period(cal_period_str, allow_extra=True)
-
-            # Align and calculate metrics
-            obs_aligned, sim_aligned = self._streamflow_metrics.align_timeseries(
-                sim_series, obs_series, calibration_period=cal_period_tuple
-            )
-
-            results = self._streamflow_metrics.calculate_metrics(
-                obs_aligned, sim_aligned, metrics=self._requested_metrics(config)
-            )
-            return results
-
-        except Exception as e:  # noqa: BLE001 — calibration resilience
-            self.logger.error(f"Error calculating CRHM metrics: {e}", exc_info=True)
-            import traceback
-            self.logger.debug(traceback.format_exc())
-            return {'kge': self.penalty_score, 'error': str(e)}
+        # Skip warmup period
+        warmup_days = int(config.get('CRHM_WARMUP_DAYS', 365))
+        if warmup_days > 0 and len(sim_series) > warmup_days:
+            sim_series = sim_series.iloc[warmup_days:]
+            self.logger.debug(f"Skipped {warmup_days} warmup days for metric calculation")
+        return sim_series
 
     @staticmethod
     def evaluate_worker_function(task_data: Dict[str, Any]) -> Dict[str, Any]:

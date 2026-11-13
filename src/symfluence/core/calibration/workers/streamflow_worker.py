@@ -87,6 +87,18 @@ class StreamflowWorker(BaseWorker):
         """
         return {}
 
+    def scoring_period(self, config: Dict[str, Any], **kwargs) -> Optional[Tuple[Any, Any]]:
+        """``(start, end)`` of the window to score, or ``None`` for the whole overlap.
+
+        ``kwargs['period']`` when given (a ``'start, end'`` string, used to
+        score the evaluation period from a full-period run), else
+        ``CALIBRATION_PERIOD``. A value that is not a period scores the
+        whole overlap; override to refuse it instead.
+        """
+        period = kwargs.get('period') or resolve_config_value(
+            config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
+        return split_period(period, allow_extra=True)
+
     @staticmethod
     def daily_mean_if_subdaily(series: pd.Series) -> pd.Series:
         """``series`` on a ``DatetimeIndex``, averaged to days when finer than daily.
@@ -125,10 +137,7 @@ class StreamflowWorker(BaseWorker):
     ) -> Dict[str, Any]:
         """Score the trial's simulated discharge against observations.
 
-        The scoring window is ``kwargs['period']`` when given (a
-        ``'start, end'`` string, used to score the evaluation period from a
-        full-period run), else ``CALIBRATION_PERIOD``; with neither, the
-        whole overlap is scored.
+        The scoring window comes from :meth:`scoring_period`.
         """
         try:
             sim_series = self.read_simulated_streamflow(output_dir, config, **kwargs)
@@ -143,11 +152,9 @@ class StreamflowWorker(BaseWorker):
                 return self._failed('No observations')
             obs_series = pd.Series(obs_values, index=obs_index)
 
-            period = kwargs.get('period') or resolve_config_value(
-                config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
             obs_aligned, sim_aligned = self._streamflow_metrics.align_series(
                 sim_series, obs_series,
-                calibration_period=split_period(period, allow_extra=True),
+                calibration_period=self.scoring_period(config, **kwargs),
             )
             results: Dict[str, Any] = self._streamflow_metrics.calculate_metrics(
                 np.asarray(obs_aligned.values), np.asarray(sim_aligned.values),

@@ -22,19 +22,18 @@ import pandas as pd
 
 from symfluence.core.calibration.workers.base_worker import (
     MACOS_MALLOC_QUIET_ENV,
-    BaseWorker,
     run_worker_task,
 )
-from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.calibration.workers.streamflow_worker import StreamflowWorker
+from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.mixins.config import resolve_config_value
-from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.path_resolver import resolve_install_dir
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
 
 @R.workers.add('NOAHMP')
-class NoahMPWorker(BaseWorker):
+class NoahMPWorker(StreamflowWorker):
     """
     Worker for Noah-MP model calibration.
 
@@ -63,7 +62,6 @@ class NoahMPWorker(BaseWorker):
     ):
         super().__init__(config, logger)
 
-    _streamflow_metrics = StreamflowMetrics()
 
     def apply_parameters(
         self,
@@ -357,67 +355,36 @@ class NoahMPWorker(BaseWorker):
         from symfluence.models.noahmp.extractor import route_nash
         return route_nash(series, k_days, n=n)
 
-    def calculate_metrics(
+    def read_simulated_streamflow(
         self,
         output_dir: Path,
-        config: Dict,
-        **kwargs,
-    ) -> Dict:
-        """
-        Calculate streamflow metrics from Noah-MP output.
+        config: Dict[str, Any],
+        **kwargs
+    ) -> Optional[pd.Series]:
+        """Daily routed discharge (m3/s) from this trial's Noah-MP runoff."""
+        output_dir = Path(output_dir)
+        output_nc = output_dir / 'output.nc'
+        if not output_nc.exists():
+            raise ModelExecutionError('No output.nc')
 
-        Extracts SFCRNOFF (surface runoff) + UGDRNOFF (subsurface drainage),
-        converts to m3/s, aligns with observations, and computes KGE/NSE.
-        """
-        try:
-            output_dir = Path(output_dir)
-            output_nc = output_dir / 'output.nc'
-            if not output_nc.exists():
-                return {'kge': self.penalty_score, 'error': 'No output.nc'}
+        # Convert mm -> m3/s
+        domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
+        data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
+        project_dir = data_dir / f'domain_{domain_name}'
 
-            # Convert mm -> m3/s
-            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
-            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
-            project_dir = data_dir / f'domain_{domain_name}'
+        area_km2 = self._streamflow_metrics.get_catchment_area(
+            config, project_dir, domain_name, source='shapefile'
+        )
 
-            area_km2 = self._streamflow_metrics.get_catchment_area(
-                config, project_dir, domain_name, source='shapefile'
-            )
-
-            # SFCRNOFF + UGDRNOFF -> daily m3/s, then the calibrated Nash
-            # cascade (route_k, days): a 1-D column emits runoff ~10x too
-            # flashy (Bow at Banff: KGE -0.18 -> ~0.85 with routing). Shared
-            # with the postprocessor so the results CSV matches calibration.
-            from symfluence.models.noahmp.extractor import noahmp_daily_discharge_cms
-            sim_series = noahmp_daily_discharge_cms(
-                output_nc, area_km2 * 1e6, self._read_route_k(kwargs.get('settings_dir')),
-            )
-
-            # Load observations
-            obs_values, obs_index = self._streamflow_metrics.load_observations(
-                config, project_dir, domain_name, resample_freq='D'
-            )
-            if obs_values is None:
-                return {'kge': self.penalty_score, 'error': 'No observations'}
-
-            obs_series = pd.Series(obs_values, index=obs_index)
-
-            # Align
-            cal_period_str = resolve_config_value(config, lambda: config.domain.calibration_period, None, 'CALIBRATION_PERIOD')
-            calibration_period = split_period(cal_period_str)
-
-            obs_aligned, sim_aligned = self._streamflow_metrics.align_timeseries(
-                sim_series, obs_series,
-                calibration_period=calibration_period,
-            )
-
-            return self._streamflow_metrics.calculate_metrics(
-                obs_aligned, sim_aligned, metrics=self._requested_metrics(config)
-            )
-
-        except Exception as e:  # noqa: BLE001 — calibration resilience
-            self.logger.error(f"Error calculating Noah-MP metrics: {e}", exc_info=True)
-            return {'kge': self.penalty_score, 'error': str(e)}
+        # SFCRNOFF + UGDRNOFF -> daily m3/s, then the calibrated Nash
+        # cascade (route_k, days): a 1-D column emits runoff ~10x too
+        # flashy (Bow at Banff: KGE -0.18 -> ~0.85 with routing). Shared
+        # with the postprocessor so the results CSV matches calibration.
+        from symfluence.models.noahmp.extractor import noahmp_daily_discharge_cms
+        sim_series = noahmp_daily_discharge_cms(
+            output_nc, area_km2 * 1e6, self._read_route_k(kwargs.get('settings_dir')),
+        )
+        return sim_series
 
     @staticmethod
     def evaluate_worker_function(task_data: Dict[str, Any]) -> Dict[str, Any]:

@@ -18,17 +18,17 @@ from typing import Any, Dict, Optional
 
 import pandas as pd
 
-from symfluence.core.calibration.workers.base_worker import BaseWorker, run_worker_task
-from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.calibration.workers.base_worker import run_worker_task
+from symfluence.core.calibration.workers.streamflow_worker import StreamflowWorker
+from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.mixins.config import resolve_config_value
-from symfluence.core.modeling.utilities.periods import parse_period
 from symfluence.core.path_resolver import resolve_install_dir
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
 
 @R.workers.add('PIHM')
-class PIHMWorker(BaseWorker):
+class PIHMWorker(StreamflowWorker):
     """
     Worker for PIHM model calibration.
 
@@ -43,7 +43,6 @@ class PIHMWorker(BaseWorker):
     ):
         super().__init__(config, logger)
 
-    _streamflow_metrics = StreamflowMetrics()
 
     def apply_parameters(
         self,
@@ -184,78 +183,40 @@ class PIHMWorker(BaseWorker):
             self.logger.error(f"PIHM execution error: {e}", exc_info=True)
             return False
 
-    def calculate_metrics(
+    def read_simulated_streamflow(
         self,
         output_dir: Path,
-        config: Dict,
-        **kwargs,
-    ) -> Dict:
-        """Calculate streamflow metrics from PIHM output."""
-        try:
-            output_dir = Path(output_dir)
+        config: Dict[str, Any],
+        **kwargs
+    ) -> Optional[pd.Series]:
+        """Daily outlet discharge (m3/s) from this trial's PIHM river flux."""
+        output_dir = Path(output_dir)
 
-            # MM-PIHM output is in output/<project_name>/ subdirectory
-            pihm_output = output_dir / "output" / "pihm_lumped"
-            if not pihm_output.exists():
-                pihm_output = output_dir  # fallback
+        # MM-PIHM output is in output/<project_name>/ subdirectory
+        pihm_output = output_dir / "output" / "pihm_lumped"
+        if not pihm_output.exists():
+            pihm_output = output_dir  # fallback
 
-            from symfluence.models.pihm.extractor import PIHMResultExtractor
-            extractor = PIHMResultExtractor()
+        from symfluence.models.pihm.extractor import PIHMResultExtractor
+        extractor = PIHMResultExtractor()
 
-            river_flux = extractor.extract_variable(
-                pihm_output, 'river_flux',
-                outlet_segment=int(resolve_config_value(
-                    config,
-                    lambda: config.model.pihm.outlet_segment,
-                    dict_key='PIHM_OUTLET_SEGMENT',
-                )),
-            )
+        river_flux = extractor.extract_variable(
+            pihm_output, 'river_flux',
+            outlet_segment=int(resolve_config_value(config, lambda: config.model.pihm.outlet_segment, dict_key='PIHM_OUTLET_SEGMENT')),
+        )
 
-            if river_flux.empty:
-                return {'kge': self.penalty_score, 'error': 'No PIHM output'}
+        if river_flux.empty:
+            raise ModelExecutionError('No PIHM output')
 
-            if (river_flux < 0).any():
-                return {'kge': self.penalty_score, 'error': 'Negative PIHM outlet discharge'}
-            interval = river_flux.index.to_series().diff().dropna().iloc[0]
-            samples_per_day = pd.Timedelta(days=1) / interval
-            if (samples_per_day != int(samples_per_day) or
-                    not (river_flux.resample('D').count() == int(samples_per_day)).all()):
-                return {'kge': self.penalty_score, 'error': 'Partial PIHM output day'}
-            sim_series = river_flux.resample('D').mean()
-
-            # Load observations
-            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
-            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
-            project_dir = data_dir / f'domain_{domain_name}'
-
-            obs_values, obs_index = self._streamflow_metrics.load_observations(
-                config, project_dir, domain_name, resample_freq='D'
-            )
-            if obs_values is None:
-                return {'kge': self.penalty_score, 'error': 'No observations'}
-
-            obs_series = pd.Series(obs_values, index=obs_index)
-
-            # Filter to calibration period if defined
-            cal_period = resolve_config_value(config, lambda: config.domain.calibration_period, None, 'CALIBRATION_PERIOD')
-            cal_window = parse_period(cal_period)
-            if cal_window is not None:
-                cal_start, cal_end = cal_window
-                sim_series = sim_series[cal_start:cal_end]
-                obs_series = obs_series[cal_start:cal_end]
-
-            obs_aligned, sim_aligned = self._streamflow_metrics.align_timeseries(
-                sim_series, obs_series
-            )
-
-            results = self._streamflow_metrics.calculate_metrics(
-                obs_aligned, sim_aligned, metrics=self._requested_metrics(config)
-            )
-            return results
-
-        except Exception as e:  # noqa: BLE001 — calibration resilience
-            self.logger.error(f"Error calculating PIHM metrics: {e}", exc_info=True)
-            return {'kge': self.penalty_score, 'error': str(e)}
+        if (river_flux < 0).any():
+            raise ModelExecutionError('Negative PIHM outlet discharge')
+        interval = river_flux.index.to_series().diff().dropna().iloc[0]
+        samples_per_day = pd.Timedelta(days=1) / interval
+        if (samples_per_day != int(samples_per_day) or
+                not (river_flux.resample('D').count() == int(samples_per_day)).all()):
+            raise ModelExecutionError('Partial PIHM output day')
+        sim_series = river_flux.resample('D').mean()
+        return sim_series
 
     @staticmethod
     def evaluate_worker_function(task_data: Dict[str, Any]) -> Dict[str, Any]:

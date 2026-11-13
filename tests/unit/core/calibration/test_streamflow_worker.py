@@ -144,7 +144,10 @@ def test_daily_mean_if_subdaily():
     assert isinstance(out.index, pd.DatetimeIndex) and out.tolist() == [1.0, 2.0]
 
 
-@pytest.mark.parametrize('model', ['WFLOW', 'LISFLOOD', 'PCRGLOBWB', 'CWATM', 'PRMS', 'GSFLOW', 'MHM', 'WATFLOOD'])
+@pytest.mark.parametrize('model', [
+    'WFLOW', 'LISFLOOD', 'PCRGLOBWB', 'CWATM', 'PRMS', 'GSFLOW', 'MHM', 'WATFLOOD',
+    'CRHM', 'VIC', 'PIHM', 'NOAHMP', 'SWAT', 'CLM', 'WRFHYDRO',
+])
 def test_converted_workers_share_the_scoring_tail(model):
     from symfluence.core.registries import R
 
