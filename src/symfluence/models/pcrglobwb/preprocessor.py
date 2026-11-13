@@ -49,7 +49,7 @@ class PCRGLOBWBPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
         self.resolution = self._get_config_value(
             lambda: self.config.model.pcrglobwb.resolution,
-            default='05min', dict_key='PCRGLOBWB_RESOLUTION',
+            dict_key='PCRGLOBWB_RESOLUTION',
         )
 
     # USDA texture classes → hydraulic properties (Saxton & Rawls 2006)
@@ -216,7 +216,7 @@ class PCRGLOBWBPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         """
         clone_map_cfg = self._get_config_value(
             lambda: self.config.model.pcrglobwb.clone_map,
-            default='clone.map', dict_key='PCRGLOBWB_CLONE_MAP',
+            dict_key='PCRGLOBWB_CLONE_MAP',
         )
         target = self.settings_dir / 'clone.map'
 
@@ -483,7 +483,7 @@ class PCRGLOBWBPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
         pet_method = self._get_config_value(
             lambda: self.config.model.pcrglobwb.pet_method,
-            default='hamon', dict_key='PCRGLOBWB_PET_METHOD',
+            dict_key='PCRGLOBWB_PET_METHOD',
         )
 
         doy = np.array([t.timetuple().tm_yday for t in times])
@@ -901,7 +901,7 @@ class PCRGLOBWBPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
         config_file = self._get_config_value(
             lambda: self.config.model.pcrglobwb.config_file,
-            default='setup.ini',
+            dict_key='PCRGLOBWB_CONFIG_FILE',
         )
         domain_name = self._get_config_value(
             lambda: self.config.domain.name,
@@ -924,7 +924,7 @@ class PCRGLOBWBPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
         spinup_years = self._get_config_value(
             lambda: self.config.model.pcrglobwb.spinup_years,
-            default=0, dict_key='PCRGLOBWB_SPINUP_YEARS',
+            dict_key='PCRGLOBWB_SPINUP_YEARS',
         )
 
         p = self.params_dir  # shorthand for generated parameter paths

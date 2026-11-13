@@ -272,10 +272,14 @@ class NoahMPWorker(BaseWorker):
 
             # Resolve executable
             data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
-            install_path = resolve_config_value(config, lambda: config.model.noahmp.install_path, 'default', 'NOAHMP_INSTALL_PATH')
+            install_path = resolve_config_value(
+                config,
+                lambda: config.model.noahmp.install_path,
+                dict_key='NOAHMP_INSTALL_PATH',
+            )
             install_dir = resolve_install_dir(install_path, data_dir, 'installs/noah-owp-modular')
 
-            exe_name = resolve_config_value(config, lambda: config.model.noahmp.exe, 'noah_owp_modular.exe', 'NOAHMP_EXE')
+            exe_name = resolve_config_value(config, lambda: config.model.noahmp.exe, dict_key='NOAHMP_EXE')
             # The noah-owp-modular build places the executable under run/; older
             # layouts used bin/ or the install root. Check all three.
             noahmp_exe = None

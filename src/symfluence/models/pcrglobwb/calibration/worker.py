@@ -111,7 +111,11 @@ class PCRGLOBWBWorker(StreamflowWorker):
         env = dict(os.environ)
 
         # PCR-GLOBWB install path
-        install_path = resolve_config_value(config, lambda: config.model.pcrglobwb.install_path, 'default', 'PCRGLOBWB_INSTALL_PATH')
+        install_path = resolve_config_value(
+            config,
+            lambda: config.model.pcrglobwb.install_path,
+            dict_key='PCRGLOBWB_INSTALL_PATH',
+        )
         data_dir = resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR')
         pcrglobwb_dir = resolve_install_dir(install_path, data_dir, 'installs/pcrglobwb')
 
@@ -125,11 +129,15 @@ class PCRGLOBWBWorker(StreamflowWorker):
             env['CONDA_PREFIX'] = pcraster_prefix
             env['PATH'] = f"{pcraster_prefix}/bin:{env.get('PATH', '')}"
 
-        exe_name = resolve_config_value(config, lambda: config.model.pcrglobwb.exe, 'deterministic_runner.py', 'PCRGLOBWB_EXE')
+        exe_name = resolve_config_value(config, lambda: config.model.pcrglobwb.exe, dict_key='PCRGLOBWB_EXE')
         runner_script = pcrglobwb_dir / exe_name
         cmd = [sys.executable, str(runner_script), str(ini_path)]
 
-        timeout = int(resolve_config_value(config, lambda: config.model.pcrglobwb.timeout, 14400, 'PCRGLOBWB_TIMEOUT'))
+        timeout = int(resolve_config_value(
+            config,
+            lambda: config.model.pcrglobwb.timeout,
+            dict_key='PCRGLOBWB_TIMEOUT',
+        ))
         try:
             result = run_subprocess(
                 cmd, cwd=str(settings_dir), env=env,

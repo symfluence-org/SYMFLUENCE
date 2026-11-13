@@ -187,7 +187,7 @@ class CLMSurfaceGenerator:
 
         surfdata_file = self.pp._get_config_value(
             lambda: self.pp.config.model.clm.surfdata_file,
-            default='surfdata_clm.nc', dict_key='CLM_SURFDATA_FILE'
+            dict_key='CLM_SURFDATA_FILE',
         )
         filepath = self.pp.params_dir / surfdata_file
         ds = nc4.Dataset(str(filepath), 'w', format='NETCDF4_CLASSIC')
@@ -361,7 +361,7 @@ class CLMSurfaceGenerator:
 
         params_file = self.pp._get_config_value(
             lambda: self.pp.config.model.clm.params_file,
-            default='clm5_params.nc', dict_key='CLM_PARAMS_FILE'
+            dict_key='CLM_PARAMS_FILE',
         )
         params_dst = self.pp.params_dir / params_file
 

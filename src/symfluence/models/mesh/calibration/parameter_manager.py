@@ -271,10 +271,9 @@ class MESHParameterManager(BaseParameterManager):
             MESHConfigDefaults.find_landcover_stats(_get, attributes_dir),
             self._get_config_value(
                 lambda: self.config.model.mesh.landcover_classification,
-                default='default', dict_key='MESH_LANDCOVER_CLASSIFICATION'),
-            self._get_config_value(
-                lambda: self.config.domain.land_class_source,
-                default='modis', dict_key='LAND_CLASS_SOURCE'),
+                dict_key='MESH_LANDCOVER_CLASSIFICATION',
+            ),
+            self._get_config_value(lambda: self.config.domain.land_class_source, dict_key='LAND_CLASS_SOURCE'),
         )
         self.logger.info(
             f"Land-cover multipliers: built-in {classification.upper()} table "

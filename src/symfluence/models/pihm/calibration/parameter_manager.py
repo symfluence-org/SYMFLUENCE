@@ -121,8 +121,7 @@ class PIHMParameterManager(BaseParameterManager):
 
         pihm_params_str = self._get_config_value(
             lambda: self.config.model.pihm.params_to_calibrate,
-            default='K_SAT,POROSITY,VG_ALPHA,VG_N,MACROPORE_K,MANNINGS_N,SOIL_DEPTH',
-            dict_key='PIHM_PARAMS_TO_CALIBRATE'
+            dict_key='PIHM_PARAMS_TO_CALIBRATE',
         )
         self.pihm_params = [p.strip() for p in str(pihm_params_str).split(',') if p.strip()]
 

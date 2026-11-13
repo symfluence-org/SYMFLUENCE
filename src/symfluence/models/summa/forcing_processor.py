@@ -1057,7 +1057,10 @@ class SummaForcingProcessor(BaseForcingProcessor):
             self.logger.debug(f"File {filename}: Time range from data: {pd_times[0]} to {pd_times[-1]}")
 
             # Get time step from config
-            time_step_seconds = int(self._get_config_value(lambda: self.config.forcing.time_step_size, default=3600))
+            time_step_seconds = int(self._get_config_value(
+                lambda: self.config.forcing.time_step_size,
+                dict_key='FORCING_TIME_STEP_SIZE',
+            ))
 
             # Convert to SUMMA's expected format: seconds since 1990-01-01 00:00:00
             reference_date = pd.Timestamp('1990-01-01 00:00:00')

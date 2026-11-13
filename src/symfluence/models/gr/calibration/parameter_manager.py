@@ -40,8 +40,7 @@ class GRParameterManager(BaseParameterManager):
         # Parse GR parameters to calibrate from config
         gr_params_str = self._get_config_value(
             lambda: self.config.model.gr.params_to_calibrate,
-            default='X1,X2,X3,X4,CTG,Kf,Gratio,Albedo_diff',
-            dict_key='GR_PARAMS_TO_CALIBRATE'
+            dict_key='GR_PARAMS_TO_CALIBRATE',
         )
 
         self.gr_params = [p.strip() for p in str(gr_params_str).split(',') if p.strip()]
@@ -51,18 +50,14 @@ class GRParameterManager(BaseParameterManager):
         from ..glacier import require_lumped_for_glacier
         require_lumped_for_glacier(
             not self._runs_distributed(),
-            bool(self._get_config_value(
-                lambda: self.config.model.gr.glacier_enabled, default=False, dict_key='GR_GLACIER_ENABLED'
-            )),
+            bool(self._get_config_value(lambda: self.config.model.gr.glacier_enabled, dict_key='GR_GLACIER_ENABLED')),
             self.gr_params,
         )
 
     def _runs_distributed(self) -> bool:
         """Whether the GR runner will take its distributed path (anything but lumped)."""
         from symfluence.core.modeling.spatial_modes import SpatialMode
-        mode = self._get_config_value(
-            lambda: self.config.model.gr.spatial_mode, default='auto', dict_key='GR_SPATIAL_MODE'
-        )
+        mode = self._get_config_value(lambda: self.config.model.gr.spatial_mode, dict_key='GR_SPATIAL_MODE')
         if mode in (None, 'auto', 'default'):
             method = self._get_config_value(
                 lambda: self.config.domain.definition_method, default='lumped',
@@ -109,7 +104,7 @@ class GRParameterManager(BaseParameterManager):
         # Check for explicit initial params in config
         initial_params = self._get_config_value(
             lambda: self.config.model.gr.initial_params,
-            default='default'
+            dict_key='GR_INITIAL_PARAMS',
         )
 
         if initial_params == 'midpoint':

@@ -57,8 +57,7 @@ class MHMModelOptimizer(BaseModelOptimizer):
         """Get path to mHM namelist file."""
         namelist_file = self._get_config_value(
             lambda: self.config.model.mhm.namelist_file,
-            default='mhm.nml',
-            dict_key='MHM_NAMELIST_FILE'
+            dict_key='MHM_NAMELIST_FILE',
         )
         return self.mhm_setup_dir / namelist_file
 

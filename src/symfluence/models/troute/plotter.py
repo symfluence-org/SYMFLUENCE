@@ -117,7 +117,6 @@ class TRoutePlotter(BasePlotter):
 
         output_dir_cfg = self._get_config_value(
             lambda: self.config.model.troute.experiment_output,
-            default='default',
             dict_key='EXPERIMENT_OUTPUT_TROUTE',
         )
         if output_dir_cfg != 'default':

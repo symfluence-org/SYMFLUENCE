@@ -104,10 +104,9 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # (the framework's geofabric engine), consistent with delineation.
         self.distributed_morph = bool(self._get_config_value(
             lambda: self.config.model.mhm.distributed_morph,
-            default=False, dict_key='MHM_DISTRIBUTED'))
-        self.grid_res = float(self._get_config_value(
-            lambda: self.config.model.mhm.grid_res,
-            default=0.02, dict_key='MHM_GRID_RES'))   # degrees (~2 km lat)
+            dict_key='MHM_DISTRIBUTED',
+        ))
+        self.grid_res = float(self._get_config_value(lambda: self.config.model.mhm.grid_res, dict_key='MHM_GRID_RES'))   # degrees (~2 km lat)
         if not self.distributed_morph:
             self._set_lumped_cellsize()
         self._dist_grid = None  # cache of distributed-grid arrays/metadata
@@ -266,7 +265,8 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         glacier_frac = np.where(mask, self._glacier_fraction_grid(nrow, ncol, dst_t, crs), 0.0)
         min_frac = float(self._get_config_value(
             lambda: self.config.model.mhm.glacier_min_fraction,
-            default=0.5, dict_key='MHM_GLACIER_MIN_FRACTION'))
+            dict_key='MHM_GLACIER_MIN_FRACTION',
+        ))
         glacier = glacier_frac >= max(min_frac, 1e-9)
 
         slope = np.clip(np.abs(sd8), 0.0001, 2.0)
@@ -320,8 +320,7 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
     def _routing_case(self) -> int:
         """MHM_ROUTING_CASE: mRM processCase(8), 1 (Muskingum) or 2 (adaptive
         time step, constant ``streamflow_celerity``)."""
-        case = int(self._get_config_value(
-            lambda: self.config.model.mhm.routing_case, default=1, dict_key='MHM_ROUTING_CASE'))
+        case = int(self._get_config_value(lambda: self.config.model.mhm.routing_case, dict_key='MHM_ROUTING_CASE'))
         if case not in (1, 2):
             raise ConfigurationError(f"MHM_ROUTING_CASE must be 1 or 2, got {case}")
         return case
@@ -337,13 +336,10 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         """
         from .build_instructions import TIMESTEP_PATCH_MARKER
 
-        timestep = int(self._get_config_value(
-            lambda: self.config.model.mhm.timestep, default=1, dict_key='MHM_TIMESTEP'))
+        timestep = int(self._get_config_value(lambda: self.config.model.mhm.timestep, dict_key='MHM_TIMESTEP'))
         if timestep == 1:
             return timestep
-        install = self._get_config_value(
-            lambda: self.config.model.mhm.install_path, default='default',
-            dict_key='MHM_INSTALL_PATH')
+        install = self._get_config_value(lambda: self.config.model.mhm.install_path, dict_key='MHM_INSTALL_PATH')
         if not install or install == 'default':
             data_dir = Path(self._get_config_value(
                 lambda: self.config.system.data_dir, dict_key='SYMFLUENCE_DATA_DIR'))
@@ -853,9 +849,7 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         utm_zone = int((lon + 180) / 6) + 1
         utm_epsg = 32600 + utm_zone if lat >= 0 else 32700 + utm_zone
         areas = pd.Series(gdf.to_crs(f"EPSG:{utm_epsg}").geometry.area.values)
-        id_col = self._get_config_value(
-            lambda: self.config.paths.catchment_hruid, default='HRU_ID',
-            dict_key='CATCHMENT_SHP_HRUID')
+        id_col = self._get_config_value(lambda: self.config.paths.catchment_hruid, dict_key='CATCHMENT_SHP_HRUID')
         if 'hruId' in forcing_ds.variables and id_col in gdf.columns:
             # Several polygons may share an HRU id; their areas add up.
             by_id = areas.groupby(gdf[id_col].astype('int64').values).sum()
@@ -912,9 +906,7 @@ class MHMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         """Daily PET (mm/day) from temperature with Hamon or Oudin
         (MHM_PET_METHOD). Arguments broadcast, so this serves both the lumped
         series and the (time, nrow, ncol) distributed grid."""
-        method = self._get_config_value(
-            lambda: self.config.model.mhm.pet_method,
-            default='hamon', dict_key='MHM_PET_METHOD')
+        method = self._get_config_value(lambda: self.config.model.mhm.pet_method, dict_key='MHM_PET_METHOD')
         if method == 'oudin':
             # Oudin et al. (2005): PET = Re / (lambda rho) * (T + 5) / 100.
             # Kept local on purpose: the declination constants here (0.4093,

@@ -255,7 +255,11 @@ def read_fuse_streamflow(
         return None
 
     with ds:
-        spatial_mode = resolve_config_value(config, lambda: config.model.fuse.spatial_mode, 'lumped', 'FUSE_SPATIAL_MODE')
+        spatial_mode = resolve_config_value(
+            config,
+            lambda: config.model.fuse.spatial_mode,
+            dict_key='FUSE_SPATIAL_MODE',
+        )
         subcatchment_dim = resolve_config_value(
             config,
             lambda: config.model.fuse.subcatchment_dim,

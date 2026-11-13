@@ -114,7 +114,7 @@ class LisfloodRunner(BaseModelRunner):
     def run(self, **kwargs) -> Optional[Path]:
         settings_file = self._get_config_value(
             lambda: self.config.model.lisflood.settings_file,
-            default="settings.xml",
+            dict_key='LISFLOOD_SETTINGS_FILE',
         )
         settings_path = self.settings_dir / settings_file
         if not settings_path.exists():
@@ -130,7 +130,7 @@ class LisfloodRunner(BaseModelRunner):
 
         num_threads = self._get_config_value(
             lambda: self.config.model.lisflood.num_threads,
-            default=1,
+            dict_key='LISFLOOD_NUM_THREADS',
         )
         if num_threads > 1:
             env["PCRASTER_NR_WORKER_THREADS"] = str(num_threads)
@@ -142,10 +142,7 @@ class LisfloodRunner(BaseModelRunner):
             "-c",
             f'from lisflood.main import main; main("{settings_path}")',
         ]
-        timeout = self._get_config_value(
-            lambda: self.config.model.lisflood.timeout,
-            default=7200,
-        )
+        timeout = self._get_config_value(lambda: self.config.model.lisflood.timeout, dict_key='LISFLOOD_TIMEOUT')
 
         log_dir = self.get_simulation_dir('LISFLOOD', self._get_experiment_id()) / 'logs'
         log_dir.mkdir(parents=True, exist_ok=True)

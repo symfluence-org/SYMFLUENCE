@@ -87,7 +87,11 @@ class PRMSWorker(StreamflowWorker):
                 return False
 
             # Find parameter file
-            param_file_name = resolve_config_value(config, lambda: config.model.prms.parameter_file, 'params.dat', 'PRMS_PARAMETER_FILE')
+            param_file_name = resolve_config_value(
+                config,
+                lambda: config.model.prms.parameter_file,
+                dict_key='PRMS_PARAMETER_FILE',
+            )
             param_file = settings_dir / param_file_name
             if not param_file.exists():
                 # Try any .dat file that isn't control or data
@@ -170,7 +174,11 @@ class PRMSWorker(StreamflowWorker):
             settings_dir: Worker's PRMS settings directory
             config: Configuration dictionary
         """
-        control_file = resolve_config_value(config, lambda: config.model.prms.control_file, 'control.dat', 'PRMS_CONTROL_FILE')
+        control_file = resolve_config_value(
+            config,
+            lambda: config.model.prms.control_file,
+            dict_key='PRMS_CONTROL_FILE',
+        )
         control_path = settings_dir / control_file
         if not control_path.exists():
             return
@@ -232,7 +240,11 @@ class PRMSWorker(StreamflowWorker):
                 return False
 
             # Get control file
-            control_file = resolve_config_value(config, lambda: config.model.prms.control_file, 'control.dat', 'PRMS_CONTROL_FILE')
+            control_file = resolve_config_value(
+                config,
+                lambda: config.model.prms.control_file,
+                dict_key='PRMS_CONTROL_FILE',
+            )
             control_path = settings_dir / control_file
             if not control_path.exists():
                 self.logger.error(f"PRMS control file not found: {control_path}")
@@ -244,7 +256,7 @@ class PRMSWorker(StreamflowWorker):
             env = os.environ.copy()
             env['MallocStackLogging'] = '0'
 
-            timeout = resolve_config_value(config, lambda: config.model.prms.timeout, 3600, 'PRMS_TIMEOUT')
+            timeout = resolve_config_value(config, lambda: config.model.prms.timeout, dict_key='PRMS_TIMEOUT')
 
             stdout_file = prms_output_dir / 'prms_stdout.log'
             stderr_file = prms_output_dir / 'prms_stderr.log'
@@ -288,8 +300,16 @@ class PRMSWorker(StreamflowWorker):
             tolerance = resolve_config_value(config, lambda: config.model.prms.water_balance_tolerance_mm, None, 'PRMS_WATER_BALANCE_TOLERANCE_MM')
             if tolerance is not None:
                 from ..balance import check_water_balance
-                check_water_balance(output_files[0], settings_dir / resolve_config_value(config, lambda: config.model.prms.parameter_file, 'params.dat', 'PRMS_PARAMETER_FILE'),
-                                    float(tolerance), bool(resolve_config_value(config, lambda: config.model.prms.glacier_flag, False, 'PRMS_GLACIER_FLAG')))
+                check_water_balance(output_files[0], settings_dir / resolve_config_value(
+                    config,
+                    lambda: config.model.prms.parameter_file,
+                    dict_key='PRMS_PARAMETER_FILE',
+                ),
+                                    float(tolerance), bool(resolve_config_value(
+                                        config,
+                                        lambda: config.model.prms.glacier_flag,
+                                        dict_key='PRMS_GLACIER_FLAG',
+                                    )))
             return True
 
         except Exception as e:  # noqa: BLE001 — calibration resilience
@@ -299,8 +319,12 @@ class PRMSWorker(StreamflowWorker):
 
     def _get_prms_executable(self, config: Dict[str, Any], data_dir: Path) -> Path:
         """Get PRMS executable path."""
-        install_path = resolve_config_value(config, lambda: config.model.prms.install_path, 'default', 'PRMS_INSTALL_PATH')
-        exe_name = resolve_config_value(config, lambda: config.model.prms.exe, 'prms', 'PRMS_EXE')
+        install_path = resolve_config_value(
+            config,
+            lambda: config.model.prms.install_path,
+            dict_key='PRMS_INSTALL_PATH',
+        )
+        exe_name = resolve_config_value(config, lambda: config.model.prms.exe, dict_key='PRMS_EXE')
 
         exe = resolve_install_executable(install_path, data_dir, 'installs/prms/bin', exe_name)
         # Windows builds produce <name>.exe even when the config declares a bare
@@ -350,7 +374,11 @@ class PRMSWorker(StreamflowWorker):
         **kwargs
     ) -> Dict[str, Any]:
         """Snow-cover and glacier mass-balance scores when PRMS_CRYOSPHERE_CONSTRAINTS is on."""
-        if not resolve_config_value(config, lambda: config.model.prms.cryosphere_constraints, False, 'PRMS_CRYOSPHERE_CONSTRAINTS'):
+        if not resolve_config_value(
+            config,
+            lambda: config.model.prms.cryosphere_constraints,
+            dict_key='PRMS_CRYOSPHERE_CONSTRAINTS',
+        ):
             return {}
         from ..cryosphere import calculate_constraints
         settings_dir = kwargs.get('settings_dir')
@@ -358,8 +386,16 @@ class PRMSWorker(StreamflowWorker):
         return calculate_constraints(
             self._find_statvar(output_dir, config, **kwargs), parameter_file, project_dir,
             resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD'),
-            resolve_config_value(config, lambda: config.model.prms.snow_cover_error_scale, 0.2, 'PRMS_SNOW_COVER_ERROR_SCALE'),
-            resolve_config_value(config, lambda: config.model.prms.glacier_mb_error_scale, 1.0, 'PRMS_GLACIER_MB_ERROR_SCALE'))
+            resolve_config_value(
+                config,
+                lambda: config.model.prms.snow_cover_error_scale,
+                dict_key='PRMS_SNOW_COVER_ERROR_SCALE',
+            ),
+            resolve_config_value(
+                config,
+                lambda: config.model.prms.glacier_mb_error_scale,
+                dict_key='PRMS_GLACIER_MB_ERROR_SCALE',
+            ))
 
     @staticmethod
     def evaluate_worker_function(task_data: Dict[str, Any]) -> Dict[str, Any]:

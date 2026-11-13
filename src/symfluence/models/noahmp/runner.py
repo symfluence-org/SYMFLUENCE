@@ -37,7 +37,7 @@ class NoahMPRunner(BaseModelRunner):
 
         install_path = self._get_config_value(
             lambda: self.config.model.noahmp.install_path,
-            default='default',
+            dict_key='NOAHMP_INSTALL_PATH',
         )
         data_dir = self._get_config_value(
             lambda: self.config.system.data_dir,
@@ -45,16 +45,13 @@ class NoahMPRunner(BaseModelRunner):
         )
         self.noahmp_dir = resolve_install_dir(install_path, data_dir, 'installs/noah-owp-modular')
 
-        exe_name = self._get_config_value(
-            lambda: self.config.model.noahmp.exe,
-            default='noah_owp_modular.exe',
-        )
+        exe_name = self._get_config_value(lambda: self.config.model.noahmp.exe, dict_key='NOAHMP_EXE')
         self.executable = self.noahmp_dir / 'run' / exe_name
 
     def run(self, **kwargs) -> Optional[Path]:
         namelist_file = self._get_config_value(
             lambda: self.config.model.noahmp.namelist_file,
-            default='namelist.input',
+            dict_key='NOAHMP_NAMELIST_FILE',
         )
         namelist_path = self.settings_dir / namelist_file
         if not namelist_path.exists():
@@ -76,10 +73,7 @@ class NoahMPRunner(BaseModelRunner):
 
         cmd = [str(exe_path)]
 
-        timeout = self._get_config_value(
-            lambda: self.config.model.noahmp.timeout,
-            default=7200,
-        )
+        timeout = self._get_config_value(lambda: self.config.model.noahmp.timeout, dict_key='NOAHMP_TIMEOUT')
 
         log_dir = self.get_simulation_dir('NOAHMP', self._get_experiment_id()) / 'logs'
         log_dir.mkdir(parents=True, exist_ok=True)

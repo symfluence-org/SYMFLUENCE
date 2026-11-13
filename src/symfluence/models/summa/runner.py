@@ -66,7 +66,7 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
         )
         self.file_manager = self.settings_path / self._get_config_value(
             lambda: self.config.model.summa.filemanager,
-            default='fileManager.txt'
+            dict_key='SETTINGS_SUMMA_FILEMANAGER',
         )
 
         # Legacy alias for backward compatibility
@@ -113,7 +113,8 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
     def _get_slurm_config(self) -> Optional[SlurmJobConfig]:
         """Get SLURM configuration for parallel SUMMA."""
         use_parallel = self._get_config_value(
-            lambda: self.config.model.summa.use_parallel, default=False
+            lambda: self.config.model.summa.use_parallel,
+            dict_key='SETTINGS_SUMMA_USE_PARALLEL_SUMMA',
         )
 
         if not use_parallel:
@@ -150,7 +151,8 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
 
         # Backup settings if requested
         backup = self._get_config_value(
-            lambda: self.config.model.summa.backup_settings, default='no'
+            lambda: self.config.model.summa.backup_settings,
+            dict_key='EXPERIMENT_BACKUP_SETTINGS',
         )
         if backup == 'yes':
             self.backup_settings(self.settings_path)
@@ -188,7 +190,8 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
         # Check if we need to convert lumped output for distributed routing
         domain_method = self.domain_definition_method
         routing_delineation = self._get_config_value(
-            lambda: self.config.domain.delineation.routing, default='lumped'
+            lambda: self.config.domain.delineation.routing,
+            dict_key='ROUTING_DELINEATION',
         )
 
         if domain_method == 'lumped' and routing_delineation == 'river_network':
@@ -260,7 +263,8 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
             return
 
         coldstate_name = self._get_config_value(
-            lambda: self.config.model.summa.coldstate, default='coldState.nc'
+            lambda: self.config.model.summa.coldstate,
+            dict_key='SETTINGS_SUMMA_COLDSTATE',
         )
         dst = self.settings_path / coldstate_name
 
@@ -288,7 +292,8 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
             output = self.run_summa_point()
         else:
             use_parallel = self._get_config_value(
-                lambda: self.config.model.summa.use_parallel, default=False
+                lambda: self.config.model.summa.use_parallel,
+                dict_key='SETTINGS_SUMMA_USE_PARALLEL_SUMMA',
             )
             if use_parallel:
                 output = self.run_parallel_summa()
@@ -322,7 +327,8 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
         Python's ThreadPoolExecutor (also used as a fallback if SLURM is unavailable).
         """
         backend = self._get_config_value(
-            lambda: self.config.model.summa.parallel_backend, default='slurm'
+            lambda: self.config.model.summa.parallel_backend,
+            dict_key='SETTINGS_SUMMA_PARALLEL_BACKEND',
         )
         backend = str(backend or 'slurm').lower()
 
@@ -373,7 +379,8 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
 
         # Backup settings if requested
         backup = self._get_config_value(
-            lambda: self.config.model.summa.backup_settings, default='no'
+            lambda: self.config.model.summa.backup_settings,
+            dict_key='EXPERIMENT_BACKUP_SETTINGS',
         )
         if backup == 'yes':
             self.backup_settings(self.settings_path)
@@ -382,7 +389,8 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
         result = self.submit_slurm_job(
             script_path=script_path,
             wait=self._get_config_value(
-                lambda: self.config.model.summa.monitor_slurm_job, default=True
+                lambda: self.config.model.summa.monitor_slurm_job,
+                dict_key='MONITOR_SLURM_JOB',
             ),
             # No fixed hour here: the monitor never counts queue time and
             # takes its backstop from the job's own --time limit.
@@ -412,11 +420,10 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
         if not self._pre_execution():
             return None
 
-        timeout = self._get_config_value(
-            lambda: self.config.model.summa.timeout, default=7200
-        )
+        timeout = self._get_config_value(lambda: self.config.model.summa.timeout, dict_key='SUMMA_TIMEOUT')
         cpus_per_task = self._get_config_value(
-            lambda: self.config.model.summa.cpus_per_task, default=32
+            lambda: self.config.model.summa.cpus_per_task,
+            dict_key='SETTINGS_SUMMA_CPUS_PER_TASK',
         )
         debug_info: Dict[str, List[str]] = {'errors': []}
 
@@ -456,7 +463,8 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
         try:
             gdf = gpd.read_file(shapefile)
             gru_col = self._get_config_value(
-                lambda: self.config.paths.catchment_gruid, default='GRU_ID'
+                lambda: self.config.paths.catchment_gruid,
+                dict_key='CATCHMENT_SHP_GRUID',
             )
             return len(gdf[gru_col].unique())
         except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error

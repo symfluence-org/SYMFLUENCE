@@ -59,8 +59,7 @@ class VICModelOptimizer(BaseModelOptimizer):
         """Get path to VIC global parameter file."""
         global_file = self._get_config_value(
             lambda: self.config.model.vic.global_param_file,
-            default='vic_global.txt',
-            dict_key='VIC_GLOBAL_PARAM_FILE'
+            dict_key='VIC_GLOBAL_PARAM_FILE',
         )
         return self.vic_setup_dir / global_file
 

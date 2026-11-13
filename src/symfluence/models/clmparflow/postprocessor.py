@@ -76,7 +76,6 @@ class CLMParFlowPostProcessor(StandardModelPostProcessor):
 
             timestep_hours = self._get_config_value(
                 lambda: self.config.model.clmparflow.timestep_hours,
-                default=1.0,
                 dict_key='CLMPARFLOW_TIMESTEP_HOURS',
             )
 
@@ -86,26 +85,10 @@ class CLMParFlowPostProcessor(StandardModelPostProcessor):
                 dict_key='EXPERIMENT_TIME_START',
             )
 
-            k_sat = self._get_config_value(
-                lambda: self.config.model.clmparflow.k_sat,
-                default=5.0,
-                dict_key='CLMPARFLOW_K_SAT',
-            )
-            dx = self._get_config_value(
-                lambda: self.config.model.clmparflow.dx,
-                default=1000.0,
-                dict_key='CLMPARFLOW_DX',
-            )
-            dy = self._get_config_value(
-                lambda: self.config.model.clmparflow.dy,
-                default=1000.0,
-                dict_key='CLMPARFLOW_DY',
-            )
-            dz = self._get_config_value(
-                lambda: self.config.model.clmparflow.dz,
-                default=2.0,
-                dict_key='CLMPARFLOW_DZ',
-            )
+            k_sat = self._get_config_value(lambda: self.config.model.clmparflow.k_sat, dict_key='CLMPARFLOW_K_SAT')
+            dx = self._get_config_value(lambda: self.config.model.clmparflow.dx, dict_key='CLMPARFLOW_DX')
+            dy = self._get_config_value(lambda: self.config.model.clmparflow.dy, dict_key='CLMPARFLOW_DY')
+            dz = self._get_config_value(lambda: self.config.model.clmparflow.dz, dict_key='CLMPARFLOW_DZ')
 
             from symfluence.models.parflow.extractor import resolve_dump_interval_hours
             common_kwargs = dict(
