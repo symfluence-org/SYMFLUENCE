@@ -156,10 +156,12 @@ class SoilGridsAcquirer(BaseAcquisitionHandler, RetryMixin):
         self.logger.info("Acquiring soil class data from SoilGrids WCS (fallback)")
 
         layer = self._get_config_value(
-            lambda: self.config.data.geospatial.soilgrids.layer, default="wrb_0-5cm_mode"
+            lambda: self.config.data.geospatial.soilgrids.layer,
+            dict_key='SOILGRIDS_LAYER',
         )
         wcs_map = self._get_config_value(
-            lambda: self.config.data.geospatial.soilgrids.wcs_map, default="/map/wcs/soilgrids.map"
+            lambda: self.config.data.geospatial.soilgrids.wcs_map,
+            dict_key='SOILGRIDS_WCS_MAP',
         )
         coverage = self._get_config_value(
             lambda: self.config.data.geospatial.soilgrids.coverage_id, default=layer
@@ -223,7 +225,8 @@ class SoilGridsAcquirer(BaseAcquisitionHandler, RetryMixin):
             - Subsets extracted raster to domain bounding box via rasterio
         """
         cache_dir_cfg = self._get_config_value(
-            lambda: self.config.data.geospatial.soilgrids.hs_cache_dir, default='default'
+            lambda: self.config.data.geospatial.soilgrids.hs_cache_dir,
+            dict_key='SOILGRIDS_HS_CACHE_DIR',
         )
         if cache_dir_cfg == 'default':
             # Data-dir-level cache: the HydroShare archive is global (~1 GB,
@@ -235,7 +238,7 @@ class SoilGridsAcquirer(BaseAcquisitionHandler, RetryMixin):
 
         resource_id = self._get_config_value(
             lambda: self.config.data.geospatial.soilgrids.hs_resource_id,
-            default="1361509511e44adfba814f6950c6e742"
+            dict_key='SOILGRIDS_HS_RESOURCE_ID',
         )
         hs_url = self._get_config_value(
             lambda: self.config.data.geospatial.soilgrids.hs_api_url,
@@ -245,7 +248,10 @@ class SoilGridsAcquirer(BaseAcquisitionHandler, RetryMixin):
         zip_path = cache_dir / f"soilgrids_{resource_id}.zip"
 
         # Download with retry logic using mixin
-        if not zip_path.exists() or zip_path.stat().st_size == 0 or self._get_config_value(lambda: self.config.data.force_download, default=False):
+        if not zip_path.exists() or zip_path.stat().st_size == 0 or self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             # PID-unique temp: concurrent workflows share this cache dir, so two
             # writers on one .part file would corrupt both downloads. Pass it as
             # part_path so download_file_resumable resumes from it across

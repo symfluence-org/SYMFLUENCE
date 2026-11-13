@@ -282,8 +282,7 @@ class GPMIMERGAcquirer(BaseAcquisitionHandler):
 
                 if out_file.exists() and not self._get_config_value(
                     lambda: self.config.data.force_download,
-                    default=False,
-                    dict_key='FORCE_DOWNLOAD'
+                    dict_key='FORCE_DOWNLOAD',
                 ):
                     downloaded += 1
                     downloaded_files.append(out_file)

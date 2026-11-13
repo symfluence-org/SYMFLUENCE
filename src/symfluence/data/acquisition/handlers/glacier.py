@@ -109,7 +109,10 @@ class GlacierAcquirer(BaseAcquisitionHandler):
 
         # Check if already processed
         domain_type_file = glacier_dir / f"domain_{self.domain_name}_domain_type.tif"
-        if domain_type_file.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False, dict_key='FORCE_DOWNLOAD'):
+        if domain_type_file.exists() and not self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             self.logger.info(f"Glacier data already exists: {glacier_dir}")
             return glacier_dir
 
@@ -208,7 +211,10 @@ class GlacierAcquirer(BaseAcquisitionHandler):
 
         cached_file = cache_dir / filename.replace('.zip', '.shp')
 
-        if cached_file.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False, dict_key='FORCE_DOWNLOAD'):
+        if cached_file.exists() and not self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             self.logger.debug(f"Using cached RGI data: {cached_file}")
             return gpd.read_file(cached_file)
 

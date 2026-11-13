@@ -99,8 +99,9 @@ class RemappingWeightApplier(ConfigMixin):
         key = str(remap_file)
         if key not in self._elevation_differences:
             hru_field = self.cached_hru_field or self._get_config_value(
-                lambda: self.config.paths.catchment_hruid, default='HRU_ID',
-                dict_key='CATCHMENT_SHP_HRUID')
+                lambda: self.config.paths.catchment_hruid,
+                dict_key='CATCHMENT_SHP_HRUID',
+            )
             self._elevation_differences[key] = hru_elevation_differences(
                 find_intersection_table(remap_file), hru_field, self.logger)
         for candidate in temp_dir.glob('*.nc'):

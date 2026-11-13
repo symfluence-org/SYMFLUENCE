@@ -37,7 +37,10 @@ class SNOTELHandler(BaseObservationHandler):
         """
         Acquire SNOTEL data from NRCS AWDB API.
         """
-        download_enabled = self._get_config_value(lambda: self.config.evaluation.snotel.download, default=False, dict_key='DOWNLOAD_SNOTEL')
+        download_enabled = self._get_config_value(
+            lambda: self.config.evaluation.snotel.download,
+            dict_key='DOWNLOAD_SNOTEL',
+        )
         if isinstance(download_enabled, str):
             download_enabled = download_enabled.lower() == 'true'
 

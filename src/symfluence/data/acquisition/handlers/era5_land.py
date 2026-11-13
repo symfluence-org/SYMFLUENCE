@@ -104,7 +104,7 @@ class ERA5LandAcquirer(BaseAcquisitionHandler, SpatialSubsetMixin):
         # Get configuration
         variables = self._get_variables()
         frequency = self._get_config_value(lambda: None, default='daily', dict_key='ERA5_LAND_FREQUENCY')
-        force_download = self._get_config_value(lambda: self.config.data.force_download, default=False)
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
 
         # Build output filename
         start_str = self.start_date.strftime('%Y%m%d')

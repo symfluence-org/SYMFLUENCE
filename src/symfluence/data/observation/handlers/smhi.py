@@ -33,7 +33,7 @@ class SMHIStreamflowHandler(BaseObservationHandler):
     }
 
     def acquire(self) -> Path:
-        data_access = self._get_config_value(lambda: self.config.domain.data_access, default='cloud', dict_key='DATA_ACCESS').lower()
+        data_access = self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS').lower()
         station_id = self._get_config_value(lambda: self.config.evaluation.streamflow.station_id, dict_key='STATION_ID')
 
         if not station_id:
@@ -51,7 +51,8 @@ class SMHIStreamflowHandler(BaseObservationHandler):
             # on every call. Reuse the already-downloaded raw CSV unless
             # FORCE_DOWNLOAD is set.
             force_download = self._get_config_value(
-                lambda: self.config.data.force_download, default=False, dict_key='FORCE_DOWNLOAD'
+                lambda: self.config.data.force_download,
+                dict_key='FORCE_DOWNLOAD',
             )
             if raw_file.exists() and not force_download:
                 self.logger.info(f"Using existing SMHI data: {raw_file}")

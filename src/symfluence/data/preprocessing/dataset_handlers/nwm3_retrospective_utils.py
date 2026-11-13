@@ -448,10 +448,12 @@ class NWM3RetrospectiveHandler(BaseDatasetHandler):
                         )
 
         lat_name = self._get_config_value(
-            lambda: self.config.forcing.shape_lat_name, default='lat'
+            lambda: self.config.forcing.shape_lat_name,
+            dict_key='FORCING_SHAPE_LAT_NAME',
         )
         lon_name = self._get_config_value(
-            lambda: self.config.forcing.shape_lon_name, default='lon'
+            lambda: self.config.forcing.shape_lon_name,
+            dict_key='FORCING_SHAPE_LON_NAME',
         )
 
         gdf = gpd.GeoDataFrame(

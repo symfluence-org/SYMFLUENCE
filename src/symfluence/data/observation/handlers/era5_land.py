@@ -83,7 +83,7 @@ class ERA5LandHandler(BaseObservationHandler):
         """Acquire ERA5-Land data via cloud acquisition."""
         era5_dir = Path(self._get_config_value(lambda: None, default=self.project_observations_dir / "era5_land", dict_key='ERA5_LAND_DIR'))
 
-        force_download = self._get_config_value(lambda: self.config.data.force_download, default=False)
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
         has_files = era5_dir.exists() and any(era5_dir.glob("*.nc"))
 
         if not has_files or force_download:
