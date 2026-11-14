@@ -267,7 +267,9 @@ class DREAMAlgorithm(OptimizationAlgorithm):
             # Outlier chain detection and correction
             # Detect and correct outlier chains that may be stuck in low-probability regions
             # (Vrugt 2009, Section 2.4)
-            if iteration > 10 and iteration % 10 == 0:
+            # Only during burn-in: resetting chains while posterior samples are
+            # collected breaks detailed balance and biases the posterior.
+            if 10 < iteration <= burn_in and iteration % 10 == 0:
                 try:
                     self._correct_outlier_chains(
                         chains, fitness, log_likelihood,

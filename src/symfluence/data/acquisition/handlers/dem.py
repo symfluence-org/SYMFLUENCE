@@ -476,9 +476,22 @@ class FABDEMAcquirer(BaseAcquisitionHandler):
                         self.logger.info(f"Fetching FABDEM tile: {tile_name}")
                         with requests.get(url, stream=True, timeout=60) as r:
                             if r.status_code == 200:
-                                with open(local_tile, "wb") as f:
-                                    for chunk in r.iter_content(chunk_size=65536): f.write(chunk)
+                                # .part + rename: a truncated tile must not be
+                                # reused as complete on the next run.
+                                part = local_tile.with_name(local_tile.name + ".part")
+                                try:
+                                    with open(part, "wb") as f:
+                                        for chunk in r.iter_content(chunk_size=65536): f.write(chunk)
+                                    part.replace(local_tile)
+                                finally:
+                                    part.unlink(missing_ok=True)
                                 tile_paths.append(local_tile)
+                            elif r.status_code != 404:
+                                # 404 = ocean tile (no data). Anything else would
+                                # silently leave a hole in the mosaic.
+                                r.raise_for_status()
+                                raise RuntimeError(
+                                    f"FABDEM tile {tile_name}: unexpected HTTP {r.status_code}")
                     else:
                         tile_paths.append(local_tile)
 

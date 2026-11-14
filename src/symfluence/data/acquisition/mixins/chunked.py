@@ -124,20 +124,12 @@ class ChunkedDownloadMixin:
         start_date = pd.Timestamp(start_date)
         end_date = pd.Timestamp(end_date)
 
-        dates = pd.date_range(start_date, end_date, freq='MS')
+        if start_date > end_date:
+            return []
 
-        if dates.empty:
-            # Single month case
-            return [(start_date.year, start_date.month)]
-
-        ym_list = [(d.year, d.month) for d in dates]
-
-        # Ensure end month is included
-        end_ym = (end_date.year, end_date.month)
-        if end_ym not in ym_list:
-            ym_list.append(end_ym)
-
-        return ym_list
+        # period_range covers the start month even when the start is mid-month;
+        # date_range(freq='MS') would begin at the *next* month start.
+        return [(p.year, p.month) for p in pd.period_range(start_date, end_date, freq='M')]
 
     def download_chunks_parallel(
         self,
