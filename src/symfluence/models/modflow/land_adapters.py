@@ -232,6 +232,31 @@ class HYPERechargeAdapter(LandRechargeAdapter):
         (d / 'PSDailySeries.txt').write_text('\n'.join(rows) + '\n')
         self._set_info_flag(d, 'readpstime', 'y')
 
+    def route_groundwater(self, settings_dir: Path, flux: pd.DataFrame) -> None:
+        """Make the next HYPE run take daily groundwater discharge (m3/s, >= 0) per subbasin as main-river inflow.
+
+        ``flux`` has one column per subid and continuous daily rows covering the run. One point source per subid
+        (psid = subid). Used by the national two-pass coupling (docs/adr/0012-national-hype-mf6.md).
+        """
+        d = Path(settings_dir)
+        gd = _read_geodata(d)
+        unknown = sorted(set(int(c) for c in flux.columns) - set(gd.index))
+        if unknown:
+            raise ConfigurationError(f'Groundwater flux for unknown subids {unknown[:10]}')
+        q = flux.astype(float).fillna(0.0)
+        if (q < -1e-9).any().any():
+            raise ValidationError('Groundwater discharge to rivers must be non-negative')
+        q = q.clip(lower=0.0) + 0.0
+        ids = [int(c) for c in q.columns]
+        (d / 'PointSourceData.txt').write_text(
+            'psid\tsubid\tps_type\tps_source\n' + ''.join(f'{s}\t{s}\t1\t3\n' for s in ids))
+        rowfmt = '\t'.join(['%.5f'] * len(ids))
+        with open(d / 'PSDailySeries.txt', 'w') as fh:
+            fh.write('DATE\t' + '\t'.join(['flow'] * len(ids)) + '\n')
+            fh.write('psid\t' + '\t'.join(str(s) for s in ids) + '\n')
+            fh.write(''.join(f'{t:%Y-%m-%d}\t{rowfmt % tuple(r)}\n' for t, r in zip(q.index, q.to_numpy())))
+        self._set_info_flag(d, 'readpstime', 'y')
+
     def clear_lake_flux(self, settings_dir: Path) -> None:
         d = Path(settings_dir)
         for f in self.PS_FILES:
