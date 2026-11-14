@@ -53,6 +53,8 @@ def test_year_month_list_keeps_mid_month_start(start, end, expected):
 def test_tws_handlers_use_domain_bbox_not_globe(module, cls_name):
     import importlib
 
+    if module.endswith("gldas_tws"):
+        pytest.importorskip("earthaccess")  # optional dependency, imported at module load
     cls = getattr(importlib.import_module(module), cls_name)
     handler = cls.__new__(cls)
     handler.bbox = {"lat_min": 51.2, "lat_max": 51.8, "lon_min": -1.0, "lon_max": 0.5}
