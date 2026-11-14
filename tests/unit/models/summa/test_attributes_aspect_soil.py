@@ -223,3 +223,18 @@ def test_elevation_is_written_when_every_hru_has_one(tmp_path):
 
     with nc4.Dataset(attributes) as att:
         np.testing.assert_allclose(att['elevation'][:], [900.0, 950.0, 1000.0])
+
+
+def test_connected_hrus_drain_to_the_next_lower_hru_in_their_gru(tmp_path):
+    """SETTINGS_SUMMA_CONNECT_HRUS is a bool; `== 'yes'` meant downHRUindex was never written."""
+    mgr = _manager(tmp_path)
+    _dem_intersection(tmp_path, [1, 2, 3], [950.0, 1000.0, 900.0])
+    attributes = _attributes(tmp_path / 'attributes.nc', [1, 2, 3])
+    with nc4.Dataset(attributes, 'r+') as att:
+        att['hru2gruId'][:] = [7, 7, 7]  # one GRU, three elevation bands
+
+    mgr.insert_elevation(attributes)  # schema default: connect_hrus = True
+
+    with nc4.Dataset(attributes) as att:
+        # 1000 m (HRU 2) -> 950 m (HRU 1) -> 900 m (HRU 3) -> outlet
+        assert list(att['downHRUindex'][:]) == [3, 1, 0]

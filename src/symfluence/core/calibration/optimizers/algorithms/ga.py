@@ -277,6 +277,10 @@ class GAAlgorithm(OptimizationAlgorithm):
                     c1 = 0.5 * ((y1 + y2) - betaq * (y2 - y1))
                     c2 = 0.5 * ((y1 + y2) + betaq * (y2 - y1))
 
+                    # Deb's SBX swaps the children per gene with p=0.5; without
+                    # it child1 always takes the lower value of every gene.
+                    if self._rng.random() < 0.5:
+                        c1, c2 = c2, c1
                     child1[i] = np.clip(c1, 0, 1)
                     child2[i] = np.clip(c2, 0, 1)
                 else:
