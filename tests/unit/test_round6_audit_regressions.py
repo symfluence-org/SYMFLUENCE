@@ -173,7 +173,7 @@ def test_acquisition_handlers_do_not_stream_into_final_paths():
     for path in root.rglob("*.py"):
         if path.name == "utils.py":
             continue
-        for lineno, line in enumerate(path.read_text().splitlines(), 1):
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             m = raw.search(line)
             if m and not re.search(r"_part|part|tmp|temp", m["tgt"], re.I):
                 offenders.append(f"{path.relative_to(root)}:{lineno}")
