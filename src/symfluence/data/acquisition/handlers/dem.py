@@ -48,6 +48,7 @@ from rasterio.transform import from_bounds as rio_from_bounds
 from rasterio.windows import Window, from_bounds
 
 from symfluence.core.registries import R
+from symfluence.data.acquisition.utils import atomic_write
 
 from ..base import BaseAcquisitionHandler
 from ..mixins import RetryMixin
@@ -136,7 +137,7 @@ class _TileDownloadMixin:
                     if r.status_code == 200:
                         expected_size = int(r.headers.get('Content-Length', 0))
                         bytes_written = 0
-                        with open(local_tile, "wb") as f:
+                        with atomic_write(local_tile) as _part, open(_part, 'wb') as f:
                             for chunk in r.iter_content(chunk_size=65536):
                                 if chunk:
                                     f.write(chunk)
@@ -939,7 +940,7 @@ class MapzenAcquirer(BaseAcquisitionHandler, RetryMixin, _TileDownloadMixin):
                     if tile_result:
                         # Decompress gzip
                         with gzip.open(gz_path, 'rb') as gz_in:
-                            with open(hgt_path, 'wb') as hgt_out:
+                            with atomic_write(hgt_path) as _part, open(_part, 'wb') as hgt_out:
                                 hgt_out.write(gz_in.read())
                         gz_path.unlink(missing_ok=True)
 

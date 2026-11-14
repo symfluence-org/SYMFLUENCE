@@ -151,3 +151,28 @@ def test_hype_multi_gauge_min_gauges_falls_back_to_three(tmp_path):
     worker = HYPEWorker.__new__(HYPEWorker)
     worker.config = flat
     assert int(worker._resolve_config_value("MULTI_GAUGE_MIN_GAUGES", flat, 3)) == 3
+
+
+# --- acquisition downloads are written atomically ------------------------------
+
+
+def test_acquisition_handlers_do_not_stream_into_final_paths():
+    """A raw `open(path, 'wb')` leaves a truncated file at `path` on failure,
+    and the handlers' `if path.exists()` cache checks then reuse it as complete.
+    Write through `atomic_write(path)` (or to an explicit .part/tmp path)."""
+    import re
+    from pathlib import Path
+
+    import symfluence.data.acquisition as acq
+
+    root = Path(acq.__file__).parent
+    raw = re.compile(r"open\((?P<tgt>[^)]*?),\s*['\"]wb['\"]\)")
+    offenders = []
+    for path in root.rglob("*.py"):
+        if path.name == "utils.py":
+            continue
+        for lineno, line in enumerate(path.read_text().splitlines(), 1):
+            m = raw.search(line)
+            if m and not re.search(r"_part|part|tmp|temp", m["tgt"], re.I):
+                offenders.append(f"{path.relative_to(root)}:{lineno}")
+    assert not offenders, "non-atomic download writes: " + ", ".join(offenders)

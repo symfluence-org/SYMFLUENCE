@@ -13,6 +13,7 @@ from pathlib import Path
 import requests
 
 from symfluence.core.registries import R
+from symfluence.data.acquisition.utils import atomic_write
 
 from ..base import BaseAcquisitionHandler
 
@@ -82,7 +83,7 @@ class MODISSnowAcquirer(BaseAcquisitionHandler):
                 self.logger.error(f"THREDDS returned an error page instead of data: {snippet}")
                 raise ValueError("THREDDS NCSS request failed: received HTML/XML instead of NetCDF")
 
-            with open(out_nc, "wb") as f:
+            with atomic_write(out_nc) as _part, open(_part, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=1024*1024):
                     f.write(chunk)
 

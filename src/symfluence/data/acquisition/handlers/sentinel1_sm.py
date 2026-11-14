@@ -27,6 +27,7 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from symfluence.core.registries import R
+from symfluence.data.acquisition.utils import atomic_write
 
 from ..base import BaseAcquisitionHandler
 
@@ -194,7 +195,7 @@ class Sentinel1SMAcquirer(BaseAcquisitionHandler):
             with requests.get(download_url, headers=headers, stream=True, timeout=600) as response:
                 response.raise_for_status()
 
-                with open(output_file, 'wb') as f:
+                with atomic_write(output_file) as _part, open(_part, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192):
                         f.write(chunk)
 

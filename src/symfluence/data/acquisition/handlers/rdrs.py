@@ -32,6 +32,7 @@ import requests
 import xarray as xr
 
 from symfluence.core.registries import R
+from symfluence.data.acquisition.utils import atomic_write
 
 from ..base import BaseAcquisitionHandler
 from ..utils import create_robust_session
@@ -694,7 +695,7 @@ class RDRSAcquirer(BaseAcquisitionHandler):
         try:
             response = session.get(url, timeout=timeout, stream=True)
             if response.status_code == 200:
-                with open(dest_path, 'wb') as f:
+                with atomic_write(dest_path) as _part, open(_part, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=65536):
                         f.write(chunk)
                 return dest_path

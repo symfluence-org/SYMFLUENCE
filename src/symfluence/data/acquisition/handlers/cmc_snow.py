@@ -38,6 +38,7 @@ from typing import Dict, Optional
 import requests
 
 from symfluence.core.registries import R
+from symfluence.data.acquisition.utils import atomic_write
 
 from ..base import BaseAcquisitionHandler
 
@@ -156,7 +157,7 @@ class CMCSnowAcquirer(BaseAcquisitionHandler):
                         resp.raise_for_status()
 
                     total_size = 0
-                    with open(fp, 'wb') as f:
+                    with atomic_write(fp) as _part, open(_part, 'wb') as f:
                         for chunk in resp.iter_content(chunk_size=8192):
                             if chunk:
                                 f.write(chunk)

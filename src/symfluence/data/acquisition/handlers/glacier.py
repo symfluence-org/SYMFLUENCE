@@ -234,7 +234,7 @@ class GlacierAcquirer(BaseAcquisitionHandler):
 
             # Download zip file
             zip_path = cache_dir / filename
-            with open(zip_path, 'wb') as f:
+            with atomic_write(zip_path) as _part, open(_part, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=65536):
                     if chunk:
                         f.write(chunk)
@@ -615,3 +615,5 @@ class GlacierAcquirer(BaseAcquisitionHandler):
 
 # Import pandas for the handler
 import pandas as pd
+
+from symfluence.data.acquisition.utils import atomic_write

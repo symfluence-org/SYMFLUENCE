@@ -54,6 +54,7 @@ import requests
 import xarray as xr
 
 from symfluence.core.registries import R
+from symfluence.data.acquisition.utils import atomic_write
 
 from ..base import BaseAcquisitionHandler
 
@@ -148,7 +149,7 @@ class FLUXCOMETAcquirer(BaseAcquisitionHandler):
             response = requests.get(url, stream=True, timeout=600)
             response.raise_for_status()
 
-            with open(out_file, "wb") as f:
+            with atomic_write(out_file) as _part, open(_part, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=1024*1024):
                     f.write(chunk)
 

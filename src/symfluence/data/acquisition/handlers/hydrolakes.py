@@ -27,6 +27,7 @@ from shapely.geometry import box
 from urllib3.util.retry import Retry
 
 from symfluence.core.registries import R
+from symfluence.data.acquisition.utils import atomic_write
 
 from ..base import BaseAcquisitionHandler
 
@@ -195,7 +196,7 @@ class HydroLAKESAcquirer(BaseAcquisitionHandler):
 
             total = int(resp.headers.get("content-length", 0))
             downloaded = 0
-            with open(zip_path, "wb") as f:
+            with atomic_write(zip_path) as _part, open(_part, 'wb') as f:
                 for chunk in resp.iter_content(chunk_size=1 << 20):  # 1 MB
                     if chunk:
                         f.write(chunk)

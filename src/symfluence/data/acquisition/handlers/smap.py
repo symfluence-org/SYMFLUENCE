@@ -37,6 +37,7 @@ import requests
 import xarray as xr
 
 from symfluence.core.registries import R
+from symfluence.data.acquisition.utils import atomic_write
 
 from ..base import BaseAcquisitionHandler
 
@@ -147,7 +148,7 @@ class SMAPAcquirer(BaseAcquisitionHandler):
 
                 response.raise_for_status()
 
-                with open(out_nc, "wb") as f:
+                with atomic_write(out_nc) as _part, open(_part, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=1024*1024):
                         f.write(chunk)
 
