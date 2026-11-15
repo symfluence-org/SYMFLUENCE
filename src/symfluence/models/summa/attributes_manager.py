@@ -853,7 +853,12 @@ class SummaAttributesManager(ConfigurableMixin):
             lambda: self.config.model.summa.connect_hrus,
             dict_key='SETTINGS_SUMMA_CONNECT_HRUS',
         )
-        do_downHRUindex = connect_hrus == 'yes'
+        # The schema field is a bool; `== 'yes'` was never true, so
+        # downHRUindex was silently never written. Accept legacy 'yes' too.
+        do_downHRUindex = (
+            connect_hrus is True
+            or str(connect_hrus).strip().lower() in ('yes', 'true')
+        )
 
         # Prefer the model-ready attributes store (terrain/elev_mean keyed by
         # hru_id); fall back to the DEM intersection shapefile when the store is
@@ -880,7 +885,8 @@ class SummaAttributesManager(ConfigurableMixin):
                 if elevation is not None and np.isfinite(elevation):
                     att['elevation'][idx] = elevation
                     if do_downHRUindex:
-                        gru_data.setdefault(gru_id, []).append((hru_id, elevation))
+                        # netCDF4 returns masked scalars, which are unhashable
+                        gru_data.setdefault(int(gru_id), []).append((int(hru_id), elevation))
                 else:
                     missing_elevation.append(int(hru_id))
 

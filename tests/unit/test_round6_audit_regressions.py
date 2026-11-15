@@ -178,3 +178,47 @@ def test_acquisition_handlers_do_not_stream_into_final_paths():
             if m and not re.search(r"_part|part|tmp|temp", m["tgt"], re.I):
                 offenders.append(f"{path.relative_to(root)}:{lineno}")
     assert not offenders, "non-atomic download writes: " + ", ".join(offenders)
+
+
+# --- SBX swaps children per gene; SA stops at its final temperature ----------
+
+
+@pytest.mark.parametrize("algo", ["ga", "nsga2"])
+def test_sbx_children_are_not_always_ordered(algo):
+    """Without Deb's per-gene swap, child 1 always took the lower gene value."""
+    if algo == "ga":
+        from symfluence.core.calibration.optimizers.algorithms.ga import GAAlgorithm as cls
+    else:
+        from symfluence.core.calibration.optimizers.algorithms.nsga2 import NSGA2Algorithm as cls
+
+    inst = cls({"OPTIMIZATION_METRIC": "KGE", "RANDOM_SEED": 3}, logging.getLogger("sbx"))
+    inst._rng = np.random.default_rng(3)
+    p1, p2 = np.full(200, 0.2), np.full(200, 0.8)
+    c1, c2 = inst._sbx_crossover(p1, p2) if algo == "ga" else inst._sbx_crossover(p1, p2, 20.0)
+    crossed = c1 != p1
+    assert crossed.any()
+    assert (c1[crossed] > c2[crossed]).any() and (c1[crossed] < c2[crossed]).any()
+
+
+def test_simulated_annealing_stops_at_final_temperature():
+    from symfluence.core.calibration.optimizers.algorithms.simulated_annealing import (
+        SimulatedAnnealingAlgorithm,
+    )
+
+    iterations = []
+    config = {
+        "OPTIMIZATION_METRIC": "KGE", "RANDOM_SEED": 1, "NUMBER_OF_ITERATIONS": 200,
+        "SA_INITIAL_TEMP": 1.0, "SA_FINAL_TEMP": 0.1, "SA_COOLING_SCHEDULE": "exponential",
+        "SA_COOLING_RATE": 0.5, "SA_STEPS_PER_TEMP": 1,
+    }
+    SimulatedAnnealingAlgorithm(config, logging.getLogger("sa")).optimize(
+        n_params=2,
+        evaluate_solution=lambda x, i: -float(np.sum((x - 0.5) ** 2)),
+        evaluate_population=lambda pop, i=0: -np.sum((np.atleast_2d(pop) - 0.5) ** 2, axis=1),
+        denormalize_params=lambda x: {f"p{i}": float(v) for i, v in enumerate(x)},
+        record_iteration=lambda it, *a, **k: iterations.append(it),
+        update_best=lambda *a, **k: None,
+        log_progress=lambda *a, **k: None,
+    )
+    # 1.0 * 0.5**4 = 0.0625 < 0.1, so cooling hits the floor within ~4 steps.
+    assert max(iterations) < 20
