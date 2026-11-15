@@ -43,6 +43,7 @@ import requests
 from symfluence.core.registries import R
 
 from ..base import BaseAcquisitionHandler
+from ..utils import atomic_write
 from .fluxnet_constants import (
     FLUXNET_VARIABLE_MAPPING,
     convert_le_to_et,
@@ -401,7 +402,7 @@ class FLUXNETAcquirer(BaseAcquisitionHandler):
             response = requests.get(download_url, timeout=300)
             if response.status_code == 200:
                 raw_file = output_dir / f"AMF_{station_id}_raw.zip"
-                with open(raw_file, 'wb') as f:
+                with atomic_write(raw_file) as _part, open(_part, 'wb') as f:
                     f.write(response.content)
 
                 # Extract and read

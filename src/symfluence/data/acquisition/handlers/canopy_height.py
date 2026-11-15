@@ -37,6 +37,7 @@ import requests
 from rasterio.merge import merge as rio_merge
 
 from symfluence.core.registries import R
+from symfluence.data.acquisition.utils import atomic_write
 
 from ..base import BaseAcquisitionHandler
 from ..earthdata_auth import missing_credentials_message
@@ -337,7 +338,7 @@ class GEDICanopyHeightAcquirer(BaseAcquisitionHandler):
                 )
                 response.raise_for_status()
 
-                with open(output_path, 'wb') as f:
+                with atomic_write(output_path) as _part, open(_part, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192):
                         f.write(chunk)
 
@@ -549,7 +550,7 @@ class MetaCanopyHeightAcquirer(BaseAcquisitionHandler, RetryMixin):
         def do_download():
             with session.get(url, stream=True, timeout=300) as r:
                 if r.status_code == 200:
-                    with open(local_tile, "wb") as f:
+                    with atomic_write(local_tile) as _part, open(_part, 'wb') as f:
                         for chunk in r.iter_content(chunk_size=65536):
                             if chunk:
                                 f.write(chunk)
@@ -752,7 +753,7 @@ class GLADTreeHeightAcquirer(BaseAcquisitionHandler, RetryMixin):
         def do_download():
             with session.get(url, stream=True, timeout=300) as r:
                 if r.status_code == 200:
-                    with open(local_tile, "wb") as f:
+                    with atomic_write(local_tile) as _part, open(_part, 'wb') as f:
                         for chunk in r.iter_content(chunk_size=65536):
                             if chunk:
                                 f.write(chunk)

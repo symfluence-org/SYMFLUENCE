@@ -137,7 +137,7 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
                     'individual_id': individual_id,
                     'params': params,
                     'score': None,
-                    'objectives': None if is_multiobjective else None,
+                    'objectives': None,
                     'error': error_msg,
                     'debug_info': debug_info,
                     'runtime': eval_runtime
@@ -154,7 +154,7 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
                 'individual_id': individual_id,
                 'params': params,
                 'score': None,
-                'objectives': None if is_multiobjective else None,
+                'objectives': None,
                 'error': error_msg,
                 'debug_info': debug_info,
                 'runtime': eval_runtime
@@ -187,7 +187,7 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
                 'individual_id': individual_id,
                 'params': params,
                 'score': None,
-                'objectives': None if is_multiobjective else None,
+                'objectives': None,
                 'error': error_msg,
                 'debug_info': debug_info,
                 'runtime': eval_runtime
@@ -219,7 +219,7 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
                         'individual_id': individual_id,
                         'params': params,
                         'score': None,
-                        'objectives': None if is_multiobjective else None,
+                        'objectives': None,
                         'error': error_msg,
                         'debug_info': debug_info,
                         'runtime': eval_runtime
@@ -250,7 +250,7 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
                     'individual_id': individual_id,
                     'params': params,
                     'score': None,
-                    'objectives': None if is_multiobjective else None,
+                    'objectives': None,
                     'error': error_msg,
                     'debug_info': debug_info,
                     'runtime': eval_runtime
@@ -318,7 +318,10 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
                     objectives = []
                     for obj_name in objective_names:
                         # Look for both 'Calib_OBJ' and 'OBJ' to be safe
-                        value = metrics.get(obj_name) or metrics.get(f'Calib_{obj_name}')
+                        # `or` would treat a perfect 0.0 (e.g. PBIAS) as missing
+                        value = metrics.get(obj_name)
+                        if value is None:
+                            value = metrics.get(f'Calib_{obj_name}')
 
                         logger.debug(f"Extracted {obj_name}: {value}")
 
@@ -488,7 +491,7 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
             'individual_id': task_data.get('individual_id', -1),
             'params': task_data.get('params', {}),
             'score': None,
-            'objectives': None if is_multiobjective else None,
+            'objectives': None,
             'error': error_msg,
             'debug_info': debug_info,
             'full_traceback': error_trace,

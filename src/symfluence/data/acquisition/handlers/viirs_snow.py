@@ -37,6 +37,7 @@ import xarray as xr
 from symfluence.core.registries import R
 from symfluence.data.acquisition.earthaccess_base import BaseEarthaccessAcquirer
 from symfluence.data.acquisition.earthdata_auth import missing_credentials_message
+from symfluence.data.acquisition.utils import atomic_write
 
 APPEEARS_BASE = "https://appeears.earthdatacloud.nasa.gov/api"
 
@@ -407,7 +408,7 @@ class VIIRSSnowAcquirer(BaseEarthaccessAcquirer):
                     stream=True,
                     timeout=300
                 )
-                with open(output_path, 'wb') as f:
+                with atomic_write(output_path) as _part, open(_part, 'wb') as f:
                     for chunk in dl_response.iter_content(chunk_size=8192):
                         f.write(chunk)
                 self.logger.debug(f"Downloaded: {file_name}")

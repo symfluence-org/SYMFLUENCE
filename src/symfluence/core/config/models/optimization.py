@@ -371,8 +371,9 @@ class MultiGaugeConfig(BaseModel):
     """Multi-gauge calibration settings.
 
     All fields default to None so the flat view stays unchanged when unset
-    and the calibration workers' own fallback defaults keep applying
-    (e.g. aggregation 'mean', min_gauges 5).
+    and the calibration workers' own fallback defaults keep applying.
+    min_gauges in particular stays None: FUSE/SUMMA fall back to 5 and HYPE
+    to 3, and a schema default would override HYPE's.
     """
     model_config = FROZEN_CONFIG
 
@@ -397,7 +398,7 @@ class MultiGaugeConfig(BaseModel):
         description="Aggregation of per-gauge scores: 'mean', 'median' or 'weighted'"
     )
     min_gauges: Optional[int] = Field(
-        default=5, alias='MULTI_GAUGE_MIN_GAUGES',
+        default=None, alias='MULTI_GAUGE_MIN_GAUGES',
         description='Minimum number of usable gauges required'
     )
     max_distance: Optional[float] = Field(

@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from symfluence.core.registries import R
+from symfluence.data.acquisition.utils import atomic_write
 
 from ..base import BaseAcquisitionHandler
 from ..earthdata_auth import missing_credentials_message
@@ -293,7 +294,7 @@ class MODISLSTAcquirer(BaseAcquisitionHandler):
                 )
                 response.raise_for_status()
 
-                with open(output_path, 'wb') as f:
+                with atomic_write(output_path) as _part, open(_part, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192):
                         f.write(chunk)
 

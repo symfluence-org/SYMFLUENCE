@@ -249,6 +249,7 @@ _METRIC_ALIASES: Dict[str, str] = {
     "mae": "MAE",
     "mare": "MARE",
     "pbias": "PBIAS",
+    "bias": "bias",
 }
 
 

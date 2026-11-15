@@ -29,6 +29,7 @@ import xarray as xr
 
 from symfluence.core.registries import R
 from symfluence.data.acquisition.earthaccess_base import BaseEarthaccessAcquirer
+from symfluence.data.acquisition.utils import atomic_write
 
 
 @R.acquisition_handlers.add('MODIS_SCA')
@@ -397,7 +398,7 @@ class MODISSCAAcquirer(BaseEarthaccessAcquirer):
                     stream=True, timeout=600
                 )
                 dl_response.raise_for_status()
-                with open(out_path, 'wb') as f:
+                with atomic_write(out_path) as _part, open(_part, 'wb') as f:
                     for chunk in dl_response.iter_content(chunk_size=1024*1024):
                         f.write(chunk)
                 downloaded.append(out_path)

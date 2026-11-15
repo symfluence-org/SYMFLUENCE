@@ -463,6 +463,7 @@ class FUSEWorker(BaseWorker):
             min_gauges = resolve_config_value(
                 config,
                 lambda: config.optimization.multi_gauge.min_gauges,
+                default=5,
                 dict_key='MULTI_GAUGE_MIN_GAUGES',
             )
 

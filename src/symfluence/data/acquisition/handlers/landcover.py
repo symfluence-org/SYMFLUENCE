@@ -51,6 +51,7 @@ import requests
 from rasterio.windows import Window, from_bounds
 
 from symfluence.core.registries import R
+from symfluence.data.acquisition.utils import atomic_write
 
 from ..base import BaseAcquisitionHandler
 from ..utils import create_robust_session, download_file_resumable
@@ -403,7 +404,7 @@ class USGSLandcoverAcquirer(BaseAcquisitionHandler):
                 snippet = next(resp.iter_content(2048)).decode("utf-8", errors="ignore")
                 raise ValueError(f"NLCD WCS returned XML error: {snippet}")
 
-            with open(out_path, "wb") as f:
+            with atomic_write(out_path) as _part, open(_part, 'wb') as f:
                 for chunk in resp.iter_content(chunk_size=65536):
                     f.write(chunk)
 

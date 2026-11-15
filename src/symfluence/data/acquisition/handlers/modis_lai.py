@@ -40,6 +40,7 @@ import xarray as xr
 
 from symfluence.core.registries import R
 from symfluence.data.acquisition.earthaccess_base import BaseEarthaccessAcquirer
+from symfluence.data.acquisition.utils import atomic_write
 
 
 @R.acquisition_handlers.add('MODIS_LAI')
@@ -539,7 +540,7 @@ class MODISLAIAcquirer(BaseEarthaccessAcquirer):
                 )
                 response.raise_for_status()
 
-                with open(output_path, 'wb') as f:
+                with atomic_write(output_path) as _part, open(_part, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192):
                         f.write(chunk)
 

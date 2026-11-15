@@ -37,6 +37,7 @@ import xarray as xr
 
 from symfluence.core.registries import R
 from symfluence.data.acquisition.earthaccess_base import BaseEarthaccessAcquirer
+from symfluence.data.acquisition.utils import atomic_write
 
 
 @R.acquisition_handlers.add('MODIS_NDVI')
@@ -455,7 +456,7 @@ class MODISNDVIAcquirer(BaseEarthaccessAcquirer):
                     headers=headers, stream=True, timeout=300
                 )
                 resp.raise_for_status()
-                with open(output_dir / file_name, 'wb') as f:
+                with atomic_write(output_dir / file_name) as _part, open(_part, 'wb') as f:
                     for chunk in resp.iter_content(chunk_size=8192):
                         f.write(chunk)
             except (OSError, ValueError, TypeError, RuntimeError, KeyError, AttributeError, ImportError, LookupError) as e:
