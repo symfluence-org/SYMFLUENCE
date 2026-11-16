@@ -109,6 +109,8 @@ def select_gauges(link: pd.DataFrame, divides: pd.DataFrame, transfers: pd.DataF
     res = set(lakes.loc[lakes.reservoir.astype(str) == 'True', 'unit_id'].dropna().astype(int))
     g['upstream'] = g.unit_id.astype(int).map(ups)
     g['regulated'] = g.upstream.map(lambda s: bool(s & (ends | res)))
+    if 'regulated' in link.columns:            # gauge_notes.yaml (fabric >= v1.2): regulation the network does not show
+        g['regulated'] |= link.loc[g.index, 'regulated'].astype(str).str.lower().eq('true')
     g = g[~g.regulated].sort_values('area_fabric_km2').reset_index(drop=True)
     g['set'] = np.where(np.arange(len(g)) % 3 == 1, 'val', 'cal')
     return g
