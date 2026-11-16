@@ -43,6 +43,43 @@ logger = logging.getLogger(__name__)
 # -0.20 m w.e. over 7,700 km2, Langjokull -0.055 over 835 km2, Hofsjokull -0.067 over 810 km2; about -1.6 Gt/yr).
 GLACIER_MB_GT_YR = (-10.0, 1.0)
 GLACDENS = 0.85                         # HYPE glacdens: water equivalent of a m3 of glacier ice (Gt per km3)
+# Per-ice-cap surface mass balance (glaciological, m w.e./yr): VÍ glaciers API /glacier/mass_balance (CC BY 4.0),
+# annual ba by hydrological year; uncertainty of the annual glaciological balance (Adalgeirsdottir et al. 2020).
+CAP_SIGMA = {'Vatnajökull': 0.10, 'Langjökull': 0.07, 'Hofsjökull': 0.07}
+
+
+def cap_balance(out: Path, caps: pd.DataFrame, geodata_subids: np.ndarray, y0: int, y1: int) -> dict:
+    """Simulated surface mass balance per ice cap (m w.e./yr per hydrological year y0..y1) from the 1 October
+    states: {cap: {year: ba}}. `caps` has subid, cap, glac_km2. Ice flow is within ice basins, which do not cross
+    ice caps, so the cap totals are not affected by the redistribution."""
+    from symfluence.models.hype.national_glacier import read_glacvol
+    c = caps.set_index('subid').reindex(geodata_subids)
+    vol = {}
+    for f in Path(out).glob('era*_*/state_save*1001.txt'):
+        v = pd.Series(read_glacvol(f), index=geodata_subids)
+        vol[int(f.name[10:14])] = v.groupby(c.cap.to_numpy()).sum()
+    area = c.groupby('cap').glac_km2.sum()
+    res = {}
+    for y in range(y0, y1 + 1):
+        if y in vol and y - 1 in vol:
+            d = (vol[y] - vol[y - 1]) / 1e9 * GLACDENS * 1000.0 / area.reindex(vol[y].index)   # Gt -> m w.e.
+            for cap, b in d.items():
+                res.setdefault(cap, {})[y] = float(b)
+    return res
+
+
+def cap_penalty(sim: dict, obs: dict, sigma: dict = CAP_SIGMA) -> tuple[float, dict]:
+    """Mean over the measured ice caps of |mean sim - mean obs| / (3 sigma), over the years both have."""
+    terms, diag = [], {}
+    for cap, s in sigma.items():
+        ys = sorted(set(sim.get(cap, {})) & {int(y) for y in obs.get(cap, {})})
+        if not ys:
+            continue
+        ms = float(np.mean([sim[cap][y] for y in ys]))
+        mo = float(np.mean([obs[cap][str(y)] if str(y) in obs[cap] else obs[cap][y] for y in ys]))
+        terms.append(abs(ms - mo) / (3 * s))
+        diag[cap] = {'sim': ms, 'obs': mo, 'n': len(ys)}
+    return (float(np.mean(terms)) if terms else np.nan), diag
 
 
 # ---------------------------------------------------------------- gauges
@@ -173,23 +210,33 @@ class Param:
     lo: float
     hi: float
     mode: str = 'mult'          # 'mult': scale the base row; 'add': add to it; 'set': set every value
+    col: int | None = None      # only this value of the row (0-based), e.g. one soil type; applied after the
+                                # whole-row parameters listed before it, so it acts relative to them
 
     def apply(self, base: list, x: float) -> list:
-        if self.mode == 'mult':
-            return [v * x for v in base]
-        if self.mode == 'add':
-            return [v + x for v in base]
-        return [x for _ in base]
+        op = {'mult': lambda v: v * x, 'add': lambda v: v + x}.get(self.mode, lambda v: x)
+        if self.col is None:
+            return [op(v) for v in base]
+        out = list(base)
+        out[self.col] = op(out[self.col])
+        return out
 
 
 DEFAULT_PARAMS = [
     Param('cmlt', 0.5, 2.0), Param('ttmp', -1.0, 4.0, 'add'), Param('cmrad', 0.3, 2.0),
     Param('glaccmlt', 2.0, 12.0, 'set'), Param('glacttmp', -2.0, 2.0, 'set'), Param('glaccmrad', 0.0, 1.0, 'set'),
     Param('tcalt', 0.3, 0.9, 'set'), Param('pcusnow', 0.0, 0.5, 'set'),
-    Param('cevp', 0.5, 2.0), Param('wcfc', 0.5, 2.0), Param('wcep', 0.5, 2.0),
+    Param('cevp', 0.5, 2.0), Param('wcfc', 0.5, 3.5), Param('wcep', 0.25, 1.8),   # wcwp+wcfc+wcep <= 0.96
     Param('rrcs1', 0.3, 3.0), Param('rrcs2', 0.3, 3.0), Param('srrcs', 0.3, 2.0),
     Param('mperc1', 0.2, 3.0), Param('mperc2', 0.2, 3.0),
     Param('rivvel', 0.5, 10.0, 'set'), Param('damp', 0.05, 0.9, 'set'),
+]
+# Lava soil type (national_lava, soil type 4 = column 3), relative to the whole-row values: faster percolation to
+# the aquifer, slower lateral soil runoff, more infiltration into frozen ground. 1.0 reproduces the unsplit model.
+LAVA_PARAMS = [
+    Param('mperc1', 1.0, 20.0, col=3), Param('mperc2', 1.0, 20.0, col=3),
+    Param('rrcs1', 0.05, 1.0, col=3), Param('rrcs2', 0.05, 1.0, col=3),
+    Param('bfroznsoil', 1.0, 20.0, col=3),     # frozen-soil infiltration capacity (soil_proc.f90): higher = more
 ]
 
 
@@ -238,6 +285,31 @@ def read_cout(path: Path) -> pd.DataFrame:
     d = pd.read_csv(path, sep='\t', skiprows=1, index_col=0, parse_dates=True)
     d.columns = [int(float(c)) for c in d.columns]
     return d.where(d > -9998)
+
+
+def gw_return(aqin: pd.DataFrame, ref_file: Path, geodata: pd.DataFrame, gauges, tau_days: float) -> pd.DataFrame:
+    """Surrogate for MODFLOW's response to a change in recharge during HYPE calibration (ADR 0014).
+
+    The groundwater point sources are fixed: MODFLOW run on a reference recharge (`ref_file`: dates, subids, values
+    m3/d). A parameter set that sends more (or less) water to the aquifer would otherwise lose (or gain) it. The
+    difference AQIN - reference, summed over each gauge's upstream units, passes through a linear reservoir with
+    time constant `tau_days` and is added to the gauge's flow (m3/s). Local return only: the coupled rerun
+    replaces it with MODFLOW."""
+    z = np.load(ref_file)
+    ref = pd.DataFrame(z['values'], index=pd.DatetimeIndex(z['dates']), columns=z['subids'].astype(int))
+    ups = upstream_sets(geodata.subid.to_numpy(int), geodata.maindown.to_numpy(int))
+    d = aqin.sub(ref.reindex(index=aqin.index, columns=aqin.columns), fill_value=0.0) / 86400.0
+    a = float(np.exp(-1.0 / tau_days))
+    out = {}
+    for g in gauges:
+        x = d[[u for u in ups(int(g)) if u in d.columns]].sum(axis=1).to_numpy(float)
+        y = np.empty_like(x)
+        acc = 0.0
+        for i, v in enumerate(x):
+            acc = a * acc + (1.0 - a) * v
+            y[i] = acc
+        out[int(g)] = y
+    return pd.DataFrame(out, index=aqin.index)
 
 
 def glacier_rate(out: Path, y0: int, y1: int) -> float:
@@ -327,6 +399,9 @@ class CalibSetup:
                                      # over the calibration gauges + half over the spring-fed ones (ADR 0014)
     spring: frozenset = frozenset()  # unit ids of spring-fed gauges
     exclude: frozenset = frozenset() # unit ids left out of the objective
+    cap_obs: dict | None = None      # {cap: {year: ba m w.e.}}; with template/glacier_caps.csv adds a per-cap term
+    gw_tau_days: float | None = None # with template/aqin_ref.npz: MODFLOW surrogate for recharge changes (gw_return)
+    w_caps: float = 0.25             # global parameters cannot fix opposite cap errors (forcing); keep it moderate
 
 
 def _link_template(template: Path, run: Path) -> None:
@@ -351,7 +426,8 @@ def evaluate(setup: CalibSetup, x: np.ndarray, tag: str, keep: bool = False) -> 
         shutil.rmtree(run)
     _link_template(Path(setup.template), run)
     write_par(read_par(Path(setup.template) / 'par.txt'), setup.params, x, run / 'par.txt')
-    set_info(run, {'timeoutput variable': 'cout\tsnow', 'timeoutput meanperiod': 1, 'timeoutput decimals': 3,
+    vars_ = 'cout\tsnow\taqin' if setup.gw_tau_days else 'cout\tsnow'
+    set_info(run, {'timeoutput variable': vars_, 'timeoutput meanperiod': 1, 'timeoutput decimals': 3,
                    'submodel': 'n', 'modeloption glacierini': 1})
     out = run / 'out'
     try:
@@ -368,6 +444,12 @@ def evaluate(setup: CalibSetup, x: np.ndarray, tag: str, keep: bool = False) -> 
 def score_run(setup: CalibSetup, run: Path, x, seconds: float = np.nan) -> Evaluation:
     out = Path(run) / 'out'
     cout = read_cout(out / 'timeCOUT.txt')
+    ref = Path(setup.template) / 'aqin_ref.npz'
+    if setup.gw_tau_days and ref.exists() and (out / 'timeAQIN.txt').exists():
+        geo = pd.read_csv(run / 'GeoData.txt', sep='\t', usecols=['subid', 'maindown'])
+        gauged = [int(c) for c in pd.read_csv(run / 'Qobs.txt', sep='\t', nrows=0).columns[1:]]
+        cout = cout.add(gw_return(read_cout(out / 'timeAQIN.txt'), ref, geo, gauged, setup.gw_tau_days),
+                        fill_value=0.0).clip(lower=0.0)
     qobs = pd.read_csv(run / 'Qobs.txt', sep='\t', index_col=0, parse_dates=True)
     qobs.columns = [int(c) for c in qobs.columns]
     qobs = qobs.where(qobs > -9998)
@@ -390,6 +472,12 @@ def score_run(setup: CalibSetup, run: Path, x, seconds: float = np.nan) -> Evalu
     else:
         sc = score(kc, gt, snow.get('log_swe_max', np.nan))
     meta = dict(snow, kge_log={int(k): float(v) for k, v in klog.items()})
+    caps_file = Path(setup.template) / 'glacier_caps.csv'
+    if setup.cap_obs and caps_file.exists():
+        sub = pd.read_csv(run / 'GeoData.txt', sep='\t', usecols=['subid']).subid.to_numpy(int)
+        pen, diag = cap_penalty(cap_balance(out, pd.read_csv(caps_file), sub, *setup.mb_years), setup.cap_obs)
+        sc = sc - setup.w_caps * pen if np.isfinite(pen) else sc - 10.0
+        meta['caps'] = diag
     return Evaluation(list(map(float, x)), sc, float(np.median(vals)) if vals else np.nan,
                       {int(k): float(v) for k, v in kges.items()}, gt, seconds, str(run), meta)
 
