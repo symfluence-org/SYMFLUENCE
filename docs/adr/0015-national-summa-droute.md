@@ -69,8 +69,8 @@ daily means. dRoute from `/Users/darri/repos/dRoute` main (#17), not the SYMFLUE
 
 ## Open
 
-1. Rebuild summa-glacier with the restart patch on the server (done locally), then the full smoke month and
-   1991–2025.
+1. ~~Rebuild summa-glacier with the restart patch~~ (local and server `~/landslikan_models`, 2026-11-16); next the
+   whole-country smoke month (staged on the server) and 1991–2025.
 2. Spin-up: the Tungnaá cold state is uniform; run WY1992–1996 twice and start the scored run from the second.
 3. Calibration: the Tungnaá values are priors only; a national calibration like ADR 0013 (KGE at the 72 gauges,
    VÍ glacier mass balance) after the first run.

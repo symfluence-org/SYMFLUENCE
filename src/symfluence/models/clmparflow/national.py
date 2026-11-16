@@ -28,6 +28,8 @@ PFB writer:
     python -m symfluence.models.clmparflow.national grid <fabric_dir> <domain_dir>
     python -m symfluence.models.clmparflow.national segment <fabric_dir> <domain_dir> <carra_3h_dir> <name> \
         <start> <end> [--P 4 --Q 2 --dt 1 --prev <dir>] [--run]
+    python -m symfluence.models.clmparflow.national spinup <fabric_dir> <domain_dir> <name> <years> \
+        [--P 4 --Q 4 --prev <dir> --max-step 240] [--run]     # Richards only, MF6 mean recharge
 """
 from __future__ import annotations
 
@@ -289,17 +291,93 @@ def read_mf6_heads(path: Path, nrow: int, ncol: int) -> np.ndarray:
     return np.frombuffer(raw, '<f8', count=nrow * ncol, offset=off + 52).reshape(nrow, ncol)
 
 
-def ic_from_mf6(grid: BasinGrid, heads_nu: np.ndarray, params: case.BasinParameters) -> np.ndarray:
+def ic_from_mf6(grid: BasinGrid, heads_nu: np.ndarray, params: case.BasinParameters, K: np.ndarray | None = None,
+                recharge_mh: np.ndarray | None = None) -> np.ndarray:
     """Initial pressure head [z, y, x] (z = 0 at the base) from MF6 steady-state heads on the same grid: the water
-    table at min(h, surface), hydrostatic below it, the same linear profile (suction) above it."""
+    table at min(h, surface), hydrostatic below it, the same linear profile (suction) above it, capped at the
+    steady-infiltration suction (`flux_suction`) when the cell K [z, y, x] and recharge (m/h, south-up) are given."""
     h = heads_nu[::-1]
     zs = np.nan_to_num(grid.z)
-    wt = np.where(grid.mask & (np.abs(h) < 1e20), np.minimum(h, zs), zs - params.initial_water_table_depth)
+    # the water table at least one top layer below the surface: with it at the surface, 19 % of cells start with
+    # 5 cm ponded (top-cell psi > 0), which at the basin Manning's n flows at km/h and the first step cannot solve
+    top = params.dz_top_down[0]
+    wt = np.where(grid.mask & (np.abs(h) < 1e20), np.minimum(h, zs - top), zs - params.initial_water_table_depth)
     dz = np.asarray(params.dz_top_down)
     depth = np.cumsum(dz) - dz / 2                       # cell centres below the surface, top layer first
     psi = wt[None] - (zs[None] - depth[:, None, None])
     psi = np.clip(psi, -sum(dz), None)[::-1]            # bottom layer first
+    if K is not None and recharge_mh is not None:
+        psi = np.maximum(psi, flux_suction(K, recharge_mh[None], params))
     return np.where(grid.mask[None], psi, 0.0)
+
+
+def flux_suction(K: np.ndarray, flux: np.ndarray, params: case.BasinParameters) -> np.ndarray:
+    """Pressure head (< 0) at which van Genuchten–Mualem K(psi) equals `flux` (unit-gradient infiltration): the
+    moisture above a water table under steady recharge. Hydrostatic suction above a deep MF6 water table (to
+    -97 m, kr ~1e-12) gives ParFlow an infiltration front into dry soil that the first step cannot solve."""
+    a, n = params.vg_alpha, params.vg_n
+    m = 1 - 1 / n
+    ps = -np.logspace(-3, 2, 400)
+    se = (1 + (a * -ps) ** n) ** -m
+    kr = se ** .5 * (1 - (1 - se ** (1 / m)) ** m) ** 2          # decreasing with suction
+    ratio = np.clip(np.maximum(flux, 1e-9) / np.maximum(K, 1e-12), kr[-1], 1.0)
+    return np.interp(np.log(ratio), np.log(kr[::-1]), ps[::-1])
+
+
+def mf6_recharge(mf6_dir: Path, nrow: int, ncol: int) -> np.ndarray:
+    """Recharge (m/h, north-up [nrow, ncol]) of the MF6 steady state: RCH rows (layer row col unit mult) times the
+    unit's rate at t = 0 of gwf.rch.ts (the long-term mean, m/d)."""
+    d = Path(mf6_dir)
+    ts = (d / 'gwf.rch.ts').read_text()
+    names = ts.split('NAMES', 1)[1].split('\n', 1)[0].split()
+    first = ts.split('BEGIN TIMESERIES', 1)[1].strip().split('\n', 1)[0].split()
+    rate = dict(zip(names, map(float, first[1:])))
+    body = (d / 'gwf.rch').read_text().split('BEGIN PERIOD', 1)[1].split('END PERIOD', 1)[0].split('\n')[1:]
+    r = np.zeros((nrow, ncol))
+    for line in body:
+        f = line.split()
+        if len(f) == 5:
+            r[int(f[1]) - 1, int(f[2]) - 1] += rate[f[3]] * float(f[4])
+    return r / 24.0
+
+
+def write_spinup(run: Path, name: str, grid: BasinGrid, extra: dict, params: case.BasinParameters,
+                 recharge_mh: np.ndarray, years: float, P: int, Q: int, parflow_dir: Path = PARFLOW_DIR,
+                 ic_pressure: np.ndarray | None = None, prev: Path | None = None, max_step_h: float = 240.0,
+                 dump_h: float = 8760.0) -> dict:
+    """Stage 1 of the spin-up (ADR 0016): Richards only (no CLM), the MF6 mean recharge as a source in the top
+    layer (south-up recharge_mh / top dz, 1/h), overland flow on, growing steps up to `max_step_h`, a pressure
+    dump every `dump_h` hours. Starts from `ic_pressure` (MF6 state) or the last pressure of `prev`."""
+    shutil.rmtree(run, ignore_errors=True)
+    run.mkdir(parents=True)
+    t0 = time.time()
+    write_static(run, grid, extra, params, parflow_dir, P, Q)
+    nz = params.nz
+    pme = np.zeros((nz,) + grid.shape)
+    pme[nz - 1] = np.where(grid.mask, recharge_mh, 0.0) / params.dz_top_down[0]
+    pfio.write_pfb(run / 'pme.pfb', pme, dx=grid.dx, dy=grid.dx, P=P, Q=Q)
+    if prev is not None:
+        last = sorted(prev.glob(f'{prev.name}.out.press.*.pfb'))[-1]
+        shutil.copy(last, run / 'ic_press.pfb')
+        shutil.copy(str(last) + '.dist', run / 'ic_press.pfb.dist')
+    else:
+        pfio.write_pfb(run / 'ic_press.pfb', ic_pressure, dx=grid.dx, dy=grid.dx, P=P, Q=Q)
+    hours = float(round(years * 8760))
+    k = case.parflow_keys(grid, params, name, int(hours), P, Q, dump_hours=int(dump_h), ic_file='ic_press.pfb')
+    k = {a: b for a, b in k.items() if not a.startswith('Solver.CLM.')}
+    k.update({'Solver.LSM': 'none', 'Solver.PrintCLM': False, 'Solver.EvapTransFile': True,
+              'Solver.EvapTrans.FileName': 'pme.pfb', 'TimingInfo.StopTime': hours,
+              'TimingInfo.DumpInterval': float(dump_h), 'TimeStep.Type': 'Growth', 'TimeStep.InitialStep': 1.0,
+              'TimeStep.GrowthFactor': 1.2, 'TimeStep.MaxStep': float(max_step_h), 'TimeStep.MinStep': 1e-3})
+    k.pop('TimeStep.Value', None)
+    pfio.write_pfidb(run / f'{name}.pfidb', k)
+    m = grid.mask
+    meta = dict(seg=name, stage='richards_spinup', years=years, hours=hours, max_step_h=max_step_h, dump_h=dump_h,
+                prev=prev.name if prev else None, P=P, Q=Q, active=int(m.sum()),
+                recharge_mm_yr=round(float(recharge_mh[m].mean() * 8760 * 1000), 1), params=params.record(),
+                write_s=round(time.time() - t0))
+    (run / 'meta.json').write_text(json.dumps(meta, indent=1, default=str))
+    return meta
 
 
 def national_parameters(**kw) -> case.BasinParameters:
@@ -350,7 +428,7 @@ def write_segment(run: Path, name: str, grid: BasinGrid, extra: dict, params: ca
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
     ap = argparse.ArgumentParser()
-    ap.add_argument('cmd', choices=['grid', 'segment'])
+    ap.add_argument('cmd', choices=['grid', 'segment', 'spinup'])
     ap.add_argument('fabric', type=Path)
     ap.add_argument('domain', type=Path)
     ap.add_argument('rest', nargs='*')
@@ -358,6 +436,7 @@ def main() -> int:
     ap.add_argument('--Q', type=int, default=2)
     ap.add_argument('--dt', type=int, default=1, choices=[1, 3])
     ap.add_argument('--prev', type=Path)
+    ap.add_argument('--max-step', type=float, default=240.0)
     ap.add_argument('--run', action='store_true')
     a = ap.parse_args()
     gdir = a.domain / 'settings' / 'PARFLOW' / 'grid_1km'
@@ -372,6 +451,26 @@ def main() -> int:
         grid, extra = build(a.fabric, raw, att, hc, x)
         save(grid, extra, gdir)
         print(json.dumps(grid.info, indent=1, default=str))
+    elif a.cmd == 'spinup':
+        # spinup <fabric> <domain> <name> <years> [--prev <dir>] [--max-step 240] [--run]
+        name, years = a.rest[0], float(a.rest[1])
+        grid, extra = load(gdir)
+        params = national_parameters()
+        mf6 = a.domain / 'settings' / 'PARFLOW' / 'mf6_steady'
+        nrow, ncol = grid.info['nrow'], grid.info['ncol']
+        rch = mf6_recharge(mf6, nrow, ncol)[::-1]
+        ic = None if a.prev else ic_from_mf6(grid, read_mf6_heads(mf6 / 'gwf.hds', nrow, ncol), params,
+                                             K=permeability(grid, extra, params), recharge_mh=rch)
+        run = a.domain / 'simulations' / 'parflow_national' / name
+        meta = write_spinup(run, name, grid, extra, params, rch, years, a.P, a.Q, ic_pressure=ic, prev=a.prev,
+                            max_step_h=a.max_step)
+        print(json.dumps(meta, indent=1, default=str))
+        if a.run:
+            t = time.time()
+            rc, out = case.run_parflow(run, name, PARFLOW_DIR, a.P * a.Q)
+            (run / 'run.log').write_text(out)
+            print('exit', rc, 'seconds', round(time.time() - t))
+            print(out[-1500:])
     else:
         from symfluence.models.summa.national import _table, carra_orography
         h3, name, start, end = Path(a.rest[0]), a.rest[1], a.rest[2], a.rest[3]

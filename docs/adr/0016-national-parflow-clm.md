@@ -35,13 +35,23 @@ ranks, about 2 h per simulated year; hand-tuned KGE 0.87/0.88) has one outlet, n
 - **4 ranks (~48,000 columns each) segfault in `clm_lsm` on the first step**, with or without a 64 MB stack; 16
   ranks (~12,000 each) run. Keep columns per rank ≲ 12,000 (≥ 16 ranks; the server has 24 cores).
 - Cold start from a uniform 3 m water table: the first hour needed > 50 Newton iterations (residual 1.8e5 → 6e4).
-  Not repeated with the MF6 initial pressure yet (the Mac was saturated by other runs).
+- Richards-only spin-up stage (`national.py spinup`, 8 ranks, Mac at load 24 from other runs), MF6 initial
+  pressure, mean MF6 recharge (639 mm/yr) as a top-layer source:
+  - as first written, the first step started at a residual of 6.9e7: 19 % of cells had the MF6 water table at the
+    surface, i.e. 5 cm ponded at t = 0, flowing at km/h with the basin Manning's n. The water table is now held
+    one top layer (0.1 m) below the surface: residual 2.8e5 (250× lower);
+  - hydrostatic suction above deep water tables (to −97 m, kr ≈ 1e-12) is capped at the steady-infiltration
+    suction where K(ψ) = recharge (`flux_suction`, about −1 m in the soil);
+  - still slow: the 1.2 h first step failed twice and was cut to 0.3 h; the full-Jacobian preconditioner with
+    `OverlandKinematic` was no faster on the loaded Mac. Solver tuning moves to the server.
 
 ## Open
 
-1. Build ParFlow-CLM with the SYMFLUENCE glacier patches on the server (`scripts/server_build_models.sh`).
-2. Spin-up: Richards-only with mean recharge (no CLM) from the MF6 state, then a CLM year repeated until storage
-   drift is below tolerance (basin mode's `chain.py` logic), then 1991–2025 in segments.
+1. ~~Build on the server~~: done 2026-11-16 (`~/landslikan_models/parflow`, v3.15.0 + 3 patches, hypre 2.31.0).
+2. Spin-up: Richards-only with mean recharge (no CLM) from the MF6 state (written; first steps slow, see above:
+   try on 24 server ranks with FullJacobian / OverlandKinematic, a smaller initial step, and if needed overland
+   flow off for the first years), then a CLM year repeated until storage drift is below tolerance (basin mode's
+   `chain.py` logic), then 1991–2025 in segments.
 3. Decide 1 h or 3 h steps from a one-month comparison.
 4. Sea boundary (Dirichlet at sea level on coastal sides) and lakes (`lake_manning`) are not yet used.
 5. Cost: unknown until the spin-up runs; first estimate 15–20 h per simulated year on 24 ranks.
