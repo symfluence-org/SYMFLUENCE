@@ -1,0 +1,22 @@
+--- a/build/source/netcdf/modelwrite.f90	2026-11-16 21:27:10
++++ b/build/source/netcdf/modelwrite.f90	2026-11-16 21:27:10
+@@ -1036,13 +1036,16 @@
+       end select
+       if (err/=0) message=trim(message)//'writing variable:'//trim(bvar_meta(iVar)%varName); call netcdf_err(err,message); if (err/=0) return; err=0; message='writeRestart/'
+     end do
+-
+-    ! include grids
+-    call writeRestartGrid(ncid, nGRU, gruDimID, grid_meta, grid_data, err, cmessage); if(err/=0)then; message=trim(message)//trim(cmessage); return; endif
+   endif
+   
+  end do  ! iGRU loop
+ 
++ ! include grids: once for the file (writeRestartGrid defines the grid dimensions and loops over all GRUs itself;
++ ! called inside the GRU loop it failed on the second GRU with "iCreate[grid] String match to name in use")
++ if (maxGlaciers > 0) then
++  call writeRestartGrid(ncid, nGRU, gruDimID, grid_meta, grid_data, err, cmessage); if(err/=0)then; message=trim(message)//trim(cmessage); return; endif
++ endif
++
+  ! write dimensions and ID for file
+  call write_id_info(ncid, gruDimID, hruDimID, domDimID, nglDimID, err, cmessage); if(err/=0) then; message=trim(message)//trim(cmessage); return; end if
+ 
