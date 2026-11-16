@@ -108,12 +108,15 @@ def select_gauges(link: pd.DataFrame, divides: pd.DataFrame, transfers: pd.DataF
     ends = set(pd.concat([transfers.from_unit, transfers.to_unit]).dropna().astype(int))
     res = set(lakes.loc[lakes.reservoir.astype(str) == 'True', 'unit_id'].dropna().astype(int))
     g['upstream'] = g.unit_id.astype(int).map(ups)
+    noted = (link.loc[g.index, 'regulated'].astype(str).str.lower().eq('true') if 'regulated' in link.columns
+             else pd.Series(False, index=g.index))
     g['regulated'] = g.upstream.map(lambda s: bool(s & (ends | res)))
-    if 'regulated' in link.columns:            # gauge_notes.yaml (fabric >= v1.2): regulation the network does not show
-        g['regulated'] |= link.loc[g.index, 'regulated'].astype(str).str.lower().eq('true')
-    g = g[~g.regulated].sort_values('area_fabric_km2').reset_index(drop=True)
+    g = g[~g.regulated].sort_values('area_fabric_km2')
     g['set'] = np.where(np.arange(len(g)) % 3 == 1, 'val', 'cal')
-    return g
+    # gauge_notes.yaml (link column `regulated`, fabric v1.1 links rebuilt 2026-11-16): regulation the network does
+    # not show. Dropped after the split so the other gauges keep their cal/val sets.
+    g.loc[noted.reindex(g.index, fill_value=False).to_numpy(), 'regulated'] = True
+    return g[~g.regulated].reset_index(drop=True)
 
 
 def read_lamah(root: Path, path: str) -> pd.Series:
