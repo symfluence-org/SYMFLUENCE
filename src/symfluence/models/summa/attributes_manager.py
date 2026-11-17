@@ -28,6 +28,7 @@ import xarray as xr
 # Local imports
 from symfluence.core import ConfigurableMixin
 from symfluence.core.exceptions import ModelExecutionError
+from symfluence.core.modeling.utilities.base_topology_generator import GRID_DEFINITION_METHODS
 
 if TYPE_CHECKING:
     from symfluence.core.config.models import SymfluenceConfig
@@ -1004,7 +1005,7 @@ class SummaAttributesManager(ConfigurableMixin):
         definition_method = self._get_config_value(
             lambda: self.config.domain.definition_method, default='subset'
         )
-        is_grid_distribute = definition_method == 'distribute'
+        is_grid_distribute = definition_method in GRID_DEFINITION_METHODS
 
         if is_grid_distribute:
             self._set_downHRUindex_from_d8(att)

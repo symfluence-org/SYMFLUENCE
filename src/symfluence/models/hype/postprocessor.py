@@ -12,6 +12,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict
 
+import pandas as pd
+
 from symfluence.core.modeling.base import StandardModelPostProcessor
 from symfluence.core.registries import R
 
@@ -51,6 +53,30 @@ class HYPEPostProcessor(StandardModelPostProcessor):
 
     # Streamflow is already in cms from HYPE
     streamflow_unit = "cms"
+
+    def _get_flow_column(self, df):
+        """Translate SIM_REACH_ID into HYPE's subid before selecting the column.
+
+        GeoData subids are shifted (+1) for 0-based input ids and replaced by band
+        ids under elevation banding. Looking the untranslated id up in timeCOUT
+        can silently pick a different sub-basin that happens to have that id.
+        """
+        reach = self._get_config_value(lambda: None, dict_key='SIM_REACH_ID')
+        map_path = self.project_dir / 'settings' / 'HYPE' / 'subid_map.csv'
+        if reach is not None and map_path.exists():
+            try:
+                mapping = pd.read_csv(map_path)
+                hit = mapping.loc[mapping['original_id'] == int(reach), 'hype_subid']
+            except (OSError, ValueError, KeyError) as e:
+                self.logger.warning(f"Could not read {map_path}: {e}")
+                hit = None
+            if hit is not None and len(hit):
+                column = str(int(hit.iloc[0]))
+                if column in df.columns:
+                    if column != str(reach):
+                        self.logger.info(f"SIM_REACH_ID {reach} is HYPE subid {column}")
+                    return column
+        return super()._get_flow_column(df)
 
     def _get_model_name(self) -> str:
         """Return model name for HYPE."""

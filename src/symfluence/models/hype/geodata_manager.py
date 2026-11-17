@@ -382,7 +382,11 @@ class HYPEGeoDataManager:
             )
             base_df = base_df[~missing_mask].copy()
             # Remove any maindown references to dropped sub-basins
-            base_df.loc[base_df['maindown'].isin(dropped_ids), 'maindown'] = 0
+            base_df.loc[base_df['maindown'].isin(dropped_ids), 'maindown'] = self._OUTLET
+
+        # Remember each row's original id through banding and the id shift, so
+        # ids from the user's config (SIM_REACH_ID) can be translated later.
+        base_df['_orig_id'] = base_df['subid'].astype(int)
 
         # 7b. Expand into elevation-band sub-basins (semi-distributed HYPE).
         # Done after geometry/SLC/glacier are resolved per original sub-basin so
@@ -407,6 +411,7 @@ class HYPEGeoDataManager:
 
         # 8. Handle ID shifting (HYPE requires IDs > 0)
         base_df = self._shift_ids_if_needed(base_df)
+        self._write_subid_map(base_df.pop('_orig_id'), base_df)
 
         # 9. Sort and save
         sorted_df = self.sort_geodata(base_df)
@@ -717,11 +722,12 @@ class HYPEGeoDataManager:
             else:
                 soil_value = [1]
 
+            # HYPE requires soil types >= 1. Remap before building the set, or
+            # (lc, 0) and (lc, 1) become two SLC rows that both match the basin.
+            soil_value = [1 if int(s) == 0 else s for s in soil_value]
             combinations_set.update(product(lc_values, soil_value))
 
         slc_df = pd.DataFrame(list(combinations_set), columns=['landcover', 'soil'])
-        # HYPE requires soil types >= 1, so remap 0 to 1
-        slc_df['soil'] = slc_df['soil'].replace(0, 1)
         slc_df['SLC'] = range(1, len(slc_df) + 1)
 
         # Calculate SLC fractions for each basin
@@ -875,8 +881,8 @@ class HYPEGeoDataManager:
                 parent_outlet[pid] = band_subid(pid, 1, low)
 
         def downstream_subid(parent_maindown: int) -> int:
-            if parent_maindown <= 0:
-                return 0
+            # Membership first: with 0-based ids, 0 can be a real parent. Band
+            # ids are parent*100+k (k >= 1), so 0 is unambiguous as the outlet.
             if parent_maindown in parent_outlet:
                 return parent_outlet[parent_maindown]
             return parent_maindown if parent_maindown in parent_ids else 0
@@ -980,34 +986,65 @@ class HYPEGeoDataManager:
                 row[col] = parent_outlet[int(row[col])]
         return row
 
+    # Internal "drains out of the model" marker used before ids are final. It
+    # cannot collide with a real sub-basin id, unlike 0 when ids are 0-based.
+    _OUTLET = -1
+
     def _shift_ids_if_needed(self, base_df: pd.DataFrame) -> pd.DataFrame:
         """
-        Shift IDs if they start from 0 (HYPE requires > 0).
+        Shift IDs if they start from 0 (HYPE requires > 0) and write outlets as 0.
+
+        Links are resolved against the pre-shift ids: a maindown/grwdown that
+        names an existing *other* sub-basin is a real link (shifted with it);
+        anything else (the -1 outlet marker, a self-reference, an unknown id)
+        is an outlet and becomes 0. grwdown keeps its out-of-domain code.
 
         Note: HYPEForcingProcessor also shifts forcing IDs, so this must be consistent.
         """
-        if base_df['subid'].min() == 0:
+        shift = 1 if base_df['subid'].min() == 0 else 0
+        if shift:
             self.logger.debug("Shifting subids +1 for HYPE compatibility (0-based to 1-based)")
 
-            # Get original IDs for checking connectivity
-            original_ids = set(base_df['subid'])
+        original_ids = set(base_df['subid'])
+        own = base_df['subid']
 
-            # Shift subids
-            base_df['subid'] = base_df['subid'] + 1
+        def relink(col: str, keep_special: bool) -> None:
+            vals = base_df[col]
+            linked = vals.isin(original_ids) & (vals != own)
+            out = vals.where(~linked, vals + shift)
+            outlet = ~linked
+            if keep_special:
+                # e.g. GROUNDWATER_OUT_OF_DOMAIN_SUBID must survive as-is
+                outlet &= (vals <= 0) | (vals == own)
+            base_df[col] = out.where(~outlet, 0)
 
-            # Update maindown: map valid connections to shifted ID, set others (outlets) to 0
-            def update_downstream(val):
-                if val in original_ids:
-                    return val + 1
-                return 0  # Outlet
-
-            base_df['maindown'] = base_df['maindown'].apply(update_downstream)
-            # The regional groundwater target is an id too; left unshifted it
-            # points each sub-basin at itself (or at a non-existent id).
-            if 'grwdown' in base_df.columns:
-                base_df['grwdown'] = base_df['grwdown'].apply(update_downstream)
-
+        relink('maindown', keep_special=False)
+        # The regional groundwater target is an id too; left unshifted it
+        # points each sub-basin at itself (or at a non-existent id).
+        if 'grwdown' in base_df.columns:
+            relink('grwdown', keep_special=True)
+        base_df['subid'] = base_df['subid'] + shift
         return base_df
+
+    SUBID_MAP_FILE = 'subid_map.csv'
+
+    def _write_subid_map(self, orig_ids: pd.Series, base_df: pd.DataFrame) -> None:
+        """Write original sub-basin id -> HYPE outlet subid.
+
+        HYPE subids differ from the input ids after the 0-based shift (+1) and
+        elevation banding (a parent becomes several band subids). Each original
+        id maps to the subid where its water leaves: the row whose maindown is
+        outside its own group.
+        """
+        rows = []
+        frame = pd.DataFrame({'orig': orig_ids.astype(int), 'subid': base_df['subid'].astype(int),
+                              'maindown': base_df['maindown'].astype(int)})
+        for orig, group in frame.groupby('orig'):
+            members = set(group['subid'])
+            outlet = group.loc[~group['maindown'].isin(members), 'subid']
+            rows.append((orig, int(outlet.iloc[0] if len(outlet) else group['subid'].iloc[0])))
+        pd.DataFrame(rows, columns=['original_id', 'hype_subid']).to_csv(
+            self.output_path / self.SUBID_MAP_FILE, index=False)
 
     def _write_forckey(self, sorted_df: pd.DataFrame) -> None:
         """
