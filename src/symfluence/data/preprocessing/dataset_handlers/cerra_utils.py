@@ -19,6 +19,7 @@ from shapely.geometry import Polygon
 from symfluence.core.registries import R
 
 from ...utils import VariableStandardizer
+from ..resampling.grid_geometry import curvilinear_cell_polygons
 from .base_dataset import BaseDatasetHandler
 
 
@@ -419,26 +420,20 @@ class CERRAHandler(BaseDatasetHandler):
                     # No filter - use all indices
                     indices_list = [(i, j) for i in range(ny) for j in range(nx)]
 
+                # Footprints centred on each cell over the window spanning the selection.
+                if indices_list:
+                    r0 = min(i for i, _ in indices_list)
+                    r1 = max(i for i, _ in indices_list) + 1
+                    c0 = min(j for _, j in indices_list)
+                    c1 = max(j for _, j in indices_list) + 1
+                    cells = curvilinear_cell_polygons(lons, lats, rows=(r0, r1), cols=(c0, c1), nominal_step=0.05)
+
                 for i, j in indices_list:
                     # Get cell center coordinates
                     center_lat = float(lats[i, j])
                     center_lon = float(lons[i, j])
 
-                    # Create cell from corners
-                    lat_corners = [
-                        lats[i, j],
-                        lats[i, j + 1] if j + 1 < nx else lats[i, j],
-                        lats[i + 1, j + 1] if i + 1 < ny and j + 1 < nx else lats[i, j],
-                        lats[i + 1, j] if i + 1 < ny else lats[i, j],
-                    ]
-                    lon_corners = [
-                        lons[i, j],
-                        lons[i, j + 1] if j + 1 < nx else lons[i, j],
-                        lons[i + 1, j + 1] if i + 1 < ny and j + 1 < nx else lons[i, j],
-                        lons[i + 1, j] if i + 1 < ny else lons[i, j],
-                    ]
-
-                    geometries.append(Polygon(zip(lon_corners, lat_corners)))
+                    geometries.append(cells[i - r0, j - c0])
                     ids.append(i * nx + j)
                     center_lats.append(center_lat)
                     center_lons.append(center_lon)

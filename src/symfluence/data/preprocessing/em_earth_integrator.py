@@ -25,6 +25,17 @@ from symfluence.core.mixins import ConfigMixin
 from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.mixins.project import resolve_data_subdir
 
+# Normalised precipitation-flux unit spellings (see _normalise_units).
+_KG_M2_S_UNITS = frozenset({'kg m-2 s-1', 'kg/m2/s', 'kg m-2/s', 'kg/(m2 s)', 'kg/m2 s'})
+_MM_S_UNITS = frozenset({'mm s-1', 'mm/s', 'mm/sec'})
+_M_S_UNITS = frozenset({'m s-1', 'm/s', 'm/sec'})
+
+
+def _normalise_units(units: str) -> str:
+    """Lower-case a units string and drop exponent markers ('**', '^') and extra spaces."""
+    u = str(units).strip().lower().replace('**', '').replace('^', '')
+    return ' '.join(u.split())
+
 
 # Logic moved from DataManager
 def _perform_em_earth_remapping_logic(input_file: Path, output_file: Path, basin_shapefile: Path, config: Dict[str, Any]) -> bool:
@@ -500,15 +511,18 @@ class EMEarthIntegrator(ConfigMixin):
                                 current_units = str(updated_ds[forcing_var].attrs.get('units', ''))
                                 original_max = float(em_data_interp.max())
 
-                                if 'kg m-2 s-1' in current_units or 'kg m**-2 s**-1' in current_units:
+                                # Exact (normalised) match: a substring test would let
+                                # 'm s-1' capture 'mm s-1' and scale 1000x too small.
+                                norm_units = _normalise_units(current_units)
+                                if norm_units in _KG_M2_S_UNITS:
                                     em_data_interp = em_data_interp / UnitConversion.SECONDS_PER_HOUR
                                     em_data_interp.attrs['units'] = 'kg m-2 s-1'
-                                elif 'm s-1' in current_units:
-                                    em_data_interp = em_data_interp / (UnitConversion.SECONDS_PER_HOUR * 1000)
-                                    em_data_interp.attrs['units'] = 'm s-1'
-                                elif 'mm s-1' in current_units or 'mm/s' in current_units:
+                                elif norm_units in _MM_S_UNITS:
                                     em_data_interp = em_data_interp / UnitConversion.SECONDS_PER_HOUR
                                     em_data_interp.attrs['units'] = 'mm/s'
+                                elif norm_units in _M_S_UNITS:
+                                    em_data_interp = em_data_interp / (UnitConversion.SECONDS_PER_HOUR * 1000)
+                                    em_data_interp.attrs['units'] = 'm s-1'
                                 else:
                                     em_data_interp.attrs['units'] = 'mm/h'
 
@@ -518,7 +532,7 @@ class EMEarthIntegrator(ConfigMixin):
 
                             elif em_var == 'tmean':
                                 current_units = str(updated_ds[forcing_var].attrs.get('units', ''))
-                                if 'K' in current_units and 'Celsius' not in current_units.lower():
+                                if 'K' in current_units and 'celsius' not in current_units.lower():
                                     em_data_interp = em_data_interp + PhysicalConstants.KELVIN_OFFSET
                                     # Ensure the interpolated data knows its new units
                                     em_data_interp.attrs['units'] = 'K'

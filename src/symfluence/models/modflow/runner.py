@@ -62,7 +62,8 @@ class MODFLOWRunner(BaseModelRunner):
     def _get_timeout(self) -> int:
         return self._get_config_value(lambda: self.config.model.modflow.timeout, dict_key='MODFLOW_TIMEOUT')
 
-    def run_modflow(self, sim_dir: Optional[Path] = None, coupling_source_dir: Optional[Path] = None, **kwargs) -> Optional[Path]:
+    def run_modflow(self, sim_dir: Optional[Path] = None, coupling_source_dir: Optional[Path] = None,
+                    prepare_recharge: bool = True, **kwargs) -> Optional[Path]:
         """
         Execute MODFLOW 6.
 
@@ -74,6 +75,9 @@ class MODFLOWRunner(BaseModelRunner):
                 the CoupledGWWorker during calibration, this points to the
                 iteration-specific SUMMA output so recharge reflects the
                 current parameter set (not the project-level default).
+            prepare_recharge: False keeps the gwf.rch already in the settings
+                directory (e.g. written by a coupling graph) instead of
+                rebuilding it from the land model's output.
 
         Returns:
             Path to output directory on success.
@@ -84,7 +88,8 @@ class MODFLOWRunner(BaseModelRunner):
         logger.debug(f"Running MODFLOW 6 for domain: {self.config.domain.name}")
 
         # Prepare coupled recharge from upstream land surface model
-        self._prepare_coupled_recharge(source_dir_override=coupling_source_dir)
+        if prepare_recharge:
+            self._prepare_coupled_recharge(source_dir_override=coupling_source_dir)
 
         with symfluence_error_handler(
             "MODFLOW 6 model execution",
@@ -221,11 +226,27 @@ class MODFLOWRunner(BaseModelRunner):
             source_output_dir, variable=recharge_var,
         )
 
+        rch_path = self.write_lumped_recharge(recharge_series, coupler)
+        logger.debug(f"Wrote coupled recharge ({len(recharge_series)} days) to {rch_path}")
+
+    def write_lumped_recharge(self, recharge_series, coupler=None) -> Path:
+        """Write daily recharge (m/d) as the lumped model's gwf.rch, one block per TDIS stress period.
+
+        Period count and length come from the settings' gwf.tdis (else
+        MODFLOW_STRESS_PERIOD_LENGTH), so recharge is averaged over each period.
+        """
+        from symfluence.models.modflow.coupling import SUMMAToMODFLOWCoupler, read_tdis
+
+        coupler = coupler or SUMMAToMODFLOWCoupler(self.config_dict, logger_instance=logger)
+        nper, perlen = read_tdis(self.settings_dir)
+        if perlen is None:
+            perlen = float(self._get_config_value(
+                lambda: self.config.model.modflow.stress_period_length,
+                default=1.0, dict_key='MODFLOW_STRESS_PERIOD_LENGTH') or 1.0)
         rch_path = self.settings_dir / "gwf.rch"
         self.settings_dir.mkdir(parents=True, exist_ok=True)
-        coupler.write_modflow_recharge_rch(recharge_series, rch_path)
-
-        logger.debug(f"Wrote coupled recharge ({len(recharge_series)} periods) to {rch_path}")
+        return coupler.write_modflow_recharge_rch(
+            recharge_series, rch_path, n_stress_periods=nper, stress_period_length=perlen)
 
     def _grid_mode(self) -> str:
         return str(self._get_config_value(lambda: self.config.model.modflow.grid_mode, dict_key='MODFLOW_GRID_MODE')).lower()

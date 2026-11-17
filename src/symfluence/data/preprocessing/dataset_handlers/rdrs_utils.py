@@ -16,12 +16,12 @@ from typing import Dict, Optional, Tuple
 import geopandas as gpd
 import pandas as pd
 import xarray as xr
-from shapely.geometry import Polygon
 
 from symfluence.core.constants import PhysicalConstants, UnitConversion
 from symfluence.core.registries import R
 
 from ...utils import VariableStandardizer
+from ..resampling.grid_geometry import curvilinear_cell_polygons
 from .base_dataset import BaseDatasetHandler
 
 
@@ -400,44 +400,16 @@ class RDRSHandler(BaseDatasetHandler):
 
             self.logger.info(f"Creating RDRS grid cells in {num_batches} batches")
 
-            cell_count = 0
+            # Footprints centred on each cell (corners midway between neighbouring
+            # centres), tagged with that cell's own lat/lon.
+            cells = curvilinear_cell_polygons(lon, lat, nominal_step=0.09)
             for i in range(len(rlat)):
                 for j in range(len(rlon)):
-                    # Create grid cell corners
-                    [
-                        rlat[i], rlat[i],
-                        rlat[i+1] if i+1 < len(rlat) else rlat[i],
-                        rlat[i+1] if i+1 < len(rlat) else rlat[i]
-                    ]
-                    [
-                        rlon[j],
-                        rlon[j+1] if j+1 < len(rlon) else rlon[j],
-                        rlon[j+1] if j+1 < len(rlon) else rlon[j],
-                        rlon[j]
-                    ]
-
-                    # Get actual lat/lon corners
-                    lat_corners = [
-                        lat[i,j],
-                        lat[i, j+1] if j+1 < len(rlon) else lat[i,j],
-                        lat[i+1, j+1] if i+1 < len(rlat) and j+1 < len(rlon) else lat[i,j],
-                        lat[i+1, j] if i+1 < len(rlat) else lat[i,j]
-                    ]
-                    lon_corners = [
-                        lon[i,j],
-                        lon[i, j+1] if j+1 < len(rlon) else lon[i,j],
-                        lon[i+1, j+1] if i+1 < len(rlat) and j+1 < len(rlon) else lon[i,j],
-                        lon[i+1, j] if i+1 < len(rlat) else lon[i,j]
-                    ]
-
-                    geometries.append(Polygon(zip(lon_corners, lat_corners)))
+                    geometries.append(cells[i, j])
                     ids.append(i * len(rlon) + j)
                     lats.append(lat[i,j])
                     lons.append(lon[i,j])
-
-                    cell_count += 1
-                    if cell_count % batch_size == 0 or cell_count == total_cells:
-                        self.logger.info(f"Created {cell_count}/{total_cells} RDRS grid cells")
+            self.logger.info(f"Created {total_cells}/{total_cells} RDRS grid cells")
 
             # Create GeoDataFrame
             gdf = gpd.GeoDataFrame({
