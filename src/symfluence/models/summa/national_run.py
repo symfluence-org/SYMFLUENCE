@@ -123,12 +123,13 @@ def route(fabric_dir: Path, runoff: pd.DataFrame, dt: float = 3600.0, enable_gro
 
 
 def run_both(domain: Path, tag: str, start: str, end: str, forcing: dict, out: Path, init: dict, procs: dict,
-             exe: Path = EXE) -> dict:
+             exe: Path = EXE, niceness: int = 0) -> dict:
     """Run the ice and land runs side by side over [start, end] and merge each run's block restarts into
     settings/SUMMA/<run>/restart_<run>_<tag>.nc; returns {run: {wall_s, slowest_s, blocks, restart}}."""
     def one(run):
         t = time.time()
-        res = run_chunk(domain, run, tag, start, end, forcing[run], out / run, init[run], procs[run], exe=exe)
+        res = run_chunk(domain, run, tag, start, end, forcing[run], out / run, init[run], procs[run], exe=exe,
+                        niceness=niceness)
         name = merge_restarts(out / run, domain / 'settings' / 'SUMMA' / run, f'{run}_{tag}')
         return run, dict(wall_s=round(time.time() - t), slowest_s=round(max(r[3] for r in res)), blocks=len(res),
                          restart=name)
@@ -149,7 +150,7 @@ def chunk_main(a) -> int:
     procs = {'ice': a.procs_ice, 'land': a.procs_land}
     try:
         res = run_both(a.domain, tag, f'{c0 - 1}-10-01 03:00', f'{c1}-10-01 00:00', forcing, sim, init, procs,
-                       exe=Path(a.exe) if a.exe else EXE)
+                       exe=Path(a.exe) if a.exe else EXE, niceness=a.nice)
     except Exception as e:  # noqa: BLE001  (reported to the orchestrator through the marker file)
         (sim / f'failed_{tag}.txt').write_text(repr(e))
         raise

@@ -118,6 +118,9 @@ def main() -> int:
     ap.add_argument('--procs-ice', type=int, default=10)
     ap.add_argument('--procs-land', type=int, default=13)
     ap.add_argument('--poll', type=int, default=300)
+    ap.add_argument('--nice', type=int, default=10, help='niceness of the SUMMA processes on the host')
+    ap.add_argument('--init-ice', default='coldState.nc', help='initial state of the first chunk (settings file)')
+    ap.add_argument('--init-land', default='coldState.nc')
     a = ap.parse_args()
     if a.wsl and not a.stage_wsl:
         ap.error('--wsl needs --stage-wsl (the --stage-win directory as WSL sees it, e.g. /mnt/c/Users/u/...)')
@@ -128,8 +131,8 @@ def main() -> int:
     local = a.domain / 'simulations' / a.name / 'SUMMA'
     local.mkdir(parents=True, exist_ok=True)
     state_f = local / 'remote_state.json'
-    state = json.loads(state_f.read_text()) if state_f.exists() else {'done': [], 'init': {r: 'coldState.nc'
-                                                                                           for r in runs}}
+    state = json.loads(state_f.read_text()) if state_f.exists() else {'done': [], 'init': {'ice': a.init_ice,
+                                                                                           'land': a.init_land}}
     rsim = f'{a.remote_domain}/simulations/{a.name}/SUMMA'
     todo = [c for c in chunks(a.wy0, a.wy1, a.chunk) if f'WY{c[0]}-{c[1]}' not in state['done']]
     pool = ThreadPoolExecutor(1)
@@ -137,10 +140,10 @@ def main() -> int:
     for i, (c0, c1) in enumerate(todo):
         tag = f'WY{c0}-{c1}'
         staged.result()
-        cmd = (f'cd {a.remote_code} && setsid nohup python3 national_run.py chunk - {a.remote_domain} {a.name} '
+        cmd = (f'cd {a.remote_code} && setsid -f nohup python3 national_run.py chunk - {a.remote_domain} {a.name} '
                f'{c0} {c1} --exe {a.exe} --init-ice {state["init"]["ice"]} --init-land {state["init"]["land"]} '
-               f'--procs-ice {a.procs_ice} --procs-land {a.procs_land} > {rsim}/chunk_{tag}.log 2>&1 '
-               f'< /dev/null & disown')
+               f'--procs-ice {a.procs_ice} --procs-land {a.procs_land} --nice {a.nice} > {rsim}/chunk_{tag}.log 2>&1 '
+               f'< /dev/null; sleep 5')      # setsid -f: detached before the WSL session ends (plain & was killed)
         host.sh(f'mkdir -p {rsim} && rm -f {rsim}/done_{tag}.json {rsim}/failed_{tag}.txt')
         host.sh(cmd)
         t = time.time()
