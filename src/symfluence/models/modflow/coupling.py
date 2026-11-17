@@ -21,6 +21,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from symfluence.core.exceptions import ConfigurationError
+
 logger = logging.getLogger(__name__)
 
 
@@ -189,7 +191,7 @@ class SUMMAToMODFLOWCoupler:
         vals = np.nan_to_num(np.asarray(daily, dtype=float).ravel(), nan=0.0)
         sp = float(stress_period_length)
         if sp <= 0:
-            raise ValueError(f"stress_period_length must be > 0, got {sp}")
+            raise ConfigurationError(f"stress_period_length must be > 0, got {sp}")
         if vals.size == 0:
             return vals
         n = int(n_stress_periods) if n_stress_periods and n_stress_periods > 0 \
