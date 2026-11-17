@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING
 import easymore
 import geopandas as gpd
 import netCDF4 as nc4
-import pandas as pd
 import xarray as xr
 
 from symfluence.core.exceptions import ModelExecutionError
@@ -97,6 +96,7 @@ class MizuRouteRemapGenerator:
             # Same ids, same order, as the topology's hruId for this layout
             # (create_network_topology_file takes them from GRU_ID too).
             gru_ids = shp_catchments['GRU_ID'].values.astype(int)
+        lumped_gru_id = self._lumped_summa_gru_id()
         remap_name = self.pp.mizu_remap_file
         if not remap_name:
             remap_name = "remap_file.nc"
@@ -117,14 +117,16 @@ class MizuRouteRemapGenerator:
             rn_hru[:] = gru_ids
             rn_hru.long_name = 'River network HRU ID'
 
-            # nOverlaps: Each HRU gets input from 1 SUMMA GRU
+            # nOverlaps: Each HRU gets input from the single lumped SUMMA GRU
             noverlaps = ncid.createVariable('nOverlaps', 'i4', ('hru',))
-            noverlaps[:] = [1] * n_hrus  # Each HRU has 1 overlap (with SUMMA GRU 1)
+            noverlaps[:] = [1] * n_hrus
             noverlaps.long_name = 'Number of overlapping HM_HRUs for each RN_HRU'
 
-            # HM_hruId: The SUMMA GRU ID (1) for each entry
+            # HM_hruId: the lumped SUMMA GRU id for each entry. mizuRoute
+            # matches it against the runoff file's gruId (<vname_hruid>), which
+            # SUMMA copies from attributes.nc, so it must be that id, not 1.
             hm_hru = ncid.createVariable('HM_hruId', 'i4', ('data',))
-            hm_hru[:] = [1] * n_hrus  # All entries point to SUMMA GRU 1
+            hm_hru[:] = [lumped_gru_id] * n_hrus
             hm_hru.long_name = 'ID of overlapping HM_HRUs'
 
             # weight: Area-based weights from delineated catchments
@@ -135,6 +137,44 @@ class MizuRouteRemapGenerator:
         self.pp.logger.info(f"Area-weighted remapping file created with {n_hrus} HRUs")
         self.pp.logger.info(f"Weight range: {weights.min():.4f} to {weights.max():.4f}")
         self.pp.logger.info(f"Weight sum: {weights.sum():.4f}")
+
+    def _lumped_summa_gru_id(self) -> int:
+        """GRU id of the lumped SUMMA domain, read from SUMMA's attributes file.
+
+        Falls back to 1 (with a warning) when the attributes file is
+        unavailable or has no gruId.
+        """
+        settings_dir = self.pp._get_config_value(
+            lambda: self.pp.config.model.summa.settings_path,
+            default='default', dict_key='SETTINGS_SUMMA_PATH',
+        )
+        if not settings_dir or settings_dir == 'default':
+            settings_dir = self.pp.project_dir / 'settings' / 'SUMMA'
+        attr_name = self.pp._get_config_value(
+            lambda: self.pp.config.model.summa.attributes,
+            default='attributes.nc', dict_key='SETTINGS_SUMMA_ATTRIBUTES',
+        ) or 'attributes.nc'
+        attributes_path = Path(settings_dir) / attr_name
+        try:
+            with xr.open_dataset(attributes_path) as attrs:
+                gru_ids = attrs['gruId'].values.astype(int).ravel()
+        except (OSError, KeyError, ValueError) as exc:
+            self.pp.logger.warning(
+                f"Could not read gruId from SUMMA attributes {attributes_path} ({exc}); "
+                "assuming lumped GRU id 1 for HM_hruId"
+            )
+            return 1
+        if gru_ids.size == 0:
+            self.pp.logger.warning(
+                f"SUMMA attributes {attributes_path} has no gruId; assuming lumped GRU id 1"
+            )
+            return 1
+        if gru_ids.size > 1:
+            self.pp.logger.warning(
+                f"Lumped-to-distributed remap expects 1 SUMMA GRU but {attributes_path} has "
+                f"{gru_ids.size}; using the first ({gru_ids[0]})"
+            )
+        return int(gru_ids[0])
 
     # =========================================================================
     # Equal-weight remapping
@@ -261,14 +301,21 @@ class MizuRouteRemapGenerator:
     # Remap NetCDF helpers
     # =========================================================================
 
+    def _routing_basin_id_field(self) -> str:
+        """GRU id column of the routing (river) basins shapefile."""
+        return self.pp._get_config_value(
+            lambda: self.pp.config.paths.river_basin_rm_gruid,
+            default='GRU_ID', dict_key='RIVER_BASIN_SHP_RM_GRUID',
+        ) or 'GRU_ID'
+
     def _process_remap_variables(self, intersected_shape):
-        int_rm_id = f"S_1_{self.pp._get_config_value(lambda: None, dict_key='RIVER_BASIN_SHP_RM_HRUID')}"
+        int_rm_id = f"S_1_{self._routing_basin_id_field()}"
         int_hm_id = f"S_2_{self.pp._get_config_value(lambda: self.pp.config.paths.catchment_gruid, default='GRU_ID')}"
         int_weight = 'AP1N'
 
         intersected_shape = intersected_shape.sort_values(by=[int_rm_id, int_hm_id])
 
-        self.nc_rnhruid = intersected_shape.groupby(int_rm_id).agg({int_rm_id: pd.unique}).values.astype(int)
+        self.nc_rnhruid = intersected_shape.groupby(int_rm_id).agg({int_rm_id: 'first'}).values.astype(int)
         self.nc_noverlaps = intersected_shape.groupby(int_rm_id).agg({int_hm_id: 'count'}).values.astype(int)
 
         multi_nested_list = intersected_shape.groupby(int_rm_id).agg({int_hm_id: list}).values.tolist()
@@ -278,7 +325,7 @@ class MizuRouteRemapGenerator:
         self.nc_weight = [item for sublist in multi_nested_list for item in sublist[0]]
 
     def _create_remap_file(self, intersected_shape, remap_name):
-        num_hru = len(intersected_shape[f"S_1_{self.pp._get_config_value(lambda: None, dict_key='RIVER_BASIN_SHP_RM_HRUID')}"].unique())
+        num_hru = len(intersected_shape[f"S_1_{self._routing_basin_id_field()}"].unique())
         num_data = len(intersected_shape)
 
         with nc4.Dataset(self.pp.setup_dir / remap_name, 'w', format='NETCDF4') as ncid:

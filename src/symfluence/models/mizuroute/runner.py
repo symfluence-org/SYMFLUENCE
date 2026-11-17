@@ -406,7 +406,7 @@ class MizuRouteRunner(BaseModelRunner):  # type: ignore[misc]
                 lambda: self.config.model.summa.backup_settings,
                 dict_key='EXPERIMENT_BACKUP_SETTINGS',
             )
-            if backup == 'yes':
+            if backup is True or str(backup).strip().lower() == 'yes':
                 self.backup_settings(settings_path, backup_subdir="run_settings")
 
             # Run mizuRoute (with OpenMP thread count if configured)

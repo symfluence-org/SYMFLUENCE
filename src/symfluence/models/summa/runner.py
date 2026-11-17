@@ -20,6 +20,7 @@ Author: SYMFLUENCE Development Team
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -27,6 +28,7 @@ import geopandas as gpd
 import pandas as pd
 import xarray as xr
 
+from symfluence.core.exceptions import ModelExecutionError
 from symfluence.core.modeling.execution import ExecutionResult, SlurmJobConfig
 from symfluence.core.modeling.mixins.slurm_execution import SlurmJobNotMonitoredError
 from symfluence.core.modeling.state import ModelState, StateCapableMixin, StateFormat, StateMetadata
@@ -154,7 +156,7 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
             lambda: self.config.model.summa.backup_settings,
             dict_key='EXPERIMENT_BACKUP_SETTINGS',
         )
-        if backup == 'yes':
+        if backup is True or str(backup).strip().lower() == 'yes':
             self.backup_settings(self.settings_path)
 
         return True
@@ -304,7 +306,6 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
         # The sequential manager ignores return values. A failed upstream run
         # must raise so downstream routing never consumes unfinished output.
         if output is None:
-            from symfluence.core.exceptions import ModelExecutionError
             unmonitored_job = getattr(self, '_unmonitored_slurm_job_id', None)
             if unmonitored_job is not None:
                 # Submitted, not finished: say exactly that instead of the
@@ -382,7 +383,7 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
             lambda: self.config.model.summa.backup_settings,
             dict_key='EXPERIMENT_BACKUP_SETTINGS',
         )
-        if backup == 'yes':
+        if backup is True or str(backup).strip().lower() == 'yes':
             self.backup_settings(self.settings_path)
 
         # Submit and optionally wait
@@ -527,53 +528,103 @@ class SummaRunner(UnifiedModelRunner, StateCapableMixin):  # type: ignore[misc]
             f"wait for the job and merge by itself, set MONITOR_SLURM_JOB: true."
         )
 
+    @staticmethod
+    def _chunk_start_gru(path: Path, ds: xr.Dataset) -> int:
+        """GRU-start sort key for a per-chunk SUMMA output file.
+
+        Prefers the first ``gruId`` in the file; falls back to the
+        ``_G<start>-<end>`` tag SUMMA appends for ``-g start n`` runs.
+        """
+        if 'gruId' in ds.variables and ds['gruId'].size > 0:
+            return int(ds['gruId'].values.ravel()[0])
+        match = re.search(r'_G0*(\d+)-\d+', path.name)
+        if match:
+            return int(match.group(1))
+        raise ModelExecutionError(
+            f"Cannot determine the GRU start of chunk output {path.name}: "
+            f"no gruId variable and no _G<start>-<end> tag in the file name"
+        )
+
     def _merge_files(self, pattern: str, output_file: Path) -> None:
-        """Merge files matching pattern into output file."""
+        """Merge per-GRU-chunk SUMMA outputs matching pattern into output file.
+
+        Chunks are concatenated along ``hru`` / ``gru`` in GRU-start order;
+        variables without those dimensions (e.g. time) are taken once from the
+        first chunk. Raises if any chunk cannot be read or combined, so a
+        partial merge is never written.
+        """
         input_files = sorted(self.output_dir.glob(pattern))
 
         if not input_files:
             self.logger.warning(f"No files matching: {pattern}")
             return
 
-        merged_ds = None
-        reference_date = pd.Timestamp('1990-01-01')
+        datasets = [xr.open_dataset(f) for f in input_files]
+        try:
+            order = sorted(
+                range(len(datasets)),
+                key=lambda i: self._chunk_start_gru(input_files[i], datasets[i]),
+            )
+            datasets = [datasets[i] for i in order]
+            first = datasets[0]
 
-        for src_file in input_files:
-            try:
-                ds = xr.open_dataset(src_file)
+            hru_vars = [v for v in first.data_vars if 'hru' in first[v].dims]
+            gru_vars = [v for v in first.data_vars
+                        if 'gru' in first[v].dims and v not in hru_vars]
+            other_vars = [v for v in first.data_vars if v not in hru_vars and v not in gru_vars]
 
-                # Convert time to seconds since reference
-                time_values = pd.to_datetime(ds.time.values)
-                seconds_since_ref = (time_values - reference_date).total_seconds()
-                ds = ds.assign_coords(time=seconds_since_ref)
-                ds.time.attrs = {
-                    'units': 'seconds since 1990-1-1 0:0:0.0 -0:00',
-                    'calendar': 'standard',
-                }
+            parts = []
+            for dim, names in (('hru', hru_vars), ('gru', gru_vars)):
+                if names:
+                    parts.append(xr.concat(
+                        [ds[names] for ds in datasets],
+                        dim=dim, data_vars='all', coords='minimal',
+                        compat='override', join='exact',
+                    ))
+            if other_vars:
+                parts.append(first[other_vars])
+            if not parts:
+                raise ModelExecutionError(f"No variables to merge in files matching {pattern}")
 
-                if merged_ds is None:
-                    merged_ds = ds
-                else:
-                    merged_ds = xr.merge([merged_ds, ds])
+            merged_ds = xr.merge(parts, compat='override', join='exact')
 
+            for dim in ('hru', 'gru'):
+                expected = sum(ds.sizes.get(dim, 0) for ds in datasets)
+                if merged_ds.sizes.get(dim, 0) != expected:
+                    raise ModelExecutionError(
+                        f"Merged {dim} size {merged_ds.sizes.get(dim, 0)} != {expected} "
+                        f"across {len(datasets)} chunks matching {pattern}"
+                    )
+
+            # Convert time to seconds since reference
+            reference_date = pd.Timestamp('1990-01-01')
+            time_values = pd.to_datetime(merged_ds.time.values)
+            seconds_since_ref = (time_values - reference_date).total_seconds()
+            merged_ds = merged_ds.assign_coords(time=seconds_since_ref)
+            merged_ds.time.attrs = {
+                'units': 'seconds since 1990-1-1 0:0:0.0 -0:00',
+                'calendar': 'standard',
+            }
+
+            merged_ds = merged_ds.load()
+        except ValueError as exc:  # xarray AlignmentError: chunks disagree on time etc.
+            raise ModelExecutionError(f"Cannot merge SUMMA chunks matching {pattern}: {exc}") from exc
+        finally:
+            for ds in datasets:
                 ds.close()
 
-            except Exception as e:  # noqa: BLE001 — model execution resilience
-                self.logger.warning(f"Error processing {src_file}: {e}", exc_info=True)
+        encoding = {'time': {'dtype': 'double', '_FillValue': None}}
+        for var in merged_ds.data_vars:
+            encoding[str(var)] = {'_FillValue': None}
 
-        if merged_ds is not None:
-            encoding = {'time': {'dtype': 'double', '_FillValue': None}}
-            for var in merged_ds.data_vars:
-                encoding[str(var)] = {'_FillValue': None}
-
-            merged_ds.to_netcdf(
-                output_file,
-                encoding=encoding,
-                unlimited_dims=['time'],
-                format='NETCDF4'
-            )
-            merged_ds.close()
-            self.logger.info(f"Created: {output_file}")
+        merged_ds.to_netcdf(
+            output_file,
+            encoding=encoding,
+            unlimited_dims=['time'],
+            format='NETCDF4'
+        )
+        merged_ds.close()
+        self.logger.info(f"Created: {output_file} ({len(input_files)} chunks)")
 
     def _convert_lumped_for_routing(self) -> None:
         """Convert lumped SUMMA output for distributed routing."""
