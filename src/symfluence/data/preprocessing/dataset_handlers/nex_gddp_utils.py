@@ -14,12 +14,14 @@ from typing import Dict, List, Tuple
 
 import geopandas as gpd
 import numpy as np
+import pandas as pd
 import xarray as xr
 from shapely.geometry import Polygon
 
 from symfluence.core.registries import R
 
 from ...utils import VariableStandardizer
+from ..resampling.grid_geometry import curvilinear_cell_polygons
 from .base_dataset import BaseDatasetHandler
 
 
@@ -249,6 +251,32 @@ class NEXGDDPCMIP6Handler(BaseDatasetHandler):
 
         return ds_out
 
+    def _cos_solar_zenith(self, ds: xr.Dataset, times) -> xr.DataArray:
+        """Clipped cos(solar zenith) at *times* (UTC) for each cell of *ds*.
+
+        Uses the cells' lat/lon coordinates (1D or 2D); falls back to the
+        equator/Greenwich with a warning when they are missing.
+        """
+        lat_name, lon_name = self.get_coordinate_names()
+        if lat_name in ds.coords and lon_name in ds.coords:
+            lat = ds.coords[lat_name].astype(float)
+            lon = ds.coords[lon_name].astype(float)
+        else:
+            self.logger.warning(
+                "NEX-GDDP-CMIP6 lat/lon coordinates not found; shortwave diurnal cycle assumes lat=0, lon=0"
+            )
+            lat = lon = xr.DataArray(0.0)
+        t = pd.DatetimeIndex(times)
+        doy = xr.DataArray(np.asarray(t.dayofyear, dtype=float), dims="time", coords={"time": times})
+        utc_hour = xr.DataArray(
+            np.asarray(t.hour + t.minute / 60.0, dtype=float), dims="time", coords={"time": times}
+        )
+        decl = np.radians(23.45) * np.sin(2.0 * np.pi * (284.0 + doy) / 365.0)
+        hour_angle = np.radians(15.0 * (utc_hour + lon / 15.0 - 12.0))
+        phi = np.radians(lat)
+        cosz = np.sin(phi) * np.sin(decl) + np.cos(phi) * np.cos(decl) * np.cos(hour_angle)
+        return cosz.clip(min=0.0)
+
     def _interpolate_daily_to_hourly(self, ds: xr.Dataset) -> xr.Dataset:
         """
         Convert daily NEX-GDDP-CMIP6 data to hourly resolution for SUMMA compatibility.
@@ -325,19 +353,11 @@ class NEXGDDPCMIP6Handler(BaseDatasetHandler):
                     kwargs={'fill_value': 'extrapolate'}
                 )
 
-                # Create diurnal cycle (simplified: sinusoidal, zero at night)
-                hours = np.array([t.hour for t in pd.to_datetime(hourly_times_np)])
-                # Simple diurnal cycle: peak at hour 12, zero from hour 18-6
-                diurnal_factor = np.where(
-                    (hours >= 6) & (hours <= 18),
-                    np.sin((hours - 6) * np.pi / 12),  # Sine curve from 6am to 6pm
-                    0.0
-                )
-
-                # Normalize so daily average matches original
-                # Apply diurnal pattern (broadcast over spatial dims)
-                sw_hourly = interp_sw.copy(deep=True)
-                sw_hourly.values = sw_hourly.values * diurnal_factor.reshape(-1, *([1] * (sw_hourly.ndim - 1)))
+                # Diurnal shape: cos(solar zenith) per cell from latitude, day of
+                # year and local solar time (UTC hour + lon/15), zero at night.
+                diurnal_factor = self._cos_solar_zenith(ds, hourly_times_np)
+                sw_hourly = (interp_sw * diurnal_factor).transpose(*interp_sw.dims)
+                sw_hourly = sw_hourly.copy(deep=True)
 
                 # Rescale to preserve daily mean
                 # Group by day and rescale
@@ -558,22 +578,10 @@ class NEXGDDPCMIP6Handler(BaseDatasetHandler):
             self.logger.info(f"NEX-GDDP-CMIP6 grid dimensions (2D): ny={ny}, nx={nx}, total={total_cells}")
 
             cell_count = 0
+            cells = curvilinear_cell_polygons(lon, lat, nominal_step=0.25)
             for i in range(ny):
                 for j in range(nx):
-                    lat_corners = [
-                        lat[i, j],
-                        lat[i, j + 1] if j + 1 < nx else lat[i, j],
-                        lat[i + 1, j + 1] if i + 1 < ny and j + 1 < nx else lat[i, j],
-                        lat[i + 1, j] if i + 1 < ny else lat[i, j],
-                    ]
-                    lon_corners = [
-                        lon[i, j],
-                        lon[i, j + 1] if j + 1 < nx else lon[i, j],
-                        lon[i + 1, j + 1] if i + 1 < ny and j + 1 < nx else lon[i, j],
-                        lon[i + 1, j] if i + 1 < ny else lon[i, j],
-                    ]
-
-                    geometries.append(Polygon(zip(lon_corners, lat_corners)))
+                    geometries.append(cells[i, j])
                     ids.append(i * nx + j)
                     lats.append(float(lat[i, j]))
                     lons.append(float(lon[i, j]))

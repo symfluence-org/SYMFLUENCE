@@ -21,7 +21,31 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from symfluence.core.exceptions import ConfigurationError
+
 logger = logging.getLogger(__name__)
+
+
+def read_tdis(settings_dir: Path) -> tuple:
+    """``(nper, perlen of the first period)`` from ``gwf.tdis``; ``(0, None)`` if absent."""
+    tdis = Path(settings_dir) / "gwf.tdis"
+    if not tdis.exists():
+        return 0, None
+    nper, perlen, in_pd = 0, None, False
+    for line in tdis.read_text().splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        key = parts[0].upper()
+        if key == "NPER" and len(parts) > 1:
+            nper = int(parts[1])
+        elif key == "BEGIN" and len(parts) > 1 and parts[1].upper() == "PERIODDATA":
+            in_pd = True
+        elif key == "END":
+            in_pd = False
+        elif in_pd and perlen is None:
+            perlen = float(parts[0])
+    return nper, perlen
 
 
 class SUMMAToMODFLOWCoupler:
@@ -149,22 +173,62 @@ class SUMMAToMODFLOWCoupler:
 
         return series
 
+    @staticmethod
+    def aggregate_to_stress_periods(
+        daily: np.ndarray,
+        stress_period_length: float = 1.0,
+        n_stress_periods: int = 0,
+    ) -> np.ndarray:
+        """Mean of a daily series over each stress period.
+
+        Day ``i`` covers model time ``[i, i + 1)``; period ``k`` covers
+        ``[k * L, (k + 1) * L)`` and gets the time-weighted mean of the days it
+        overlaps (fractional lengths split days). A period only partly covered
+        by the series averages the covered part; periods wholly past its end
+        repeat the last period's value (as MODFLOW does for omitted blocks).
+        With ``L == 1`` the daily values are returned unchanged.
+        """
+        vals = np.nan_to_num(np.asarray(daily, dtype=float).ravel(), nan=0.0)
+        sp = float(stress_period_length)
+        if sp <= 0:
+            raise ConfigurationError(f"stress_period_length must be > 0, got {sp}")
+        if vals.size == 0:
+            return vals
+        n = int(n_stress_periods) if n_stress_periods and n_stress_periods > 0 \
+            else int(np.ceil(vals.size / sp - 1e-9))
+        if sp == 1.0:
+            out = vals[:n].copy()
+        else:
+            days = float(vals.size)
+            cum = np.concatenate([[0.0], np.cumsum(vals)])     # integral at whole days
+            edges = np.minimum(np.arange(n + 1) * sp, days)
+            integral = np.diff(np.interp(edges, np.arange(cum.size, dtype=float), cum))
+            covered = np.diff(edges)
+            out = np.divide(integral, covered, out=np.full(n, np.nan), where=covered > 1e-12)
+            out = out[~np.isnan(out)]
+        if out.size < n:
+            out = np.concatenate([out, np.full(n - out.size, out[-1])])
+        return out
+
     def write_modflow_recharge_rch(
         self,
         recharge_series: pd.Series,
         rch_path: Path,
         n_stress_periods: int = 0,
+        stress_period_length: float = 1.0,
     ) -> Path:
         """Write MODFLOW 6 RCH package with per-period recharge.
 
         Uses READASARRAYS CONSTANT format — one PERIOD block per stress
-        period.  Periods beyond the recharge series reuse the last value
-        (MODFLOW default behaviour when a period block is omitted).
+        period. The daily recharge is averaged over each stress period of
+        ``stress_period_length`` days (see :meth:`aggregate_to_stress_periods`).
 
         Args:
-            recharge_series: Recharge in m/d with datetime index
+            recharge_series: Daily recharge in m/d, starting on the first model day
             rch_path: Path to write the gwf.rch file
-            n_stress_periods: Total stress periods in TDIS (0 = use series length)
+            n_stress_periods: Total stress periods in TDIS (0 = as many as the
+                series covers). Periods beyond the series reuse its last day.
+            stress_period_length: Stress-period length in days (TDIS PERLEN)
 
         Returns:
             Path to written file
@@ -178,10 +242,9 @@ class SUMMAToMODFLOWCoupler:
             "",
         ]
 
-        values = recharge_series.values
+        values = self.aggregate_to_stress_periods(
+            np.asarray(recharge_series, dtype=float), stress_period_length, n_stress_periods)
         for i, val in enumerate(values):
-            if np.isnan(val):
-                val = 0.0
             lines.append(f"BEGIN PERIOD {i + 1}")
             lines.append("  RECHARGE")
             lines.append(f"    CONSTANT {val:.8e}")
@@ -191,7 +254,8 @@ class SUMMAToMODFLOWCoupler:
         rch_path.write_text("\n".join(lines))
 
         self.logger.debug(
-            f"Wrote MODFLOW per-period recharge: {len(recharge_series)} periods to {rch_path}"
+            f"Wrote MODFLOW per-period recharge: {len(values)} periods of "
+            f"{stress_period_length} d from {len(recharge_series)} days to {rch_path}"
         )
 
         return rch_path
