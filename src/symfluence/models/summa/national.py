@@ -43,12 +43,20 @@ CARRA_SHAPE = (221, 301)
 GLACIER_LAND, WATER_LAND = 1, (2, 9)
 # fabric land class -> MODIFIED_IGBP_MODIS_NOAH (as national HYPE's LAND_TO_IGBP); water is never an HRU's class:
 # lakes are routed by dRoute, so an HRU takes its largest non-water class
-LAND_TO_IGBP = {1: 15, 3: 16, 4: 7, 5: 10, 6: 11, 7: 4, 8: 12}
+# cultivated land (8) is Iceland's hayfields: grassland (10), not cropland (12). With 12, three low-lying HRUs failed
+# in the native solver in January 1991 (getBrackets: "residual and iteration increment are of the same sign"); with
+# 10 they run (2026-11-17)
+LAND_TO_IGBP = {1: 15, 3: 16, 4: 7, 5: 10, 6: 11, 7: 4, 8: 10}
 # fabric soil group -> ROSETTA class (priors; the Tungnaá runs used SANDY LOAM throughout and calibrated k_soil
 # and theta_sat): coarse (sand, gravel, lava) -> LOAMY SAND, andosol -> SANDY LOAM, organic (histosol) -> SILT LOAM
 SOIL_TO_ROSETTA = {1: 4, 2: 8, 3: 12}
 TEMPLATE = (Path(__file__).resolve().parents[5] / 'SYMFLUENCE_data'
             / 'domain_Tungnaa_Mariufossar_SUMMA_V2_19GRU_GLACIER' / 'settings' / 'SUMMA')
+# pinned parameter values: the finished elevgrad calibration of the Tungnaá glacier member (KGE-based score 0.876),
+# the set every national test so far ran with. Its precip_mult / precip_elev_grad / velo / diff are forcing and
+# routing settings of the Tungnaá setup and are not used here.
+BEST_PARAMS = (TEMPLATE.parents[1] / 'optimization' / 'SUMMA' / 'async-dds_summa_v2_19gru_glacier_elevgrad'
+               / 'summa_v2_19gru_glacier_elevgrad_asyncdds_best_params.json')
 COPY = ('modelDecisions.txt', 'localParamInfo.txt', 'basinParamInfo.txt', 'TBL_GENPARM.TBL', 'TBL_MPTABLE.TBL',
         'TBL_SOILPARM.TBL', 'TBL_VEGPARM.TBL')
 OUTPUT_CONTROL = """! national SUMMA output (ADR 0015): daily means, GRU runoff for dRoute
@@ -213,13 +221,19 @@ def _trial_params(h: pd.DataFrame, params: dict):
     return ds
 
 
-def template_params(template: Path = TEMPLATE) -> dict:
-    """The best Tungnaá glacier calibration (summa_v2_19gru_glacier) as national priors: uniform values,
-    {name: (value, dimension)}."""
+def template_params(template: Path = TEMPLATE, best: Path | None = BEST_PARAMS) -> dict:
+    """A finished Tungnaá glacier calibration as national priors: uniform values, {name: (value, dimension)}.
+    The parameters and values are those of the pinned best-parameter JSON (`BEST_PARAMS`), each on its dimension
+    in the template's trialParams.nc (names the template lacks are forcing/routing settings and are skipped).
+    trialParams.nc itself is not a fixed source: a running Tungnaá calibration rewrites it (2026-11-16 21:27, with
+    van Genuchten parameters added), and a rebuild from it made an ice HRU fail at its first step."""
     import xarray as xr
     with xr.open_dataset(template / 'trialParams.nc') as t:
-        return {k: (float(np.asarray(v.values).ravel()[0]), v.dims[0]) for k, v in t.data_vars.items()
-                if k not in ('hruId', 'gruId')}
+        dims = {k: v.dims[0] for k, v in t.data_vars.items() if k not in ('hruId', 'gruId')}
+        if not best:
+            return {k: (float(np.asarray(t[k].values).ravel()[0]), d) for k, d in dims.items()}
+    pinned = json.loads(Path(best).read_text())['best_params']
+    return {k: (float(np.ravel(v)[0]), dims[k]) for k, v in pinned.items() if k in dims}
 
 
 def raw_dem(fabric_dir: Path) -> Path:
@@ -388,7 +402,7 @@ def write_settings(nat: NationalSUMMA, fabric_dir: Path, domain_dir: Path, templ
     """settings/SUMMA/{ice,land}/ with attributes, cold state, trial parameters, decisions and tables."""
     domain_dir = Path(domain_dir)
     params = template_params(template)
-    report = {'template': str(template), 'params': params}
+    report = {'template': str(template), 'params_from': str(BEST_PARAMS), 'params': params}
     grids = glacier_grids(fabric_dir, nat.hrus, nat.bands)
     for run, h in nat.hrus.groupby('run'):
         d = domain_dir / 'settings' / 'SUMMA' / run

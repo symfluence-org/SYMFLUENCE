@@ -9,6 +9,8 @@ both runs from the previous chunk's restart, then deletes the forcing (about 0.8
 
     python national_run.py summa <fabric_dir> <domain_dir> <carra_3h_dir> <name> <wy0> <wy1> [--procs N] [--chunk Y]
     python national_run.py route <fabric_dir> <domain_dir> <name>
+    python national_run.py chunk - <domain_dir> <name> <wy0> <wy1> --exe .. --init-ice .. --init-land ..
+        (server side of national_remote.py: forcing already in place)
 """
 from __future__ import annotations
 
@@ -120,10 +122,48 @@ def route(fabric_dir: Path, runoff: pd.DataFrame, dt: float = 3600.0, enable_gro
     return pd.DataFrame(out, index=runoff.index, columns=seg), r.mass_balance().as_dict(), summary
 
 
+def run_both(domain: Path, tag: str, start: str, end: str, forcing: dict, out: Path, init: dict, procs: dict,
+             exe: Path = EXE) -> dict:
+    """Run the ice and land runs side by side over [start, end] and merge each run's block restarts into
+    settings/SUMMA/<run>/restart_<run>_<tag>.nc; returns {run: {wall_s, slowest_s, blocks, restart}}."""
+    def one(run):
+        t = time.time()
+        res = run_chunk(domain, run, tag, start, end, forcing[run], out / run, init[run], procs[run], exe=exe)
+        name = merge_restarts(out / run, domain / 'settings' / 'SUMMA' / run, f'{run}_{tag}')
+        return run, dict(wall_s=round(time.time() - t), slowest_s=round(max(r[3] for r in res)), blocks=len(res),
+                         restart=name)
+    with ThreadPoolExecutor(len(forcing)) as ex:
+        return dict(ex.map(one, list(forcing)))
+
+
+def chunk_main(a) -> int:
+    """Server side of `national_remote`: one chunk of water years whose forcing is already in forcing/SUMMA.
+    Writes <sim>/done_<tag>.json (or failed_<tag>.txt) and deletes the chunk's forcing."""
+    c0, c1 = int(a.rest[1]), int(a.rest[2])
+    tag = f'WY{c0}-{c1}'
+    sim = a.domain / 'simulations' / a.rest[0] / 'SUMMA'
+    sim.mkdir(parents=True, exist_ok=True)
+    runs = a.runs.split(',')
+    forcing = {r: [f'{r}_WY{wy}.nc' for wy in range(c0, c1 + 1)] for r in runs}
+    init = {'ice': a.init_ice, 'land': a.init_land}
+    procs = {'ice': a.procs_ice, 'land': a.procs_land}
+    try:
+        res = run_both(a.domain, tag, f'{c0 - 1}-10-01 03:00', f'{c1}-10-01 00:00', forcing, sim, init, procs,
+                       exe=Path(a.exe) if a.exe else EXE)
+    except Exception as e:  # noqa: BLE001  (reported to the orchestrator through the marker file)
+        (sim / f'failed_{tag}.txt').write_text(repr(e))
+        raise
+    (sim / f'done_{tag}.json').write_text(json.dumps(res, indent=1))
+    for r in runs:
+        for f in forcing[r]:
+            (a.domain / 'forcing' / 'SUMMA' / f).unlink(missing_ok=True)
+    return 0
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
     ap = argparse.ArgumentParser()
-    ap.add_argument('cmd', choices=['summa', 'route'])
+    ap.add_argument('cmd', choices=['summa', 'route', 'chunk'])
     ap.add_argument('fabric', type=Path)
     ap.add_argument('domain', type=Path)
     ap.add_argument('rest', nargs='*')
@@ -132,7 +172,15 @@ def main() -> int:
     ap.add_argument('--runs', default='ice,land')
     ap.add_argument('--keep-forcing', action='store_true')
     ap.add_argument('--nice', type=int, default=0)
+    ap.add_argument('--exe')
+    ap.add_argument('--init-ice', default='coldState.nc')
+    ap.add_argument('--init-land', default='coldState.nc')
+    ap.add_argument('--procs-ice', type=int, default=10)
+    ap.add_argument('--procs-land', type=int, default=13)
     a = ap.parse_args()
+    if a.cmd == 'chunk':
+        # chunk <domain> <name> <wy0> <wy1>  (fabric argument unused: pass '-')
+        return chunk_main(a)
     if a.cmd == 'summa':
         h3, name, wy0, wy1 = Path(a.rest[0]), a.rest[1], int(a.rest[2]), int(a.rest[3])
         sim = a.domain / 'simulations' / name / 'SUMMA'

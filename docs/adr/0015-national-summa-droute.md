@@ -28,9 +28,15 @@ server may run the full model.
   `bed_elev` = block-mean raw DEM − block-mean ice thickness. 10,477 km² and 3,409 Gt of ice (class table 10,470 km²).
   The surface is the raw IslandsDEM the class bands were cut from, not `dem_filled.tif` (the conditioned routing
   surface, hydraulic potential under ice): with that, 773 km² of ice landed in the wrong bands.
-- Vegetation: dominant non-water land class (IGBP as national HYPE); soil: fabric soil group → ROSETTA (coarse →
+- Vegetation: dominant non-water land class (IGBP as national HYPE, except cultivated land → grassland 10: Iceland's
+  hayfields; as cropland 12, three low-lying land HRUs failed in January 1991 in the native solver, "residual and
+  iteration increment are of the same sign", and run as 10); soil: fabric soil group → ROSETTA (coarse →
   LOAMY SAND, andosol → SANDY LOAM, organic → SILT LOAM; priors).
-- Parameters: the Tungnaá glacier calibration, uniform, with each parameter on the template's dimension (only
+- Parameters: the Tungnaá glacier calibration, uniform, pinned to the finished `elevgrad` calibration's
+  best-parameter JSON (`BEST_PARAMS`, score 0.876), not read from the template's `trialParams.nc`: a running Tungnaá
+  calibration rewrites that file (2026-11-16 21:27, adding `vGn_alpha`/`vGn_n`/`theta_res`), and a rebuild from it
+  made ice HRU 654302 fail at its first step ("coupled step below the minimum step length"). Each parameter on the
+  template's dimension (only
   `routingGamma*` are GRU parameters; a local parameter put on `gru` is read at HRU indices and fails with a bare
   `read_param/netcdf-file_open/` once a block's HRUs pass nGRU).
 - Decisions, tables and parameter-info files copied from the Tungnaá glacier member. Daily output.
