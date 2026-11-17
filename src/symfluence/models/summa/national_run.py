@@ -139,12 +139,14 @@ def run_both(domain: Path, tag: str, start: str, end: str, forcing: dict, out: P
 
 def chunk_main(a) -> int:
     """Server side of `national_remote`: one chunk of water years whose forcing is already in forcing/SUMMA.
-    Writes <sim>/done_<tag>.json (or failed_<tag>.txt) and deletes the chunk's forcing."""
+    Writes <sim>/done_<mark>.json (or failed_<mark>.txt) and deletes the chunk's forcing; <mark> is <tag> for
+    both runs, <run>_<tag> for one (--runs ice)."""
     c0, c1 = int(a.rest[1]), int(a.rest[2])
-    tag = f'WY{c0}-{c1}'
     sim = a.domain / 'simulations' / a.rest[0] / 'SUMMA'
     sim.mkdir(parents=True, exist_ok=True)
     runs = a.runs.split(',')
+    tag = f'WY{c0}-{c1}'
+    mark = tag if len(runs) > 1 else f'{runs[0]}_{tag}'
     forcing = {r: [f'{r}_WY{wy}.nc' for wy in range(c0, c1 + 1)] for r in runs}
     init = {'ice': a.init_ice, 'land': a.init_land}
     procs = {'ice': a.procs_ice, 'land': a.procs_land}
@@ -152,19 +154,54 @@ def chunk_main(a) -> int:
         res = run_both(a.domain, tag, f'{c0 - 1}-10-01 03:00', f'{c1}-10-01 00:00', forcing, sim, init, procs,
                        exe=Path(a.exe) if a.exe else EXE, niceness=a.nice)
     except Exception as e:  # noqa: BLE001  (reported to the orchestrator through the marker file)
-        (sim / f'failed_{tag}.txt').write_text(repr(e))
+        (sim / f'failed_{mark}.txt').write_text(repr(e))
         raise
-    (sim / f'done_{tag}.json').write_text(json.dumps(res, indent=1))
+    (sim / f'done_{mark}.json').write_text(json.dumps(res, indent=1))
     for r in runs:
         for f in forcing[r]:
             (a.domain / 'forcing' / 'SUMMA' / f).unlink(missing_ok=True)
     return 0
 
 
+def host_status(sample_s: float = 3.0) -> dict:
+    """For `national_remote`: CPU count, processes other than summa.exe busy right now (>10% of a core over
+    sample_s, each counted as a whole core: MPI ranks pinned to shared cores show 20% but want a core of their own;
+    the ps %CPU is a lifetime average) and the running `national_run.py chunk` jobs."""
+    def ticks():
+        out = {}
+        for d in Path('/proc').iterdir():
+            if d.name.isdigit():
+                try:
+                    st = (d / 'stat').read_text()
+                    comm = st[st.index('(') + 1:st.rindex(')')]
+                    f = st[st.rindex(')') + 2:].split()
+                    out[d.name] = (comm, int(f[11]) + int(f[12]))
+                except (OSError, ValueError):
+                    pass
+        return out
+    t0 = ticks()
+    time.sleep(sample_s)
+    t1 = ticks()
+    hz = os.sysconf('SC_CLK_TCK')
+    busy = sum(1 for k, (comm, v) in t1.items()
+               if k in t0 and comm != 'summa.exe' and (v - t0[k][1]) / hz / sample_s > 0.1)
+    jobs = []
+    for d in Path('/proc').iterdir():
+        if d.name.isdigit() and d.name != str(os.getpid()):
+            try:
+                cmd = (d / 'cmdline').read_bytes().split(b'\0')
+            except OSError:
+                continue
+            cmd = [c.decode(errors='replace') for c in cmd if c]
+            if any(c.endswith('national_run.py') for c in cmd) and 'chunk' in cmd:
+                jobs.append(cmd[cmd.index('chunk'):])
+    return dict(ncpu=os.cpu_count(), busy_other=busy, jobs=jobs)
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
     ap = argparse.ArgumentParser()
-    ap.add_argument('cmd', choices=['summa', 'route', 'chunk'])
+    ap.add_argument('cmd', choices=['summa', 'route', 'chunk', 'hoststatus'])
     ap.add_argument('fabric', type=Path)
     ap.add_argument('domain', type=Path)
     ap.add_argument('rest', nargs='*')
@@ -179,6 +216,9 @@ def main() -> int:
     ap.add_argument('--procs-ice', type=int, default=10)
     ap.add_argument('--procs-land', type=int, default=13)
     a = ap.parse_args()
+    if a.cmd == 'hoststatus':
+        print(json.dumps(host_status()))
+        return 0
     if a.cmd == 'chunk':
         # chunk <domain> <name> <wy0> <wy1>  (fabric argument unused: pass '-')
         return chunk_main(a)

@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # National SUMMA 1991-2025 on the landslíkan server (ADR 0015): 5-year spin-up (WY1992-1996 from the cold state),
 # then WY1992-2025 from the spin-up's end state. Run from the Mac (the CARRA archive is here):
-#   nohup bash scripts/run_national_summa_server.sh > <log> 2>&1 &
+#   nohup bash scripts/run_national_summa_server.sh >> <log> 2>&1 &
+# A rerun resumes: finished chunks are skipped, chunks still running on the host are adopted.
 set -euo pipefail
-PROCS_ICE=${PROCS_ICE:-5}; PROCS_LAND=${PROCS_LAND:-7}; NICE=${NICE:-10}
+# most processes per ice / land chunk; each chunk takes what the host has free (other users' jobs come first)
+PROCS_ICE=${PROCS_ICE:-10}; PROCS_LAND=${PROCS_LAND:-13}; NICE=${NICE:-10}
 PY=/Users/darri/repos/SYMFLUENCE/.venv/bin/python
 CODE=/Users/darri/repos/SYMFLUENCE-national/src/symfluence/models/summa
 FABRIC=/Users/darri/repos/landslikan/data/build/v1.1_25m

@@ -5,9 +5,12 @@
 
 The 3-h CARRA archive (18 GB) stays here; the host has the SUMMA build and the settings. For each chunk of water
 years: write the chunk's forcing here, copy it over and delete it here, run ``national_run.py chunk`` there
-(ice and land side by side, restarts merged), copy the daily output back and delete it there. The next chunk's
-forcing is written and copied while the current chunk runs. Progress is kept in ``<sim>/remote_state.json``, so a
-rerun resumes after the last finished chunk.
+for ice and for land, each with its own restart chain), copy the daily output back and delete it there. Ice and land
+are independent queues: each starts its next chunk as soon as its last one is done (up to --lead chunks ahead of the
+other), sized to the cores free on the host at that moment (between --min-procs and --procs-ice/--procs-land). The
+next chunk's forcing is written and copied while chunks run. Progress is kept in ``<sim>/remote_state.json``; a rerun
+resumes after the last finished chunk and adopts a chunk that is still running (or finished) on the host instead of
+starting it again.
 
     python national_remote.py <fabric_dir> <domain_dir> <carra_3h_dir> <name> <wy0> <wy1> \\
         --host user@host --remote-domain /home/u/landslikan_models/run/domain_landslikan \\
@@ -87,15 +90,30 @@ def chunks(wy0: int, wy1: int, size: int) -> list:
 
 
 def stage_forcing(a, host: Host, c0: int, c1: int, runs: tuple) -> None:
-    """Write the chunk's forcing here, copy it to the host, delete it here."""
+    """Write the chunk's forcing here, copy it to the host, delete it here (WYs already there are skipped)."""
     fdir = a.domain / 'forcing' / 'SUMMA'
+    there = set(host.sh(f'ls {a.remote_domain}/forcing/SUMMA 2>/dev/null || true').split())
     for wy in range(c0, c1 + 1):
-        N.write_forcing(a.fabric, a.domain, a.h3, wy, runs=runs)
-        files = [fdir / f'{r}_WY{wy}.nc' for r in runs]
+        need = tuple(r for r in runs if f'{r}_WY{wy}.nc' not in there)
+        if not need:
+            continue
+        N.write_forcing(a.fabric, a.domain, a.h3, wy, runs=need)
+        files = [fdir / f'{r}_WY{wy}.nc' for r in need]
         host.put(files, f'{a.remote_domain}/forcing/SUMMA')
         for f in files:
             f.unlink()
-        logger.info('forcing WY%d staged', wy)
+        logger.info('forcing WY%d staged (%s)', wy, ','.join(need))
+
+
+def host_status(a, host: Host) -> dict:
+    return json.loads(host.sh(f'cd {a.remote_code} && python3 national_run.py hoststatus - -'))
+
+
+def job_runs(job: list) -> tuple:
+    """(name, c0, c1, runs, procs) of a running `chunk - <domain> <name> <c0> <c1> ...` command line."""
+    opt = {job[k]: job[k + 1] for k in range(6, len(job) - 1) if job[k].startswith('--')}
+    runs = tuple(opt.get('--runs', 'ice,land').split(','))
+    return job[3], int(job[4]), int(job[5]), runs, {r: int(opt.get(f'--procs-{r}', 0)) for r in runs}
 
 
 def main() -> int:
@@ -115,8 +133,11 @@ def main() -> int:
     ap.add_argument('--remote-code', required=True)
     ap.add_argument('--exe', required=True)
     ap.add_argument('--chunk', type=int, default=5)
-    ap.add_argument('--procs-ice', type=int, default=10)
-    ap.add_argument('--procs-land', type=int, default=13)
+    ap.add_argument('--procs-ice', type=int, default=10, help='most processes for an ice chunk')
+    ap.add_argument('--procs-land', type=int, default=13, help='most processes for a land chunk')
+    ap.add_argument('--min-procs', type=int, default=3)
+    ap.add_argument('--reserve', type=int, default=1, help='cores left free on the host')
+    ap.add_argument('--lead', type=int, default=2, help='chunks one run may get ahead of the other')
     ap.add_argument('--poll', type=int, default=300)
     ap.add_argument('--nice', type=int, default=10, help='niceness of the SUMMA processes on the host')
     ap.add_argument('--init-ice', default='coldState.nc', help='initial state of the first chunk (settings file)')
@@ -125,49 +146,100 @@ def main() -> int:
     if a.wsl and not a.stage_wsl:
         ap.error('--wsl needs --stage-wsl (the --stage-win directory as WSL sees it, e.g. /mnt/c/Users/u/...)')
     runs = ('ice', 'land')
+    pmax = {'ice': a.procs_ice, 'land': a.procs_land}
     host = Host(a)
     if a.wsl:
         host.sh(f'mkdir -p {a.stage_wsl}')
     local = a.domain / 'simulations' / a.name / 'SUMMA'
     local.mkdir(parents=True, exist_ok=True)
     state_f = local / 'remote_state.json'
-    state = json.loads(state_f.read_text()) if state_f.exists() else {'done': [], 'init': {'ice': a.init_ice,
-                                                                                           'land': a.init_land}}
+    state = json.loads(state_f.read_text()) if state_f.exists() else {'init': {'ice': a.init_ice, 'land': a.init_land}}
+    done = state.setdefault('done_run', {r: list(state.get('done', [])) for r in runs})   # 'done': both runs
     rsim = f'{a.remote_domain}/simulations/{a.name}/SUMMA'
-    todo = [c for c in chunks(a.wy0, a.wy1, a.chunk) if f'WY{c[0]}-{c[1]}' not in state['done']]
+    host.sh(f'mkdir -p {rsim}')
+    cl = chunks(a.wy0, a.wy1, a.chunk)
+    tags = [f'WY{c0}-{c1}' for c0, c1 in cl]
+    n = len(cl)
+
+    def nxt(r):
+        return next((i for i, t in enumerate(tags) if t not in done[r]), n)
+
+    def save():
+        state_f.write_text(json.dumps(state, indent=1))
+
+    # adopt chunks already running on the host, or finished there while nobody was watching
+    inflight = {}                       # run -> {i, procs, t}
+    marks = set(host.sh(f'ls {rsim}').split())
+    for job in host_status(a, host)['jobs']:
+        name, c0, c1, jr, procs = job_runs(job)
+        if name == a.name and (c0, c1) in cl:
+            for r in jr:
+                if nxt(r) == cl.index((c0, c1)):
+                    inflight[r] = dict(i=cl.index((c0, c1)), procs=procs[r], t=time.time())
+                    logger.info('%s %s is running on the host: adopted', r, tags[inflight[r]['i']])
+    for r in runs:
+        i = nxt(r)
+        if r not in inflight and i < n and ({f'done_{tags[i]}.json', f'done_{r}_{tags[i]}.json'} & marks):
+            inflight[r] = dict(i=i, procs=0, t=time.time())
+            logger.info('%s %s finished on the host: collecting', r, tags[i])
+    staged = {v['i'] for v in inflight.values()}
     pool = ThreadPoolExecutor(1)
-    staged = pool.submit(stage_forcing, a, host, *todo[0], runs) if todo else None
-    for i, (c0, c1) in enumerate(todo):
-        tag = f'WY{c0}-{c1}'
-        staged.result()
-        cmd = (f'cd {a.remote_code} && setsid -f nohup python3 national_run.py chunk - {a.remote_domain} {a.name} '
-               f'{c0} {c1} --exe {a.exe} --init-ice {state["init"]["ice"]} --init-land {state["init"]["land"]} '
-               f'--procs-ice {a.procs_ice} --procs-land {a.procs_land} --nice {a.nice} > {rsim}/chunk_{tag}.log 2>&1 '
-               f'< /dev/null; sleep 5')      # setsid -f: detached before the WSL session ends (plain & was killed)
-        host.sh(f'mkdir -p {rsim} && rm -f {rsim}/done_{tag}.json {rsim}/failed_{tag}.txt')
-        host.sh(cmd)
-        t = time.time()
-        logger.info('%s started on %s', tag, a.host)
-        # the next chunk's forcing goes over while this one runs
-        staged = pool.submit(stage_forcing, a, host, *todo[i + 1], runs) if i + 1 < len(todo) else None
-        while True:
-            time.sleep(a.poll)
-            st = host.sh(f'ls {rsim}/done_{tag}.json {rsim}/failed_{tag}.txt 2>/dev/null || true')
-            if 'failed_' in st:
-                raise RuntimeError(f'{tag} failed: ' + host.sh(f'cat {rsim}/failed_{tag}.txt; tail -5 '
-                                                              f'{rsim}/chunk_{tag}.log'))
-            if 'done_' in st:
-                break
-        res = json.loads(host.sh(f'cat {rsim}/done_{tag}.json'))
-        for r in runs:
+    stage_job = None                    # (index, future)
+
+    while any(nxt(r) < n for r in runs):
+        # -- forcing: stage the next chunk some run will need
+        if stage_job and stage_job[1].done():
+            stage_job[1].result()
+            staged.add(stage_job[0])
+            stage_job = None
+        live = [nxt(r) for r in runs if nxt(r) < n]
+        if not stage_job:
+            want = [i for i in range(min(live), min(max(live) + 2, n))
+                    if i not in staged and any(nxt(r) <= i for r in runs)]
+            if want:
+                i = want[0]
+                stage_job = (i, pool.submit(stage_forcing, a, host, *cl[i],
+                                            tuple(r for r in runs if tags[i] not in done[r])))
+        # -- launch: each idle run starts its next chunk if staged and not too far ahead
+        go = [r for r in runs if r not in inflight and nxt(r) < n and nxt(r) in staged and nxt(r) - min(live) <= a.lead]
+        hs = host_status(a, host) if go else None
+        for r in go:
+            i = nxt(r)
+            free = hs['ncpu'] - a.reserve - hs['busy_other'] - sum(v['procs'] for v in inflight.values())
+            share = free * pmax[r] / sum(pmax[q] for q in go if q not in inflight)    # runs starting together
+            procs = max(a.min_procs, min(pmax[r], int(share)))
+            tag = tags[i]
+            c0, c1 = cl[i]
+            host.sh(f'rm -f {rsim}/done_{r}_{tag}.json {rsim}/failed_{r}_{tag}.txt')
+            host.sh(f'cd {a.remote_code} && setsid -f nohup python3 national_run.py chunk - {a.remote_domain} '
+                    f'{a.name} {c0} {c1} --runs {r} --exe {a.exe} --init-{r} {state["init"][r]} '
+                    f'--procs-{r} {procs} --nice {a.nice} > {rsim}/chunk_{r}_{tag}.log 2>&1 < /dev/null; sleep 5')
+            # setsid -f: detached before the WSL session ends (plain & was killed)
+            inflight[r] = dict(i=i, procs=procs, t=time.time())
+            logger.info('%s %s started on %s with %d processes (%d busy others)', r, tag, a.host, procs,
+                        hs['busy_other'])
+        # -- poll
+        time.sleep(a.poll)
+        marks = set(host.sh(f'ls {rsim}').split())
+        for r in list(inflight):
+            tag = tags[inflight[r]['i']]
+            fail = {f'failed_{tag}.txt', f'failed_{r}_{tag}.txt'} & marks
+            if fail:
+                f = fail.pop()
+                raise RuntimeError(f'{r} {tag} failed: ' + host.sh(f'cat {rsim}/{f}'))
+            ok = sorted({f'done_{tag}.json', f'done_{r}_{tag}.json'} & marks)
+            if not ok:
+                continue
+            res = json.loads(host.sh(f'cat {rsim}/{ok[0]}'))[r]
             host.get(f'{rsim}/{r}/{r}_{tag}_G*_day.nc', local / r)
             host.sh(f'rm -f {rsim}/{r}/{r}_{tag}_G*_day.nc {rsim}/{r}/{r}_{tag}_G*_timestep.nc '
                     f'{rsim}/{r}/{r}_{tag}_restart_*.nc')
-            state['init'][r] = res[r]['restart']
-        state['done'].append(tag)
-        state.setdefault('timing', {})[tag] = dict(res, wall_s=round(time.time() - t))
-        state_f.write_text(json.dumps(state, indent=1))
-        logger.info('%s done in %.1f h', tag, (time.time() - t) / 3600)
+            state['init'][r] = res['restart']
+            done[r].append(tag)
+            state.setdefault('timing', {})[f'{r}_{tag}'] = dict(res, wall_s=round(time.time() - inflight[r]['t']))
+            save()
+            logger.info('%s %s done in %.1f h', r, tag, (time.time() - inflight[r]['t']) / 3600)
+            del inflight[r]
     return 0
 
 
