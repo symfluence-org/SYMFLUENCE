@@ -231,15 +231,17 @@ class MODFLOWPlotter(BasePlotter):
             modflow_dir, 'drain_discharge',
             stress_period_length=sp_length, start_date=start_date,
         )
-        baseflow_m3s = drain_m3_d / 86400.0
-
         # Extract SUMMA recharge and surface runoff
-        from symfluence.models.modflow.coupling import SUMMAToMODFLOWCoupler
+        from symfluence.models.modflow.coupling import SUMMAToMODFLOWCoupler, periods_to_daily
+
+        # One value per stress period -> every day of its period, to match daily SUMMA output
+        baseflow_m3s = periods_to_daily(drain_m3_d / 86400.0, sp_length)
         coupler = SUMMAToMODFLOWCoupler(self.config_dict, self.logger)
 
         recharge_m_d = coupler.extract_recharge_from_summa(summa_dir)
-        surface_kg_m2_s = coupler.extract_surface_runoff(summa_dir)
-        surface_m3s = surface_kg_m2_s * area_m2 / 1000.0
+        surface_m_s = coupler.extract_surface_runoff(summa_dir)  # m/s
+        surface_m3s = surface_m_s * area_m2
+        surface_m3s.index = pd.DatetimeIndex(surface_m3s.index).normalize()
 
         # Total simulated streamflow
         common_idx = surface_m3s.index.intersection(baseflow_m3s.index)

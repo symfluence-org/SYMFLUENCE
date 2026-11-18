@@ -138,19 +138,23 @@ class CoupledGWStreamflowTarget(StreamflowEvaluator):
         # Use date-only (no time component) so dates align with SUMMA daily output
         start_str = str(self._get_config_value(lambda: self.config.domain.time_start, default='2000-01-01', dict_key='EXPERIMENT_TIME_START'))
         start_date = pd.Timestamp(start_str).strftime('%Y-%m-%d')
+        sp_length = float(self._get_config_value(
+            lambda: self.config.model.modflow.stress_period_length,
+            default=1.0, dict_key='MODFLOW_STRESS_PERIOD_LENGTH') or 1.0)
         drain_discharge = extractor.extract_variable(
             modflow_dir,
             'drain_discharge',
             start_date=start_date,
-            stress_period_length=1.0,
+            stress_period_length=sp_length,
         )
 
         # Get catchment area for unit conversion
         catchment_area_m2 = self._get_catchment_area()
 
-        # Combine flows
+        # Combine flows (drain discharge spread over each stress period's days)
         total_streamflow = coupler.combine_flows(
             surface_runoff, drain_discharge, catchment_area_m2,
+            stress_period_length=sp_length,
         )
 
         return total_streamflow

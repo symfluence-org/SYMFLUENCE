@@ -48,6 +48,60 @@ def read_tdis(settings_dir: Path) -> tuple:
     return nper, perlen
 
 
+def periods_to_daily(
+    per_period: pd.Series,
+    period_length_days: float | None = None,
+) -> pd.Series:
+    """Spread one-value-per-stress-period rates over the days each period covers.
+
+    ``per_period`` is indexed by period start (as ``MODFLOWResultExtractor``
+    dates it). Period ``k`` covers ``[start_k, start_{k+1})`` and the last one
+    ``[start_last, start_last + period_length_days)``; a period's mean rate is
+    constant over that window (step, not interpolation across periods). Day
+    ``d`` (covering ``[d, d + 1)``) gets the time-weighted mean of the periods
+    overlapping it, so fractional period lengths split days between periods;
+    days only partly covered at either end average their covered part.
+
+    ``period_length_days`` (MODFLOW_STRESS_PERIOD_LENGTH) sizes the last
+    period; ``None`` infers it from the median spacing of the starts (1 day
+    for a single period). Days are counted from the first period start (its
+    time of day, e.g. a 01:00 EXPERIMENT_TIME_START, marks the day boundary)
+    and labelled by date, as the daily land-model series is. With 1-day
+    periods the values are returned unchanged, one per date.
+    """
+    s = per_period.dropna().sort_index()
+    s = s[~s.index.duplicated(keep='last')]
+    if s.empty:
+        return s.astype(float)
+    starts = pd.DatetimeIndex(s.index)
+    origin = starts[0]
+    t = np.asarray((starts - origin) / pd.Timedelta(days=1), dtype=float)
+    if period_length_days is None:
+        period_length_days = float(np.median(np.diff(t))) if t.size > 1 else 1.0
+    if period_length_days <= 0:
+        raise ConfigurationError(f"stress period length must be > 0, got {period_length_days}")
+    edges = np.append(t, t[-1] + float(period_length_days))
+    vals = s.to_numpy(dtype=float)
+    spans = np.diff(edges)
+
+    whole = np.allclose(edges, np.round(edges), atol=1e-9)
+    if whole:
+        # Periods on day boundaries: each day lies in exactly one period.
+        reps = np.round(spans).astype(int)
+        daily = np.repeat(vals, reps)
+        first = int(round(edges[0]))
+    else:
+        first = int(np.floor(edges[0] + 1e-9))
+        last = int(np.ceil(edges[-1] - 1e-9))
+        day_edges = np.clip(np.arange(first, last + 1, dtype=float), edges[0], edges[-1])
+        cum = np.concatenate([[0.0], np.cumsum(vals * spans)])   # integral at period edges
+        integral = np.diff(np.interp(day_edges, edges, cum))
+        covered = np.diff(day_edges)
+        daily = np.divide(integral, covered, out=np.full(covered.size, np.nan), where=covered > 1e-12)
+    index = (origin + pd.to_timedelta(np.arange(first, first + daily.size), unit='D')).normalize()
+    return pd.Series(daily, index=index, name=s.name).dropna()
+
+
 class SUMMAToMODFLOWCoupler:
     """Couples SUMMA land surface output to MODFLOW 6 groundwater model.
 
@@ -357,27 +411,35 @@ class SUMMAToMODFLOWCoupler:
         surface_runoff_kg_m2_s: pd.Series,
         drain_discharge_m3_d: pd.Series,
         catchment_area_m2: float,
+        stress_period_length: float | None = None,
     ) -> pd.Series:
         """Combine surface runoff and MODFLOW baseflow into total streamflow.
 
+        The drain discharge has one value per stress period, dated at the
+        period start; it is spread over every day of its period (see
+        :func:`periods_to_daily`) before being added to the daily surface
+        runoff, so each land-model day inside the MODFLOW run gets a value.
+
         Args:
             surface_runoff_kg_m2_s: SUMMA surface runoff (kg/m2/s)
-            drain_discharge_m3_d: MODFLOW drain discharge (m3/d)
+            drain_discharge_m3_d: MODFLOW drain discharge (m3/d), one value per stress period
             catchment_area_m2: Catchment area in m2
+            stress_period_length: Stress-period length in days
+                (MODFLOW_STRESS_PERIOD_LENGTH); ``None`` infers it from the
+                spacing of the drain series.
 
         Returns:
-            Combined streamflow in m3/s
+            Combined daily streamflow in m3/s
         """
         # Convert surface runoff: m/s → m3/s
         # (m/s) × area_m2 = m3/s
         surface_m3s = surface_runoff_kg_m2_s * catchment_area_m2
 
-        # Convert drain discharge: m3/d → m3/s
-        baseflow_m3s = drain_discharge_m3_d / 86400.0
+        # Convert drain discharge: m3/d → m3/s, one value per day of each stress period
+        baseflow_m3s = periods_to_daily(drain_discharge_m3_d / 86400.0, stress_period_length)
 
-        # Normalize both indices to date-only for alignment
+        # Normalize the surface index to date-only for alignment
         surface_m3s.index = surface_m3s.index.normalize()
-        baseflow_m3s.index = baseflow_m3s.index.normalize()
 
         # Align indices
         common_idx = surface_m3s.index.intersection(baseflow_m3s.index)

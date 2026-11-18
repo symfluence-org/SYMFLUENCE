@@ -103,7 +103,7 @@ class MODFLOWPostProcessor(StandardModelPostProcessor):
 
         if coupling_source and str(coupling_source).upper() == 'SUMMA':
             return self._extract_coupled_streamflow(
-                drain_discharge, output_dir
+                drain_discharge, output_dir, stress_period_length=float(sp_length),
             )
         else:
             return self._extract_standalone_baseflow(drain_discharge)
@@ -140,6 +140,7 @@ class MODFLOWPostProcessor(StandardModelPostProcessor):
         self,
         drain_discharge: pd.Series,
         modflow_output_dir: Path,
+        stress_period_length: Optional[float] = None,
     ) -> Optional[Tuple[pd.Series, Dict]]:
         """Extract combined SUMMA surface runoff + MODFLOW baseflow."""
         try:
@@ -165,7 +166,8 @@ class MODFLOWPostProcessor(StandardModelPostProcessor):
 
             # Combine flows
             total_streamflow = coupler.combine_flows(
-                surface_runoff, drain_discharge, area_m2
+                surface_runoff, drain_discharge, area_m2,
+                stress_period_length=stress_period_length,
             )
 
             metadata = {
