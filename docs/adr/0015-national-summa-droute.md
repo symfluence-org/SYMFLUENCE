@@ -92,6 +92,11 @@ daily means. dRoute from `/Users/darri/repos/dRoute` main (#17), not the SYMFLUE
      when valid. Consequence: every chunk restart before this patch used wrong upland temperatures in mostly
      glacier-covered HRUs; the spin-up's G134–296 block was rerun for WY1996 with both patches, and the merged
      end state is checked by a one-day start of all ice GRUs before the main run.
+  3. `check_icond` caps snow at volFracIce ≤ maxVolIceContent + 0.1 (0.8, or 0.95 over glacier ice), a cold-state
+     sanity limit; after 5 years the run has compacted firn and perennial snowfields past it (2 of 8 test blocks
+     stopped). `patches/glacier_restart_firn_init.patch` holds snow on a restart to the physical bounds (ice ≤ 1,
+     ice + liquid ≤ 1). With all three, every ice GRU starts from the merged spin-up state (one-day test,
+     2026-11-18).
 - Runner: ice and land run as independent chunk queues sized to the server's free cores; a rerun adopts chunks
   still running there (`national_remote.py`).
 

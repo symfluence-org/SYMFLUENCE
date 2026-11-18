@@ -1,0 +1,20 @@
+--- a/build/source/engine/check_icond.f90	2026-11-18 07:10:32
++++ b/build/source/engine/check_icond.f90	2026-11-18 07:15:49
+@@ -392,13 +392,10 @@
+         if(mLayerVolFracLiq(iLayer) < 0._rkind)then; write(message,'(a,1x,i0)') trim(message)//'cannot initialize the model with volumetric fraction of liquid water < 0: layer = ',iLayer; err=20; return; end if
+         if(mLayerVolFracLiq(iLayer) > 1._rkind)then; write(message,'(a,1x,i0)') trim(message)//'cannot initialize the model with volumetric fraction of liquid water > 1: layer = ',iLayer; err=20; return; end if
+         ! (check ice)
+-        if (layerType(iLayer)==iname_snow) then
+-          if(mLayerVolFracIce(iLayer) > maxVolIceContent_use+0.1_rkind)then; write(message,'(a,f4.2,a,1x,i0)') trim(message)//'cannot initialize the model with volumetric fraction of ice > ',maxVolIceContent_use,': layer = ',iLayer; err=20; return; end if
+-          if(scalarTheta > maxVolIceContent_use+0.1_rkind)then; write(message,'(a,f4.2,a,1x,i0)') trim(message)//'cannot initialize the model with total water fraction [liquid + ice] > ',maxVolIceContent_use,': layer = '    ,iLayer; err=20; return; end if
+-        else ! glacier ice or lake (could be all ice)
+-          if(mLayerVolFracIce(iLayer) > 1._rkind  )then; write(message,'(a,1x,i0)') trim(message)//'cannot initialize the model with volumetric fraction of ice > 1: layer = ',iLayer; err=20; return; end if
+-          if(scalarTheta > 1._rkind)then; write(message,'(a,1x,i0)') trim(message)//'cannot initialize the model with total water fraction [liquid + ice] > 1: layer = '      ,iLayer; err=20; return; end if
+-        end if
++        ! (upper bounds: physical only. The snow limit maxVolIceContent+0.1 suits a cold state, but a restart
++        ! carries snow the run compacted past it: firn over glacier ice and perennial snowfields)
++        if(mLayerVolFracIce(iLayer) > 1._rkind  )then; write(message,'(a,1x,i0)') trim(message)//'cannot initialize the model with volumetric fraction of ice > 1: layer = ',iLayer; err=20; return; end if
++        if(scalarTheta > 1._rkind)then; write(message,'(a,1x,i0)') trim(message)//'cannot initialize the model with total water fraction [liquid + ice] > 1: layer = '      ,iLayer; err=20; return; end if
+         if (layerType(iLayer)==iname_lake) then ! lake could be all liquid
+           if(mLayerVolFracIce(iLayer) < 0._rkind  )then; write(message,'(a,1x,i0)') trim(message)//'cannot initialize the model with volumetric fraction of ice < 0: layer = '   ,iLayer; err=20; return; end if
+         else if (layerType(iLayer)==iname_glce) then ! glacier ice should be mostly ice

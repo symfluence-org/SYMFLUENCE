@@ -21,7 +21,7 @@ if [ ! -x "$PREFIX/summa-glacier/bin/summa.exe" ]; then
   cd "$PREFIX/summa-glacier"
   git checkout -q b851c3df2bdc3fd91c8eeae856ce6098078a4055
   for p in glacier_diagnostics_routing.patch glacier_restart_grid.patch snow_glacier_density_cap.patch \
-           glacier_restart_upland_elev.patch; do
+           glacier_restart_upland_elev.patch glacier_restart_firn_init.patch; do
     git apply --check "$HERE/patches/$p" && git apply "$HERE/patches/$p"
   done
   export LIBRARY_LINKS="-lopenblas"          # read by SUMMA's CMakeLists with SPECIFY_LAPACK_LINKS
