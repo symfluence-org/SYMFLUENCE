@@ -101,6 +101,8 @@ class BasinParameters:
     aquifer_k_map: Optional[str] = None  # multiplier of the aquifer K
     soil_k_map: Optional[str] = None  # multiplier of the soil K (not glacier-bed cells)
     k_tensor_map: Optional[str] = None  # bool: apply k_tensor only in these cells
+    aquifer_vg_alpha: Optional[float] = None  # van Genuchten alpha / n below the CLM layers (default: vg_alpha / vg_n)
+    aquifer_vg_n: Optional[float] = None
 
     @property
     def nz(self) -> int:
@@ -117,7 +119,8 @@ class BasinParameters:
 
 OPTIONAL_DEFAULTS: Dict[str, object] = {'k_tensor': None, 'k_zone_factor': 1.0, 'k_zone_soil': False,
                                         'lake_manning': None, 'residual_tol': 1e-6, 'initial_pressure': None,
-                                        'aquifer_k_map': None, 'soil_k_map': None, 'k_tensor_map': None}
+                                        'aquifer_k_map': None, 'soil_k_map': None, 'k_tensor_map': None,
+                                        'aquifer_vg_alpha': None, 'aquifer_vg_n': None}
 
 
 def parflow_keys(grid: BasinGrid, params: BasinParameters, name: str, hours: int, P: int = 1, Q: int = 1,
@@ -163,9 +166,11 @@ def parflow_keys(grid: BasinGrid, params: BasinParameters, name: str, hours: int
         'Phase.RelPerm.Type': 'VanGenuchten', 'Phase.RelPerm.GeomNames': 'domain soil',
         'Phase.Saturation.Type': 'VanGenuchten', 'Phase.Saturation.GeomNames': 'domain soil',
     })
-    for g in ('domain', 'soil'):
-        k.update({f'Geom.{g}.RelPerm.Alpha': params.vg_alpha, f'Geom.{g}.RelPerm.N': params.vg_n,
-                  f'Geom.{g}.Saturation.Alpha': params.vg_alpha, f'Geom.{g}.Saturation.N': params.vg_n,
+    for g in ('domain', 'soil'):  # 'soil' (the CLM layers) overrides 'domain' there; domain = aquifer below
+        a = params.aquifer_vg_alpha if g == 'domain' and params.aquifer_vg_alpha else params.vg_alpha
+        n = params.aquifer_vg_n if g == 'domain' and params.aquifer_vg_n else params.vg_n
+        k.update({f'Geom.{g}.RelPerm.Alpha': a, f'Geom.{g}.RelPerm.N': n,
+                  f'Geom.{g}.Saturation.Alpha': a, f'Geom.{g}.Saturation.N': n,
                   f'Geom.{g}.Saturation.SRes': params.s_res, f'Geom.{g}.Saturation.SSat': 1.})
     k.update({
         'Wells.Names': '', 'Cycle.Names': 'constant', 'Cycle.constant.Names': 'alltime',

@@ -132,6 +132,8 @@ class CLMParFlowConfig(BaseModel):
     basin_aquifer_k_map: Optional[str] = Field(default=None, alias='CLMPARFLOW_BASIN_AQUIFER_K_MAP')
     basin_soil_k_map: Optional[str] = Field(default=None, alias='CLMPARFLOW_BASIN_SOIL_K_MAP')
     basin_k_tensor_map: Optional[str] = Field(default=None, alias='CLMPARFLOW_BASIN_K_TENSOR_MAP')
+    basin_aquifer_vg_alpha: Optional[float] = Field(default=None, alias='CLMPARFLOW_BASIN_AQUIFER_VG_ALPHA', gt=0)
+    basin_aquifer_vg_n: Optional[float] = Field(default=None, alias='CLMPARFLOW_BASIN_AQUIFER_VG_N', gt=1)
     basin_initial_water_table_depth: float = Field(default=3.0, alias='CLMPARFLOW_BASIN_INITIAL_WATER_TABLE_DEPTH', ge=0)
     basin_spinup_years: Optional[List[int]] = Field(default=None, alias='CLMPARFLOW_BASIN_SPINUP_YEARS')
     basin_first_water_year: Optional[int] = Field(default=None, alias='CLMPARFLOW_BASIN_FIRST_WATER_YEAR')
