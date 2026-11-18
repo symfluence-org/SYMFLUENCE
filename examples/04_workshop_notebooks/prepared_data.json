@@ -1,0 +1,12 @@
+{
+  "bundles": {
+    "rohtang_snow": {
+      "notebook": "04d_intelligent_rivers_snow",
+      "file": "workshop_rohtang_snow.zip",
+      "url": "https://github.com/symfluence-org/SYMFLUENCE/releases/download/workshop-data-iit-2026/workshop_rohtang_snow.zip",
+      "sha256": "cbaa59f5cad97c8a8342e209946a3356e02fad4657b219788458298051b0cf39",
+      "size_mb": 6.4,
+      "files": 105
+    }
+  }
+}
