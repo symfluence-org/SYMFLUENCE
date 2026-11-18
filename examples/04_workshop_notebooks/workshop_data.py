@@ -31,7 +31,9 @@ import zipfile
 from pathlib import Path
 
 ACQUISITION_STAGES = frozenset({"acquire_attributes", "process_observed_data", "acquire_forcings"})
-MANIFEST = Path(__file__).with_name("prepared_data.json")
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parents[1]
+MANIFEST = HERE / "prepared_data.json"
 READY_MARKER = ".workshop_bundle.json"
 
 
@@ -100,6 +102,27 @@ def ensure_prepared_project(project: Path) -> Path:
     marker.write_text(json.dumps({"sha256": entry["sha256"], "file": entry["file"]}, indent=2))
     print(f"Prepared data unpacked to {project}")
     return project
+
+
+def open_experiment(config_name: str, use_prepared_data: bool):
+    """Load a workshop YAML and return ``(config, project)``.
+
+    The YAMLs use paths relative to the repository root, so this changes the
+    working directory there. With ``use_prepared_data`` the project folder is
+    filled from the prepared bundle first.
+    """
+    import symfluence
+    from symfluence.core.config.models import SymfluenceConfig
+
+    os.chdir(REPO)
+    config = SymfluenceConfig.from_file(HERE / config_name)
+    project = config.system.data_dir / f"domain_{config.domain.name}"
+    if use_prepared_data:
+        ensure_prepared_project(project)
+    print(f"SYMFLUENCE {symfluence.__version__} · config {Path(config_name).name}")
+    print(f"Project: {project}")
+    print("Data:", "prepared workshop bundle" if use_prepared_data else "own acquisition")
+    return config, project
 
 
 def stages_to_run(names, use_prepared_data: bool) -> list[str]:

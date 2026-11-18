@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import shlex
 from pathlib import Path
 
 import geopandas as gpd
@@ -12,9 +11,8 @@ import pandas as pd
 import xarray as xr
 
 from symfluence.core.metrics import kge, nse, pbias
-from symfluence.core.mixins.project import resolve_data_subdir
 
-# Keep only meteorological variables; no model states or discharge as predictors.
+# LSTM inputs: meteorology only, no model states or discharge. Units as SUMMA writes them.
 FORCING_UNITS = {
     'airtemp': {'K', 'kelvin'},
     'pptrate': {'kg m-2 s-1', 'kg m^-2 s^-1'},
@@ -43,51 +41,23 @@ def load_bundle(folder: Path):
     return basin, obs, provenance
 
 
-def daily_summa_forcing(project: Path, config):
-    """Read the SUMMA manifest and average complete days for the native LSTM.
+def daily_summa_forcing(project: Path, config) -> pd.DataFrame:
+    """Daily means of SUMMA's hourly input weather (one HRU), for the native LSTM.
 
-    Precipitation stays a mean rate (kg m-2 s-1). Multiply by 86400 for mm/day.
-    Reject incomplete weather instead of compressing the LSTM time axis.
+    Precipitation stays a mean rate (kg m-2 s-1); multiply by 86400 for mm/day.
+    A missing hour raises an error instead of quietly shortening a day.
     """
-    manifest = project / 'settings' / 'SUMMA' / 'forcingFileList.txt'
-    folder = resolve_data_subdir(project, 'forcing') / 'SUMMA_input'
-    files = []
-    for line in manifest.read_text().splitlines():
-        names = shlex.split(line.split('!')[0], comments=True)
-        if names:
-            files.append(folder / names[0])
+    files = sorted((project / 'data' / 'forcing' / 'SUMMA_input').glob('*.nc'))
     if not files:
-        raise FileNotFoundError('SUMMA forcing manifest is empty. Complete preprocessing.')
-    parts = []
-    hashes = {}
-    for path in files:
-        with xr.open_dataset(path) as ds:
-            for name, units in FORCING_UNITS.items():
-                if name not in ds or ds[name].attrs.get('units', '').strip() not in units:
-                    raise ValueError(f'{path.name}: missing {name} or unsupported units.')
-                if set(ds[name].dims) != {'time', 'hru'} or ds.sizes['hru'] != 1:
-                    raise ValueError('04e expects one HRU with time × hru weather variables.')
-            parts.append(ds[list(FORCING_UNITS)].isel(hru=0).load().to_dataframe())
-        hashes[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
-    hourly = pd.concat(parts).sort_index()[list(FORCING_UNITS)]
-    if hourly.index.has_duplicates:
-        if (hourly.groupby(level=0).nunique(dropna=False) > 1).any().any():
-            raise ValueError('Conflicting weather at duplicate timestamps.')
-        hourly = hourly.loc[~hourly.index.duplicated()]
+        raise FileNotFoundError('No SUMMA forcing yet. Run the preprocessing stages first.')
+    with xr.open_mfdataset(files) as ds:
+        hourly = ds[list(FORCING_UNITS)].isel(hru=0).to_dataframe()[list(FORCING_UNITS)]
     start, end = pd.Timestamp(config.domain.time_start), pd.Timestamp(config.domain.time_end)
     hourly = hourly.loc[start:end]
-    timestep = int(config.forcing.time_step_size)
-    if timestep <= 0 or 86400 % timestep:
-        raise ValueError('Forcing timestep must divide one day.')
-    expected = pd.date_range(start, end, freq=pd.Timedelta(seconds=timestep))
-    if not hourly.index.equals(expected) or not np.isfinite(hourly).all().all():
+    expected = pd.date_range(start, end, freq=pd.Timedelta(seconds=int(config.forcing.time_step_size)))
+    if not hourly.index.equals(expected) or hourly.isna().any().any():
         raise ValueError('Weather must cover the experiment with no missing timesteps or values.')
-    if (hourly.pptrate < 0).any():
-        raise ValueError('Negative precipitation needs upstream inspection.')
-    counts = hourly.resample('D').count()
-    if (counts != 86400 // timestep).any().any():
-        raise ValueError('Each daily LSTM input must contain a full day of weather.')
-    return hourly.resample('D').mean(), hashes
+    return hourly.resample('D').mean()
 
 
 def write_daily_forcing(daily: pd.DataFrame, path: Path):
