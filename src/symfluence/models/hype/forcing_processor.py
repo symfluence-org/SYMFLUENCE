@@ -48,6 +48,43 @@ def wet_bulb_temperature(t: Any, rh: Any) -> Any:
             + 0.00391838 * rh ** 1.5 * np.arctan(0.023101 * rh) - 4.686035)
 
 
+def complete_day_window(
+    times: Any, step_seconds: Optional[float] = None
+) -> tuple[Optional[pd.Timestamp], Optional[pd.Timestamp], List[pd.Timestamp], List[pd.Timestamp]]:
+    """First and last complete calendar day of a regular sub-daily time axis.
+
+    A day is complete when it holds ``86400 / step`` timesteps. Forcing that does
+    not start at the first step of a day or end at the last one (e.g. ERA5's
+    period-ending 01:00 ... 00:00 stamps) leaves partial leading/trailing days
+    whose daily sums are too low and whose min/max/mean are biased.
+
+    Returns ``(first_day, last_day, dropped_edge_days, incomplete_interior_days)``.
+    Only leading/trailing incomplete days are meant to be dropped: HYPE needs a
+    gap-free daily series, so interior incomplete days are reported, not removed.
+    ``first_day``/``last_day`` are ``None`` when no day is complete; for daily or
+    coarser input (or an undeterminable step) the whole span is returned unchanged.
+    """
+    idx = pd.DatetimeIndex(pd.to_datetime(np.asarray(times))).sort_values()
+    if len(idx) == 0:
+        return None, None, [], []
+    if step_seconds is None:
+        if len(idx) < 2:
+            return idx[0].normalize(), idx[-1].normalize(), [], []
+        step_seconds = float(np.median(np.diff(idx.asi8)) / 1e9)
+    if not step_seconds or step_seconds <= 0 or step_seconds >= 86400:
+        return idx[0].normalize(), idx[-1].normalize(), [], []
+    expected = int(round(86400 / step_seconds))
+    counts = pd.Series(1, index=idx).resample('D').size()
+    complete = counts.index[counts.to_numpy() >= expected]
+    if len(complete) == 0:
+        return None, None, list(counts.index), []
+    first, last = complete[0], complete[-1]
+    dropped = [d for d in counts.index if d < first or d > last]
+    interior = [d for d in counts.index
+                if first <= d <= last and counts[d] < expected]
+    return first, last, dropped, interior
+
+
 class HYPEForcingProcessor(BaseForcingProcessor):
     """
     Processor for HYPE forcing data.
@@ -428,9 +465,12 @@ class HYPEForcingProcessor(BaseForcingProcessor):
             raise ValidationError(f'{variable} forcing must have a regular timestep dividing one day')
         if not np.isfinite(frame.to_numpy()).all():
             raise ValidationError(f'Missing {variable} forcing')
-        count = frame.resample('D').size()
-        if not (count == int(86400 / dt[0])).all():
+        # Drop partial leading/trailing days exactly as Pobs/Tobs do, so every
+        # daily obs file covers the same dates; interior gaps remain an error.
+        first, last, _dropped, interior = complete_day_window(frame.index, float(dt[0]))
+        if first is None or interior:
             raise ValidationError(f'Incomplete {variable} forcing day')
+        frame = frame.loc[first:last + pd.Timedelta(days=1) - pd.Timedelta(seconds=dt[0])]
         frame.attrs['step_seconds'] = float(dt[0])
         return frame
 
@@ -595,6 +635,29 @@ class HYPEForcingProcessor(BaseForcingProcessor):
             # Ensure time index is sorted
             ds = ds.sortby('time')
 
+            # Drop partial first/last days (forcing not starting at the first
+            # step of a day or ending at the last one): their sums are too low
+            # and their min/max/mean are biased. Interior gaps are left alone
+            # because HYPE needs a gap-free daily series.
+            first_day, last_day, dropped_days, interior_days = complete_day_window(ds[var_time].values)
+            if first_day is None:
+                raise ValidationError(
+                    f"No complete forcing day for {variable_out} in {input_file_name}"
+                )
+            if dropped_days:
+                self.logger.warning(
+                    "%s: dropping %d incomplete forcing day(s) at the period edges: %s",
+                    variable_out, len(dropped_days),
+                    ', '.join(d.strftime('%Y-%m-%d') for d in dropped_days),
+                )
+            if interior_days:
+                self.logger.warning(
+                    "%s: %d interior forcing day(s) have missing timesteps and are "
+                    "aggregated over the available steps: %s",
+                    variable_out, len(interior_days),
+                    ', '.join(d.strftime('%Y-%m-%d') for d in interior_days[:10]),
+                )
+
             # Resample to daily
             if stat == 'max':
                 ds_daily = ds.resample(time='D').max()
@@ -606,6 +669,8 @@ class HYPEForcingProcessor(BaseForcingProcessor):
                 ds_daily = ds.resample(time='D').sum()
             else:
                 raise ValueError(f"Unsupported stat: {stat}")
+
+            ds_daily = ds_daily.sel({var_time: slice(first_day, last_day)})
 
             # Extract variable and convert to dataframe
             # Use to_series().unstack() to get time as index and IDs as columns

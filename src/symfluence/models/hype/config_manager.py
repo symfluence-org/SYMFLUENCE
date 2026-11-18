@@ -189,7 +189,10 @@ class HYPEConfigManager(ConfigMixin):
                 self._get_config_value(lambda: self.config.domain.time_end, default='2000-12-31', dict_key='EXPERIMENT_TIME_END')
             )
 
-        # Ensure start_date is not before forcing starts
+        # Ensure start_date is not before forcing starts. The spin-up is counted
+        # from the requested start, so a later forcing start (e.g. a dropped
+        # partial first day) shortens spin-up instead of moving cdate.
+        requested_start = start_date
         if forcing_start is not None and start_date < forcing_start:
             start_date = forcing_start
 
@@ -198,7 +201,7 @@ class HYPEConfigManager(ConfigMixin):
         if forcing_end is not None:
             end_date = min(end_date.normalize(), forcing_end.normalize())
 
-        spinup_date = start_date + pd.Timedelta(days=spinup_days)
+        spinup_date = max(requested_start + pd.Timedelta(days=spinup_days), start_date)
 
         # Handle edge cases
         if spinup_date >= end_date:
@@ -417,6 +420,7 @@ timeoutput decimals\t3
         geoclass_file = self.output_path / 'GeoClass.txt'
         num_lu = 5  # Default
         num_soil = 2  # Default
+        has_ilake = False
 
         if geoclass_file.exists():
             try:
@@ -424,6 +428,8 @@ timeoutput decimals\t3
                 geoclass_df = pd.read_csv(geoclass_file, sep='\t', skiprows=1, header=None)
                 num_lu = int(geoclass_df.iloc[:, 1].max())  # Max LULC ID
                 num_soil = int(geoclass_df.iloc[:, 2].max())  # Max Soil ID
+                # Column 8 is the special class code; 2 = internal lake (ilake)
+                has_ilake = geoclass_df.shape[1] > 7 and bool((geoclass_df.iloc[:, 7] == 2).any())
 
                 # Extract land use IDs if not provided
                 if land_uses is None:
@@ -518,13 +524,8 @@ timeoutput decimals\t3
                 raise ValidationError('Ice-cap volume preservation requires the default area-volume relation')
             par_content += '\n!! Relation used to preserve parent ice-cap volume across bands\nglacvcoef1\t1.701\nglacvexp1\t1.25\n'
         lakes = self._get_config_value(lambda: self.config.model.hype.outlet_lakes, dict_key='HYPE_OUTLET_LAKES')
-        if lakes and not re.search(r'^gratk\s', par_content, flags=re.MULTILINE):
-            # HYPE requires gratk, gratp > 0 when lakes exist (hype_tests.f90); outflow = gratk * (w - w0)^gratp
-            depth = max(float(dict(v or {}).get('depth', 0.0)) for v in lakes.values())
-            par_content += ('\n!! Outlet lakes: general rating curve\n'
-                            f'gratk\t{self._get_config_value(lambda: self.config.model.hype.lake_gratk, 100.0, dict_key="HYPE_LAKE_GRATK")}\n'
-                            f'gratp\t{self._get_config_value(lambda: self.config.model.hype.lake_gratp, 1.5, dict_key="HYPE_LAKE_GRATP")}\n'
-                            f'gldepo\t{depth}\n')
+        if lakes or has_ilake:
+            par_content += self._lake_parameter_block(par_content, lakes, has_ilake)
         extra = self._get_config_value(lambda: self.config.model.hype.extra_parameters, dict_key='HYPE_EXTRA_PARAMETERS')
         if extra:
             par_content = self._apply_extra_parameters(par_content, extra, max_lu, num_soil)
@@ -551,6 +552,32 @@ timeoutput decimals\t3
     SOIL_PARAMETERS = frozenset({
         'rrcs1', 'rrcs2', 'wcwp', 'wcfc', 'wcep', 'wcwp1', 'wcfc1', 'wcep1', 'mperc1', 'mperc2',
         'bfroznsoil', 'logsatmp', 'bcosby', 'sfrost', 'macrate', 'mactrinf', 'mactrsm', 'srrate'})
+
+    def _lake_parameter_block(self, par_content: str, lakes: Any, has_ilake: bool) -> str:
+        """par.txt lines HYPE needs once lake classes exist (hype_tests.f90).
+
+        Rating curve gratk/gratp > 0 (outflow = gratk * (w - w0)^gratp) for any lake;
+        gldepo for outlet lakes; gldepi (> 0, or HYPE rejects an ilake with area) and
+        gicatch (share of local runoff routed through the ilake) for internal lakes.
+        Parameters already in par.txt are left alone.
+        """
+        def missing(name: str) -> bool:
+            return not re.search(fr'^{name}\s', par_content, flags=re.MULTILINE)
+
+        hype = lambda: self.config.model.hype  # noqa: E731
+        lines = []
+        if missing('gratk'):
+            lines.append(f'gratk\t{self._get_config_value(lambda: hype().lake_gratk, 100.0, dict_key="HYPE_LAKE_GRATK")}')
+        if missing('gratp'):
+            lines.append(f'gratp\t{self._get_config_value(lambda: hype().lake_gratp, 1.5, dict_key="HYPE_LAKE_GRATP")}')
+        if lakes and missing('gldepo'):
+            depth = max(float(dict(v or {}).get('depth', 0.0)) for v in lakes.values())
+            lines.append(f'gldepo\t{depth}')
+        if has_ilake and missing('gldepi'):
+            lines.append(f'gldepi\t{self._get_config_value(lambda: hype().ilake_depth, 5.0, dict_key="HYPE_ILAKE_DEPTH")}')
+        if has_ilake and missing('gicatch'):
+            lines.append(f'gicatch\t{self._get_config_value(lambda: hype().ilake_icatch, 0.0, dict_key="HYPE_ILAKE_ICATCH")}')
+        return '\n!! Lakes: general rating curve, depths, ilake catchment share\n' + '\n'.join(lines) + '\n' if lines else ''
 
     def _apply_extra_parameters(
         self, par_content: str, extra: dict[str, Any], max_lu: int, num_soil: int
@@ -638,13 +665,13 @@ timeoutput decimals\t3
                 1: 9.6497, 2: 9.2928, 3: 9.8897, 4: 9.8897, 5: 9.8897,
                 6: 5.5393, 7: 5.5393, 8: 9.8897, 9: 9.8897, 10: 9.6497,
                 11: 2.5333, 12: 9.6497, 13: 9.2928, 14: 5.5393, 15: 2.5333,
-                16: 5.5393, 17: 0.0,
+                16: 5.5393, 17: 9.6497,
             },
             'cevp': {  # Evapotranspiration coefficient (-)
                 1: 0.4689, 2: 0.7925, 3: 0.6317, 4: 0.6317, 5: 0.6317,
                 6: 0.1699, 7: 0.1699, 8: 0.6317, 9: 0.6317, 10: 0.4689,
                 11: 0.4506, 12: 0.4689, 13: 0.7925, 14: 0.1699, 15: 0.4506,
-                16: 0.1699, 17: 0.0,
+                16: 0.1699, 17: 0.7925,
             },
             'ttrig': {  # Soil temperature threshold for transpiration (deg C)
                 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0,
@@ -653,17 +680,17 @@ timeoutput decimals\t3
             'treda': {  # Root water uptake coefficient A (-)
                 1: 0.84, 2: 0.84, 3: 0.84, 4: 0.84, 5: 0.84, 6: 0.84, 7: 0.84,
                 8: 0.84, 9: 0.84, 10: 0.84, 11: 0.95, 12: 0.84, 13: 0.84,
-                14: 0.84, 15: 0.95, 16: 0.84, 17: 0.0,
+                14: 0.84, 15: 0.95, 16: 0.84, 17: 0.84,
             },
             'tredb': {  # Root water uptake coefficient B (-)
                 1: 0.4, 2: 0.4, 3: 0.4, 4: 0.4, 5: 0.4, 6: 0.4, 7: 0.4,
                 8: 0.4, 9: 0.4, 10: 0.4, 11: 0.4, 12: 0.4, 13: 0.4,
-                14: 0.4, 15: 0.4, 16: 0.4, 17: 0.0,
+                14: 0.4, 15: 0.4, 16: 0.4, 17: 0.4,
             },
             'fepotsnow': {  # Fraction of PET for snow sublimation (-)
                 1: 0.8, 2: 0.8, 3: 0.8, 4: 0.8, 5: 0.8, 6: 0.8, 7: 0.8,
                 8: 0.8, 9: 0.8, 10: 0.8, 11: 0.8, 12: 0.8, 13: 0.8,
-                14: 0.8, 15: 0.8, 16: 0.8, 17: 0.0,
+                14: 0.8, 15: 0.8, 16: 0.8, 17: 0.8,
             },
             'srrcs': {  # Surface runoff coefficient (-)
                 1: 0.0673, 2: 0.1012, 3: 0.1984, 4: 0.1984, 5: 0.1984,
@@ -810,7 +837,7 @@ bcosby	    {bcosby_val}	!! Cosby B parameter
 !!	SOIL:	{soil_header}
 rrcs1   {rrcs1_val}	!! recession coefficients uppermost layer
 rrcs2   {rrcs2_val}	!! recession coefficients bottom layer
-rrcs3	    0.0939	!! Recession coefficient slope dependance
+rrcs3	    0.0002	!! Recession coefficient slope dependence (per % of slope_mean; HYPE demo value)
 sfrost  {sfrost_val}	!! frost depth parameter (cm/degree Celsius)
 wcwp    {wcwp_val}	!! Soil water content at wilting point
 wcfc    {wcfc_val}	!! Field capacity

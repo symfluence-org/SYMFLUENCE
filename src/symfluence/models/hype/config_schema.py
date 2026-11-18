@@ -137,6 +137,14 @@ class HYPEConfig(BaseModel):
                               description='Outlet-lake general rating coefficient (gratk) when lakes are set')
     lake_gratp: float = Field(default=1.5, alias='HYPE_LAKE_GRATP', gt=0,
                               description='Outlet-lake general rating exponent (gratp) when lakes are set')
+    water_as_ilake: bool = Field(
+        default=True, alias='HYPE_WATER_AS_ILAKE',
+        description='Model each sub-basin\'s water land cover (HYPE_LAKE_LANDUSE) as an internal lake '
+                    '(HYPE class model 2) instead of a land class')
+    ilake_depth: float = Field(default=5.0, alias='HYPE_ILAKE_DEPTH', gt=0,
+                               description='Internal-lake water depth below the outflow threshold (gldepi, m)')
+    ilake_icatch: float = Field(default=0.0, alias='HYPE_ILAKE_ICATCH', ge=0, le=1,
+                                description='Share of local land runoff routed through the internal lake (gicatch)')
 
 
 # Legacy flat config keys accepted for backward compatibility, mapped to
