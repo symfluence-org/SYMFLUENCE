@@ -1,0 +1,23 @@
+--- a/build/source/engine/snowGlceDepth.f90	2026-11-18 06:23:29
++++ b/build/source/engine/snowGlceDepth.f90	2026-11-18 06:25:38
+@@ -259,7 +259,9 @@
+     ! update depth due to metamorphism (implicit solution)
+     scalarDepthNew = scalarDepthNew/(1._rkind + CR_metamorph*dt)
+     ! ensure that the new depth is in line with the maximum amount of compaction that can occur given the masses of ice and liquid in the layer
+-    scalarDepthMin = (massIceOld / iden_ice) + (massLiqOld / iden_water)
++    ! (all water at the density of ice: compaction to ice + liquid at their own densities leaves no room for the liquid
++    ! to refreeze, and the 9% expansion then gives volFracIce + volFracLiq > 1, an infeasible state for the solver)
++    scalarDepthMin = (massIceOld + massLiqOld) / iden_ice
+     mLayerDepth(iSnow) = max(scalarDepthMin, scalarDepthNew)
+ 
+     ! update volumetric ice and liquid water content
+@@ -349,7 +351,8 @@
+     ! adjust depth in proportion to the amount of ice lost/gained in the layer (m), keeping ice fraction constant
+     volFracIceChange = mLayerMeltFreeze(iGlce)/iden_ice  ! volumetric fraction of ice lost/gained due to melt/refreeze (-)
+     scalarDepthNew = massIceOld/((mLayerVolFracIceNew(iGlce)+volFracIceChange)*iden_ice)
+-    mLayerDepth(iGlce) = scalarDepthNew
++    ! as for snow: no thinner than all its water as ice (refreeze would otherwise give volFracIce + volFracLiq > 1)
++    mLayerDepth(iGlce) = max(scalarDepthNew, (massIceOld + massLiqOld)/iden_ice)
+ 
+     ! Keep liquid water fraction in the layer constant; excess liquid is squeezed out
+     ! Note, if it got colder the depth icreases and thus adds a bit of water to the layer, but will be corrected when the layer is reduced to the active layer depth

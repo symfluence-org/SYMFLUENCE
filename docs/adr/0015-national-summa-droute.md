@@ -72,6 +72,16 @@ daily means. dRoute from `/Users/darri/repos/dRoute` main (#17), not the SYMFLUE
   run starts from their merge. Glacier restarts size `ygrid`/`xgrid` to each block's largest GRU (rest = netCDF
   default fill), so `merge_restarts` pads every non-concatenated dimension to a common size (grids to the cold
   state's 149 × 150) before joining.
+- Snow density cap (2026-11-18): the spin-up's ice run failed on 1995-12-04 at HRU 620702 (GRU 6207, glacier tongue
+  ≈ 905 m), `systemSolv/state vector not feasible ... layer=1 ... max= -3.0e-05`: a 9-mm top snow layer at
+  volFracIce = 1.00003 with liquid water. Snow compaction stops at `massIce/iden_ice + massLiq/iden_water`, which
+  leaves no room for the liquid to refreeze (+9 % volume), so after a refreeze ice + liquid > 1 and the next substep
+  starts infeasible (fatal in `initial_function_evaluations`; a shorter step cannot help).
+  `patches/snow_glacier_density_cap.patch` floors snow and glacier-ice layer depth at `(massIce + massLiq)/iden_ice`
+  (no effect below ice density). Server build patched 2026-11-18; the failed block was resumed from its 1995-10-01
+  restart (SUMMA also writes restarts every 1 Oct) with it; the other spin-up blocks ran without it.
+- Runner: ice and land run as independent chunk queues sized to the server's free cores; a rerun adopts chunks
+  still running there (`national_remote.py`).
 
 ## Open
 
