@@ -48,11 +48,12 @@ class Host:
                     f'wsl -d {self.a.wsl} -- bash -c {shlex.quote(cmd)}']
         else:
             full = ['ssh', '-o', 'ConnectTimeout=30', self.a.host, cmd]
-        for attempt in range(5):
+        for attempt in range(40):           # ~6 h: ride out host reboots / network drops
             r = subprocess.run(full, capture_output=True, text=True)
             if r.returncode != 255:          # 255: ssh itself failed (network); retry
                 break
-            time.sleep(30 * (attempt + 1))
+            logger.warning('ssh failed (attempt %d), retrying', attempt + 1)
+            time.sleep(min(60 * (attempt + 1), 600))
         if check and r.returncode != 0:
             raise RuntimeError(f'remote command failed ({r.returncode}): {cmd}\n{r.stdout}\n{r.stderr}')
         return r.stdout
