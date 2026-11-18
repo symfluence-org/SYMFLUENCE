@@ -80,6 +80,18 @@ daily means. dRoute from `/Users/darri/repos/dRoute` main (#17), not the SYMFLUE
   `patches/snow_glacier_density_cap.patch` floors snow and glacier-ice layer depth at `(massIce + massLiq)/iden_ice`
   (no effect below ice density). Server build patched 2026-11-18; the failed block was resumed from its 1995-10-01
   restart (SUMMA also writes restarts every 1 Oct) with it; the other spin-up blocks ran without it.
+- Glacier restarts (2026-11-18): the resume from the 1995-10-01 restart then failed in two more ways, both in
+  how the glacier branch writes and reads restarts (a continuous run is unaffected):
+  1. Glacier domains whose area went to 0 are written with zero-depth snow layers and broken interface heights
+     (≈ 35 of 2,948 HRUs); `check_icond` stops on them. `national_run.fix_layer_heights` (called by
+     `merge_restarts`) drops zero-depth snow layers and rebuilds heights from depths.
+  2. On reading, `check_icond` rederives the upland domain's elevation as (HRU − glacier moments)/(remaining
+     area); once the glacier surface has moved and covers most of the HRU this gives 3–15 km (290 HRUs; air
+     temperature −1268 K), and moderately wrong values in many more. The run itself takes it from the terrain
+     grid. `patches/glacier_restart_upland_elev.patch` keeps the restart's upland elevation, slope and aspect
+     when valid. Consequence: every chunk restart before this patch used wrong upland temperatures in mostly
+     glacier-covered HRUs; the spin-up's G134–296 block was rerun for WY1996 with both patches, and the merged
+     end state is checked by a one-day start of all ice GRUs before the main run.
 - Runner: ice and land run as independent chunk queues sized to the server's free cores; a rerun adopts chunks
   still running there (`national_remote.py`).
 

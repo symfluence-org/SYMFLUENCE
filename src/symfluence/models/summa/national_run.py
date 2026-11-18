@@ -261,6 +261,51 @@ def _has_pyarrow() -> bool:
         return False
 
 
+def fix_layer_heights(ds, tol: float = 1e-3):
+    """Repair (hru, dom) layer stacks whose heights disagree with their depths. The glacier branch writes domains
+    whose area went to 0 (retreated glacier: DOMarea 0, DOMelev -9999) with snow layers of zero depth and broken
+    interface heights; a continuous run skips them, but SUMMA's restart check (check_icond: "mis-match between layer
+    depth and layer height") stops on them. Zero-depth snow layers are dropped (nSnow, SWE, snow depth to 0) and
+    heights are rebuilt from the depths: iLayerHeight[0] = -snow depth, mLayerHeight[k+1] = middle of layer k."""
+    mid = [v for v in ds.data_vars if ds[v].dims[:1] == ('midToto',)]
+    a = {v: ds[v].values.copy() for v in mid + ['iLayerHeight', 'mLayerHeight', 'nSnow', 'nSoil', 'nGlce']
+         + [v for v in ('scalarSWE', 'scalarSnowDepth') if v in ds]}
+    dep, ih, mh = a['mLayerDepth'], a['iLayerHeight'], a['mLayerHeight']
+    ffill = 9.969209968386869e36
+    fixed = dropped = 0
+    for h in range(dep.shape[1]):
+        for k in range(dep.shape[2]):
+            ns, n = int(a['nSnow'][h, k]), int(a['nSnow'][h, k]) + int(a['nSoil'][h, k]) + int(a['nGlce'][h, k])
+            if ns < 0 or n <= 0 or n > dep.shape[0]:
+                continue
+            if np.allclose(np.diff(ih[:n + 1, h, k]), dep[:n, h, k], atol=tol):
+                continue
+            if ns and np.all(dep[:ns, h, k] == 0):
+                for v in mid:
+                    a[v][:n - ns, h, k] = a[v][ns:n, h, k]
+                    a[v][n - ns:n, h, k] = ffill
+                n -= ns
+                ns = 0
+                a['nSnow'][h, k] = 0
+                for v in ('scalarSWE', 'scalarSnowDepth'):
+                    if v in a:
+                        a[v][..., h, k] = 0.
+                dropped += 1
+            top = -dep[:ns, h, k].sum()
+            ih[:, h, k] = ffill
+            ih[0, h, k] = top
+            ih[1:n + 1, h, k] = top + np.cumsum(dep[:n, h, k])
+            mh[1:, h, k] = ffill
+            mh[1:n + 1, h, k] = 0.5 * (ih[:n, h, k] + ih[1:n + 1, h, k])
+            fixed += 1
+    if fixed:
+        logger.info('restart: rebuilt layer heights of %d (hru, dom) stacks, dropped zero-depth snow in %d',
+                    fixed, dropped)
+    for v, x in a.items():
+        ds[v] = (ds[v].dims, x, ds[v].attrs)
+    return ds
+
+
 def merge_restarts(out: Path, settings: Path, prefix: str) -> str:
     """Join the block restart files (<prefix>_restart_*_G*.nc) along hru/gru into settings/restart_<prefix>.nc,
     in attributes order; returns its name for the next chunk's fileManager."""
@@ -299,6 +344,8 @@ def merge_restarts(out: Path, settings: Path, prefix: str) -> str:
     other = [v for v in parts[0].data_vars if v not in hru_vars + gru_vars]
     merged = xr.merge([xr.concat([p[hru_vars] for p in parts], 'hru'),
                        xr.concat([p[gru_vars] for p in parts], 'gru'), parts[0][other]])
+    if 'iLayerHeight' in merged:
+        merged = fix_layer_heights(merged)
     name = f'restart_{prefix}.nc'
     merged.to_netcdf(settings / name)
     for p in parts:

@@ -1,0 +1,18 @@
+--- a/build/source/engine/check_icond.f90	2026-11-18 06:45:38
++++ b/build/source/engine/check_icond.f90	2026-11-18 06:45:38
+@@ -208,7 +208,14 @@
+                  DOMcontourLength => progData%gru(iGRU)%hru(iHRU)%dom(iDOM)%var(iLookPROG%DOMcontourLength)%dat(1) )
+          if (typeDOM==upland) then
+            DOMarea = remaining_area
+-           if(remaining_area>0._rkind)then 
++           if(remaining_area>0._rkind .and. remaining_area<attrData%gru(iGRU)%hru(iHRU)%var(iLookATTR%HRUarea) .and. &
++              .not.no_dom_vars .and. DOMelev>-1000._rkind .and. DOMelev<10000._rkind)then
++             ! glacier HRU from a restart: keep the upland elevation, slope and aspect the run wrote (run_oneGRU sets
++             ! them from the terrain grid and the static HRU attributes once glacier area is updated). Rederiving
++             ! them as (HRU - glacier moments)/(remaining area) blows up when the glacier covers most of the HRU and
++             ! its surface has moved (upland elevations of 3-15 km, nonsense air temperature)
++             continue
++           else if(remaining_area>0._rkind)then 
+              DOMelev = remaining_elev/remaining_area
+              DOMtan_slope = remaining_tan_slope/remaining_area
+              if(remaining_aspect_sin**2 + remaining_aspect_cos**2 > aspect_tol)then
