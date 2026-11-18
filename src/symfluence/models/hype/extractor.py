@@ -11,6 +11,7 @@ use mizuRoute for routing.
 from __future__ import annotations
 
 import logging
+from collections.abc import Hashable
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -53,7 +54,7 @@ def find_subid_map(output_file: Path) -> Optional[Path]:
 
 
 def select_outlet_column(df: pd.DataFrame, reach: Any = None,
-                         map_path: Optional[Path] = None, logger=None) -> Optional[str]:
+                         map_path: Optional[Path] = None, logger=None) -> Optional[Hashable]:
     """Pick the outlet sub-basin column of a HYPE time file (DATE-indexed frame).
 
     Order: SIM_REACH_ID translated through subid_map.csv, the raw SIM_REACH_ID,
