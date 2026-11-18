@@ -212,6 +212,9 @@ def zone_cell_weights(grid: MF6BasinGrid, zones, zone_area_m2: Optional[Dict] = 
     recharge rate (m/d) into the cell's rate such that the zone's total volume
     (rate x ``zone_area_m2``, the land model's own area) is preserved:
     ``mult = overlap / cell_area * zone_area / sum(overlaps of zone)``.
+    ``overlap_m2`` is the zone's actual area inside the cell; it, not the
+    area-normalised ``mult``, decides a cell's main zone (see
+    :func:`main_zone_per_cell`).
     """
     import geopandas as gpd
     if 'zone_id' not in zones:
@@ -230,7 +233,21 @@ def zone_cell_weights(grid: MF6BasinGrid, zones, zone_area_m2: Optional[Dict] = 
         target = pd.Series({k: float(zone_area_m2[k]) for k in covered.index})
     ov['mult'] = ov.a / grid.cell_area * ov.zone_id.map(target / covered)
     ov['coverage'] = ov.zone_id.map(covered / z.set_index('zone_id').geometry.area)
-    return ov[['zone_id', 'row', 'col', 'mult', 'coverage']].sort_values(['zone_id', 'row', 'col']).reset_index(drop=True)
+    ov['overlap_m2'] = ov.a
+    return ov[['zone_id', 'row', 'col', 'mult', 'coverage', 'overlap_m2']].sort_values(
+        ['zone_id', 'row', 'col']).reset_index(drop=True)
+
+
+def main_zone_per_cell(weights: pd.DataFrame) -> pd.DataFrame:
+    """The recharge zone covering the largest part of each cell (one row per ``row, col``).
+
+    Ranked by the zone's overlap area with the cell. ``mult`` is not used: it
+    is rescaled by each zone's land-model area over its gridded overlap, so a
+    zone holding a sliver of the cell can outrank the zone the cell lies in.
+    Weights written before ``overlap_m2`` existed fall back to ``mult``.
+    """
+    key = 'overlap_m2' if 'overlap_m2' in weights else 'mult'
+    return weights.sort_values([key, 'zone_id'], kind='mergesort').groupby(['row', 'col']).tail(1)
 
 
 def _array(a: np.ndarray, fmt: str) -> str:
@@ -306,7 +323,7 @@ def write_parameter_packages(sim_dir: Path, grid: MF6BasinGrid, params: MF6Basin
     seep: Dict[bool, List[str]] = {False: [], True: []}   # True: SEEPL, seepage in cells whose main recharge zone drains to the lake
     to_lake = np.zeros((grid.nrow, grid.ncol), bool)
     if grid.lake_zones:
-        top_zone = weights.sort_values('mult').groupby(['row', 'col']).tail(1)
+        top_zone = main_zone_per_cell(weights)
         top_zone = top_zone[top_zone.zone_id.isin(grid.lake_zones)]
         to_lake[top_zone.row.to_numpy(int) - 1, top_zone.col.to_numpy(int) - 1] = True
     for r, c in zip(rows, cols):

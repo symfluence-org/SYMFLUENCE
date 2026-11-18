@@ -157,11 +157,18 @@ class MODFLOWPreProcessor(BaseModelPreProcessor):
         self.logger.info(f"Generating MODFLOW 6 input files in {settings_dir}")
 
         # Get parameters
-        area_m2 = self._get_catchment_area_m2()
-        cell_size = float(self._get_modflow_cfg('CELL_SIZE', math.sqrt(area_m2)))
         nlay = int(self._get_modflow_cfg('NLAY', 1))
+        if nlay != 1:
+            # TOP/BOTM, the single-cell drain and the CONSTANT recharge are all
+            # written for one layer; extra layers would get zero thickness.
+            raise ConfigurationError(
+                f"MODFLOW lumped mode supports only one layer (MODFLOW_NLAY: 1), got MODFLOW_NLAY: {nlay}. "
+                "Set MODFLOW_NLAY to 1, or use MODFLOW_GRID_MODE: basin."
+            )
         nrow = int(self._get_modflow_cfg('NROW', 1))
         ncol = int(self._get_modflow_cfg('NCOL', 1))
+        area_m2 = self._get_catchment_area_m2()
+        cell_size = self._lumped_cell_size(area_m2, nrow, ncol)
         k = float(self._get_modflow_cfg('K', 5.0))
         sy = float(self._get_modflow_cfg('SY', 0.05))
         ss = float(self._get_modflow_cfg('SS', 1e-5))
@@ -206,6 +213,27 @@ class MODFLOWPreProcessor(BaseModelPreProcessor):
 
         self.logger.info(f"MODFLOW 6 input files generated in {settings_dir}")
 
+    def _lumped_cell_size(self, area_m2: float, nrow: int, ncol: int) -> float:
+        """Square cell size whose ``nrow x ncol`` grid has exactly the catchment area.
+
+        Recharge is a depth rate (m/d) applied to every cell, so the grid area
+        sets the recharge volume and must equal the basin area the land model's
+        depths refer to. A configured ``MODFLOW_CELL_SIZE`` that would give a
+        different grid area is overridden (with a warning) in lumped mode.
+        """
+        n_cells = nrow * ncol
+        cell_size = math.sqrt(area_m2 / n_cells)
+        configured = self._get_modflow_cfg('CELL_SIZE')
+        if configured is not None:
+            grid_area = float(configured) ** 2 * n_cells
+            if abs(grid_area - area_m2) > 0.01 * area_m2:
+                self.logger.warning(
+                    f"MODFLOW_CELL_SIZE={float(configured):g} m gives a {nrow}x{ncol} grid of "
+                    f"{grid_area / 1e6:.3f} km2, not the catchment's {area_m2 / 1e6:.3f} km2; lumped mode "
+                    f"uses cell_size={cell_size:.1f} m so recharge volume matches the catchment."
+                )
+        return cell_size
+
     # ------------------------------------------------------------------
     # Real-basin grid (MODFLOW_GRID_MODE: basin)
     # ------------------------------------------------------------------
@@ -232,6 +260,8 @@ class MODFLOWPreProcessor(BaseModelPreProcessor):
         from .land_adapters import get_land_adapter
 
         cfg = self.config.model.modflow
+        if int(getattr(cfg, 'nlay', 1) or 1) != 1:
+            self.logger.warning(f'MODFLOW basin mode builds a single-layer aquifer; MODFLOW_NLAY={cfg.nlay} is ignored')
         sub = gpd.read_file(self._resolve_input(cfg.subbasin_shapefile, 'shapefiles/river_basins', '*.shp',
                                                 'subbasins'))
         net = gpd.read_file(self._resolve_input(cfg.river_network_shapefile, 'shapefiles/river_network', '*.shp',

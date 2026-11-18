@@ -89,6 +89,7 @@ class MODFLOWConfig(BaseModel):
 
     # Grid discretization (lumped mode)
     grid_type: str = Field(default='dis', alias='MODFLOW_GRID_TYPE')
+    # Lumped mode supports one layer only (rejected otherwise); basin mode is always single-layer.
     nlay: int = Field(default=1, alias='MODFLOW_NLAY', ge=1, le=100)
     nrow: int = Field(default=1, alias='MODFLOW_NROW', ge=1, le=10000)
     ncol: int = Field(default=1, alias='MODFLOW_NCOL', ge=1, le=10000)

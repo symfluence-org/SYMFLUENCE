@@ -266,15 +266,15 @@ class CERRAHandler(BaseDatasetHandler):
 
             # Get HRU bounding box for spatial filtering
             # Read the HRU shapefile to get its extent
-            # shapefile_path is .../shapefiles/forcing, so parent is .../shapefiles
-            hru_shapefile_dir = shapefile_path.parent / 'catchment'
-            domain_name = self._get_config_value(lambda: self.config.domain.name, default='domain')
-            hru_shapefile = hru_shapefile_dir / f"{domain_name}_HRUs_GRUs.shp"
+            # Resolved from project_dir: shapefile_path may be nested
+            # (shapefiles/forcing/<signature>) and the catchment lives under
+            # shapefiles/catchment/<method>/<experiment_id>/.
+            hru_shapefile = self._find_catchment_shapefile()
 
             self.logger.info(f"Looking for HRU shapefile at: {hru_shapefile}")
 
             bbox_filter = None
-            if hru_shapefile.exists():
+            if hru_shapefile is not None and hru_shapefile.exists():
                 try:
                     import geopandas as gpd
                     hru_gdf = gpd.read_file(hru_shapefile)
@@ -317,7 +317,7 @@ class CERRAHandler(BaseDatasetHandler):
 
                     # If we have the HRU shapefile, use it to ensure full coverage
                     poly_created = False
-                    if hru_shapefile.exists():
+                    if hru_shapefile is not None and hru_shapefile.exists():
                         try:
                             # Re-read or use existing if efficient (safest to re-read to be sure)
                             if 'hru_gdf' not in locals():

@@ -5667,7 +5667,7 @@ MODFLOW_NCOL: 1
 #   Type:        float
 #   Default:     1000.0
 #   Source:      MODFLOWConfig (model_configs.py)
-#   Note:        For lumped mode, defaults to sqrt(catchment_area_m2)
+#   Note:        Lumped mode ignores it: cell = sqrt(catchment_area_m2 / (NROW*NCOL))
 MODFLOW_CELL_SIZE: 1000.0
 
 # MODFLOW_K — Hydraulic conductivity (m/d)
