@@ -12,10 +12,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict
 
-import pandas as pd
-
 from symfluence.core.modeling.base import StandardModelPostProcessor
 from symfluence.core.registries import R
+
+from .extractor import translate_reach_to_subid
 
 
 @R.postprocessors.add('HYPE')
@@ -63,19 +63,11 @@ class HYPEPostProcessor(StandardModelPostProcessor):
         """
         reach = self._get_config_value(lambda: None, dict_key='SIM_REACH_ID')
         map_path = self.project_dir / 'settings' / 'HYPE' / 'subid_map.csv'
-        if reach is not None and map_path.exists():
-            try:
-                mapping = pd.read_csv(map_path)
-                hit = mapping.loc[mapping['original_id'] == int(reach), 'hype_subid']
-            except (OSError, ValueError, KeyError) as e:
-                self.logger.warning(f"Could not read {map_path}: {e}")
-                hit = None
-            if hit is not None and len(hit):
-                column = str(int(hit.iloc[0]))
-                if column in df.columns:
-                    if column != str(reach):
-                        self.logger.info(f"SIM_REACH_ID {reach} is HYPE subid {column}")
-                    return column
+        column = translate_reach_to_subid(reach, map_path, self.logger)
+        if column is not None and column in df.columns:
+            if column != str(reach):
+                self.logger.info(f"SIM_REACH_ID {reach} is HYPE subid {column}")
+            return column
         return super()._get_flow_column(df)
 
     def _get_model_name(self) -> str:
