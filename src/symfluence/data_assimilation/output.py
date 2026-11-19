@@ -30,6 +30,10 @@ class DAOutputManager:
         analysis_times: Optional[List[int]] = None,
         time_index: Optional[np.ndarray] = None,
         global_attrs: Optional[Dict[str, Any]] = None,
+        open_loop_predictions: Optional[np.ndarray] = None,
+        forecasts: Optional[np.ndarray] = None,
+        forecast_issue_steps: Optional[List[int]] = None,
+        precip_bias: Optional[np.ndarray] = None,
     ) -> None:
         """Write DA results to a NetCDF file.
 
@@ -43,6 +47,11 @@ class DAOutputManager:
             time_index: Optional datetime index.
             global_attrs: Extra global attributes (e.g. catchment area and
                 timestep used for the observation unit conversion).
+            open_loop_predictions: Open-loop ensemble (n_timesteps, n_members).
+            forecasts: Lead-time forecasts (n_issues, n_leads, n_members).
+            forecast_issue_steps: Step index of each forecast issue.
+            precip_bias: Precipitation bias multiplier per member after each
+                step (n_timesteps, n_members).
         """
         import xarray as xr
 
@@ -75,6 +84,18 @@ class DAOutputManager:
                 ensemble_predictions[:n_timesteps],
             )
             coords['member'] = np.arange(n_members)
+
+        if open_loop_predictions is not None and n_members > 0:
+            data_vars['open_loop_streamflow'] = (
+                ['time', 'member'], np.asarray(open_loop_predictions)[:n_timesteps])
+        if precip_bias is not None and n_members > 0:
+            data_vars['precip_bias'] = (['time', 'member'], np.asarray(precip_bias)[:n_timesteps])
+        if forecasts is not None and forecast_issue_steps is not None and n_members > 0:
+            fc = np.asarray(forecasts)
+            issues = np.asarray(forecast_issue_steps, dtype=int)
+            data_vars['forecast_streamflow'] = (['issue', 'lead', 'member'], fc)
+            data_vars['forecast_issue_time'] = (['issue'], np.asarray(time_coord)[issues])
+            coords['lead'] = np.arange(1, fc.shape[1] + 1)
 
         # Analysis mask
         analysis_mask = np.zeros(n_timesteps, dtype=bool)
@@ -113,6 +134,22 @@ class DAOutputManager:
             'units': 'mm/timestep',
             'long_name': 'Innovation (observation minus predicted mean)',
         }
+        if 'open_loop_streamflow' in ds:
+            ds['open_loop_streamflow'].attrs = {
+                'units': 'mm/timestep',
+                'long_name': 'Open-loop (never updated) per-member streamflow',
+            }
+        if 'forecast_streamflow' in ds:
+            ds['forecast_streamflow'].attrs = {
+                'units': 'mm/timestep',
+                'long_name': 'Ensemble forecast issued after the analysis at forecast_issue_time',
+            }
+            ds['lead'].attrs = {'long_name': 'Forecast lead', 'units': 'timesteps'}
+        if 'precip_bias' in ds:
+            ds['precip_bias'].attrs = {
+                'units': '1',
+                'long_name': 'Multiplicative precipitation bias state per member',
+            }
         if 'ensemble_streamflow' in ds:
             ds['ensemble_streamflow'].attrs = {
                 'units': 'mm/timestep',
