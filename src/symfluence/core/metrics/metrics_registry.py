@@ -342,3 +342,56 @@ def interpret_metric(name: str, value: float) -> str:
             category = "N/A"
 
     return f"{name} = {value:.3f}: {category}"
+
+
+# ---------------------------------------------------------------------------
+# Glacier mass-balance metrics (multi-variable evaluation). Computed by the
+# GLACIER_MB evaluator from period-mean rates, not by a standalone function;
+# registered so their optimisation direction is known to workers, COMPOSITE
+# objectives and NSGA-II (e.g. NSGA2_SECONDARY_METRIC: GMB_SCORE).
+# ---------------------------------------------------------------------------
+METRIC_REGISTRY["GMB_SCORE"] = {
+    "function": None,
+    "info": MetricInfo(
+        name="GMB_SCORE",
+        full_name="Glacier mass-balance score",
+        range=(float("-inf"), 1.0),
+        optimal=1.0,
+        direction="maximize",
+        units="dimensionless",
+        description="1 - RMS of (simulated - observed period-mean mass-balance rate) / "
+                    "(observation uncertainty, or GLACIER_MB_SCALE)",
+        reference="Hugonnet et al. (2021) for geodetic period-mean rates",
+    ),
+}
+METRIC_REGISTRY["GMB_ABS_BIAS"] = {
+    "function": None,
+    "info": MetricInfo(
+        name="GMB_ABS_BIAS",
+        full_name="Glacier mass-balance absolute bias",
+        range=(0.0, float("inf")),
+        optimal=0.0,
+        direction="minimize",
+        units="mm w.e. yr-1",
+        description="|mean(simulated - observed) period-mean mass-balance rate|",
+        reference="",
+    ),
+}
+METRIC_REGISTRY["GMB_RMSE"] = {
+    "function": None,
+    "info": MetricInfo(
+        name="GMB_RMSE",
+        full_name="Glacier mass-balance RMSE",
+        range=(0.0, float("inf")),
+        optimal=0.0,
+        direction="minimize",
+        units="mm w.e. yr-1",
+        description="RMSE of period-mean mass-balance rates over the observed periods",
+        reference="",
+    ),
+}
+_METRIC_ALIASES.update({
+    "gmb_score": "GMB_SCORE",
+    "gmb_abs_bias": "GMB_ABS_BIAS",
+    "gmb_rmse": "GMB_RMSE",
+})

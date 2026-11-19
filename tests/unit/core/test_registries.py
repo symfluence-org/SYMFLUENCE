@@ -77,7 +77,7 @@ class TestRegistryInstances:
             "preprocessors", "runners", "postprocessors", "visualizers",
             "config_adapters", "config_schemas", "config_defaults",
             "config_transformers", "config_validators",
-            "result_extractors",
+            "result_extractors", "output_adapters",
             "optimizers", "workers", "parameter_managers",
             "calibration_targets", "objectives",
             "acquisition_handlers", "dataset_handlers", "observation_handlers",

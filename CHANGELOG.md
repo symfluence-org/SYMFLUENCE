@@ -10,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Model-agnostic multi-variable evaluation**: output-variable adapters (`R.output_adapters`,
+  `core.modeling.output_variables`) give glacier storage / area / cumulative specific mass balance, basin SWE,
+  snow-covered fraction and ET in standard units for SUMMA, HYPE, GR (lumped glacier balances), PRMS, GSFLOW,
+  Raven, Wflow and mHM (others raise `UnsupportedVariableError`). New evaluators `GLACIER_MB` (period-mean
+  rates vs geodetic/glaciological observations, `GLACIER_MB_OBS_PATH`, e.g. Hugonnet `dmdtda`; `GMB_BIAS`,
+  `GMB_ABS_BIAS`, `GMB_REL_BIAS`, `GMB_RMSE`, `GMB_SCORE` with observation uncertainty), `BASIN_SWE`,
+  `BASIN_SCA`, `BASIN_ET` (KGE with components), also as calibration targets `glacier_mb`, `basin_*`.
+  `GMB_*` metrics can be `OPTIMIZATION_METRIC`, COMPOSITE components or NSGA-II objectives
+  (`NSGA2_SECONDARY_METRIC: GMB_SCORE`); workers compute them through the evaluator and fail the run if they
+  cannot. New docs page "Multi-variable evaluation" with the support matrix.
 - **Elevation corrections of remapped forcing (opt-in)**: the `lapse` config section (`pressure`, `humidity`,
   `longwave`, `shortwave`, `precipitation`, `wind`, with `lw_gradient`, `sw_gradient`, `precip_gradient`,
   `wind_gradient`) is now applied by the forcing remapper, from the elevation difference between each HRU and
@@ -72,6 +82,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requires it.
 
 ### Changed
+- **Multivariate objective defaults are bias-sensitive (changes results)**: the default metric for `SCA` and
+  `ET` in `OBJECTIVE_METRICS` is now KGE instead of correlation (bias-blind); `SWE`, `SNOW` and the new
+  `BASIN_*` default to KGE and `GLACIER_MB` to `GMB_SCORE`. `OBJECTIVE_METRICS` keys are now case-insensitive
+  and merged over the defaults (a lower-case `streamflow: nse` used to be ignored; a variable missing from a
+  user dict now gets its default, e.g. NSE for TWS, instead of KGE). Minimised metrics (RMSE, PBIAS,
+  `GMB_ABS_BIAS`) now contribute `|value|` instead of `1 - value`. A variable whose evaluator returned no
+  metrics is penalised (2.0) instead of raising.
 - **SAC-SMA cryosphere replay scores with the engine's KGE/NSE**: `sacsma_cryosphere/replay.py` dropped its own
   KGE/NSE formula for `core.metrics` (identical values to 1e-12 on real series). A constant simulation now scores
   `None` instead of a finite KGE with r = 0. `replay.py` hashes its own source, so specs frozen against the

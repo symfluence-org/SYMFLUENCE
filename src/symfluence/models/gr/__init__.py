@@ -125,6 +125,7 @@ def register() -> None:
     R.postprocessors.add_lazy("GR", f"{base}.postprocessor.GRPostProcessor")
     R.visualizers.add_lazy("GR", f"{base}.visualizer.visualize_gr")
     R.result_extractors.add_lazy("GR", f"{base}.extractor.GRResultExtractor")
+    R.output_adapters.add_lazy("GR", f"{base}.output_adapter.GROutputAdapter")
 
     from symfluence.core.modeling.spatial_modes import (
         ModelSpatialCapability,

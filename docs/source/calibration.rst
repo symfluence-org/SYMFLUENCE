@@ -168,6 +168,12 @@ Combine multiple target variables with per-variable weights and metrics:
      streamflow: 0.7
      swe: 0.3
 
+Unset variables use bias-sensitive default metrics (KGE; NSE for TWS;
+``GMB_SCORE`` for ``GLACIER_MB``). Glacier mass balance, basin SWE, SCA and ET
+can be evaluated for any model with an output adapter, and glacier mass
+balance can be a COMPOSITE component or an NSGA-II objective; see
+:doc:`multivariable_evaluation`.
+
 Calibration Execution
 ---------------------
 
@@ -286,6 +292,7 @@ Example Workflows
 
 **See Also**
 
+- :doc:`multivariable_evaluation` — glacier mass balance, SWE, SCA and ET for any model
 - :doc:`configuration` — Complete parameter reference
 - :doc:`troubleshooting` — Calibration troubleshooting and diagnostics
 - :doc:`api` — Programmatic calibration control
