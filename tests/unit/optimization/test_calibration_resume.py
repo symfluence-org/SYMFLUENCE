@@ -382,6 +382,11 @@ def test_resume_refuses_changed_budget_mode(tmp_path):
              CALIBRATION_BUDGET_MODE='per_parameter', EVALUATIONS_PER_PARAMETER=20)
 
 
+def test_dream_resume_refuses_changed_likelihood_settings(tmp_path):
+    run_dir = tmp_path / 'run'
+    _run(tmp_path, 'dream', run_dir, budget=40)
+    with pytest.raises(CalibrationResumeError, match="likelihood"):
+        _run(tmp_path, 'dream', run_dir, CALIBRATION_RESUME=True, LIKELIHOOD_BOX_COX_LAMBDA=0.5)
 def test_resume_refuses_changed_forcing_correction(tmp_path, monkeypatch):
     from symfluence.core.calibration.forcing_correction import ForcingCorrectionPlan
 

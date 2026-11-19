@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
+
 from symfluence.core.calibration.forcing_correction import PENALTY_METRIC as FORCING_CORRECTION_PENALTY_METRIC
 from symfluence.core.calibration.forcing_correction import TASK_KEY as FORCING_CORRECTION_TASK_KEY
 from symfluence.core.calibration.forcing_correction import apply_prior_to_score
@@ -24,7 +26,10 @@ from symfluence.core.exceptions import RetryExhaustedError
 from symfluence.core.logging_utils import log_once
 from symfluence.core.metrics.metric_transformer import MetricTransformer
 from symfluence.core.metrics.penalty import is_failure_sentinel, is_penalty, sanitize_score
-from symfluence.core.metrics.streamflow_metrics import StreamflowMetrics
+from symfluence.core.metrics.streamflow_metrics import (
+    StreamflowMetrics,
+    configured_objective_metrics,
+)
 from symfluence.core.mixins.config import SCHEMA_DEFAULT, resolve_config_value
 from symfluence.core.mixins.logging import _class_logger_name
 
@@ -282,12 +287,11 @@ class BaseWorker(ABC):
         self.logger = logger or logging.getLogger(
             _class_logger_name(self.__class__))
 
-        # Shadow the subclass-level shared StreamflowMetrics instance when a
-        # non-default Box-Cox lambda is configured (used by *_BOX_COX metrics)
-        box_cox_lambda = self._cfg('BOX_COX_LAMBDA')
-        if box_cox_lambda is not None:
-            self._streamflow_metrics = StreamflowMetrics(
-                box_cox_lambda=float(box_cox_lambda))
+        # Shadow the subclass-level shared StreamflowMetrics instance with one
+        # carrying the configured BOX_COX_LAMBDA (*_BOX_COX metrics) and the
+        # LIKELIHOOD_* error model (LOGLIK_BC_AR1).
+        if self.config:
+            self._streamflow_metrics = StreamflowMetrics.from_config(self.config)
 
     def _cfg(self, key: str, default: Any = None) -> Any:
         """Get config value from the worker's config dict.
@@ -610,6 +614,49 @@ class BaseWorker(ABC):
     # Always requested alongside the objective (reporting + legacy consumers).
     BASE_REQUESTED_METRICS = ('kge', 'nse')
 
+    #: Whether this worker can return the formal likelihood (LOGLIK_BC_AR1).
+    #: Workers scoring through StreamflowMetrics, a StreamflowEvaluator target
+    #: or :meth:`_objective_extras` can; a worker that cannot sets this False
+    #: so a formal DREAM run falls back to the informal objective up front.
+    SUPPORTS_FORMAL_LIKELIHOOD: bool = True
+
+    def supports_formal_likelihood(self, config: Any = None) -> bool:
+        """True when this worker can score ``LOGLIK_BC_AR1`` for ``config``.
+
+        Multi-gauge calibration aggregates scores over several gauges, which
+        is not a single-series likelihood, so it is never supported.
+        """
+        if not self.SUPPORTS_FORMAL_LIKELIHOOD:
+            return False
+        cfg = self.config if config is None else config
+        multi_gauge = resolve_config_value(
+            cfg, lambda: cfg.optimization.multi_gauge.calibration, dict_key='MULTI_GAUGE_CALIBRATION')
+        return not bool(multi_gauge)
+
+    def _objective_extras(
+        self,
+        obs: Any,
+        sim: Any,
+        existing: Dict[str, Any],
+        config: Any = None,
+    ) -> Dict[str, float]:
+        """Configured objective metrics missing from ``existing``.
+
+        For workers that compute KGE/NSE themselves from aligned obs/sim
+        arrays: adds the configured objective (LOGLIK_BC_AR1, KGE_LOG,
+        signature errors, NSGA-II objectives) through the shared
+        StreamflowMetrics, so the worker never falls back to KGE for them.
+        """
+        cfg = self.config if config is None else config
+        have = {str(k).lower() for k in existing}
+        wanted = [m for m in self._requested_metrics(cfg) if m not in have]
+        if not wanted:
+            return {}
+        calc = StreamflowMetrics.from_config(cfg or {})
+        calc.penalty_score = self.penalty_score
+        return calc.calculate_metrics(
+            np.asarray(obs, dtype=float), np.asarray(sim, dtype=float), metrics=wanted)
+
     def _requested_metrics(self, config: Any = None) -> List[str]:
         """Metric names a worker should ask ``StreamflowMetrics`` for.
 
@@ -627,6 +674,10 @@ class BaseWorker(ABC):
             wanted.extend(str(k) for k in composite_config)
         if metric_name.upper() != 'COMPOSITE':
             wanted.append(metric_name)
+        # NSGA-II / MOEA/D objective metrics (e.g. the KGE_LOG secondary),
+        # which the population evaluator looks up by name in the metrics dict.
+        wanted.extend(configured_objective_metrics(
+            self.config if config is None else config))
         wanted.extend(self.BASE_REQUESTED_METRICS)
         out: List[str] = []
         for name in wanted:
@@ -839,6 +890,15 @@ class BaseWorker(ABC):
         Returns:
             ``(source_metric_name, value)`` or ``(metric_name, None)``.
         """
+        if metric_name.strip().upper() == 'LOGLIK_BC_AR1':
+            # An efficiency score is not a likelihood: substituting KGE would
+            # silently turn a formal DREAM run back into an informal one.
+            self.logger.warning(
+                f"{type(self).__name__} did not produce LOGLIK_BC_AR1; refusing a "
+                "fallback metric (the run is scored as failed). Use DREAM_LIKELIHOOD: "
+                "informal for workers that cannot compute the formal likelihood."
+            )
+            return metric_name, None
         wanted = MetricTransformer.get_direction(metric_name)
         for alt in self.FALLBACK_METRICS:
             for k, v in metrics.items():

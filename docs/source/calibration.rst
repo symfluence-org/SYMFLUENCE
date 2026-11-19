@@ -163,15 +163,26 @@ Good for continuous optimization problems.
 
 **Multi-Objective (NSGA-II)**
 
-For multiple competing objectives.
+For multiple competing objectives. The default objectives are ``KGE`` and
+``KGE_LOG`` (KGE of log-transformed flows), which weight high and low flows
+differently and so give a genuine trade-off front. (Before this default the
+secondary metric was also ``KGE`` and NSGA-II collapsed to single-objective.)
 
 .. code-block:: yaml
 
    OPTIMIZATION_ALGORITHM: NSGA-II
    NSGA2_PRIMARY_METRIC: KGE
-   NSGA2_SECONDARY_METRIC: NSE
+   NSGA2_SECONDARY_METRIC: KGE_LOG
    POPULATION_SIZE: 100
    NUMBER_OF_ITERATIONS: 50
+
+**Uncertainty estimation (DREAM, GLUE)**
+
+``DREAM`` is an MCMC sampler; by default (``DREAM_LIKELIHOOD: formal``) it
+samples the Bayesian posterior under the Box-Cox AR(1) streamflow likelihood
+``LOGLIK_BC_AR1`` and replaces ``OPTIMIZATION_METRIC`` with it. ``GLUE``
+identifies behavioural parameter sets with an informal likelihood. Both write
+their samples and scored predictive intervals; see :doc:`uncertainty_sensitivity`.
 
 Objective Functions
 -------------------
@@ -183,11 +194,28 @@ Objective Functions
    OPTIMIZATION_METRIC: KGE
 
 Available metrics:
+
 - **KGE** — Kling-Gupta Efficiency (recommended)
 - **NSE** — Nash-Sutcliffe Efficiency
 - **RMSE** — Root Mean Square Error
 - **PBIAS** — Percent Bias
 - **R2** — Coefficient of Determination
+- **KGE_LOG**, **KGE_SQRT**, **KGE_INV**, **KGE_BOX_COX**, **NSE_LOG**,
+  **NSE_SQRT**, **RMSE_LOG** — metrics of transformed flows (low-flow emphasis);
+  ``KGE_LOG`` adds 1% of the mean observed flow before taking logs, so zero
+  flows are handled
+- **LOGLIK_BC_AR1** — formal Box-Cox AR(1) log-likelihood (maximised); see
+  :doc:`uncertainty_sensitivity`
+- **FDC_SLOPE_ERROR** — \|%BiasFMS\|, error (%) of the mid-segment (20–70%
+  exceedance) slope of the log flow-duration curve (minimised)
+- **PEAK_FLOW_BIAS** — \|%BiasFHV\|, volume error (%) of the highest 2% of
+  flows (minimised)
+- **BFI_ERROR** — \|BFI_sim − BFI_obs\| from the Lyne-Hollick baseflow filter
+  (minimised)
+
+The signature errors (Yilmaz et al., 2008) are non-negative and minimised;
+they can be used alone, as ``COMPOSITE_METRIC`` components or as NSGA-II
+objectives, e.g. ``NSGA2_SECONDARY_METRIC: FDC_SLOPE_ERROR``.
 
 **Multi-Objective (NSGA-II / MOEA/D)**
 
@@ -197,7 +225,7 @@ Multi-objective algorithms optimize two metrics simultaneously:
 
    OPTIMIZATION_ALGORITHM: NSGA-II
    NSGA2_PRIMARY_METRIC: KGE
-   NSGA2_SECONDARY_METRIC: NSE
+   NSGA2_SECONDARY_METRIC: KGE_LOG
 
 **Multivariate Objective**
 
@@ -267,7 +295,13 @@ Calibration produces:
 - ``calibration_results.csv`` — Parameter evolution
 - ``best_parameters.yaml`` — Optimal parameter set
 - ``objective_history.png`` — Convergence plot
-- ``parameter_sensitivity.csv`` — Sensitivity analysis
+- ``<algorithm>_uq_samples.nc``, ``<algorithm>_predictive_quantiles.csv`` and
+  ``<algorithm>_predictive_scores.json`` — posterior / behavioural samples and
+  scored predictive intervals (DREAM and GLUE only)
+
+Parameter sensitivity is a separate workflow step
+(``run_sensitivity_analysis``) that runs its own sampling design; see
+:doc:`uncertainty_sensitivity`.
 
 **Validation**
 
@@ -320,8 +354,9 @@ over when:
 - the calibrated parameters, their bounds, the algorithm, the model,
   ``OPTIMIZATION_METRIC``, ``CALIBRATION_PERIOD``, ``RANDOM_SEED``,
   ``POPULATION_SIZE``, the calibration budget (``CALIBRATION_BUDGET_MODE``
-  and its settings) or the shared forcing correction (``FORCING_CORRECTION_*``)
-  changed since the checkpoint (the error names the
+  and its settings), the shared forcing correction (``FORCING_CORRECTION_*``)
+  or, for DREAM, the likelihood settings (``DREAM_LIKELIHOOD``,
+  ``DREAM_TEMPERATURE``, ``LIKELIHOOD_*``) changed since the checkpoint (the error names the
   setting);
 - the replay diverges from the log: the algorithm asks for different
   parameter sets than were recorded, or its random-number generator is not in
@@ -400,6 +435,7 @@ Example Workflows
 
 **See Also**
 
+- :doc:`uncertainty_sensitivity` — DREAM/GLUE predictive uncertainty and global sensitivity analysis
 - :doc:`multivariable_evaluation` — glacier mass balance, SWE, SCA and ET for any model
 - :doc:`configuration` — Complete parameter reference
 - :doc:`troubleshooting` — Calibration troubleshooting and diagnostics

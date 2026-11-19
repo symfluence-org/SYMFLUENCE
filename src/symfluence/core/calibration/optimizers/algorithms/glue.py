@@ -16,7 +16,10 @@ Key Features:
     - Monte Carlo sampling from parameter space (uniform or Latin Hypercube)
     - Likelihood-based weighting of model runs
     - Threshold-based behavioral/non-behavioral classification
-    - Weighted prediction bounds for uncertainty quantification
+    - Likelihood-weighted prediction bounds: the calibration post-processing
+      (``core.calibration.optimizers.uncertainty``) re-runs up to
+      UQ_PREDICTIVE_RUNS behavioural sets over the full period and writes the
+      GLUE-weighted predictive quantiles and their scores
     - Dotty plots for parameter sensitivity visualization
 
 Reference:
@@ -66,7 +69,9 @@ class GLUEAlgorithm(OptimizationAlgorithm):
         each sample, and identifies "behavioral" parameter sets that exceed
         a performance threshold. The behavioral sets are then used to:
         1. Estimate parameter uncertainty (dotty plots)
-        2. Generate weighted prediction bounds
+        2. Generate weighted prediction bounds (done after the run by the
+           uncertainty post-processing, from ``behavioral_samples`` and
+           ``behavioral_likelihoods``)
         3. Identify the best-performing parameter set
 
         The likelihood L(θ|Y) for each parameter set θ is typically computed as:

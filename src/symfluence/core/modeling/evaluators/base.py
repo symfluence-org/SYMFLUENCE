@@ -752,6 +752,11 @@ class ModelEvaluator(ConfigurableMixin, ABC):
             # Calculate metrics
             base_metrics = self._calculate_performance_metrics(obs_common, sim_common)
 
+            # The configured objective(s) when not in the standard set
+            # (KGE_LOG, LOGLIK_BC_AR1, signature errors, NSGA-II objectives)
+            base_metrics.update(self._calculate_objective_metrics(
+                obs_common, sim_common, base_metrics))
+
             # Optionally compute log-likelihood if observation uncertainties are available
             likelihood_metrics = self._calculate_likelihood_metrics(obs_common, sim_common)
             if likelihood_metrics:
@@ -868,6 +873,38 @@ class ModelEvaluator(ConfigurableMixin, ABC):
         if agg_func == 'sum':
             return pd.Series(resampler.sum(min_count=1))
         return pd.Series(resampler.mean())
+
+    def _calculate_objective_metrics(
+        self,
+        obs_common: pd.Series,
+        sim_common: pd.Series,
+        existing: Dict[str, float],
+    ) -> Dict[str, float]:
+        """Configured objective metrics missing from the standard metric set.
+
+        Without this, a worker scoring through an evaluator (e.g. SUMMA) found
+        no KGE_LOG / LOGLIK_BC_AR1 / signature value and fell back to KGE.
+        """
+        from symfluence.core.metrics.streamflow_metrics import (
+            StreamflowMetrics,
+            configured_objective_metrics,
+        )
+        try:
+            wanted = [
+                name for name in configured_objective_metrics(self.config)
+                if name not in existing and StreamflowMetrics.supports(name.lower())
+            ]
+        except (AttributeError, TypeError, ValueError):
+            return {}
+        if not wanted:
+            return {}
+        calc = StreamflowMetrics.from_config(self.config)
+        values = calc.calculate_metrics(
+            np.asarray(obs_common.values, dtype=float),
+            np.asarray(sim_common.values, dtype=float),
+            metrics=[name.lower() for name in wanted],
+        )
+        return {name: float(values[name.lower()]) for name in wanted if name.lower() in values}
 
     def _calculate_likelihood_metrics(
         self,
