@@ -538,9 +538,33 @@ class OptimizationConfig(BaseModel):
     )
     iterations: int = Field(default=1000, alias='NUMBER_OF_ITERATIONS', ge=1)
     population_size: int = Field(default=50, alias='POPULATION_SIZE', ge=2, le=10000)
+    # Evaluation budget for fair multi-model comparison. 'fixed' (default)
+    # uses NUMBER_OF_ITERATIONS as-is; 'per_parameter' gives each model a
+    # budget proportional to its number of calibrated parameters.
+    budget_mode: Literal['fixed', 'per_parameter'] = Field(
+        default='fixed', alias='CALIBRATION_BUDGET_MODE',
+        description="'fixed' uses NUMBER_OF_ITERATIONS; 'per_parameter' sets the evaluation "
+                    "budget to EVALUATIONS_PER_PARAMETER x n calibrated parameters (capped)")
+    evaluations_per_parameter: int = Field(
+        default=100, alias='EVALUATIONS_PER_PARAMETER', ge=1,
+        description="Model evaluations per calibrated parameter in 'per_parameter' budget mode")
+    budget_min_evaluations: int = Field(
+        default=100, alias='CALIBRATION_BUDGET_MIN_EVALUATIONS', ge=1,
+        description="Lower cap on the 'per_parameter' evaluation budget")
+    budget_max_evaluations: Optional[int] = Field(
+        default=None, alias='CALIBRATION_BUDGET_MAX_EVALUATIONS', ge=1,
+        description="Upper cap on the 'per_parameter' evaluation budget (unset = no cap)")
     final_evaluation_numerical_method: str = Field(default='ida', alias='FINAL_EVALUATION_NUMERICAL_METHOD')
     cleanup_parallel_dirs: bool = Field(default=True, alias='CLEANUP_PARALLEL_DIRS')
     checkpoint_interval: int = Field(default=10, alias='CHECKPOINT_INTERVAL', ge=1)
+    calibration_resume: bool = Field(
+        default=False,
+        alias='CALIBRATION_RESUME',
+        description='Resume an interrupted calibration from its resume-state checkpoint '
+                    '(written every CHECKPOINT_INTERVAL iterations) instead of starting '
+                    'over. Refused with an error when the parameters, bounds, objective '
+                    'or algorithm changed. Also set by the --resume CLI flag.'
+    )
     initial_guess: Optional[Dict[str, Any]] = Field(
         default=None,
         alias='INITIAL_GUESS',

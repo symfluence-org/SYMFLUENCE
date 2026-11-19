@@ -128,6 +128,13 @@ STOP_ON_ERROR: true
 #   Usage:      1
 RECORD_PROVENANCE: true
 
+# PROVENANCE_INPUT_HASH
+#   Type:        Literal['listing', 'content', 'none']
+#   Default:     listing
+#   Source:      SystemConfig (system.py)
+#   Description: Fingerprint forcing/observation inputs by file listing (names, sizes, mtimes), by full content SHA-256, or not at all
+PROVENANCE_INPUT_HASH: "listing"
+
 # SYMFLUENCE_CODE_DIR
 #   Type:        Path
 #   Default:     None
@@ -2011,6 +2018,34 @@ LBFGS_STEPS: null
 #   Usage:      10
 NUMBER_OF_ITERATIONS: 1000
 
+# CALIBRATION_BUDGET_MODE
+#   Type:        Literal['fixed', 'per_parameter']
+#   Default:     fixed
+#   Source:      OptimizationConfig (optimization.py)
+#   Description: 'fixed' uses NUMBER_OF_ITERATIONS; 'per_parameter' sets the evaluation budget to EVALUATIONS_PER_PARAMETER x n calibrated parameters (capped)
+CALIBRATION_BUDGET_MODE: "fixed"
+
+# EVALUATIONS_PER_PARAMETER
+#   Type:        int
+#   Default:     100
+#   Source:      OptimizationConfig (optimization.py)
+#   Description: Model evaluations per calibrated parameter in 'per_parameter' budget mode
+EVALUATIONS_PER_PARAMETER: 100
+
+# CALIBRATION_BUDGET_MIN_EVALUATIONS
+#   Type:        int
+#   Default:     100
+#   Source:      OptimizationConfig (optimization.py)
+#   Description: Lower cap on the 'per_parameter' evaluation budget
+CALIBRATION_BUDGET_MIN_EVALUATIONS: 100
+
+# CALIBRATION_BUDGET_MAX_EVALUATIONS
+#   Type:        Optional[int]
+#   Default:     None
+#   Source:      OptimizationConfig (optimization.py)
+#   Description: Upper cap on the 'per_parameter' evaluation budget (unset = no cap)
+CALIBRATION_BUDGET_MAX_EVALUATIONS: null
+
 # OPTIMIZATION_METRIC
 #   Type:        str
 #   Default:     KGE
@@ -2059,6 +2094,13 @@ CLEANUP_PARALLEL_DIRS: true
 #   Source:      OptimizationConfig (optimization.py)
 #   Usage:      Save best_params.json and iteration results every N iterations during optimization
 CHECKPOINT_INTERVAL: 10
+
+# CALIBRATION_RESUME
+#   Type:        bool
+#   Default:     false
+#   Source:      OptimizationConfig (optimization.py)
+#   Usage:      Resume an interrupted calibration from its resume-state checkpoint (also --resume)
+CALIBRATION_RESUME: false
 
 # INITIAL_GUESS
 #   Type:        dict | None
@@ -3220,11 +3262,20 @@ HRU_GAUGE_MAPPING: null
 EVALUATION_VARIABLE: ""
 
 # EVALUATION_SPINUP_YEARS
+# DEPRECATED: use SPINUP_PERIOD. Years from the simulation start, mapped onto
+# the same spin-up window that evaluators exclude from every score.
 #   Type:        int
 #   Default:     0
 #   Source:      EvaluationConfig (evaluation.py)
-#   Description: Number of spinup years to exclude from evaluation
+#   Description: Deprecated spin-up years (use SPINUP_PERIOD)
 EVALUATION_SPINUP_YEARS: 0
+
+# SUMMARY_REPORT
+#   Type:        bool
+#   Default:     True
+#   Source:      EvaluationConfig (evaluation.py)
+#   Description: Write the one-page results/<EXPERIMENT_ID>/summary.png (hydrograph, FDC, metrics) after postprocessing; metrics.json is written regardless
+SUMMARY_REPORT: true
 
 # ========================================
 # TWS (Total Water Storage) Evaluation
@@ -3882,6 +3933,16 @@ BOUNDING_BOX_COORDS: null
 #   Usage:      7
 EVALUATION_PERIOD: "2008-01-01, 2009-12-31"
 
+# TEST_PERIOD
+# Optional third, independent hold-out period. Scored and reported in the
+# final evaluation (Test_* metrics, benchmark skill), never used for
+# optimisation or model selection. Must lie inside the experiment window and
+# must not overlap CALIBRATION_PERIOD or EVALUATION_PERIOD (overlap warns).
+#   Type:        str
+#   Default:     None
+#   Source:      DomainConfig (domain.py)
+TEST_PERIOD: null
+
 # EXPERIMENT_ID
 #   Type:        str
 #   Default:     None
@@ -3908,6 +3969,8 @@ EXPERIMENT_TIME_END: "2009-12-31 23:00"
 EXPERIMENT_TIME_START: "2002-01-01 01:00"
 
 # SPINUP_PERIOD
+# Model warm-up at the start of the run. Output before its end is excluded
+# from every score; it should end before CALIBRATION_PERIOD starts.
 #   Type:        str
 #   Default:     None
 #   Source:      DomainConfig (domain.py)

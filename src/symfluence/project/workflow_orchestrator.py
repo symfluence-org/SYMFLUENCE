@@ -423,7 +423,7 @@ class WorkflowOrchestrator(ConfigMixin):
 
         ]
 
-    def run_workflow(self, force_run: bool = False):
+    def run_workflow(self, force_run: bool = False, stop_on_error: Optional[bool] = None):
         """
         Run the complete workflow according to the defined steps.
 
@@ -441,6 +441,8 @@ class WorkflowOrchestrator(ConfigMixin):
         Args:
             force_run (bool): If True, forces execution of all steps even if outputs exist.
                             If False (default), skips steps with existing outputs.
+            stop_on_error (bool, optional): Stop at the first failing step.
+                            None (default) uses the config's STOP_ON_ERROR.
 
         Raises:
             Exception: If a step fails and STOP_ON_ERROR is True in configuration
@@ -452,6 +454,9 @@ class WorkflowOrchestrator(ConfigMixin):
             - Clear success/skip/failure indicators
             - Final summary statistics
         """
+        if stop_on_error is None:
+            stop_on_error = bool(self.config.system.stop_on_error)
+
         # Check prerequisites
         if not self.validate_workflow_prerequisites():
             raise ValueError("Workflow prerequisites not met")
@@ -557,7 +562,7 @@ class WorkflowOrchestrator(ConfigMixin):
                 record_step(self.provenance, step_name, 0.0, status="failed", error=str(e))
 
                 # Decide whether to continue or stop
-                if self.config.system.stop_on_error:
+                if stop_on_error:
                     self.logger.error("Workflow stopped due to error (STOP_ON_ERROR=True)")
                     self._log_workflow_summary(
                         start_time, total_steps, completed_steps,
@@ -574,7 +579,7 @@ class WorkflowOrchestrator(ConfigMixin):
                 self._record_step_result(step, 'failed', error=str(e))
                 record_step(self.provenance, step_name, 0.0, status="failed", error=str(e))
 
-                if self.config.system.stop_on_error:
+                if stop_on_error:
                     self.logger.error("Workflow stopped due to unexpected error (STOP_ON_ERROR=True)")
                     self._log_workflow_summary(
                         start_time, total_steps, completed_steps,

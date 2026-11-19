@@ -10,6 +10,7 @@ direct print() calls throughout the codebase.
 """
 from __future__ import annotations
 
+import os
 import sys
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -42,11 +43,23 @@ def _plain(message: Any) -> Any:
     return escape(message) if isinstance(message, str) else message
 
 
+def _colors_requested() -> bool:
+    """Colour unless the user opted out via ``NO_COLOR`` (https://no-color.org)."""
+    return not os.environ.get("NO_COLOR")
+
+
 @dataclass
 class ConsoleConfig:
-    """Configuration for console output behavior."""
+    """Configuration for console output behavior.
 
-    use_colors: bool = True
+    ``use_colors`` allows colour; whether ANSI codes are actually written is
+    decided per stream by Rich: only when the stream is a TTY (or
+    ``FORCE_COLOR`` is set), never when output is piped or redirected.
+    ``use_colors=False`` (or ``NO_COLOR`` in the environment) disables
+    styling entirely.
+    """
+
+    use_colors: bool = field(default_factory=_colors_requested)
     show_progress: bool = True
     quiet: bool = False
     output_stream: TextIO = field(default_factory=lambda: sys.stdout)
@@ -75,15 +88,19 @@ class Console:
             config: Console configuration. Uses defaults if not provided.
         """
         self._config = config or ConsoleConfig()
+        # force_terminal=None lets Rich detect a TTY per stream (and honour
+        # FORCE_COLOR / NO_COLOR / TERM=dumb), so piped output carries no ANSI
+        # escape codes. Forcing it on used to put escapes into redirected logs.
+        colors = self._config.use_colors
         self._console = RichConsole(
             file=self._config.output_stream,
-            force_terminal=self._config.use_colors if self._config.use_colors else None,
-            no_color=not self._config.use_colors,
+            force_terminal=None if colors else False,
+            no_color=None if colors else True,
         )
         self._error_console = RichConsole(
             file=self._config.error_stream,
-            force_terminal=self._config.use_colors if self._config.use_colors else None,
-            no_color=not self._config.use_colors,
+            force_terminal=None if colors else False,
+            no_color=None if colors else True,
             stderr=True,
         )
 

@@ -24,8 +24,10 @@ Basic Usage
    # Initialize from configuration file
    conf = SYMFLUENCE("my_project.yaml")
 
-   # Run complete workflow
-   conf.run_workflow()
+   # Run complete workflow (conf.run() is an alias)
+   result = conf.run_workflow()
+   print(result.status, result.failed_steps)
+   print(result.metrics["models"])     # results/<experiment>/metrics.json
 
    # Or run a selected subset of steps (by canonical step name)
    conf.run_individual_steps([
@@ -136,17 +138,49 @@ The constructor accepts a config file path (``str``/``Path``) or a
 
 .. code-block:: python
 
-   # Full workflow execution
-   conf.run_workflow(force_run=False)
+   # Full workflow execution; returns a RunResult
+   result = conf.run_workflow(force_run=False)
+   result = conf.run()                                  # alias
+   result = conf.run(continue_on_error=True)            # keep going past failed steps
 
-   # Run a selected, ordered subset of steps
-   conf.run_individual_steps(["setup_project", "define_domain"])
+   # Run a selected, ordered subset of steps; also returns a RunResult
+   result = conf.run_individual_steps(["setup_project", "define_domain"],
+                                      continue_on_error=False)
 
    # Workflow status
    status = conf.get_workflow_status()
 
    # Diagnostics for a single step (returns a list of issue strings)
    issues = conf.run_diagnostics_for_step("calibrate_model")
+
+RunResult
+---------
+
+``run_workflow()``, ``run()`` and ``run_individual_steps()`` return a
+``RunResult``. Callers that ignore the return value are unaffected; a step
+failure that stops the run (``STOP_ON_ERROR: true``) still raises.
+
+.. autoclass:: symfluence.project.run_result.RunResult
+   :members:
+
+.. autoclass:: symfluence.project.run_result.StepResult
+   :members:
+
+.. code-block:: python
+
+   result = conf.run()
+   result.ok                     # True when no step failed
+   for step in result.steps:     # StepResult(name, cli_name, status, duration_s, error)
+       print(step.cli_name, step.status, step.duration_s, step.error)
+   result.outputs                # {'results_csv', 'metrics_json', 'metrics_csv',
+                                 #  'summary_figure', 'run_manifest', 'log_dir'} (existing only)
+   result.metrics                # parsed metrics.json, or None
+
+The ``metrics.json`` schema is documented in :doc:`getting_started`
+("Checking results") and in :mod:`symfluence.core.metrics.run_metrics`.
+
+.. automodule:: symfluence.core.metrics.run_metrics
+   :members: build_postprocess_metrics, build_calibration_metrics, load_metrics, summary_rows
 
 Manager Classes
 ===============
