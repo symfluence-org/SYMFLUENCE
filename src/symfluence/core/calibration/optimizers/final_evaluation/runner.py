@@ -150,14 +150,18 @@ class FinalEvaluationRunner:
             # Extract period-specific metrics
             calib_metrics = self.results_saver.extract_period_metrics(metrics, 'Calib')
             eval_metrics = self.results_saver.extract_period_metrics(metrics, 'Eval')
+            test_metrics = self.results_saver.extract_period_metrics(metrics, 'Test')
+            period_warning = metrics.get('period_warning')
 
             # Log detailed results
-            self.results_saver.log_results(calib_metrics, eval_metrics)
+            self.results_saver.log_results(calib_metrics, eval_metrics, test_metrics, period_warning)
 
             final_result = {
                 'final_metrics': metrics,
                 'calibration_metrics': calib_metrics,
                 'evaluation_metrics': eval_metrics,
+                'test_metrics': test_metrics,
+                'period_warning': period_warning,
                 'success': True,
                 'best_params': best_params
             }

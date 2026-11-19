@@ -102,10 +102,12 @@ class FinalEvaluationOrchestrator:
     def log_results(
         self,
         calib_metrics: Dict[str, Any],
-        eval_metrics: Dict[str, Any]
+        eval_metrics: Dict[str, Any],
+        test_metrics: Optional[Dict[str, Any]] = None,
+        period_warning: Optional[str] = None,
     ) -> None:
         """Log detailed final evaluation results."""
-        self._results_saver.log_results(calib_metrics, eval_metrics)
+        self._results_saver.log_results(calib_metrics, eval_metrics, test_metrics, period_warning)
 
     def save_results(
         self,

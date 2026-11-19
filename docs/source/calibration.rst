@@ -35,6 +35,47 @@ Configure calibration in your project YAML:
    POPULATION_SIZE: 48
    NUMBER_OF_ITERATIONS: 30
 
+Split-sample design
+-------------------
+
+Calibration is scored on ``CALIBRATION_PERIOD`` and the calibrated model is
+judged on periods it never saw. Up to four non-overlapping windows inside
+``EXPERIMENT_TIME_START`` .. ``EXPERIMENT_TIME_END`` are recognised:
+
+.. code-block:: yaml
+
+   SPINUP_PERIOD:      "2000-01-01, 2001-12-31"   # warm-up: never scored
+   CALIBRATION_PERIOD: "2002-01-01, 2009-12-31"   # the optimisation objective
+   EVALUATION_PERIOD:  "2010-01-01, 2014-12-31"   # held out, reported (Eval_*)
+   TEST_PERIOD:        "2015-01-01, 2018-12-31"   # optional, independent (Test_*)
+
+- **Spin-up** is one notion. Output before the end of ``SPINUP_PERIOD`` is
+  dropped from every score. The deprecated ``EVALUATION_SPINUP_YEARS`` (N years
+  from the simulation start) still works and maps onto the same window; when
+  both are set, the later end wins.
+- **Evaluation and test** periods are scored only in the final evaluation
+  (``calibration_only=False``), never inside the optimisation loop. Use
+  ``EVALUATION_PERIOD`` to compare runs and choose between them; keep
+  ``TEST_PERIOD`` for a final, independent check that nothing is selected on.
+- **Benchmarks.** The final evaluation also scores three reference predictors
+  on exactly the same periods: the calibration-period mean flow (KGE
+  :math:`= 1-\sqrt{2} \approx -0.41` on the calibration period), the
+  calibration-period day-of-year climatology, and persistence (the previous
+  observation). They are fitted on the calibration period only. Keys are
+  ``<Period>_KGE_benchmark_<name>`` and the skill relative to each,
+  ``<Period>_KGE_skill_<name>`` :math:`= (KGE - KGE_{bm}) / (1 - KGE_{bm})`
+  (1 is perfect, 0 no better than the benchmark). The hydrobm benchmarking
+  analysis uses the same configured periods.
+
+Problems are reported as warnings, not errors, so existing configurations keep
+running. At config load, SYMFLUENCE warns when calibration, evaluation and
+test periods overlap, when spin-up does not end before a scored period, and
+when ``CALIBRATION_PERIOD`` is missing while an evaluation/test period is set or
+an optimisation method is configured. Without ``CALIBRATION_PERIOD``, or when it
+has no overlap with the data, metrics fall back to the full record (which
+contains the held-out years): a ``SPLIT-SAMPLE WARNING`` is logged and the
+metrics dictionary carries a ``period_warning`` entry explaining why.
+
 Parameter Selection
 -------------------
 
@@ -220,8 +261,9 @@ Calibration produces:
 
 **Validation**
 
-Performance on the independent ``EVALUATION_PERIOD`` is reported automatically
-alongside the calibration-period score using ``OPTIMIZATION_METRIC``.
+Performance on the independent ``EVALUATION_PERIOD`` (and ``TEST_PERIOD``, if
+set) is reported automatically alongside the calibration-period score, with
+skill relative to the benchmarks; see `Split-sample design`_.
 
 Best Practices
 --------------

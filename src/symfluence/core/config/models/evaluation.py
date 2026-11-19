@@ -297,6 +297,8 @@ class EvaluationConfig(BaseModel):
     analyses: Optional[List[str]] = Field(default=None, alias='ANALYSES')
     sim_reach_id: Optional[int] = Field(default=None, alias='SIM_REACH_ID')
     evaluation_variable: str = Field(default='', alias='EVALUATION_VARIABLE')
+    # Deprecated: use SPINUP_PERIOD. Mapped onto the same spin-up window
+    # (N years from the simulation start) that evaluators exclude from scoring.
     spinup_years: int = Field(default=0, alias='EVALUATION_SPINUP_YEARS')
 
     # Observation data sources

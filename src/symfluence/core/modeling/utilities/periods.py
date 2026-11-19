@@ -3,7 +3,7 @@
 
 """Canonical parsing of configured time periods and simulation dates.
 
-``CALIBRATION_PERIOD``, ``EVALUATION_PERIOD`` and ``SPINUP_PERIOD`` are
+``CALIBRATION_PERIOD``, ``EVALUATION_PERIOD``, ``TEST_PERIOD`` and ``SPINUP_PERIOD`` are
 ``'start, end'`` strings (comma separator, whitespace around either half is
 ignored). Every reader of those keys used to split them by hand, with small
 differences in how many parts were accepted and what happened when the value
@@ -15,7 +15,7 @@ Pure functions: no config access, no logging, pandas only.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, Optional, Tuple, overload
+from typing import Any, Dict, List, Literal, Optional, Tuple, overload
 
 import pandas as pd
 
@@ -25,6 +25,10 @@ __all__ = [
     'split_period',
     'parse_period',
     'to_pydatetime',
+    'period_end_exclusive',
+    'periods_overlap',
+    'spinup_window',
+    'split_sample_warnings',
 ]
 
 PERIOD_SEPARATOR = ','
@@ -154,3 +158,147 @@ def to_pydatetime(value: Any) -> datetime:
     if isinstance(value, datetime):
         return value
     return pd.Timestamp(value).to_pydatetime()
+
+
+def period_end_exclusive(end: Any) -> pd.Timestamp:
+    """Exclusive upper bound of a period ending at ``end``.
+
+    A bare date (00:00) covers the whole day, so the bound is the next
+    midnight; an explicit time is inclusive as written (the bound is one
+    nanosecond later). This matches how evaluators mask periods.
+    """
+    end = pd.Timestamp(end)
+    if end == end.normalize():
+        return end + pd.Timedelta(days=1)
+    return end + pd.Timedelta(1, unit='ns')
+
+
+def periods_overlap(a: Tuple[Any, Any], b: Tuple[Any, Any]) -> bool:
+    """True when the inclusive periods ``a`` and ``b`` share any instant.
+
+    Period ends follow :func:`period_end_exclusive`, so ``2005-12-31`` and
+    ``2006-01-01`` are adjacent, not overlapping.
+    """
+    a_start, b_start = pd.Timestamp(a[0]), pd.Timestamp(b[0])
+    return bool(
+        a_start < period_end_exclusive(b[1]) and b_start < period_end_exclusive(a[1])
+    )
+
+
+def spinup_window(
+    spinup_period: Any = None,
+    spinup_years: Any = 0,
+    simulation_start: Any = None,
+) -> Optional[Tuple[pd.Timestamp, pd.Timestamp]]:
+    """The single spin-up window evaluators exclude from every score.
+
+    Spin-up is one notion: the stretch at the start of the run whose output is
+    discarded. It is configured with ``SPINUP_PERIOD`` (``'start, end'``). The
+    deprecated ``EVALUATION_SPINUP_YEARS`` (N years counted from the
+    simulation start) maps onto the same window. When both are set the
+    window extends to the later of the two ends.
+
+    Returns ``(start, end_exclusive)`` or ``None`` when no spin-up is set.
+    An unparseable ``SPINUP_PERIOD`` is ignored here (config validation
+    reports it).
+    """
+    windows = []
+    if isinstance(spinup_period, (str, list, tuple)) and not is_missing_period(spinup_period):
+        try:
+            parsed = parse_period(spinup_period, allow_extra=True)
+        except (ValueError, TypeError):
+            parsed = None
+        if parsed is not None and not pd.isna(parsed[0]) and not pd.isna(parsed[1]):
+            windows.append((parsed[0], period_end_exclusive(parsed[1])))
+
+    try:
+        years = int(float(spinup_years)) if spinup_years is not None else 0
+    except (TypeError, ValueError):
+        years = 0
+    if years > 0 and simulation_start is not None:
+        try:
+            sim_start = pd.Timestamp(simulation_start)
+        except (TypeError, ValueError):
+            sim_start = None
+        if sim_start is not None and not pd.isna(sim_start):
+            windows.append((sim_start, sim_start + pd.DateOffset(years=years)))
+
+    if not windows:
+        return None
+    return min(w[0] for w in windows), max(w[1] for w in windows)
+
+
+def split_sample_warnings(
+    *,
+    calibration: Any = None,
+    evaluation: Any = None,
+    test: Any = None,
+    spinup: Any = None,
+    spinup_years: Any = 0,
+    simulation_start: Any = None,
+    calibrating: bool = False,
+) -> List[str]:
+    """Problems with the split-sample design, as human-readable messages.
+
+    Checks (each yields one message, nothing raises):
+
+    * calibration, evaluation and test periods must not overlap each other;
+    * spin-up (``SPINUP_PERIOD`` and/or ``EVALUATION_SPINUP_YEARS``) must end
+      before every scored period starts;
+    * without ``CALIBRATION_PERIOD``, metrics fall back to the full record,
+      which contains the evaluation/test years. Reported when an evaluation
+      or test period is set or ``calibrating`` is True.
+
+    Malformed periods are skipped; format errors are reported elsewhere.
+    """
+    def _parse(value: Any) -> Optional[Tuple[pd.Timestamp, pd.Timestamp]]:
+        if not isinstance(value, (str, list, tuple)) or is_missing_period(value):
+            return None
+        try:
+            parsed = parse_period(value, allow_extra=True)
+        except (ValueError, TypeError):
+            return None
+        if parsed is None or pd.isna(parsed[0]) or pd.isna(parsed[1]):
+            return None
+        return parsed
+
+    scored: Dict[str, Optional[Tuple[pd.Timestamp, pd.Timestamp]]] = {
+        'CALIBRATION_PERIOD': _parse(calibration),
+        'EVALUATION_PERIOD': _parse(evaluation),
+        'TEST_PERIOD': _parse(test),
+    }
+    raw = {'CALIBRATION_PERIOD': calibration, 'EVALUATION_PERIOD': evaluation, 'TEST_PERIOD': test}
+    messages: List[str] = []
+
+    names = list(scored)
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            pa, pb = scored[a], scored[b]
+            if pa is not None and pb is not None and periods_overlap(pa, pb):
+                messages.append(
+                    f"{a} ({raw[a]}) overlaps {b} ({raw[b]}): the split-sample "
+                    f"periods are not independent, so {b.split('_')[0].lower()} "
+                    f"scores are not out-of-sample."
+                )
+
+    window = spinup_window(spinup, spinup_years, simulation_start)
+    if window is not None:
+        for name, period in scored.items():
+            if period is None:
+                continue
+            if period[0] < window[1]:
+                messages.append(
+                    f"Spin-up (ends {window[1] - pd.Timedelta(1, unit='ns'):%Y-%m-%d %H:%M}) "
+                    f"does not precede {name} ({raw[name]}): output before the spin-up "
+                    f"end is excluded from scoring, so part or all of this period is not scored."
+                )
+
+    if scored['CALIBRATION_PERIOD'] is None and (
+        calibrating or scored['EVALUATION_PERIOD'] is not None or scored['TEST_PERIOD'] is not None
+    ):
+        messages.append(
+            "CALIBRATION_PERIOD is not set: calibration metrics fall back to the full "
+            "simulation/observation overlap, which includes any evaluation and test "
+            "years. Set CALIBRATION_PERIOD to keep the evaluation independent."
+        )
+    return messages

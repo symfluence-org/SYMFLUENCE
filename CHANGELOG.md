@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Split-sample rigour**: optional `TEST_PERIOD`, a third independent hold-out scored and reported in the
+  final evaluation (`Test_*` metrics, `test_metrics` in the final-evaluation JSON) and never used for
+  optimisation or selection. The final evaluation also scores three benchmarks fitted on the calibration
+  period only (mean flow, KGE = -0.41 on calibration; day-of-year climatology; persistence) on exactly the
+  configured periods, with `<Period>_KGE_benchmark_<name>` and skill `<Period>_KGE_skill_<name>`. Config load
+  warns (never raises) when calibration/evaluation/test periods overlap, spin-up does not precede a scored
+  period, or `CALIBRATION_PERIOD` is missing while evaluation/test or optimisation is configured. The silent
+  full-record metrics fallback now logs a `SPLIT-SAMPLE WARNING` and adds `period_warning` to the metrics dict.
 - **Elevation corrections of remapped forcing (opt-in)**: the `lapse` config section (`pressure`, `humidity`,
   `longwave`, `shortwave`, `precipitation`, `wind`, with `lw_gradient`, `sw_gradient`, `precip_gradient`,
   `wind_gradient`) is now applied by the forcing remapper, from the elevation difference between each HRU and
@@ -72,6 +80,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requires it.
 
 ### Changed
+- **One spin-up notion for scoring**: evaluators now exclude output before the end of `SPINUP_PERIOD` from
+  every score (previously only `EVALUATION_SPINUP_YEARS` was honoured). This changes results only where a
+  scored period overlaps spin-up (now also warned) or in the full-record fallback.
+- **hydrobm benchmarking uses the configured periods**: `Benchmarker` fits on `CALIBRATION_PERIOD` and scores on
+  `EVALUATION_PERIOD` (and `TEST_PERIOD`, as `*_test` columns) instead of splitting at the median year; the
+  median-year split remains only as a warned fallback when no calibration period is set.
 - **SAC-SMA cryosphere replay scores with the engine's KGE/NSE**: `sacsma_cryosphere/replay.py` dropped its own
   KGE/NSE formula for `core.metrics` (identical values to 1e-12 on real series). A constant simulation now scores
   `None` instead of a finite KGE with r = 0. `replay.py` hashes its own source, so specs frozen against the
@@ -177,6 +191,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `symfluence.models.<model>.config_schema` homes instead.
 
 ### Deprecated
+- `EVALUATION_SPINUP_YEARS`: use `SPINUP_PERIOD`. It still works and maps onto the same spin-up window
+  (N years from the simulation start); a deprecation warning is logged.
 - **Back-compat shim import paths still used by external plugins** (ADR-0011):
   `symfluence.models.{base,base.base_config,base.standard_postprocessor,
   execution,mixins,mixins.pet_calculator,spatial_modes,state,utilities,
