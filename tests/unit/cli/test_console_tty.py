@@ -82,7 +82,7 @@ def test_workflow_run_summary_table_is_plain_when_piped(monkeypatch):
     assert ESC not in out
     assert "SUMMA" in out and "0.812" in out and "730" in out
     assert "expected /x.csv" in out
-    assert "/p/results/e/metrics.json" in out
+    assert str(Path("/p/results/e/metrics.json")) in out
 
 
 def test_run_summary_silent_without_metrics(monkeypatch):
