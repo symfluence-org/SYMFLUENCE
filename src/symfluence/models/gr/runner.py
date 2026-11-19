@@ -384,8 +384,21 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
         return self._calibrated_defaults_cache
 
     def _forcing_corrections(self) -> Dict[str, float]:
-        """Precipitation multiplier and temperature offset (identity unless calibrated)."""
+        """Precipitation multiplier and temperature offset.
+
+        Calibration passes them in the parameter set. Otherwise the shared
+        FORCING_CORRECTION section (fixed or last calibrated values) applies;
+        without it they are identity.
+        """
         params = self._external_params or {}
+        if 'PCORR' not in params and 'TCORR' not in params:
+            if not hasattr(self, '_shared_forcing_correction'):
+                from symfluence.core.calibration.forcing_correction import forward_correction
+                info = forward_correction(
+                    self.config, 'GR', project_dir=self.project_dir, domain_name=self.domain_name,
+                    experiment_id=self.experiment_id, log=self.logger)
+                self._shared_forcing_correction = info['native'] if info else {}
+            params = {**self._shared_forcing_correction, **params}
         return {'PCORR': float(params.get('PCORR', 1.0)), 'TCORR': float(params.get('TCORR', 0.0))}
 
     def _glacier_enabled(self) -> bool:

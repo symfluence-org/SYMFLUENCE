@@ -16,6 +16,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from symfluence.core.calibration.forcing_correction import PENALTY_METRIC as FORCING_CORRECTION_PENALTY_METRIC
+from symfluence.core.calibration.forcing_correction import TASK_KEY as FORCING_CORRECTION_TASK_KEY
+from symfluence.core.calibration.forcing_correction import apply_prior_to_score
 from symfluence.core.constants import ModelDefaults
 from symfluence.core.exceptions import RetryExhaustedError
 from symfluence.core.logging_utils import log_once
@@ -492,6 +495,11 @@ class BaseWorker(ABC):
         Returns:
             WorkerResult from evaluation
         """
+        # The shared forcing-correction prior travels with the task; it is
+        # not a model argument.
+        additional_data = dict(task.additional_data)
+        forcing_correction = additional_data.pop(FORCING_CORRECTION_TASK_KEY, None)
+
         # Step 1: Apply parameters
         # Note: proc_output_dir, sim_dir, proc_id must be passed explicitly because
         # they're excluded from additional_data (since they're primary fields in WorkerTask)
@@ -503,7 +511,7 @@ class BaseWorker(ABC):
             output_dir=task.output_dir,
             sim_dir=task.sim_dir,
             proc_id=task.proc_id,
-            **task.additional_data
+            **additional_data
         ):
             return WorkerResult.failure(
                 individual_id=task.individual_id,
@@ -520,7 +528,7 @@ class BaseWorker(ABC):
             sim_dir=task.sim_dir,
             proc_id=task.proc_id,
             params=task.params,
-            **task.additional_data
+            **additional_data
         ):
             return WorkerResult.failure(
                 individual_id=task.individual_id,
@@ -536,7 +544,7 @@ class BaseWorker(ABC):
             sim_dir=task.sim_dir,
             settings_dir=str(task.settings_dir),
             proc_id=task.proc_id,
-            **task.additional_data
+            **additional_data
         )
 
         # Glacier mass-balance objectives (GMB_*) come from the model-agnostic
@@ -546,6 +554,10 @@ class BaseWorker(ABC):
 
         # Determine primary score
         score = self._extract_primary_score(metrics, task.config)
+        if forcing_correction and not is_penalty(score):
+            score, prior_penalty = apply_prior_to_score(score, forcing_correction, task.params)
+            if isinstance(metrics, dict):
+                metrics[FORCING_CORRECTION_PENALTY_METRIC] = prior_penalty
 
         return WorkerResult(
             individual_id=task.individual_id,

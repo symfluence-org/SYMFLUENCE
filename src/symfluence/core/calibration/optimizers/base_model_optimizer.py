@@ -161,6 +161,7 @@ class BaseModelOptimizer(
 
         # Create model-specific components
         self.param_manager = self._create_parameter_manager()
+        self._setup_forcing_correction()
         self.calibration_target = self._create_calibration_target()
         self.worker = self._create_worker()
 
@@ -513,6 +514,50 @@ class BaseModelOptimizer(
             # Only return expected params (drop any extra from previous run)
             return {k: v for k, v in best_params.items() if k in expected_params}
         return None
+
+    def _setup_forcing_correction(self) -> None:
+        """Hand the shared FORCING_CORRECTION plan to the parameter manager.
+
+        No-op unless FORCING_CORRECTION_MODE is set. Writes the resolved plan
+        to ``forcing_correction.json`` in the results directory; the values at
+        the best parameter set are added when the optimization finishes.
+        """
+        from symfluence.core.calibration import forcing_correction as fc
+
+        plan = fc.build_plan(
+            self.config, self._get_model_name(), project_dir=self.project_dir,
+            domain_name=self.domain_name, log=self.logger)
+        if plan is None:
+            return
+        enable = getattr(self.param_manager, 'enable_forcing_correction', None)
+        if enable is None:
+            if not (plan.fixed or plan.calibrated or plan.superseded_native_names()):
+                return  # nothing to apply for this model
+            raise OptimizationError(
+                f"FORCING_CORRECTION is set but the {self._get_model_name()} parameter "
+                "manager does not support it")
+        conflicts = fc.conflicting_settings(self.config, self.param_manager.all_param_names, plan)
+        dropped = enable(plan)
+        if conflicts:
+            self.logger.warning(
+                f"FORCING_CORRECTION_MODE={plan.mode} supersedes per-model forcing corrections "
+                f"for {self._get_model_name()}: {', '.join(conflicts)}"
+                + (f"; dropped from calibration: {', '.join(dropped)}" if dropped else ''))
+        self.logger.info(
+            f"Forcing correction ({plan.mode}) for {self._get_model_name()}: "
+            f"fixed={plan.fixed} calibrated={plan.calibrated_param_names}")
+        fc.write_report(self.results_dir / fc.REPORT_NAME, plan)
+
+    def _write_forcing_correction_report(self, best_params: Optional[Dict[str, Any]]) -> None:
+        """Record the forcing-correction values applied at ``best_params``."""
+        plan = getattr(self.param_manager, 'forcing_correction', None)
+        if plan is None:
+            return
+        from symfluence.core.calibration import forcing_correction as fc
+        try:
+            fc.write_report(self.results_dir / fc.REPORT_NAME, plan, best_params or {})
+        except (OSError, TypeError, ValueError) as e:
+            self.logger.warning(f"Could not write the forcing-correction report: {e}")
 
     def _create_parameter_manager(self):
         """
@@ -1190,6 +1235,9 @@ class BaseModelOptimizer(
 
             # Add denormalized parameters
             params_dict = self.param_manager.denormalize_parameters(solution)
+            plan = getattr(self.param_manager, 'forcing_correction', None)
+            if plan is not None:
+                params_dict = {**params_dict, **plan.common_values_from_native(params_dict)}
             for param_name in param_names:
                 val = params_dict.get(param_name)
                 if isinstance(val, (list, np.ndarray)):
@@ -1220,7 +1268,11 @@ class BaseModelOptimizer(
         )
 
         score = self.DEFAULT_PENALTY_SCORE
-        final_result = self.run_final_evaluation({})
+        # Fixed shared forcing corrections still apply with nothing calibrated
+        plan = getattr(self.param_manager, 'forcing_correction', None)
+        default_params: Dict[str, Any] = plan.to_native({}) if plan is not None else {}
+        final_result = self.run_final_evaluation(default_params)
+        self._write_forcing_correction_report(default_params)
         if final_result and isinstance(final_result, dict):
             metrics = final_result.get('final_metrics', {})
             score = metrics.get(self.target_metric, self.DEFAULT_PENALTY_SCORE)
@@ -1388,7 +1440,16 @@ class BaseModelOptimizer(
                             and self.random_seed is not None else None),
             'population_size': self.population_size,
             'budget': self._fingerprint_budget(),
+            # Shared forcing correction (mode, fixed values, prior, bounds):
+            # a fixed multiplier or prior change alters the objective without
+            # changing the calibrated parameter list.
+            'forcing_correction': self._fingerprint_forcing_correction(),
         })
+
+    def _fingerprint_forcing_correction(self) -> Optional[Dict[str, Any]]:
+        """Forcing-correction part of the resume fingerprint (None when off)."""
+        plan = getattr(self.param_manager, 'forcing_correction', None)
+        return plan.to_dict() if plan is not None else None
 
     def _fingerprint_budget(self) -> Any:
         """Budget part of the resume fingerprint ('fixed' or the per-parameter budget)."""
@@ -1665,6 +1726,7 @@ class BaseModelOptimizer(
         # Save results
         results_path = self.save_results(file_slug, standard_filename=True)
         self.save_best_params(file_slug)
+        self._write_forcing_correction_report(result.get('best_params'))
         self._visualize_progress(file_slug)
 
         # Save Pareto front for multi-objective algorithms

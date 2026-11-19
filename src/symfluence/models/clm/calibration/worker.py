@@ -125,6 +125,13 @@ class CLMWorker(StreamflowWorker):
                     f"Copied CLM settings from {original_settings_dir}"
                 )
 
+            # Shared FORCING_CORRECTION: FC_* values correct a copy of the
+            # DATM forcing for this settings directory; not CLM parameters.
+            from ..forcing_correction import apply_stream_correction, needs_reset, split_params
+            params, forcing_values = split_params(params)
+            if forcing_values or needs_reset(settings_dir):
+                apply_stream_correction(settings_dir, forcing_values, self.logger)
+
             # Reject infeasible parameter combinations early (before file I/O)
             if not self._validate_params(params):
                 log_once(self.logger, logging.WARNING, key='clm-infeasible-params',

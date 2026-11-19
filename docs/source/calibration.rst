@@ -119,6 +119,10 @@ Noah-OWP parameters:
      - psisat          # saturated soil potential
      - refkdt          # reference infiltration parameter
 
+Forcing corrections (precipitation multipliers such as GR ``PCORR`` or SUMMA
+``precip_mult``) can be shared by every model of an ensemble, fixed or
+calibrated with common bounds and a prior: see :ref:`forcing_correction`.
+
 Optimization Algorithms
 -----------------------
 
@@ -315,8 +319,9 @@ over when:
 
 - the calibrated parameters, their bounds, the algorithm, the model,
   ``OPTIMIZATION_METRIC``, ``CALIBRATION_PERIOD``, ``RANDOM_SEED``,
-  ``POPULATION_SIZE`` or the calibration budget (``CALIBRATION_BUDGET_MODE``
-  and its settings) changed since the checkpoint (the error names the
+  ``POPULATION_SIZE``, the calibration budget (``CALIBRATION_BUDGET_MODE``
+  and its settings) or the shared forcing correction (``FORCING_CORRECTION_*``)
+  changed since the checkpoint (the error names the
   setting);
 - the replay diverges from the log: the algorithm asks for different
   parameter sets than were recorded, or its random-number generator is not in

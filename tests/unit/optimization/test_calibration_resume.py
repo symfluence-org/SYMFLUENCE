@@ -382,6 +382,20 @@ def test_resume_refuses_changed_budget_mode(tmp_path):
              CALIBRATION_BUDGET_MODE='per_parameter', EVALUATIONS_PER_PARAMETER=20)
 
 
+def test_resume_refuses_changed_forcing_correction(tmp_path, monkeypatch):
+    from symfluence.core.calibration.forcing_correction import ForcingCorrectionPlan
+
+    def plan(multiplier):
+        return ForcingCorrectionPlan(mode='fixed', model='SYNTH', fixed={'precip': multiplier})
+
+    run_dir = tmp_path / 'run'
+    monkeypatch.setattr(_ParamManager, 'forcing_correction', plan(1.1), raising=False)
+    _run(tmp_path, 'dds', run_dir, budget=15)
+    monkeypatch.setattr(_ParamManager, 'forcing_correction', plan(1.3), raising=False)
+    with pytest.raises(CalibrationResumeError, match="forcing_correction"):
+        _run(tmp_path, 'dds', run_dir, CALIBRATION_RESUME=True)
+
+
 def test_resume_with_changed_iterations_diverges_loudly(tmp_path):
     """DDS's perturbation schedule depends on NUMBER_OF_ITERATIONS, so the
     replay cannot match; that must stop the run, not continue elsewhere."""

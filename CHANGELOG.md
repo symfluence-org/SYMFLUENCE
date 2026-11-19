@@ -10,6 +10,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Shared forcing correction across models (opt-in)**: the `FORCING_CORRECTION_*` section gives every model
+  one precipitation multiplier (and optional snowfall multiplier / temperature offset) instead of each model's
+  own correction parameter with its own bounds. `FORCING_CORRECTION_MODE`: `off` (none), `fixed` (config values,
+  or `FORCING_CORRECTION_PRECIP_MULTIPLIER: water_balance` = (Q_obs + ET) / P over the calibration period, ET
+  from config or Budyko on Oudin/Hamon PET) or `calibrated` (common parameters `FC_PRECIP_MULT`,
+  `FC_SNOW_MULT`, `FC_TEMP_OFFSET` with common bounds and an optional log-normal prior penalty,
+  `FORCING_CORRECTION_PRIOR_WEIGHT`). Translated to GR `PCORR`/`TCORR`, SUMMA `precip_mult`/`frozenPrecipMultip`,
+  MESH `PRECIP_MULT`, Wflow `PCORR`, mHM `precipCorrectionFactor` and HYPE `pcurain`/`pcusnow`; other models
+  accept only `off`. Superseded per-model parameters are dropped from calibration with a warning. Values are
+  written to `forcing_correction.json` in the results directory. Unset, calibration is unchanged.
+  Also supported: PRMS/GSFLOW (`rain_adj`/`snow_adj`/`tmax_adj`/`tmin_adj` or `*_cbh_adj`), Raven
+  (`PRECIP_CORR`/`SNOW_CORR`/`TEMP_CORR`), MESH temperature (`TEMP_OFFSET`), and corrected forcing copies for
+  FUSE, CLM and ParFlow-CLM (basin mode: `precip_scale` and a new `temp_offset`); HYPE-MODFLOW calibrates
+  through the land model's adapter. Forward runs (`run_models`, forecast pipelines via
+  `apply_forward_forcing_correction`) apply the fixed values, or those of the newest calibration in
+  `calibrated` mode, and record them in `simulations/<exp>/<MODEL>/forcing_correction.json`.
+  The resolved plan is part of the calibration-resume fingerprint, so `--resume` refuses a changed forcing
+  correction. See `docs/source/forcing_correction.rst`.
 - **Data assimilation you can judge (EnKF)**: every EnKF run now also runs the open loop (the same perturbed
   ensemble, never updated; `ENKF_OPEN_LOOP`, default on) and a persistence benchmark, and writes
   `*_verification.json` with CRPS, CRPSS vs open loop and vs persistence, spread-error ratio, rank histogram, and
