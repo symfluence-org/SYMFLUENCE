@@ -23,6 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   model-agnostic state interface (`DAModel`: `get_state`/`set_state`/`step`/`perturbable_forcing`) replaces the
   HBV-only manager; Xinanjiang (stand-alone, `jxaj`) is the second model. New docs page "Data assimilation".
 
+- **Model-agnostic multi-variable evaluation**: output-variable adapters (`R.output_adapters`,
+  `core.modeling.output_variables`) give glacier storage / area / cumulative specific mass balance, basin SWE,
+  snow-covered fraction and ET in standard units for SUMMA, HYPE, GR (lumped glacier balances), PRMS, GSFLOW,
+  Raven, Wflow and mHM (others raise `UnsupportedVariableError`). New evaluators `GLACIER_MB` (period-mean
+  rates vs geodetic/glaciological observations, `GLACIER_MB_OBS_PATH`, e.g. Hugonnet `dmdtda`; `GMB_BIAS`,
+  `GMB_ABS_BIAS`, `GMB_REL_BIAS`, `GMB_RMSE`, `GMB_SCORE` with observation uncertainty), `BASIN_SWE`,
+  `BASIN_SCA`, `BASIN_ET` (KGE with components), also as calibration targets `glacier_mb`, `basin_*`.
+  `GMB_*` metrics can be `OPTIMIZATION_METRIC`, COMPOSITE components or NSGA-II objectives
+  (`NSGA2_SECONDARY_METRIC: GMB_SCORE`); workers compute them through the evaluator and fail the run if they
+  cannot. New docs page "Multi-variable evaluation" with the support matrix.
 - **Fair, reproducible multi-model comparison** (docs: *Multi-model comparison*):
   - *Seeds*: with `RANDOM_SEED` unset, calibration draws a seed, logs it and records it in
     `<exp>_<algo>_calibration_conditions.json`, `*_best_params.json` and `run_manifest.json`; setting
@@ -152,6 +162,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (a reliable ensemble now scores 1). `ENKF_FORCING_PERTURBATION: false` now switches forcing perturbation off
   (it was ignored). Set `ENKF_OBS_ERROR_TYPE: relative` and `ENKF_FORCING_CORRELATION_HOURS: 0` for the previous
   error models.
+- **Multivariate objective defaults are bias-sensitive (changes results)**: the default metric for `SCA` and
+  `ET` in `OBJECTIVE_METRICS` is now KGE instead of correlation (bias-blind); `SWE`, `SNOW` and the new
+  `BASIN_*` default to KGE and `GLACIER_MB` to `GMB_SCORE`. `OBJECTIVE_METRICS` keys are now case-insensitive
+  and merged over the defaults (a lower-case `streamflow: nse` used to be ignored; a variable missing from a
+  user dict now gets its default, e.g. NSE for TWS, instead of KGE). Minimised metrics (RMSE, PBIAS,
+  `GMB_ABS_BIAS`) now contribute `|value|` instead of `1 - value`. A variable whose evaluator returned no
+  metrics is penalised (2.0) instead of raising.
 - Missing, unreadable or non-overlapping streamflow observations after postprocessing are now logged at
   WARNING level naming the expected observation path (previously a DEBUG message), and recorded in
   metrics.json.

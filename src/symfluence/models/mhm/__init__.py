@@ -128,6 +128,7 @@ def register() -> None:
     R.runners.add_lazy("MHM", f"{base}.runner.MHMRunner")
     R.postprocessors.add_lazy("MHM", f"{base}.postprocessor.MHMPostProcessor")
     R.result_extractors.add_lazy("MHM", f"{base}.extractor.MHMResultExtractor")
+    R.output_adapters.add_lazy("MHM", f"{base}.output_adapter.MHMOutputAdapter")
     R.optimizers.add_lazy("MHM", f"{base}.calibration.optimizer.MHMModelOptimizer")
     R.workers.add_lazy("MHM", f"{base}.calibration.worker.MHMWorker")
     R.parameter_managers.add_lazy("MHM", f"{base}.calibration.parameter_manager.MHMParameterManager")

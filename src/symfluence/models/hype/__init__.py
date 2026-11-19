@@ -132,6 +132,7 @@ def register() -> None:
     R.postprocessors.add_lazy("HYPE", f"{base}.postprocessor.HYPEPostProcessor")
     R.visualizers.add_lazy("HYPE", f"{base}.visualizer.visualize_hype")
     R.result_extractors.add_lazy("HYPE", f"{base}.extractor.HYPEResultExtractor")
+    R.output_adapters.add_lazy("HYPE", f"{base}.output_adapter.HYPEOutputAdapter")
     R.plotters.add_lazy("HYPE", f"{base}.plotter.HYPEPlotter")
 
     from symfluence.core.modeling.spatial_modes import (
