@@ -126,6 +126,31 @@ def test_benchmarks_feature_detected(tmp_path, monkeypatch):
     assert bms["calibration"]["mean_flow"]["KGE_skill"] > 0
 
 
+def test_real_split_sample_benchmarks_and_test_period(tmp_path):
+    """With the split-sample benchmark module present, every scored period gets benchmarks."""
+    from symfluence.core.metrics import benchmarks  # noqa: F401  (present since split-sample rigour)
+
+    project = _write_project(tmp_path)
+    csv = project / "results" / f"{EXP}_results.csv"
+    cfg = _config(test_period="2004-01-01, 2004-12-31")
+    bms = rm.build_postprocess_metrics(cfg, project, csv)["models"]["SUMMA"]["benchmarks"]
+    assert {"calibration", "evaluation", "test"} <= set(bms)
+    assert {"mean_flow", "climatology", "persistence"} <= set(bms["test"])
+
+
+def test_final_evaluation_keys_from_results_saver_map_to_benchmarks():
+    """Prefixed evaluator keys, stripped by the final-evaluation saver, land in metrics.json."""
+    from symfluence.core.calibration.optimizers.final_evaluation.results_saver import FinalResultsSaver
+
+    raw = {"Calib_KGE": 0.8, "Test_KGE": 0.5, "Test_KGE_benchmark_climatology": 0.3,
+           "Test_KGE_skill_climatology": 0.29}
+    payload = {k: FinalResultsSaver.extract_period_metrics(raw, p)
+               for k, p in (("calibration_metrics", "Calib"), ("test_metrics", "Test"))}
+    metrics, benchmarks = rm.metrics_from_final_evaluation(payload)
+    assert metrics["test"]["KGE"] == 0.5
+    assert benchmarks["test"]["climatology"] == {"KGE": 0.3, "KGE_skill": 0.29}
+
+
 def test_missing_observations_warning_names_expected_path(tmp_path):
     project = _write_project(tmp_path, with_obs=False)
     doc = rm.build_postprocess_metrics(_config(), project, project / "results" / f"{EXP}_results.csv")
