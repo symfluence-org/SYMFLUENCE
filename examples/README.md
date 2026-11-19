@@ -44,9 +44,21 @@ Hands-on workshop exercises for guided learning:
 - **04a** – Logan River watershed
 - **04b** – Provo River watershed
 - **04c** – Logan River from the command line (shell-only SUMMA workflow, no Python)
-- **04d** – [Intelligent Rivers: Himalayan snow](04_workshop_notebooks/04d_intelligent_rivers_snow.ipynb), using the shared [Rohtang config](04_workshop_notebooks/config_rohtang_snow.yaml) for native data acquisition and SUMMA, followed by forcing, snow-storage, MODIS coverage, timing, and native DE calibration exercises with before/after and a second-season holdout comparison and forcing-grid/elevation diagnostics. The notebook runs the full workflow by default; set `RUN_STEPS = False` to inspect prepared outputs during class.
+- **04d** – [Intelligent Rivers: Himalayan snow](04_workshop_notebooks/04d_intelligent_rivers_snow.ipynb), using the shared [Rohtang config](04_workshop_notebooks/config_rohtang_snow.yaml) for native data acquisition and SUMMA, followed by forcing, snow-storage, MODIS coverage, timing, and native DE calibration exercises with before/after and a second-season holdout comparison and forcing-grid/elevation diagnostics. The notebook is saved with its outputs and opens as a walkthrough of a prepared run (see *Prepared workshop data* below).
 
 - **04e** – [Intelligent Rivers: Streamflow](04_workshop_notebooks/04e_intelligent_rivers_streamflow.ipynb), comparing lumped SUMMA and a native daily LSTM on Vamanapuram at Ayilam (CAMELS-IND 15007). Includes a small, attributed observation/boundary subset, a shared [configuration](04_workshop_notebooks/config_ayilam_streamflow.yaml), fixed fitting/holdout dates, and climatology benchmarks. Launch with `symfluence example launch 04e`.
+
+#### Prepared workshop data (04d, 04e)
+
+Both notebooks are saved with their executed outputs, so they can be read on GitHub or in Jupyter without running anything. To follow along on your own machine, open them as usual: with the default `USE_PREPARED_DATA = True` the first code cell downloads a zip of the instructors' complete run (ERA5, MODIS, terrain, SUMMA inputs, model runs and calibration results) and unpacks it into `SYMFLUENCE_data/domain_<name>`, checking its SHA-256. No CDS or NASA Earthdata account is needed.
+
+| Setting | What happens |
+|---|---|
+| `USE_PREPARED_DATA = True`, `RUN_STEPS = False` (default) | Walkthrough: read the prepared results. |
+| `USE_PREPARED_DATA = True`, `RUN_STEPS = True` | Re-run preprocessing, SUMMA, calibration (and the 04e LSTM) yourself; the acquisition stages are skipped. |
+| `USE_PREPARED_DATA = False`, `RUN_STEPS = True` | Full run from scratch; needs `~/.cdsapirc`, `~/.netrc` (Earthdata) and several hours of download queueing. |
+
+Keep the data folder at the default `../SYMFLUENCE_data` next to the repository: the Rohtang YAML points `MODIS_SNOW_DIR` there. The zip locations and checksums are in [`prepared_data.json`](04_workshop_notebooks/prepared_data.json). For a computer lab, copy the zips once and set `SYMFLUENCE_WORKSHOP_DATA=/path/to/folder` (or `SYMFLUENCE_WORKSHOP_DATA_URL=` a local mirror) before starting Jupyter.
 
 Designed for classroom and workshop settings with step-by-step guidance.
 
@@ -75,6 +87,8 @@ Beyond the numbered learning path, this directory also contains:
    ```bash
    ./scripts/symfluence-bootstrap --install
    ```
+   The bootstrap also installs JupyterLab (the `[notebook]` extra). On an
+   existing install that predates this, add it with `pip install -e ".[notebook]"`.
 
 2. **Launch an example notebook** directly from the CLI:
    ```bash
