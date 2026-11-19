@@ -547,6 +547,11 @@ class BaseWorker(ABC):
             **additional_data
         )
 
+        # Glacier mass-balance objectives (GMB_*) come from the model-agnostic
+        # GLACIER_MB evaluator, not from the worker's own metrics.
+        if isinstance(metrics, dict):
+            self._add_glacier_mb_metrics(metrics, task)
+
         # Determine primary score
         score = self._extract_primary_score(metrics, task.config)
         if forcing_correction and not is_penalty(score):
@@ -561,6 +566,22 @@ class BaseWorker(ABC):
             metrics=metrics,
             iteration=task.iteration
         )
+
+    def _add_glacier_mb_metrics(self, metrics: Dict[str, Any], task: WorkerTask) -> None:
+        """Add GMB_* metrics when a configured objective asks for them."""
+        from symfluence.core.modeling.evaluators.multivariable import (
+            glacier_mb_metrics_for_run,
+            requested_glacier_mb_metrics,
+        )
+        config = task.config if task.config is not None else self.config
+        wanted = requested_glacier_mb_metrics(config)
+        if not wanted or all(self._find_metric_value(metrics, n) is not None for n in wanted):
+            return
+        data_dir = resolve_config_value(config, lambda: config.system.data_dir, dict_key='SYMFLUENCE_DATA_DIR')
+        domain = resolve_config_value(config, lambda: config.domain.name, dict_key='DOMAIN_NAME')
+        project_dir = Path(str(data_dir)) / f'domain_{domain}' if data_dir and domain else None
+        metrics.update(glacier_mb_metrics_for_run(
+            config, [task.output_dir, task.sim_dir], project_dir, self.logger))
 
     @staticmethod
     def _configured_metric(config: Any) -> Tuple[str, Optional[Dict[str, float]]]:

@@ -289,6 +289,38 @@ class ETEvalConfig(BaseModel):
     obs_path: Optional[str] = Field(default=None, alias='ET_OBS_PATH')
 
 
+class MultiVariableEvalConfig(BaseModel):
+    """Model-agnostic multi-variable evaluation (GLACIER_MB, BASIN_SWE/SCA/ET)."""
+    model_config = FROZEN_CONFIG
+
+    adapter_model: Optional[str] = Field(
+        default=None, alias='OUTPUT_ADAPTER_MODEL',
+        description="Model whose output adapter the GLACIER_MB / BASIN_* evaluators use; "
+                    "default: the single HYDROLOGICAL_MODEL")
+    glacier_mb_obs_path: Optional[str] = Field(
+        default=None, alias='GLACIER_MB_OBS_PATH',
+        description="CSV/NetCDF of glacier mass-balance periods (start/end dates, rate, optional "
+                    "uncertainty and area); e.g. Hugonnet et al. (2021) dmdtda/err_dmdtda")
+    glacier_mb_obs_units: Literal['m_we_per_yr', 'mm_we_per_yr'] = Field(
+        default='m_we_per_yr', alias='GLACIER_MB_OBS_UNITS',
+        description="Units of the observed mass-balance rate and its uncertainty")
+    glacier_mb_scale: float = Field(
+        default=1000.0, gt=0, alias='GLACIER_MB_SCALE',
+        description="Error scale (mm w.e./yr) for GMB_SCORE when a period has no uncertainty")
+    glacier_mb_endpoint_tolerance_days: float = Field(
+        default=1.0, ge=0, alias='GLACIER_MB_ENDPOINT_TOLERANCE_DAYS',
+        description="Largest gap (days) between a period boundary and the simulated state used for it")
+    basin_swe_obs_path: Optional[str] = Field(
+        default=None, alias='BASIN_SWE_OBS_PATH',
+        description="Observed basin (or point) SWE series, mm")
+    basin_sca_obs_path: Optional[str] = Field(
+        default=None, alias='BASIN_SCA_OBS_PATH',
+        description="Observed snow-covered fraction series (0-1, or percent)")
+    basin_et_obs_path: Optional[str] = Field(
+        default=None, alias='BASIN_ET_OBS_PATH',
+        description="Observed basin ET series, mm/d")
+
+
 class EvaluationConfig(BaseModel):
     """Evaluation data and analysis configuration"""
     model_config = FROZEN_CONFIG
@@ -325,6 +357,7 @@ class EvaluationConfig(BaseModel):
     # Evaluator-specific settings
     tws: Optional[TWSEvalConfig] = Field(default_factory=TWSEvalConfig)
     et: Optional[ETEvalConfig] = Field(default_factory=ETEvalConfig)
+    multivariable: Optional[MultiVariableEvalConfig] = Field(default_factory=MultiVariableEvalConfig)
 
     @field_validator('evaluation_data', 'analyses', mode='before')
     @classmethod

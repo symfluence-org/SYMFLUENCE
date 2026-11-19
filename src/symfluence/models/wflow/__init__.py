@@ -61,6 +61,7 @@ def register() -> None:
     R.runners.add_lazy("WFLOW", f"{base}.runner.WflowRunner")
     R.postprocessors.add_lazy("WFLOW", f"{base}.postprocessor.WflowPostProcessor")
     R.result_extractors.add_lazy("WFLOW", f"{base}.extractor.WflowResultExtractor")
+    R.output_adapters.add_lazy("WFLOW", f"{base}.output_adapter.WflowOutputAdapter")
     R.optimizers.add_lazy("WFLOW", f"{base}.calibration.optimizer.WflowModelOptimizer")
     R.workers.add_lazy("WFLOW", f"{base}.calibration.worker.WflowWorker")
     R.parameter_managers.add_lazy("WFLOW", f"{base}.calibration.parameter_manager.WflowParameterManager")

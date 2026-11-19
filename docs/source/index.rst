@@ -72,6 +72,7 @@
    configuration
    calibration
    forcing_correction
+   multivariable_evaluation
    multi_model_comparison
 
 .. toctree::
