@@ -349,8 +349,9 @@ class MODFLOWProcessComponent(ProcessComponent):
                 ),
             }
 
+            # daily=True: one value per day (FluxSpec dt is 86400 s), not per stress period.
             drain = extractor.extract_variable(
-                output_dir, 'drain_discharge', **kwargs
+                output_dir, 'drain_discharge', daily=True, **kwargs
             )
             # drain is in m3/d (matching FluxSpec units)
             return {"drain_discharge": torch.tensor(

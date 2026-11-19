@@ -34,6 +34,16 @@ from symfluence.core.exceptions import ConfigurationError, FileOperationError
 from symfluence.core.modeling.base.base_preprocessor import BaseModelPreProcessor
 from symfluence.core.registries import R
 
+
+def default_drain_conductance(area_m2: float) -> float:
+    """Area-scaled lumped drain conductance (m2/d) used when none is configured.
+
+    Targets a ~100-day aquifer time constant (tau = SY * A / C) with the
+    default SY of 0.05, i.e. C = 0.0005 * A, with a floor of 50 m2/d.
+    """
+    return max(50.0, float(area_m2) * 0.0005)
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -184,10 +194,8 @@ class MODFLOWPreProcessor(BaseModelPreProcessor):
             drain_elev = (top + bot) / 2.0
         else:
             drain_elev = float(drain_elev)
-        # Scale drain conductance with catchment area to target a ~100-day
-        # aquifer time constant (τ = SY × A / C) with the default SY.
-        drain_cond_default = max(50.0, area_m2 * 0.0005)
-        drain_cond = float(self._get_modflow_cfg('DRAIN_CONDUCTANCE', drain_cond_default))
+        drain_cond = float(self._get_modflow_cfg(
+            'DRAIN_CONDUCTANCE', default_drain_conductance(area_m2)))
         nstp = int(self._get_modflow_cfg('NSTP', 1))
 
         n_periods, sp_length, n_days = self._get_time_info()

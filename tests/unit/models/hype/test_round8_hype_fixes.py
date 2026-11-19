@@ -47,7 +47,7 @@ def _cfg(**extra):
 
 
 def test_spinup_period_used_unless_hype_spinup_days_set_explicitly():
-    # HYPE_SPINUP_DAYS has a schema default (365), which used to shadow SPINUP_PERIOD.
+    # HYPE_SPINUP_DAYS defaults to None so SPINUP_PERIOD is used unless it is set.
     implicit = SimpleNamespace(config=_cfg(SPINUP_PERIOD="2000-01-01, 2000-12-31"))
     explicit = SimpleNamespace(config=_cfg(SPINUP_PERIOD="2000-01-01, 2000-12-31", HYPE_SPINUP_DAYS=10))
     assert HYPEPreProcessor._hype_spinup_days_explicit(implicit) is False

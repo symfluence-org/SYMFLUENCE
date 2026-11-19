@@ -190,10 +190,10 @@ HYPE_PARAMS_TO_CALIBRATE: ttmp,cmlt,cevp,lp,epotdist,rrcs1,rrcs2,rcgrw,rivvel,da
 
 # HYPE_SPINUP_DAYS
 #   Type:        int
-#   Default:     365
+#   Default:     None (derived from SPINUP_PERIOD; 365 when no period is set)
 #   Source:      HYPEConfig (model_configs.py)
 #   Usage:      3
-HYPE_SPINUP_DAYS: 365
+HYPE_SPINUP_DAYS: null
 
 # HYPE_INFILTRATION_MODEL
 #   Type:        Optional
@@ -5730,10 +5730,10 @@ MODFLOW_DRAIN_ELEVATION: null
 
 # MODFLOW_DRAIN_CONDUCTANCE — Drain conductance (m2/d)
 #   Type:        float
-#   Default:     50.0
+#   Default:     None (area-scaled: max(50, 0.0005 * catchment_area_m2), ~100-day time constant)
 #   Source:      MODFLOWConfig (model_configs.py)
-#   Range:       1–1000 depending on geology and outlet geometry
-MODFLOW_DRAIN_CONDUCTANCE: 50.0
+#   Range:       calibration bounds 1e4–1e8 (lumped cell total)
+MODFLOW_DRAIN_CONDUCTANCE: null
 
 # MODFLOW_STRESS_PERIOD_LENGTH — Stress period length in days
 #   Type:        float

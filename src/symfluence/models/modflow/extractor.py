@@ -63,17 +63,24 @@ class MODFLOWResultExtractor(ModelResultExtractor):
             variable_type: Type ('head', 'drain_discharge', 'budget')
             **kwargs: Additional args (start_date for the time index; records
                 are dated from the file's own period start times, one value
-                per stress period)
+                per stress period). ``daily=True`` spreads drain discharge
+                rates over the days each stress period covers
+                (``stress_period_length`` sizes the last period).
 
         Returns:
             Time series of extracted variable
         """
         output_path = Path(output_file)
+        daily = bool(kwargs.pop('daily', False))
 
         if variable_type == 'head':
             return self._extract_heads(output_path, **kwargs)
         elif variable_type in ('drain_discharge', 'baseflow'):
-            return self._extract_drain_discharge(output_path, **kwargs)
+            series = self._extract_drain_discharge(output_path, **kwargs)
+            if daily:
+                from .coupling import periods_to_daily
+                series = periods_to_daily(series, kwargs.get('stress_period_length'))
+            return series
         else:
             raise ValueError(f"Unknown variable type: {variable_type}")
 
