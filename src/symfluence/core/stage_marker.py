@@ -120,6 +120,11 @@ _OBSERVATION_DATA_FIELDS: List[str] = [
     "download_ismn",
 ]
 
+# Optimization run-control switches: how a calibration is driven (e.g. continue
+# an interrupted run), never what it produces. Passing --resume must not make a
+# finished calibration look stale.
+_RUN_CONTROL_FIELDS: List[str] = ["calibration_resume"]
+
 # Per-stage fields left out of the hash, on top of EXPERIMENT_SCOPED_FIELDS for
 # domain-shared stages. Deliberately an *exclusion* list: anything not named
 # here is hashed, so an unlisted field can at worst cause an unneeded re-run,
@@ -137,7 +142,8 @@ STAGE_EXCLUDED_FIELDS: Dict[str, Dict[str, List[str]]] = {
     "acquire_forcings": {"domain": _PERIOD_FIELDS},
     "run_model_agnostic_preprocessing": {"domain": _PERIOD_FIELDS},
     "postprocess_results": {"evaluation": ["analyses"]},
-    "calibrate_model": {"evaluation": ["analyses"]},
+    "calibrate_model": {"evaluation": ["analyses"], "optimization": _RUN_CONTROL_FIELDS},
+    "run_sensitivity_analysis": {"optimization": _RUN_CONTROL_FIELDS},
 }
 
 # Hash-scheme version recorded in every marker. Markers written before the

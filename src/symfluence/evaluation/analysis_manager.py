@@ -355,6 +355,18 @@ class AnalysisManager(ConfigurableMixin):
             calib_start = calib[0] if calib is not None else str(calib_period).strip()
             eval_end = split_period(eval_period, allow_extra=True, strict=True)[1]
 
+            # An optional TEST_PERIOD outside the calibration-evaluation span
+            # must be in the benchmark input too, so it can be scored.
+            test_period = self._get_config_value(
+                lambda: self.config.domain.test_period, default=None
+            )
+            test = split_period(test_period, allow_extra=True) if isinstance(test_period, str) else None
+            if test is not None and test[0] and test[1]:
+                if pd.Timestamp(test[1]) > pd.Timestamp(eval_end):
+                    eval_end = test[1]
+                if calib is not None and pd.Timestamp(test[0]) < pd.Timestamp(calib_start):
+                    calib_start = test[0]
+
             preprocessor.preprocess_benchmark_data(calib_start, eval_end)
 
             # Run benchmarking

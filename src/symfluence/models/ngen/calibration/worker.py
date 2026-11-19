@@ -393,7 +393,8 @@ class NgenWorker(BaseWorker):
             metrics = target.calculate_metrics(experiment_id=experiment_id, output_dir=output_dir)  # type: ignore[call-arg]
 
             # Normalize metric keys to lowercase
-            return {k.lower(): float(v) for k, v in metrics.items()}
+            # Non-numeric entries (e.g. the evaluator's 'period_warning') are dropped
+            return {k.lower(): float(v) for k, v in metrics.items() if not isinstance(v, str)}
 
         except ImportError:
             # Fallback: Calculate metrics directly

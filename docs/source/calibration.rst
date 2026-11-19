@@ -35,6 +35,47 @@ Configure calibration in your project YAML:
    POPULATION_SIZE: 48
    NUMBER_OF_ITERATIONS: 30
 
+Split-sample design
+-------------------
+
+Calibration is scored on ``CALIBRATION_PERIOD`` and the calibrated model is
+judged on periods it never saw. Up to four non-overlapping windows inside
+``EXPERIMENT_TIME_START`` .. ``EXPERIMENT_TIME_END`` are recognised:
+
+.. code-block:: yaml
+
+   SPINUP_PERIOD:      "2000-01-01, 2001-12-31"   # warm-up: never scored
+   CALIBRATION_PERIOD: "2002-01-01, 2009-12-31"   # the optimisation objective
+   EVALUATION_PERIOD:  "2010-01-01, 2014-12-31"   # held out, reported (Eval_*)
+   TEST_PERIOD:        "2015-01-01, 2018-12-31"   # optional, independent (Test_*)
+
+- **Spin-up** is one notion. Output before the end of ``SPINUP_PERIOD`` is
+  dropped from every score. The deprecated ``EVALUATION_SPINUP_YEARS`` (N years
+  from the simulation start) still works and maps onto the same window; when
+  both are set, the later end wins.
+- **Evaluation and test** periods are scored only in the final evaluation
+  (``calibration_only=False``), never inside the optimisation loop. Use
+  ``EVALUATION_PERIOD`` to compare runs and choose between them; keep
+  ``TEST_PERIOD`` for a final, independent check that nothing is selected on.
+- **Benchmarks.** The final evaluation also scores three reference predictors
+  on exactly the same periods: the calibration-period mean flow (KGE
+  :math:`= 1-\sqrt{2} \approx -0.41` on the calibration period), the
+  calibration-period day-of-year climatology, and persistence (the previous
+  observation). They are fitted on the calibration period only. Keys are
+  ``<Period>_KGE_benchmark_<name>`` and the skill relative to each,
+  ``<Period>_KGE_skill_<name>`` :math:`= (KGE - KGE_{bm}) / (1 - KGE_{bm})`
+  (1 is perfect, 0 no better than the benchmark). The hydrobm benchmarking
+  analysis uses the same configured periods.
+
+Problems are reported as warnings, not errors, so existing configurations keep
+running. At config load, SYMFLUENCE warns when calibration, evaluation and
+test periods overlap, when spin-up does not end before a scored period, and
+when ``CALIBRATION_PERIOD`` is missing while an evaluation/test period is set or
+an optimisation method is configured. Without ``CALIBRATION_PERIOD``, or when it
+has no overlap with the data, metrics fall back to the full record (which
+contains the held-out years): a ``SPLIT-SAMPLE WARNING`` is logged and the
+metrics dictionary carries a ``period_warning`` entry explaining why.
+
 Parameter Selection
 -------------------
 
@@ -220,8 +261,70 @@ Calibration produces:
 
 **Validation**
 
-Performance on the independent ``EVALUATION_PERIOD`` is reported automatically
-alongside the calibration-period score using ``OPTIMIZATION_METRIC``.
+Performance on the independent ``EVALUATION_PERIOD`` (and ``TEST_PERIOD``, if
+set) is reported automatically alongside the calibration-period score, with
+skill relative to the benchmarks; see `Split-sample design`_.
+
+Checkpoint and Resume
+---------------------
+
+Long calibrations (thousands of evaluations of SUMMA, ParFlow, ...) can be
+continued after the process dies, instead of starting over. Every
+``CHECKPOINT_INTERVAL`` iterations (default 10; an iteration is one
+evaluation for DDS and one generation for population algorithms) the
+optimizer writes, next to the iteration-results CSV and best-parameter JSON,
+
+``<EXPERIMENT_ID>_<algorithm>_resume_state.json``
+
+atomically (temporary file + rename, so a crash mid-write leaves the previous
+checkpoint intact). It holds the ordered log of every evaluation request and
+its result, the iteration and evaluation counters, the random seed (or, for an
+unseeded run, the seed it drew, which a resume reuses) and the random-generator state, the best
+solution, crash counters, the iteration history, and a fingerprint of the
+calibration setup.
+
+To continue an interrupted run, rerun the same configuration with
+``--resume``:
+
+.. code-block:: bash
+
+   symfluence workflow step calibrate_model --config my_config.yaml --resume
+   # or: symfluence workflow run --config my_config.yaml --resume
+
+or set ``CALIBRATION_RESUME: true`` in the configuration. The resumed run
+replays the algorithm against the logged evaluations, which takes seconds and
+runs no model, to restore its exact internal state (DDS's current solution and
+position in its perturbation schedule, DE/PSO/SCE-UA/NSGA-II populations and
+fitnesses, DREAM chains, GLUE samples, the simulated-annealing temperature,
+CMA-ES covariance, L-BFGS history, and the random-number generator), then
+continues with real model runs. A seeded resumed run ends with the same result
+as an uninterrupted one. The results CSV and best-parameter JSON are
+continued: earlier rows keep their timestamps, and nothing is moved aside.
+Evaluations made after the last checkpoint are run again, so a smaller
+``CHECKPOINT_INTERVAL`` loses less work (``CHECKPOINT_INTERVAL: 1`` checkpoints
+after every iteration).
+
+Resume refuses, with ``CalibrationResumeError``, rather than silently starting
+over when:
+
+- the calibrated parameters, their bounds, the algorithm, the model,
+  ``OPTIMIZATION_METRIC``, ``CALIBRATION_PERIOD``, ``RANDOM_SEED``,
+  ``POPULATION_SIZE`` or the calibration budget (``CALIBRATION_BUDGET_MODE``
+  and its settings) changed since the checkpoint (the error names the
+  setting);
+- the replay diverges from the log: the algorithm asks for different
+  parameter sets than were recorded, or its random-number generator is not in
+  the checkpointed state afterwards. This happens when other settings that
+  steer the search changed (``NUMBER_OF_ITERATIONS`` for DDS, algorithm
+  options, ``INITIAL_GUESS``, ``NUM_PROCESSES`` for Async-DDS batch sizes) or
+  after a SYMFLUENCE upgrade that changed the algorithm;
+- the algorithm does not support resume (an externally registered algorithm
+  class can declare ``supports_resume = False``; all built-in algorithms
+  support it).
+
+If there is no checkpoint, ``--resume`` logs a warning and starts a new run.
+Without ``--resume``, a new run moves the previous run's results and resume
+state aside as ``*.prev-<timestamp>`` files, as before.
 
 Best Practices
 --------------
