@@ -1750,13 +1750,21 @@ class BaseModelOptimizer(
                 self.logger.error("Failed to calculate final evaluation metrics")
                 return None
 
+            # Independent test period: reported only, never used for selection
+            test_metrics = self._extract_period_metrics(metrics, 'Test')
+            period_warning = metrics.get('period_warning')
+
             # Log detailed results
-            self._log_final_evaluation_results(calib_metrics, eval_metrics)
+            self._log_final_evaluation_results(
+                calib_metrics, eval_metrics, test_metrics, period_warning
+            )
 
             final_result = {
                 'final_metrics': metrics,
                 'calibration_metrics': calib_metrics,
                 'evaluation_metrics': eval_metrics,
+                'test_metrics': test_metrics,
+                'period_warning': period_warning,
                 'success': True,
                 'best_params': best_params
             }
@@ -1891,9 +1899,15 @@ class BaseModelOptimizer(
         """Extract metrics for a specific period. Delegates to FinalEvaluationOrchestrator."""
         return self.final_orchestrator.extract_period_metrics(all_metrics, period_prefix)
 
-    def _log_final_evaluation_results(self, calib_metrics: Dict, eval_metrics: Dict) -> None:
+    def _log_final_evaluation_results(
+        self,
+        calib_metrics: Dict,
+        eval_metrics: Dict,
+        test_metrics: Optional[Dict] = None,
+        period_warning: Optional[str] = None,
+    ) -> None:
         """Log final evaluation results. Delegates to FinalEvaluationOrchestrator."""
-        self.final_orchestrator.log_results(calib_metrics, eval_metrics)
+        self.final_orchestrator.log_results(calib_metrics, eval_metrics, test_metrics, period_warning)
 
     def _update_file_manager_for_final_run(self) -> None:
         """Update file manager for full experiment period. Delegates to FinalEvaluationOrchestrator."""
