@@ -9,6 +9,7 @@ optimizers. Keeps orchestration lean; algorithm details and examples are in
 """
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional, cast
 
@@ -306,6 +307,7 @@ class OptimizationManager(BaseManager):
             BaseModelOptimizer: Base class for model optimizers
         """
         self.logger.info("Starting model calibration")
+        calibration_started = time.time()
 
         # Check if iterative optimization is enabled
         optimization_methods = self._get_config_value(
@@ -373,6 +375,7 @@ class OptimizationManager(BaseManager):
                         self_training_result = result
                 hydrological_models = [m for m in hydrological_models if m not in _SELF_TRAINING_MODELS]
                 if not hydrological_models:
+                    self._write_calibrated_run_metrics(calibration_started)
                     return self_training_result
 
             # Detect coupled groundwater calibration — when a GROUNDWATER_MODEL
@@ -427,6 +430,7 @@ class OptimizationManager(BaseManager):
                     context='calibrate_model'
                 )
 
+            self._write_calibrated_run_metrics(calibration_started)
             return results[-1]
 
         except OptimizationError:
@@ -437,6 +441,43 @@ class OptimizationManager(BaseManager):
             # marker and exited 0.
             self.logger.error(f"Error during model calibration: {str(e)}")
             raise OptimizationError(f"Model calibration failed: {e}") from e
+
+    def _write_calibrated_run_metrics(self, since: float) -> Optional[Path]:
+        """Write ``results/<exp>/metrics.json`` from this calibration's final evaluation(s).
+
+        Collects every ``optimization/<MODEL>/**/<exp>_*_final_evaluation.json``
+        written since ``since`` (epoch seconds), so the run summary describes
+        the calibrated model. Best-effort: never fails the calibration step.
+        """
+        from symfluence.core.metrics import run_metrics as rm
+
+        opt_dir = Path(self.project_dir) / 'optimization'
+        found = []
+        if opt_dir.is_dir():
+            for path in sorted(opt_dir.rglob(f"{self.experiment_id}_*_final_evaluation.json")):
+                try:
+                    if path.stat().st_mtime + 1.0 < since:
+                        continue
+                except OSError:
+                    continue
+                model = path.relative_to(opt_dir).parts[0]
+                found.append((model, path))
+        if not found:
+            self.logger.warning(
+                "No final evaluation was written by this calibration; "
+                f"results/{self.experiment_id}/metrics.json keeps the postprocessed scores."
+            )
+            return None
+        try:
+            doc = rm.build_calibration_metrics(self.config, self.project_dir, found)
+            for message in doc['warnings']:
+                self.logger.warning(f"Run metrics: {message}")
+            path = rm.write_metrics(doc, rm.run_results_dir(self.project_dir, self.experiment_id))
+        except (OSError, ValueError, TypeError, KeyError) as e:
+            self.logger.warning(f"Could not write calibrated run metrics: {e}")
+            return None
+        self.logger.info(f"Calibrated run metrics written to {path}")
+        return path
 
     def _coupled_routing_requested(self) -> bool:
         """True when a calibratable dCoupler routing model is coupled to the land model.
