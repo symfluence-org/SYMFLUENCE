@@ -8481,19 +8481,33 @@ ENKF_PRECIP_PERTURBATION_STD: 0.3
 #   Description: Additive std for temperature perturbation (K)
 ENKF_TEMP_PERTURBATION_STD: 1.0
 
+# ENKF_FORCING_CORRELATION_HOURS
+#   Type:        float
+#   Default:     24.0
+#   Source:      EnKFConfig (state_config.py)
+#   Description: e-folding time (hours) of the AR(1) forcing perturbations; 0 = white noise (independent at every timestep)
+ENKF_FORCING_CORRELATION_HOURS: 24.0
+
 # ENKF_OBS_ERROR_STD
 #   Type:        float
 #   Default:     0.1
 #   Source:      EnKFConfig (state_config.py)
-#   Description: Relative observation error standard deviation
+#   Description: Relative observation error b in sigma = a + b*Q_obs (10 %); the std itself in model units for 'absolute'
 ENKF_OBS_ERROR_STD: 0.1
+
+# ENKF_OBS_ERROR_ABS
+#   Type:        float
+#   Default:     None
+#   Source:      EnKFConfig (state_config.py)
+#   Description: Absolute observation error floor a (m3/s) in sigma = a + b*Q_obs ('heteroscedastic'); None = 1% of the mean observed discharge
+ENKF_OBS_ERROR_ABS: null
 
 # ENKF_OBS_ERROR_TYPE
 #   Type:        str
-#   Default:     relative
+#   Default:     heteroscedastic
 #   Source:      EnKFConfig (state_config.py)
-#   Description: Observation error type ('relative' or 'absolute')
-ENKF_OBS_ERROR_TYPE: relative
+#   Description: Streamflow observation error model: 'heteroscedastic' sigma = a + b*Q_obs, 'relative' sigma = max(b*Q_obs, floor), 'absolute' sigma = ENKF_OBS_ERROR_STD
+ENKF_OBS_ERROR_TYPE: heteroscedastic
 
 # ENKF_FILTER_VARIANT
 #   Type:        str
@@ -8550,6 +8564,48 @@ ENKF_ENFORCE_NONNEG: true
 #   Source:      EnKFConfig (state_config.py)
 #   Description: Enable joint state-parameter estimation
 ENKF_ESTIMATE_PARAMS: false
+
+# ENKF_PRECIP_BIAS_STATE
+#   Type:        bool
+#   Default:     False
+#   Source:      EnKFConfig (state_config.py)
+#   Description: Augment the state with a multiplicative precipitation bias (estimated in log space) that the filter updates
+ENKF_PRECIP_BIAS_STATE: false
+
+# ENKF_PRECIP_BIAS_STD
+#   Type:        float
+#   Default:     0.2
+#   Source:      EnKFConfig (state_config.py)
+#   Description: Initial log-space std of the precipitation bias state
+ENKF_PRECIP_BIAS_STD: 0.2
+
+# ENKF_PRECIP_BIAS_WALK_STD
+#   Type:        float
+#   Default:     0.01
+#   Source:      EnKFConfig (state_config.py)
+#   Description: Per-timestep random-walk std of the log precipitation bias (keeps the bias ensemble from collapsing)
+ENKF_PRECIP_BIAS_WALK_STD: 0.01
+
+# ENKF_OPEN_LOOP
+#   Type:        bool
+#   Default:     True
+#   Source:      EnKFConfig (state_config.py)
+#   Description: Also run the same perturbed ensemble without updates (open-loop baseline) and report skill relative to it
+ENKF_OPEN_LOOP: true
+
+# ENKF_FORECAST_LEAD_DAYS
+#   Type:        float
+#   Default:     0.0
+#   Source:      EnKFConfig (state_config.py)
+#   Description: Issue ensemble forecasts of this many days from the analysis and score them by lead time (0 = off)
+ENKF_FORECAST_LEAD_DAYS: 0.0
+
+# ENKF_FORECAST_ISSUE_INTERVAL
+#   Type:        int
+#   Default:     1
+#   Source:      EnKFConfig (state_config.py)
+#   Description: Issue a forecast every N timesteps after warm-up
+ENKF_FORECAST_ISSUE_INTERVAL: 1
 
 # ================================================================================
 # FEWS GENERAL ADAPTER (optional Delft-FEWS integration)

@@ -71,6 +71,7 @@
 
    configuration
    calibration
+   data_assimilation
 
 .. toctree::
    :maxdepth: 1

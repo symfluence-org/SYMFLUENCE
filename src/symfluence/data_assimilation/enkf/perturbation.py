@@ -15,6 +15,37 @@ from typing import Dict, Optional
 import numpy as np
 
 
+def ar1_coefficient(correlation_steps: float) -> float:
+    """Lag-1 autocorrelation ``exp(-1 / tau)`` for an e-folding time of tau steps."""
+    if correlation_steps <= 0:
+        return 0.0
+    return float(np.exp(-1.0 / float(correlation_steps)))
+
+
+def ar1_standard_normal(
+    rng: np.random.Generator,
+    n_members: int,
+    n_steps: int,
+    correlation_steps: float = 0.0,
+) -> np.ndarray:
+    """Stationary AR(1) series with N(0, 1) marginals, shape (n_members, n_steps)."""
+    phi = ar1_coefficient(correlation_steps)
+    eps = rng.standard_normal((n_members, n_steps))
+    if phi == 0.0 or n_steps == 0:
+        return eps
+    z = np.empty_like(eps)
+    z[:, 0] = eps[:, 0]
+    innovation_scale = np.sqrt(1.0 - phi ** 2)
+    for t in range(1, n_steps):
+        z[:, t] = phi * z[:, t - 1] + innovation_scale * eps[:, t]
+    return z
+
+
+def lognormal_multiplier(z: np.ndarray, sigma: float) -> np.ndarray:
+    """Map N(0, 1) noise to a lognormal multiplier with expectation 1."""
+    return np.exp(sigma * z - 0.5 * sigma ** 2)
+
+
 class PerturbationStrategy(ABC):
     """Abstract base class for perturbation strategies."""
 
@@ -157,6 +188,52 @@ class GaussianPerturbation(PerturbationStrategy):
             data = data * multiplier
 
         return data
+
+    def forcing_noise(
+        self,
+        variable: str,
+        n_members: int,
+        n_steps: int,
+        correlation_steps: float = 0.0,
+    ) -> np.ndarray:
+        """Perturbations for a whole period, correlated in time (AR(1)).
+
+        A standard-normal AR(1) series ``z`` is drawn per member,
+
+            z[0] ~ N(0, 1),  z[t] = phi * z[t-1] + sqrt(1 - phi**2) * eps[t],
+            phi = exp(-1 / correlation_steps)
+
+        so every ``z[t]`` is marginally N(0, 1) (the series starts in its
+        stationary distribution) and the lag-k autocorrelation is ``phi**k``.
+        ``correlation_steps = 0`` gives white noise (phi = 0).
+
+        The series is mapped exactly like :meth:`perturb_forcing` maps its
+        white noise, so the marginal statistics, and in particular the
+        debiasing, are unchanged:
+
+        - ``precip``: multiplier ``exp(sigma * z - sigma**2 / 2)``
+          (lognormal with expectation 1), sigma = ``precip_std``
+        - ``pet``: same with sigma = ``precip_std / 2``
+        - ``temp``: additive offset ``temp_std * z``
+
+        Args:
+            variable: 'precip', 'pet', 'temp' or 'temperature'.
+            n_members: Ensemble size.
+            n_steps: Number of timesteps.
+            correlation_steps: e-folding time of the noise in timesteps.
+
+        Returns:
+            Array (n_members, n_steps): multipliers for precip/pet, additive
+            offsets for temperature.
+        """
+        z = ar1_standard_normal(self.rng, n_members, n_steps, correlation_steps)
+        if variable == 'precip':
+            return lognormal_multiplier(z, self.precip_std)
+        if variable == 'pet':
+            return lognormal_multiplier(z, 0.5 * self.precip_std)
+        if variable in ('temp', 'temperature'):
+            return self.temp_std * z
+        raise ValueError(f"No forcing perturbation defined for '{variable}'")
 
     def perturb_state(
         self,
