@@ -273,10 +273,17 @@ class DREAMAlgorithm(OptimizationAlgorithm):
             # Metropolis-Hastings acceptance for each chain
             for i in range(n_chains):
                 # Log acceptance probability
-                log_alpha = proposal_log_lik[i] - log_likelihood[i]
+                # (a failed proposal is always rejected; any valid proposal
+                # replaces a chain sitting on a failed evaluation)
+                if not np.isfinite(proposal_log_lik[i]):
+                    log_alpha = float('-inf')
+                elif not np.isfinite(log_likelihood[i]):
+                    log_alpha = float('inf')
+                else:
+                    log_alpha = proposal_log_lik[i] - log_likelihood[i]
 
                 # Accept or reject
-                if np.isfinite(proposal_log_lik[i]) and np.log(self._rng.random()) < log_alpha:
+                if np.log(self._rng.random()) < log_alpha:
                     chains[i] = proposals[i]
                     fitness[i] = proposal_fitness[i]
                     log_likelihood[i] = proposal_log_lik[i]
