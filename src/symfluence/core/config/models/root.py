@@ -20,6 +20,20 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 logger = logging.getLogger(__name__)
 
+# Config objects are rebuilt many times per run (workers, coercion); report
+# each design warning once per process.
+_WARNED_MESSAGES: set = set()
+
+
+def _warn_once(message: str, deprecation: bool = False) -> None:
+    """Log ``message`` as a WARNING the first time it is seen in this process."""
+    if message in _WARNED_MESSAGES:
+        return
+    _WARNED_MESSAGES.add(message)
+    logger.warning(message)
+    if deprecation:
+        warnings.warn(message, DeprecationWarning, stacklevel=3)
+
 from .data import DataConfig
 from .domain import DomainConfig
 from .evaluation import EvaluationConfig
@@ -273,6 +287,7 @@ class SymfluenceConfig(BaseModel):
             for label, value in (
                 ('CALIBRATION_PERIOD', self.domain.calibration_period),
                 ('EVALUATION_PERIOD', self.domain.evaluation_period),
+                ('TEST_PERIOD', self.domain.test_period),
                 ('SPINUP_PERIOD', self.domain.spinup_period),
             ):
                 if not value:
@@ -306,6 +321,15 @@ class SymfluenceConfig(BaseModel):
                         f"EXPERIMENT_TIME_START ({start}) and EXPERIMENT_TIME_END ({end})"
                     )
 
+            # Validate test period is within experiment period
+            if self.domain.test_period:
+                test_start, test_end = self._parse_period(self.domain.test_period)
+                if test_start < start or test_end > end:
+                    raise ConfigurationError(
+                        f"TEST_PERIOD ({self.domain.test_period}) must be within "
+                        f"EXPERIMENT_TIME_START ({start}) and EXPERIMENT_TIME_END ({end})"
+                    )
+
         except ConfigurationError:
             raise
         except ValidationError as e:
@@ -313,7 +337,40 @@ class SymfluenceConfig(BaseModel):
         except (ValueError, TypeError) as e:
             raise ConfigurationError(f"Invalid date format: {e}") from e
 
+        self._warn_split_sample_design(start)
         return self
+
+    def _warn_split_sample_design(self, experiment_start) -> None:
+        """Warn (never raise) about a split-sample design that is not rigorous.
+
+        Overlapping calibration/evaluation/test periods, spin-up that does not
+        precede the scored periods, a missing CALIBRATION_PERIOD (full-record
+        fallback) and the deprecated EVALUATION_SPINUP_YEARS key are reported
+        so existing configs keep running.
+        """
+        from symfluence.core.modeling.utilities.periods import split_sample_warnings
+
+        spinup_years = self.evaluation.spinup_years or 0
+        if spinup_years > 0:
+            _warn_once(
+                "EVALUATION_SPINUP_YEARS is deprecated: use SPINUP_PERIOD. It is mapped "
+                f"onto the spin-up window ({spinup_years} year(s) from the simulation "
+                "start) that evaluators exclude from every score.",
+                deprecation=True,
+            )
+        methods = self.optimization.methods
+        if isinstance(methods, str):
+            methods = [m for m in methods.split(',') if m.strip()]
+        for message in split_sample_warnings(
+            calibration=self.domain.calibration_period,
+            evaluation=self.domain.evaluation_period,
+            test=self.domain.test_period,
+            spinup=self.domain.spinup_period,
+            spinup_years=spinup_years,
+            simulation_start=experiment_start,
+            calibrating=bool(methods),
+        ):
+            _warn_once(f"Split-sample design: {message}")
 
     @model_validator(mode='after')
     def validate_coordinates(self):

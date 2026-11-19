@@ -123,6 +123,9 @@ class DomainConfig(BaseModel):
     calibration_start_date: Optional[str] = Field(default=None, alias='CALIBRATION_START_DATE')
     calibration_end_date: Optional[str] = Field(default=None, alias='CALIBRATION_END_DATE')
     evaluation_period: Optional[str] = Field(default=None, alias='EVALUATION_PERIOD')
+    # Optional third, independent hold-out period: scored and reported in the
+    # final evaluation, never used for optimisation or model selection.
+    test_period: Optional[str] = Field(default=None, alias='TEST_PERIOD')
     spinup_period: Optional[str] = Field(default=None, alias='SPINUP_PERIOD')
 
     # Required spatial definition
