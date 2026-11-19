@@ -29,7 +29,10 @@ class HYPEConfig(BaseModel):
         default='ttmp,cmlt,cevp,lp,epotdist,rrcs1,rrcs2,rcgrw,rivvel,damp,wcwp,wcfc,wcep,srrcs',
         alias='HYPE_PARAMS_TO_CALIBRATE'
     )
-    spinup_days: int = Field(default=365, alias='HYPE_SPINUP_DAYS')
+    spinup_days: Optional[int] = Field(
+        default=None, alias='HYPE_SPINUP_DAYS', ge=0,
+        description='Spin-up days; None derives them from SPINUP_PERIOD (365 if no period is set)',
+    )
     timeshift: float = Field(
         default=0, alias='HYPE_TIMESHIFT',
         description='Hours added to forcing timestamps before daily aggregation (e.g. UTC to local time)'

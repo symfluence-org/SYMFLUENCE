@@ -161,8 +161,8 @@ Calibration Parameters
      - null
      - Comma-separated list of parameters
    * - HYPE_SPINUP_DAYS
-     - 365
-     - Spinup period (days)
+     - null
+     - Spinup period (days); null derives it from SPINUP_PERIOD (365 if unset)
 
 Input File Specifications
 =========================

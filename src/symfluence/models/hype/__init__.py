@@ -38,7 +38,7 @@ Key Components:
     HYPEGeoDataManager: Geographic data files (GeoData.txt, GeoClass.txt, ForcKey.txt)
 
 Configuration Parameters:
-    HYPE_SPINUP_DAYS: Model spinup period in days (default: 365)
+    HYPE_SPINUP_DAYS: Model spinup period in days (default: from SPINUP_PERIOD, else 365)
     SETTINGS_HYPE_INFO: Info file name (default: 'info.txt')
     HYPE_PARAMS_TO_CALIBRATE: Calibration parameters
         (default: 'ttmp,cmlt,cevp,lp,epotdist,rrcs1,rrcs2,rcgrw,rivvel,damp')

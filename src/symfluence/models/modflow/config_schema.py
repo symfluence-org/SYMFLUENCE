@@ -109,7 +109,11 @@ class MODFLOWConfig(BaseModel):
 
     # Drain package
     drain_elevation: Optional[float] = Field(default=None, alias='MODFLOW_DRAIN_ELEVATION')
-    drain_conductance: float = Field(default=50.0, alias='MODFLOW_DRAIN_CONDUCTANCE', gt=0)
+    drain_conductance: Optional[float] = Field(
+        default=None, alias='MODFLOW_DRAIN_CONDUCTANCE', gt=0,
+        description='Lumped drain conductance (m2/d); None scales it with catchment area '
+                    '(~100-day aquifer time constant)',
+    )
 
     # Stress period
     stress_period_length: float = Field(default=1.0, alias='MODFLOW_STRESS_PERIOD_LENGTH', gt=0)

@@ -551,8 +551,8 @@ HYPE Model Parameters
      - Description
    * - HYPE_SPINUP_DAYS
      - integer
-     - 365
-     - Number of spinup days
+     - null
+     - Number of spinup days; null derives it from SPINUP_PERIOD (365 if unset)
 
 mizuRoute Parameters
 ~~~~~~~~~~~~~~~~~~~~

@@ -106,20 +106,27 @@ class MODFLOWPostProcessor(StandardModelPostProcessor):
                 drain_discharge, output_dir, stress_period_length=float(sp_length),
             )
         else:
-            return self._extract_standalone_baseflow(drain_discharge)
+            return self._extract_standalone_baseflow(
+                drain_discharge, stress_period_length=float(sp_length),
+            )
 
     def _extract_standalone_baseflow(
-        self, drain_discharge: pd.Series
+        self,
+        drain_discharge: pd.Series,
+        stress_period_length: Optional[float] = None,
     ) -> Tuple[pd.Series, Dict]:
         """Extract baseflow-only streamflow from standalone MODFLOW run."""
-        # Convert m3/d → m3/s
-        baseflow_m3s = drain_discharge / 86400.0
+        from .coupling import periods_to_daily
+
+        # m3/d → m3/s, then spread each stress period's rate over its days so
+        # the result is daily like the observations it is compared against.
+        baseflow_m3s = periods_to_daily(drain_discharge / 86400.0, stress_period_length)
         baseflow_m3s.name = 'streamflow_m3s'
 
         metadata = {
             'units': 'm3/s',
             'source': 'MODFLOW6 drain discharge',
-            'conversion': 'drain(m3/d) / 86400',
+            'conversion': 'drain(m3/d) / 86400, stress periods spread to days',
             'mode': 'standalone',
         }
 
@@ -156,7 +163,9 @@ class MODFLOWPostProcessor(StandardModelPostProcessor):
                     f"SUMMA output directory not found: {summa_output_dir}. "
                     "Falling back to standalone baseflow."
                 )
-                return self._extract_standalone_baseflow(drain_discharge)
+                return self._extract_standalone_baseflow(
+                    drain_discharge, stress_period_length=stress_period_length,
+                )
 
             # Extract surface runoff from SUMMA
             surface_runoff = coupler.extract_surface_runoff(summa_output_dir)
@@ -193,7 +202,9 @@ class MODFLOWPostProcessor(StandardModelPostProcessor):
 
         except Exception as e:  # noqa: BLE001 — model execution resilience
             logger.error(f"Coupled extraction failed: {e}. Falling back to standalone.", exc_info=True)
-            return self._extract_standalone_baseflow(drain_discharge)
+            return self._extract_standalone_baseflow(
+                drain_discharge, stress_period_length=stress_period_length,
+            )
 
     def _try_generate_plot(self) -> None:
         """Attempt to generate coupling diagnostics plot if reporting is available."""

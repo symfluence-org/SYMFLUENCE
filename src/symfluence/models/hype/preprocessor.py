@@ -30,6 +30,9 @@ from symfluence.models.hype.geodata_manager import (
     load_elevation_band_table,
 )
 
+# Spin-up used when neither HYPE_SPINUP_DAYS nor SPINUP_PERIOD is configured.
+DEFAULT_HYPE_SPINUP_DAYS = 365
+
 
 @R.preprocessors.add('HYPE')
 class HYPEPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
@@ -165,15 +168,11 @@ class HYPEPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             0.05
         )
 
-        # HYPE_SPINUP_DAYS has a schema default (365), so the typed value is
-        # never None. Only an explicitly configured HYPE_SPINUP_DAYS should
-        # override SPINUP_PERIOD; otherwise derive it from SPINUP_PERIOD and
-        # keep the schema default only when no period is configured.
-        schema_default_spinup = self.spinup_days
+        # An explicit HYPE_SPINUP_DAYS wins; otherwise derive it from
+        # SPINUP_PERIOD, falling back to one year when no period is set.
         if not self._hype_spinup_days_explicit():
             self.spinup_days = None
 
-        # If spinup_days not provided, calculate from SPINUP_PERIOD
         if self.spinup_days is None:
             spinup_period = self._get_config_value(
                 lambda: self.config.domain.spinup_period,
@@ -187,7 +186,7 @@ class HYPEPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                     self.logger.warning(f"Could not calculate HYPE spinup from {spinup_period}: {e}", exc_info=True)
                     self.spinup_days = 0
             else:
-                self.spinup_days = schema_default_spinup if schema_default_spinup is not None else 0
+                self.spinup_days = DEFAULT_HYPE_SPINUP_DAYS
 
         self.spinup_days = int(self.spinup_days)
 
@@ -482,13 +481,17 @@ class HYPEPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         self._link_forcing_to_settings()
 
     def _hype_spinup_days_explicit(self) -> bool:
-        """True when HYPE_SPINUP_DAYS was set by the user (not the schema default)."""
+        """True when HYPE_SPINUP_DAYS was set by the user to a value (not left unset/null)."""
         try:
             hype_cfg = self.config.model.hype if self.config.model else None
         except AttributeError:
             hype_cfg = None
         # Without a typed HYPE section the spinup_days lookup already yields None.
-        return hype_cfg is not None and 'spinup_days' in getattr(hype_cfg, 'model_fields_set', set())
+        return (
+            hype_cfg is not None
+            and 'spinup_days' in getattr(hype_cfg, 'model_fields_set', set())
+            and getattr(hype_cfg, 'spinup_days', None) is not None
+        )
 
     @staticmethod
     def _spinup_days_from_period(spinup_period) -> int:
