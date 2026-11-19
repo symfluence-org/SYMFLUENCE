@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
+
 from symfluence.core.constants import ModelDefaults
 from symfluence.core.exceptions import RetryExhaustedError
 from symfluence.core.logging_utils import log_once
@@ -578,6 +580,49 @@ class BaseWorker(ABC):
 
     # Always requested alongside the objective (reporting + legacy consumers).
     BASE_REQUESTED_METRICS = ('kge', 'nse')
+
+    #: Whether this worker can return the formal likelihood (LOGLIK_BC_AR1).
+    #: Workers scoring through StreamflowMetrics, a StreamflowEvaluator target
+    #: or :meth:`_objective_extras` can; a worker that cannot sets this False
+    #: so a formal DREAM run falls back to the informal objective up front.
+    SUPPORTS_FORMAL_LIKELIHOOD: bool = True
+
+    def supports_formal_likelihood(self, config: Any = None) -> bool:
+        """True when this worker can score ``LOGLIK_BC_AR1`` for ``config``.
+
+        Multi-gauge calibration aggregates scores over several gauges, which
+        is not a single-series likelihood, so it is never supported.
+        """
+        if not self.SUPPORTS_FORMAL_LIKELIHOOD:
+            return False
+        cfg = self.config if config is None else config
+        multi_gauge = resolve_config_value(
+            cfg, lambda: cfg.optimization.multi_gauge.calibration, dict_key='MULTI_GAUGE_CALIBRATION')
+        return not bool(multi_gauge)
+
+    def _objective_extras(
+        self,
+        obs: Any,
+        sim: Any,
+        existing: Dict[str, Any],
+        config: Any = None,
+    ) -> Dict[str, float]:
+        """Configured objective metrics missing from ``existing``.
+
+        For workers that compute KGE/NSE themselves from aligned obs/sim
+        arrays: adds the configured objective (LOGLIK_BC_AR1, KGE_LOG,
+        signature errors, NSGA-II objectives) through the shared
+        StreamflowMetrics, so the worker never falls back to KGE for them.
+        """
+        cfg = self.config if config is None else config
+        have = {str(k).lower() for k in existing}
+        wanted = [m for m in self._requested_metrics(cfg) if m not in have]
+        if not wanted:
+            return {}
+        calc = StreamflowMetrics.from_config(cfg or {})
+        calc.penalty_score = self.penalty_score
+        return calc.calculate_metrics(
+            np.asarray(obs, dtype=float), np.asarray(sim, dtype=float), metrics=wanted)
 
     def _requested_metrics(self, config: Any = None) -> List[str]:
         """Metric names a worker should ask ``StreamflowMetrics`` for.

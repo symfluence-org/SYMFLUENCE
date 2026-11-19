@@ -482,7 +482,10 @@ class NgenWorker(BaseWorker):
             kge_val = kge(obs_vals, sim_vals, transfo=1)
             nse_val = nse(obs_vals, sim_vals, transfo=1)
 
-            return {'kge': float(kge_val), 'nse': float(nse_val)}
+            metrics = {'kge': float(kge_val), 'nse': float(nse_val)}
+            # Configured objective beyond KGE/NSE (LOGLIK_BC_AR1, KGE_LOG, ...)
+            metrics.update(self._objective_extras(obs_vals, sim_vals, metrics, config))
+            return metrics
 
         except Exception as e:  # noqa: BLE001 — calibration resilience
             self.logger.error(f"Error in direct ngen metrics calculation: {e}", exc_info=True)

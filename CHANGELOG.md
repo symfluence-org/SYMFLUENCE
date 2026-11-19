@@ -97,6 +97,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `LOGLIK_BC_AR1` (COMPOSITE_METRIC cleared), so DREAM samples a Bayesian posterior instead of the
   temperature-dependent `exp(KGE / T)` pseudo-posterior. `DREAM_LIKELIHOOD: informal` restores the old
   behaviour (with a warning). Failed runs are now rejected by DREAM instead of being scored at the penalty value.
+  HYPE, MESH, Raven and ngen (direct path) now compute the configured objective beyond KGE/NSE, including the
+  likelihood. A worker that cannot score it (multi-gauge calibration, IGNACIO) makes DREAM fall back to
+  `informal` before sampling, with a warning.
 - **NSGA-II default secondary objective is `KGE_LOG` (changes results)**: both objectives used to default to
   KGE, so NSGA-II silently ran single-objective; the default now gives a KGE / KGE-of-log-flows front. Workers
   now compute the NSGA-II / MOEA/D objective metrics, and evaluator-scored workers (e.g. SUMMA) compute a

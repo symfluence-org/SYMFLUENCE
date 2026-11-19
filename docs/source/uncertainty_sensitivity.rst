@@ -77,6 +77,14 @@ likelihood is defined for streamflow; for other ``OPTIMIZATION_TARGET`` values
 DREAM keeps the configured metric and warns that the result is not a Bayesian
 posterior.
 
+Before sampling, the optimizer checks that the model's calibration worker can
+compute the likelihood (``BaseWorker.supports_formal_likelihood``). Workers
+that score through ``StreamflowMetrics`` or a streamflow evaluator target can.
+So can HYPE, MESH, Raven and ngen, which compute the likelihood from their own
+aligned series. Multi-gauge calibration and non-flow workers (IGNACIO) cannot;
+DREAM then falls back to ``informal`` with a warning, instead of scoring every
+proposal as failed.
+
 ``DREAM_LIKELIHOOD: informal`` restores the old behaviour (acceptance on
 ``exp(OPTIMIZATION_METRIC / DREAM_TEMPERATURE)``) with a warning; it is an
 exploratory sampler, not Bayesian inference.

@@ -146,6 +146,9 @@ class RavenWorker(BaseWorker):
         if len(pair) < 365:
             return {"KGE": -999.0}
         result = metrics.calculate_metrics(pair.iloc[:, 0].values, pair.iloc[:, 1].values)
+        # Configured objective beyond KGE/NSE (LOGLIK_BC_AR1, KGE_LOG, ...)
+        result.update(self._objective_extras(
+            pair.iloc[:, 0].values, pair.iloc[:, 1].values, result, config))
         if resolve_config_value(
             config,
             lambda: config.model.raven.glacier_constraints,

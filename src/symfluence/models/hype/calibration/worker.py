@@ -576,6 +576,8 @@ class HYPEWorker(BaseWorker):
                 nse_val = self.penalty_score
 
             metrics = {'kge': float(kge_val), 'nse': float(nse_val)}
+            # Configured objective beyond KGE/NSE (LOGLIK_BC_AR1, KGE_LOG, ...)
+            metrics.update(self._objective_extras(obs_aligned, sim_aligned, metrics, config))
             if self._resolve_config_value('HYPE_CRYOSPHERE_CONSTRAINTS', config, False):
                 from ..cryosphere import calculate_constraints
                 metrics.update(calculate_constraints(

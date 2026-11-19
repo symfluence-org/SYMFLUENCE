@@ -102,6 +102,7 @@ class BaseModelOptimizer(
 
         # DREAM samples a formal posterior by default: the objective every
         # worker computes becomes the Box-Cox AR(1) log-likelihood.
+        self._config_before_likelihood = self._config
         self._config = self._apply_dream_likelihood(self._config)
 
         if isinstance(self._config, dict):
@@ -156,6 +157,7 @@ class BaseModelOptimizer(
         self.param_manager = self._create_parameter_manager()
         self.calibration_target = self._create_calibration_target()
         self.worker = self._create_worker()
+        self._check_formal_likelihood_support()
 
         # Algorithm parameters (using typed config with dict_key fallback)
         self.max_iterations = self._get_config_value(
@@ -597,6 +599,37 @@ class BaseModelOptimizer(
             return {**config, 'OPTIMIZATION_METRIC': formal, 'COMPOSITE_METRIC': None}
         optimization = config.optimization.model_copy(
             update={'metric': formal, 'composite_metric': None})
+        return config.model_copy(update={'optimization': optimization})
+
+    def _check_formal_likelihood_support(self) -> None:
+        """Pre-flight: fall back to informal DREAM when the worker cannot score the likelihood.
+
+        Without this a worker that cannot produce LOGLIK_BC_AR1 would score
+        every DREAM proposal as failed.
+        """
+        original = self._config_before_likelihood
+        if self._config is original:
+            return
+        supports = getattr(self.worker, 'supports_formal_likelihood', None)
+        if supports is None or supports(self._config):
+            return
+        self.logger.warning(
+            f"{type(self.worker).__name__} cannot compute the formal likelihood "
+            f"{self.FORMAL_LIKELIHOOD_METRIC} for this configuration (e.g. multi-gauge "
+            "or non-streamflow scoring). DREAM falls back to DREAM_LIKELIHOOD: informal "
+            "on the configured OPTIMIZATION_METRIC -- the samples are NOT a Bayesian "
+            "posterior."
+        )
+        self._config = self._with_informal_dream(original)
+        self.worker = self._create_worker()
+
+    @staticmethod
+    def _with_informal_dream(config: Any) -> Any:
+        """``config`` with DREAM_LIKELIHOOD = informal."""
+        if isinstance(config, dict):
+            return {**config, 'DREAM_LIKELIHOOD': 'informal'}
+        dream = config.optimization.dream.model_copy(update={'likelihood': 'informal'})
+        optimization = config.optimization.model_copy(update={'dream': dream})
         return config.model_copy(update={'optimization': optimization})
 
     def _get_nsga2_objective_names(self) -> List[str]:
