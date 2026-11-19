@@ -1385,7 +1385,7 @@ class BaseModelOptimizer(
             # restored from the resume state (see _restore_drawn_seed).
             'random_seed': (int(self.random_seed)
                             if getattr(self, 'random_seed_source', 'config') == 'config'
-                            and self.random_seed not in (None, 'None', '') else None),
+                            and self.random_seed is not None else None),
             'population_size': self.population_size,
             'budget': self._fingerprint_budget(),
         })
