@@ -525,6 +525,13 @@ class ModelManager(BaseManager):
                         f"Registered runners: {', '.join(sorted(R.runners.keys()))}"
                     )
 
+                # Shared FORCING_CORRECTION (no-op unless configured)
+                from symfluence.core.calibration.forcing_correction import (
+                    apply_forward_forcing_correction,
+                )
+                apply_forward_forcing_correction(
+                    model, self.config, self.logger, self.project_dir, runner_class=runner_class)
+
                 runner = runner_class(self.config, self.logger, reporting_manager=self.reporting_manager)
                 # Collect resolved executables for provenance
                 if hasattr(runner, '_resolved_executables'):

@@ -169,8 +169,8 @@ ADAPTERS: Dict[str, ForcingCorrectionAdapter] = {
         note='precip_mult rescales pptrate in copied forcing files; '
              'frozenPrecipMultip is SUMMA\'s snowfall multiplier.'),
     'MESH': ForcingCorrectionAdapter(
-        'MESH', precip='PRECIP_MULT',
-        note='Rescales PRE in the run forcing file.'),
+        'MESH', precip='PRECIP_MULT', temp='TEMP_OFFSET',
+        note='Rescales PRE / offsets TA in a private copy of the run forcing file.'),
     'WFLOW': ForcingCorrectionAdapter(
         'WFLOW', precip='PCORR',
         note='Sets the precipitation scale in the Wflow TOML.'),
@@ -730,3 +730,178 @@ def supported_models_table() -> List[Dict[str, str]]:
         rows.append({'model': name, 'precip': a.precip or '-', 'snow': a.snow or '-',
                      'temp': a.temp or '-', 'note': a.note})
     return rows
+
+
+# =============================================================================
+# Forward (non-calibration) runs
+# =============================================================================
+
+#: Record written next to a forward run's output.
+FORWARD_RECORD_NAME = 'forcing_correction.json'
+
+
+def latest_calibration_report(project_dir: Path, model_name: str,
+                              experiment_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Newest ``forcing_correction.json`` with applied values from a calibration of ``model_name``.
+
+    Looks in ``optimization/<MODEL>/*_<experiment_id>/`` (any experiment when
+    ``experiment_id`` is None).
+    """
+    base = Path(project_dir) / 'optimization' / str(model_name).upper()
+    if not base.is_dir():
+        return None
+    pattern = f'*_{experiment_id}/{REPORT_NAME}' if experiment_id else f'*/{REPORT_NAME}'
+    candidates = sorted(base.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+    for path in candidates:
+        try:
+            data = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        if data.get('mode') == 'calibrated' and data.get('applied'):
+            data['report_path'] = str(path)
+            return data
+    return None
+
+
+def forward_correction(
+    config: Any,
+    model_name: str,
+    project_dir: Optional[Path] = None,
+    domain_name: Optional[str] = None,
+    experiment_id: Optional[str] = None,
+    log: Optional[logging.Logger] = None,
+) -> Optional[Dict[str, Any]]:
+    """Forcing correction for a forward (non-calibration) run of ``model_name``.
+
+    ``fixed``: the plan's fixed values (water-balance estimate included).
+    ``calibrated``: the values applied at the best parameter set of the
+    newest calibration of this model and experiment (its
+    ``forcing_correction.json``), so forward runs use what the final
+    evaluation used. ``off``: identity values for the model's precipitation
+    and temperature corrections, which resets settings an earlier fixed or
+    calibrated run wrote.
+
+    Returns:
+        None when FORCING_CORRECTION_MODE is unset; otherwise a dict with
+        ``mode``, ``model``, ``values`` (common names), ``native`` (model
+        parameters) and ``source``.
+    """
+    log = log or logger
+    plan = build_plan(config, model_name, project_dir=project_dir, domain_name=domain_name, log=log)
+    if plan is None:
+        return None
+    adapter = plan.adapter
+    values: Dict[str, float]
+    source: str
+    if plan.mode == 'fixed':
+        values = dict(plan.fixed)
+        source = 'water_balance' if plan.estimate is not None else 'config'
+    elif plan.mode == 'calibrated':
+        values = dict(plan.fixed)
+        report = (latest_calibration_report(project_dir, plan.model, experiment_id)
+                  if project_dir is not None else None)
+        if report is None:
+            log.warning(
+                f'FORCING_CORRECTION_MODE=calibrated but no calibration report for {plan.model} '
+                f'(experiment {experiment_id}); calibrated quantities stay uncorrected in this run')
+            source = 'none'
+        else:
+            for q in plan.calibrated:
+                v = report['applied'].get(COMMON_NAMES[q])
+                if v is not None:
+                    values[q] = float(v)
+            source = report['report_path']
+    else:
+        values = {q: IDENTITY[q] for q in ('precip', 'temp') if adapter and adapter.supports(q)}
+        source = 'off'
+    native = adapter.to_native(values) if adapter else {}
+    return {
+        'mode': plan.mode,
+        'model': plan.model,
+        'values': {COMMON_NAMES[q]: v for q, v in values.items()},
+        'native': native,
+        'source': source,
+        'water_balance_estimate': plan.estimate,
+    }
+
+
+def write_forward_record(directory: Path, info: Mapping[str, Any]) -> Path:
+    """Write the forward-run correction ``info`` as ``forcing_correction.json`` in ``directory``."""
+    path = Path(directory) / FORWARD_RECORD_NAME
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(dict(info), indent=2, default=float), encoding='utf-8')
+    return path
+
+
+def find_forward_applier(runner_class: Any) -> Optional[Any]:
+    """``apply_forward`` of the model package that holds ``runner_class``.
+
+    A model supports forward runs by providing ``forcing_correction.py`` with
+    ``apply_forward(config, logger, project_dir, info) -> dict`` next to its
+    runner module (inversion of control: core does not name model packages).
+    """
+    import importlib
+
+    module = getattr(runner_class, '__module__', '') or ''
+    if '.' not in module:
+        return None
+    package = module.rsplit('.', 1)[0]
+    try:
+        mod = importlib.import_module(package + '.forcing_correction')
+    except ModuleNotFoundError as e:
+        if e.name and e.name.endswith('forcing_correction'):
+            return None
+        raise
+    return getattr(mod, 'apply_forward', None)
+
+
+def apply_forward_forcing_correction(
+    model: str,
+    config: Any,
+    log: Optional[logging.Logger] = None,
+    project_dir: Optional[Path] = None,
+    runner_class: Any = None,
+) -> Optional[Dict[str, Any]]:
+    """Apply the shared forcing correction before a forward (non-calibration) run.
+
+    Called by the workflow's model-run step for every model; code that
+    constructs runners directly (forecast pipelines, scripts) should call it
+    before running. No-op (returns None) when FORCING_CORRECTION_MODE is unset.
+
+    Resolves the values with :func:`forward_correction` and hands the model's
+    native parameters to the model's ``forcing_correction.apply_forward``,
+    which sets them idempotently in the run settings the way a calibration's
+    final evaluation does. The applied values are logged and written to
+    ``simulations/<experiment>/<MODEL>/forcing_correction.json``.
+    """
+    log = log or logger
+    domain_name = resolve_config_value(config, lambda: config.domain.name, dict_key='DOMAIN_NAME')
+    experiment_id = resolve_config_value(
+        config, lambda: config.domain.experiment_id, dict_key='EXPERIMENT_ID')
+    if project_dir is None:
+        data_dir = resolve_config_value(config, lambda: config.system.data_dir,
+                                        dict_key='SYMFLUENCE_DATA_DIR')
+        project_dir = Path(data_dir) / f'domain_{domain_name}'
+    project_dir = Path(project_dir)
+
+    info = forward_correction(config, model, project_dir=project_dir, domain_name=domain_name,
+                              experiment_id=experiment_id, log=log)
+    if info is None:
+        return None
+    applier = find_forward_applier(runner_class) if runner_class is not None else None
+    if applier is None:
+        if info['native'] and get_adapter(model) is not None:
+            raise ConfigurationError(
+                f'FORCING_CORRECTION: {info["model"]} has no forward-run applier '
+                '(forcing_correction.apply_forward next to its runner)')
+        info['details'] = {'applied': False, 'reason': 'no correction mechanism; identity only'}
+    else:
+        info['details'] = applier(config, log, project_dir, info) or {}
+    log.info(f"Forcing correction ({info['mode']}) for {info['model']} forward run: "
+             f"{info['values']} -> {info['native']} [{info['source']}]")
+    record_dir = project_dir / 'simulations' / str(experiment_id) / str(model).upper()
+    try:
+        write_forward_record(record_dir, info)
+    except OSError as e:
+        log.warning(f'Could not write the forcing-correction record in {record_dir}: {e}')
+    return info

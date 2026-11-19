@@ -148,13 +148,13 @@ def test_snow_parameter_superseded_only_when_snow_is_set():
 
 def test_unsupported_quantity_raises():
     with pytest.raises(ConfigurationError, match='no mechanism'):
-        fc.build_plan({'FORCING_CORRECTION_MODE': 'fixed', 'FORCING_CORRECTION_TEMP_OFFSET': 1.0}, 'MESH')
+        fc.build_plan({'FORCING_CORRECTION_MODE': 'fixed', 'FORCING_CORRECTION_TEMP_OFFSET': 1.0}, 'WFLOW')
     with pytest.raises(ConfigurationError, match='no mechanism'):
-        fc.build_plan({'FORCING_CORRECTION_MODE': 'calibrated'}, 'FUSE')
+        fc.build_plan({'FORCING_CORRECTION_MODE': 'calibrated'}, 'NOAHMP')
     # identity values and 'off' are fine anywhere
     assert fc.build_plan({'FORCING_CORRECTION_MODE': 'fixed', 'FORCING_CORRECTION_TEMP_OFFSET': 0.0},
-                         'MESH').fixed == {'precip': 1.0}
-    assert fc.build_plan({'FORCING_CORRECTION_MODE': 'off'}, 'FUSE').superseded_native_names() == []
+                         'WFLOW').fixed == {'precip': 1.0}
+    assert fc.build_plan({'FORCING_CORRECTION_MODE': 'off'}, 'NOAHMP').superseded_native_names() == []
 
 
 def test_invalid_mode_and_bounds_raise():
