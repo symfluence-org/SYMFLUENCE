@@ -243,6 +243,7 @@ For more help on a specific command:
         self._register_tui_commands(subparsers)
         self._register_data_commands(subparsers)
         self._register_doctor_commands(subparsers)
+        self._register_ensemble_commands(subparsers)
         self._register_fews_commands(subparsers)
         self._register_list_commands(subparsers)
 
@@ -272,6 +273,8 @@ For more help on a specific command:
         )
         run_parser.add_argument('--force-rerun', action='store_true', dest='force_rerun',
                               help='Force rerun of all steps')
+        run_parser.add_argument('--resume', action='store_true', dest='resume_calibration',
+                              help='Resume an interrupted calibration from its checkpoint (sets CALIBRATION_RESUME)')
         run_parser.add_argument('--continue-on-error', action='store_true', dest='continue_on_error',
                               help='Continue executing steps even if errors occur')
         run_parser.set_defaults(func=WorkflowCommands.run)
@@ -286,6 +289,8 @@ For more help on a specific command:
                                help='Step to execute (use full name or alias; see "workflow list-steps")')
         step_parser.add_argument('--force-rerun', action='store_true', dest='force_rerun',
                                help='Force rerun of this step')
+        step_parser.add_argument('--resume', action='store_true', dest='resume_calibration',
+                              help='Resume an interrupted calibration from its checkpoint (sets CALIBRATION_RESUME)')
         step_parser.set_defaults(func=WorkflowCommands.run_step)
 
         # workflow steps (multiple)
@@ -298,6 +303,8 @@ For more help on a specific command:
                                 help='Steps to execute in order (use full names or aliases; see "workflow list-steps")')
         steps_parser.add_argument('--force-rerun', action='store_true', dest='force_rerun',
                                 help='Force rerun of these steps')
+        steps_parser.add_argument('--resume', action='store_true', dest='resume_calibration',
+                              help='Resume an interrupted calibration from its checkpoint (sets CALIBRATION_RESUME)')
         steps_parser.set_defaults(func=WorkflowCommands.run_steps)
 
         # workflow status
@@ -333,6 +340,8 @@ For more help on a specific command:
                                  help='Step to resume from (use full name or alias; see "workflow list-steps")')
         resume_parser.add_argument('--force-rerun', action='store_true', dest='force_rerun',
                                  help='Force rerun from this step')
+        resume_parser.add_argument('--resume', action='store_true', dest='resume_calibration',
+                              help='Resume an interrupted calibration from its checkpoint (sets CALIBRATION_RESUME)')
         resume_parser.set_defaults(func=WorkflowCommands.resume)
 
         # workflow clean
@@ -966,6 +975,43 @@ For more help on a specific command:
             description='Comprehensive environment, path resolution, and binary diagnostics'
         )
         doctor_parser.set_defaults(func=DoctorCommands.doctor, action='doctor')
+
+    def _register_ensemble_commands(self, subparsers):
+        """Register the top-level ensemble (multi-model comparison) command."""
+        from .commands import EnsembleCommands
+
+        parser = subparsers.add_parser(
+            'ensemble',
+            help='Combine and compare multi-model members',
+            description='Equal-weight, skill-weighted (weights fitted on the calibration '
+                        'period only), median and vote-weighted combinations of member '
+                        'discharge series; scores every member and combination per period '
+                        'and tabulates each member\'s comparison conditions.',
+            parents=[self.common_parser],
+        )
+        parser.add_argument('--manifest', type=str, default=None,
+                            help='Ensemble manifest YAML (members, observations, periods)')
+        parser.add_argument('--member', action='append', default=None, metavar='NAME=PATH',
+                            help='Member discharge CSV (repeatable; instead of --manifest)')
+        parser.add_argument('--obs', type=str, default=None, help='Observed discharge CSV')
+        parser.add_argument('--obs-column', dest='obs_column', default=None,
+                            help='Discharge column of --obs (auto-detected if omitted)')
+        parser.add_argument('--calibration-period', dest='calibration_period', default=None,
+                            metavar='"START, END"')
+        parser.add_argument('--evaluation-period', dest='evaluation_period', default=None,
+                            metavar='"START, END"')
+        parser.add_argument('--test-period', dest='test_period', default=None,
+                            metavar='"START, END"')
+        parser.add_argument('--period-config', dest='period_config', default=None,
+                            help='SYMFLUENCE config to take CALIBRATION/EVALUATION/TEST_PERIOD from')
+        parser.add_argument('--weighting', choices=['kge', 'inverse_mse'], default='kge',
+                            help='Skill weighting fitted on the calibration period (default: kge)')
+        parser.add_argument('--median', action='store_true', help='Also report the member median')
+        parser.add_argument('--resample', default=None,
+                            help="Resample members and obs first (pandas rule, e.g. 'D')")
+        parser.add_argument('--output', '-o', default='ensemble_comparison',
+                            help='Output directory (default: ./ensemble_comparison)')
+        parser.set_defaults(func=EnsembleCommands.ensemble, action='ensemble')
 
     def _register_fews_commands(self, subparsers):
         """Register Delft-FEWS adapter commands."""

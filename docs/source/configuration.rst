@@ -232,7 +232,7 @@ Global Parameters
    * - SPINUP_PERIOD
      - string
      - optional
-     - Spinup period as "YYYY-MM-DD,YYYY-MM-DD"
+     - Spinup period as "YYYY-MM-DD,YYYY-MM-DD"; excluded from every score (see :ref:`calibration`)
    * - NUM_PROCESSES
      - integer
      - 1
@@ -609,6 +609,10 @@ Calibration Parameters
      - string
      - required
      - Evaluation period as "YYYY-MM-DD,YYYY-MM-DD"
+   * - TEST_PERIOD
+     - string
+     - optional
+     - Independent test period, scored in the final evaluation only (see :ref:`calibration`)
    * - PARAMS_TO_CALIBRATE
      - list
      - required
