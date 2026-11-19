@@ -15,7 +15,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 
 from symfluence.core.exceptions import ModelExecutionError, symfluence_error_handler
 from symfluence.core.mixins.project import resolve_data_subdir
@@ -44,6 +44,17 @@ class CLMParFlowRunner(BaseModelRunner):
         super().__init__(config, logger, reporting_manager=reporting_manager)
 
         self.settings_dir = self.project_dir / "settings" / "CLMPARFLOW"
+        #: Shared FORCING_CORRECTION values (precip/temp); calibration workers set them,
+        #: otherwise they are resolved from the config on first use.
+        self.forcing_correction_values: Optional[Dict[str, float]] = None
+
+    def _forcing_correction(self) -> Dict[str, float]:
+        if self.forcing_correction_values is None:
+            from .forcing_correction import forward_values
+            values = forward_values(self.config, self.project_dir, self.domain_name,
+                                    self.experiment_id, logger)
+            self.forcing_correction_values = values or {}
+        return self.forcing_correction_values
 
     def _get_parflow_executable(self) -> Path:
         """Get the CLMParFlow executable path."""
@@ -201,6 +212,13 @@ class CLMParFlowRunner(BaseModelRunner):
         grid = BasinGrid.load(grid_dir)
         inputs = basin_inputs(cfg, self.project_dir, self.config.domain.name)
         params = basin_parameters(cfg)
+        correction = self._forcing_correction()
+        if correction:
+            if 'precip' in correction and float(cfg.basin_precip_scale) != 1.0:
+                logger.warning(f"FORCING_CORRECTION supersedes CLMPARFLOW_BASIN_PRECIP_SCALE="
+                               f"{cfg.basin_precip_scale}: precipitation x{correction['precip']:g}")
+            params.precip_scale = float(correction.get('precip', params.precip_scale))
+            params.temp_offset = float(correction.get('temp', 0.0))
         settings = chain_settings(cfg, str(self.config.domain.time_start), str(self.config.domain.time_end),
                                   self._get_num_procs())
         pf_dir = self._get_parflow_dir()
@@ -249,6 +267,14 @@ class CLMParFlowRunner(BaseModelRunner):
                 if src.is_file() and src.suffix != '.npy':
                     shutil.copy2(src, sim_dir / src.name)
                     logger.debug(f"Copied forcing {src.name} to simulation directory")
+
+        # Shared FORCING_CORRECTION on this run's copy of the CLM met file
+        correction = self._forcing_correction()
+        met = sim_dir / 'forcing.1d'
+        staged = (self.settings_dir / 'forcing.1d').is_file() or (forcing_input_dir / 'forcing.1d').is_file()
+        if correction and staged and met.exists():
+            from .forcing_correction import correct_forcing_1d
+            correct_forcing_1d(met, correction)
 
     def _verify_output(self, runname: str) -> None:
         """Verify CLMParFlow produced valid output files."""

@@ -396,5 +396,6 @@ def test_optimizer_setup_warns_reports_and_back_compat(tmp_path, caplog):
 
 def test_supported_models_table_matches_adapters():
     rows = {r['model']: r for r in fc.supported_models_table()}
-    assert set(rows) == {'GR', 'SUMMA', 'MESH', 'WFLOW', 'MHM', 'HYPE'}
+    assert set(rows) == {'GR', 'SUMMA', 'MESH', 'WFLOW', 'MHM', 'HYPE', 'PRMS', 'GSFLOW', 'RAVEN',
+                         'FUSE', 'CLM', 'CLMPARFLOW'}
     assert rows['GR']['temp'] == 'TCORR'

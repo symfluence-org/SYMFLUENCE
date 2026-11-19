@@ -530,7 +530,8 @@ class ModelManager(BaseManager):
                     apply_forward_forcing_correction,
                 )
                 apply_forward_forcing_correction(
-                    model, self.config, self.logger, self.project_dir, runner_class=runner_class)
+                    model, self.config, self.logger, getattr(self, 'project_dir', None),
+                    runner_class=runner_class)
 
                 runner = runner_class(self.config, self.logger, reporting_manager=self.reporting_manager)
                 # Collect resolved executables for provenance

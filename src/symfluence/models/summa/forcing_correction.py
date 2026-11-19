@@ -19,7 +19,7 @@ from symfluence.core.mixins.config import resolve_config_value
 
 
 def settings_dir(config: Any, project_dir: Path) -> Path:
-    configured = resolve_config_value(config, lambda: config.paths.settings_summa_path,
+    configured = resolve_config_value(config, lambda: config.model.summa.settings_path,
                                       dict_key='SETTINGS_SUMMA_PATH')
     if configured and str(configured) != 'default':
         return Path(configured)
@@ -30,8 +30,7 @@ def _merge_trial_param(settings: Path, config: Any, name: str, value: float, log
     import netCDF4 as nc
     import numpy as np
 
-    from .calibration.parameter_files import write_trial_params
-    from .calibration.worker_impl.parameter_application import resolve_settings_file_names
+    from .calibration.parameter_files import resolve_settings_file_names, write_trial_params
 
     names = resolve_settings_file_names(config, settings)
     trial = settings / names.trialparams

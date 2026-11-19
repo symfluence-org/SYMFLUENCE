@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   MESH `PRECIP_MULT`, Wflow `PCORR`, mHM `precipCorrectionFactor` and HYPE `pcurain`/`pcusnow`; other models
   accept only `off`. Superseded per-model parameters are dropped from calibration with a warning. Values are
   written to `forcing_correction.json` in the results directory. Unset, calibration is unchanged.
+  Also supported: PRMS/GSFLOW (`rain_adj`/`snow_adj`/`tmax_adj`/`tmin_adj` or `*_cbh_adj`), Raven
+  (`PRECIP_CORR`/`SNOW_CORR`/`TEMP_CORR`), MESH temperature (`TEMP_OFFSET`), and corrected forcing copies for
+  FUSE, CLM and ParFlow-CLM (basin mode: `precip_scale` and a new `temp_offset`); HYPE-MODFLOW calibrates
+  through the land model's adapter. Forward runs (`run_models`, forecast pipelines via
+  `apply_forward_forcing_correction`) apply the fixed values, or those of the newest calibration in
+  `calibrated` mode, and record them in `simulations/<exp>/<MODEL>/forcing_correction.json`.
   See `docs/source/forcing_correction.rst`.
 - **Elevation corrections of remapped forcing (opt-in)**: the `lapse` config section (`pressure`, `humidity`,
   `longwave`, `shortwave`, `precipitation`, `wind`, with `lw_gradient`, `sw_gradient`, `precip_gradient`,

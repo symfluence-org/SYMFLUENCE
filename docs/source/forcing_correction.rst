@@ -45,13 +45,18 @@ Modes
 
 In every mode the model's own precipitation and temperature correction
 parameters (``PCORR``, ``TCORR``, ``precip_mult``, ``PRECIP_MULT``,
-``precipCorrectionFactor``, ``pcurain``/``pcusnow``) are superseded: if a
+``TEMP_OFFSET``, ``precipCorrectionFactor``, ``pcurain``/``pcusnow``,
+``PRECIP_CORR``/``TEMP_CORR``, PRMS/GSFLOW ``rain_adj``/``snow_adj``/``tmax_adj``/``tmin_adj``
+and their ``*_cbh_adj`` forms) are superseded: if a
 model's ``*_PARAMS_TO_CALIBRATE`` still lists one, it is dropped from the
 calibrated set and a warning names it. A snowfall parameter that is also a
-model parameter in its own right (SUMMA's ``frozenPrecipMultip``) is only
+model parameter in its own right (SUMMA's ``frozenPrecipMultip``, Raven's
+``SNOW_CORR``) is only
 superseded when the section sets the snow quantity. ``MESH_PRECIP_MULTIPLIER``
 (applied once at MESH preprocessing) also triggers the warning, since it would
-stack with the shared correction.
+stack with the shared correction. Superseding also overrides values set through
+``PRMS_PARAMETER_OVERRIDES`` / ``HYPE_EXTRA_PARAMETERS`` for those blocks
+(e.g. a glacier ``snow_adj``).
 
 Configuration
 -------------
@@ -175,18 +180,20 @@ Supported models
 ----------------
 
 The common values are translated into each model's own mechanism when
-parameter sets are denormalized, so model workers, final evaluations and
-model files are unchanged.
+parameter sets are denormalized, so model workers and final evaluations need
+no change. Where a model has no correction parameter, the common names pass
+through to its worker, which applies them to a private copy of the forcing it
+reads (shared forcing is never written).
 
 .. list-table::
    :header-rows: 1
-   :widths: 12 22 22 12 32
+   :widths: 13 22 18 18 29
 
    * - Model
      - Precipitation
      - Snowfall
      - Temperature
-     - How
+     - Mechanism
    * - GR
      - ``PCORR``
      - –
@@ -196,12 +203,13 @@ model files are unchanged.
      - ``precip_mult``
      - ``frozenPrecipMultip``
      - –
-     - Rescales ``pptrate`` in copied forcing files; SUMMA's snowfall multiplier
+     - Rescales ``pptrate`` in copied forcing files (file manager redirected);
+       SUMMA's snowfall multiplier in ``trialParams``
    * - MESH
      - ``PRECIP_MULT``
      - –
-     - –
-     - Rescales ``PRE`` in the run forcing file
+     - ``TEMP_OFFSET``
+     - Private copy of ``MESH_forcing_safe.nc`` from its recorded unscaled source
    * - Wflow
      - ``PCORR``
      - –
@@ -211,18 +219,92 @@ model files are unchanged.
      - ``precipCorrectionFactor``
      - –
      - –
-     - Rescales ``pre.nc`` in the worker's adjusted forcing
+     - Corrected ``pre.nc`` in ``forcing_adjusted`` (glacier ice factor kept)
    * - HYPE
      - ``pcurain = m_P − 1``, ``pcusnow = m_P·m_S − 1``
      - ``pcusnow``
      - –
      - ``par.txt``; both entries must exist (``HYPE_EXTRA_PARAMETERS``)
+   * - PRMS
+     - ``rain_adj`` + ``snow_adj`` (station) or ``rain_cbh_adj`` + ``snow_cbh_adj`` (climate_hru)
+     - snow adj = m_P·m_S
+     - ``tmax_adj`` + ``tmin_adj`` (or ``*_cbh_adj``)
+     - Blocks in ``params.dat``, picked by forcing mode
+   * - GSFLOW
+     - as PRMS
+     - as PRMS
+     - as PRMS
+     - PRMS blocks in the GSFLOW ``params.dat``
+   * - Raven
+     - ``PRECIP_CORR``
+     - ``SNOW_CORR``
+     - ``TEMP_CORR``
+     - Gauge ``:RainCorrection`` / ``:SnowCorrection`` (= precip × snow) /
+       ``:TemperatureCorrection`` in ``model.rvt``
+   * - FUSE
+     - forcing copy
+     - –
+     - forcing copy
+     - ``precip`` × m, ``temp`` + ΔT in a copy (per-trial ``sim_input.nc``;
+       ``forcing/FUSE_input_corrected`` in forward runs). PET is not
+       recomputed. ``RFERR_MLT`` is not used: it only acts under one
+       ``RFERR`` decision and is pinned by the constraints file.
+   * - CLM
+     - forcing copy
+     - –
+     - forcing copy
+     - Corrected copies of the DATM ``clmforc`` files (``PRECTmms`` × m,
+       ``TBOT`` + ΔT); ``datm.streams.xml`` repointed
+   * - ParFlow-CLM
+     - forcing copy / ``precip_scale``
+     - –
+     - forcing copy / ``temp_offset``
+     - Lumped: run-directory copy of ``forcing.1d`` and the Snow-17
+       ``z_upper`` flux recomputed from a corrected cache. Basin mode:
+       ``precip_scale`` (supersedes ``CLMPARFLOW_BASIN_PRECIP_SCALE``) and a
+       new ``temp_offset``; existing chain segments are reused, so change the
+       correction with a fresh ``basin_runs`` directory.
+   * - HYPE-MODFLOW (``COUPLED_GW``)
+     - the land model's (e.g. HYPE ``pcurain``/``pcusnow``)
+     - the land model's
+     - the land model's
+     - Calibration uses the land model's adapter; MODFLOW receives the
+       correction through recharge (``MODFLOW`` itself is pass-through)
 
-Other models have no correction mechanism the calibration can drive. For
-them ``off`` (and identity values) work, and any other value raises a
+CLM and ParFlow-CLM have no snowfall multiplier (CLM partitions rain and snow
+itself), FUSE has none either. Other models (e.g. Noah-MP, VIC, ngen) have no
+correction mechanism: ``off`` and identity values work, anything else raises a
 configuration error rather than silently giving that ensemble member
-different forcing. Run such members with ``FORCING_CORRECTION_MODE: off`` or
-apply the correction to their forcing beforehand.
+different forcing.
+
+Forward runs
+------------
+
+The correction also applies when models are simply run (``workflow run``
+without calibration, the run-models step, forecast runs). Before each model
+runs, ``symfluence.core.calibration.forcing_correction.apply_forward_forcing_correction``
+resolves the values and hands them to the model's ``forcing_correction.apply_forward``
+(a module next to its runner), which writes them idempotently into the run
+settings or a corrected forcing copy, exactly as a calibration's final
+evaluation does:
+
+``fixed``
+   The configured (or water-balance) values.
+``calibrated``
+   The values applied at the best parameter set of the newest calibration of
+   that model and experiment (``optimization/<MODEL>/*_<EXPERIMENT_ID>/forcing_correction.json``),
+   i.e. what the final evaluation ran with. Without one, a warning is logged
+   and calibrated quantities stay uncorrected.
+``off``
+   Identity, which also resets values an earlier corrected run wrote into the
+   settings.
+
+The applied values are logged and written to
+``simulations/<EXPERIMENT_ID>/<MODEL>/forcing_correction.json``. GR applies
+them inside its runner. Scripts that construct runners directly should call
+``apply_forward_forcing_correction(model, config, logger, project_dir, runner_class=...)``
+first. With the section absent nothing is touched; settings a previous
+corrected run wrote stay until the section is set again (``off`` resets them).
 
 Outputs
 -------

@@ -106,6 +106,9 @@ class FUSEWorker(BaseWorker):
         """
         try:
             config = kwargs.get('config', self.config)
+            # Shared FORCING_CORRECTION pseudo-parameters act on a forcing copy
+            from ..forcing_correction import record_trial, split_params
+            params, forcing_corrections = split_params(params)
 
             self.logger.debug(f"APPLY_PARAMS: Applying {len(params)} parameters to {settings_dir}")
             for p, v in list(params.items())[:5]:
@@ -118,6 +121,7 @@ class FUSEWorker(BaseWorker):
                 fuse_settings_dir = settings_dir / 'FUSE'
             else:
                 fuse_settings_dir = settings_dir
+            record_trial(fuse_settings_dir, forcing_corrections)
 
             # Determine regionalization mode
             regionalization_method = config.get('PARAMETER_REGIONALIZATION', 'lumped') if config else 'lumped'
@@ -241,6 +245,10 @@ class FUSEWorker(BaseWorker):
                 execution_cwd, fuse_run_id, config, self.logger
             ):
                 return False
+
+            # Shared FORCING_CORRECTION recorded by apply_parameters
+            from ..forcing_correction import apply_trial
+            apply_trial(execution_cwd, fuse_run_id)
 
             # Update file manager
             if not update_fuse_file_manager(

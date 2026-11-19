@@ -99,6 +99,12 @@ class ForcingCorrectionAdapter:
     temp: Optional[str] = None
     style: str = 'multiplier'
     note: str = ''
+    #: Model parameters a quantity replaces beyond its native name (for
+    #: pass-through adapters whose writer maps the common names itself).
+    extra_superseded: Tuple[Tuple[str, Tuple[str, ...]], ...] = ()
+    #: The correction reaches this model through a coupled model that carries
+    #: it (MODFLOW recharge from the land model); nothing to apply here.
+    passthrough: bool = False
 
     def supports(self, quantity: str) -> bool:
         return getattr(self, quantity) is not None
@@ -112,6 +118,16 @@ class ForcingCorrectionAdapter:
             names.append(getattr(self, q))
             if self.style == 'undercatch' and q == 'precip' and self.snow:
                 names.append(self.snow)
+        return list(dict.fromkeys(names))
+
+    def superseded_names(self, quantities: Iterable[str]) -> List[str]:
+        """Model parameters replaced when ``quantities`` are set."""
+        quantities = list(quantities)
+        names = self.native_names(quantities)
+        extra = dict(self.extra_superseded)
+        for q in quantities:
+            if self.supports(q):
+                names.extend(extra.get(q, ()))
         return list(dict.fromkeys(names))
 
     def to_native(self, values: Mapping[str, float]) -> Dict[str, float]:
@@ -177,6 +193,40 @@ ADAPTERS: Dict[str, ForcingCorrectionAdapter] = {
     'MHM': ForcingCorrectionAdapter(
         'MHM', precip='precipCorrectionFactor',
         note='Rescales pre.nc in the worker\'s adjusted forcing.'),
+    'PRMS': ForcingCorrectionAdapter(
+        'PRMS', precip=COMMON_NAMES['precip'], snow=COMMON_NAMES['snow'], temp=COMMON_NAMES['temp'],
+        note='params.dat: rain_adj/snow_adj/tmax_adj/tmin_adj (station mode) or the *_cbh_adj '
+             'blocks (climate_hru); snow adj = m_P*m_S. Mapped by prms.parameter_file.',
+        extra_superseded=(
+            ('precip', ('rain_adj', 'snow_adj', 'rain_cbh_adj', 'snow_cbh_adj')),
+            ('snow', ('snow_adj', 'snow_cbh_adj')),
+            ('temp', ('tmax_adj', 'tmin_adj', 'tmax_cbh_adj', 'tmin_cbh_adj')))),
+    'GSFLOW': ForcingCorrectionAdapter(
+        'GSFLOW', precip=COMMON_NAMES['precip'], snow=COMMON_NAMES['snow'], temp=COMMON_NAMES['temp'],
+        note='PRMS surface blocks in the GSFLOW params.dat, as for PRMS.',
+        extra_superseded=(
+            ('precip', ('rain_adj', 'snow_adj', 'rain_cbh_adj', 'snow_cbh_adj')),
+            ('snow', ('snow_adj', 'snow_cbh_adj')),
+            ('temp', ('tmax_adj', 'tmin_adj', 'tmax_cbh_adj', 'tmin_cbh_adj')))),
+    'RAVEN': ForcingCorrectionAdapter(
+        'RAVEN', precip='PRECIP_CORR', snow='SNOW_CORR', temp='TEMP_CORR',
+        note='Gauge corrections in model.rvt: :RainCorrection = PRECIP_CORR, '
+             ':SnowCorrection = PRECIP_CORR*SNOW_CORR, :TemperatureCorrection = TEMP_CORR.'),
+    'FUSE': ForcingCorrectionAdapter(
+        'FUSE', precip=COMMON_NAMES['precip'], temp=COMMON_NAMES['temp'],
+        note='Corrected copy of the FUSE forcing (precip x m, temp + dT; PET kept); '
+             'the shared FUSE_input is never written.'),
+    'CLM': ForcingCorrectionAdapter(
+        'CLM', precip=COMMON_NAMES['precip'], temp=COMMON_NAMES['temp'],
+        note='Corrected copies of the DATM clmforc files (PRECTmms x m, TBOT + dT); '
+             'datm.streams.xml repointed.'),
+    'CLMPARFLOW': ForcingCorrectionAdapter(
+        'CLMPARFLOW', precip=COMMON_NAMES['precip'], temp=COMMON_NAMES['temp'],
+        note='Lumped: run-dir copy of forcing.1d and the Snow-17 z_upper flux from a corrected '
+             'cache; basin mode: precip_scale / temp_offset.'),
+    'MODFLOW': ForcingCorrectionAdapter(
+        'MODFLOW', passthrough=True,
+        note='Recharge comes from the coupled land model, which carries the correction.'),
     'HYPE': ForcingCorrectionAdapter(
         'HYPE', precip='pcurain', snow='pcusnow', style='undercatch',
         note='Writes pcurain/pcusnow in par.txt; both must exist there '
@@ -208,10 +258,12 @@ class ForcingCorrectionPlan:
     prior_snow_sigma: float = 0.2
     prior_temp_sigma: float = 1.0
     estimate: Optional[Dict[str, Any]] = None
+    #: Model whose adapter applies (the land model of a coupled GW run), when not ``model``.
+    adapter_model: Optional[str] = None
 
     @property
     def adapter(self) -> Optional[ForcingCorrectionAdapter]:
-        return get_adapter(self.model)
+        return get_adapter(self.adapter_model or self.model)
 
     @property
     def quantities_set(self) -> List[str]:
@@ -240,7 +292,7 @@ class ForcingCorrectionPlan:
         if adapter is None:
             return []
         quantities = ['precip', 'temp'] + (['snow'] if 'snow' in self.quantities_set else [])
-        return adapter.native_names(quantities)
+        return adapter.superseded_names(quantities)
 
     def initial_common_values(self, native_params: Optional[Mapping[str, Any]] = None) -> Dict[str, float]:
         """Starting value of each calibrated common parameter.
@@ -619,14 +671,15 @@ def build_plan(
     if mode is None:
         return None
     model = str(model_name or '').upper()
-    adapter = get_adapter(model)
+    adapter_model = _coupled_land_model(config) if model == 'COUPLED_GW' else None
+    adapter = get_adapter(adapter_model or model)
 
     def num(attr: str, key: str) -> Optional[float]:
         v = _cfg(config, attr, key)
         return None if v in (None, '', 'None') else v
 
     plan = ForcingCorrectionPlan(
-        mode=mode, model=model,
+        mode=mode, model=model, adapter_model=adapter_model,
         prior_weight=float(num('prior_weight', 'FORCING_CORRECTION_PRIOR_WEIGHT') or 0.0),
         prior_precip_median=float(num('prior_precip_median', 'FORCING_CORRECTION_PRIOR_PRECIP_MEDIAN') or 1.0),
         prior_precip_sigma=float(num('prior_precip_sigma', 'FORCING_CORRECTION_PRIOR_PRECIP_SIGMA') or 0.2),
@@ -634,6 +687,9 @@ def build_plan(
         prior_temp_sigma=float(num('prior_temp_sigma', 'FORCING_CORRECTION_PRIOR_TEMP_SIGMA') or 1.0),
     )
     if mode == 'off':
+        return plan
+    if adapter is not None and adapter.passthrough:
+        log.info(f'Forcing correction: {model} receives it through its coupled model')
         return plan
 
     if mode == 'calibrated':
@@ -681,7 +737,8 @@ def build_plan(
                 if v != IDENTITY[q] and not (adapter and adapter.supports(q))]
     if missing:
         supported = ', '.join(
-            f"{m} ({'/'.join(q for q in QUANTITIES if a.supports(q))})" for m, a in ADAPTERS.items())
+            f"{m} ({'/'.join(q for q in QUANTITIES if a.supports(q))})"
+            for m, a in ADAPTERS.items() if not a.passthrough)
         raise ConfigurationError(
             f'FORCING_CORRECTION: {model} has no mechanism for {sorted(set(missing))}. '
             f'Supported: {supported}. Use FORCING_CORRECTION_MODE=off for this model, '
@@ -689,6 +746,22 @@ def build_plan(
     # Identity fixed values for unsupported quantities are no-ops.
     plan.fixed = {q: v for q, v in plan.fixed.items() if adapter and adapter.supports(q)}
     return plan
+
+
+def _coupled_land_model(config: Any) -> str:
+    """Land model of a coupled groundwater calibration (mirrors modflow.resolve_land_model)."""
+    land = resolve_config_value(config, lambda: None, default=None, dict_key='LAND_SURFACE_MODEL')
+    hydro = resolve_config_value(config, lambda: config.model.hydrological_model,
+                                 dict_key='HYDROLOGICAL_MODEL')
+    if isinstance(hydro, (list, tuple)):
+        hydro = hydro[0] if hydro else None
+    hydro = str(hydro or '').split(',')[0].strip()
+    source = resolve_config_value(config, lambda: config.model.modflow.coupling_source,
+                                  default=None, dict_key='MODFLOW_COUPLING_SOURCE')
+    for name in (land, hydro, source):
+        if name and str(name).strip().upper() not in ('MODFLOW', 'NONE', 'DEFAULT'):
+            return str(name).strip().upper()
+    return 'SUMMA'
 
 
 def _estimate_from_project(config: Any, project_dir: Optional[Path],
@@ -727,6 +800,8 @@ def supported_models_table() -> List[Dict[str, str]]:
     """Rows for documentation: model, native parameter per quantity, note."""
     rows = []
     for name, a in ADAPTERS.items():
+        if a.passthrough:
+            continue
         rows.append({'model': name, 'precip': a.precip or '-', 'snow': a.snow or '-',
                      'temp': a.temp or '-', 'note': a.note})
     return rows
@@ -849,8 +924,9 @@ def find_forward_applier(runner_class: Any) -> Optional[Any]:
     try:
         mod = importlib.import_module(package + '.forcing_correction')
     except ModuleNotFoundError as e:
-        if e.name and e.name.endswith('forcing_correction'):
-            return None
+        target = package + '.forcing_correction'
+        if e.name and target.startswith(e.name):
+            return None  # the model has no forward applier
         raise
     return getattr(mod, 'apply_forward', None)
 
@@ -875,6 +951,8 @@ def apply_forward_forcing_correction(
     ``simulations/<experiment>/<MODEL>/forcing_correction.json``.
     """
     log = log or logger
+    if configured_mode(config) is None:
+        return None
     domain_name = resolve_config_value(config, lambda: config.domain.name, dict_key='DOMAIN_NAME')
     experiment_id = resolve_config_value(
         config, lambda: config.domain.experiment_id, dict_key='EXPERIMENT_ID')
