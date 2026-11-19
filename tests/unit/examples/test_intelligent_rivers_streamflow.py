@@ -84,7 +84,8 @@ def test_native_lstm_smoke_and_scalers_exclude_validation_and_holdout(tmp_path, 
     monkeypatch.setenv('SYMFLUENCE_LSTM_DEVICE', 'cpu')
     cfg = SymfluenceConfig.from_file(WORKSHOP / 'config_ayilam_streamflow.yaml', use_env=False, overrides={
         'SYMFLUENCE_DATA_DIR': str(tmp_path), 'HYDROLOGICAL_MODEL': 'LSTM',
-        'EXPERIMENT_ID': 'workshop_test', 'EXPERIMENT_TIME_END': '2000-12-31 23:00',
+        'EXPERIMENT_ID': 'workshop_test', 'EXPERIMENT_TIME_START': '2000-01-01 00:00',
+        'EXPERIMENT_TIME_END': '2000-12-31 23:00',
         'SPINUP_PERIOD': '2000-01-01,2000-01-31',
         'CALIBRATION_PERIOD': '2000-02-01,2000-06-30',
         'EVALUATION_PERIOD': '2000-07-01,2000-12-31',
