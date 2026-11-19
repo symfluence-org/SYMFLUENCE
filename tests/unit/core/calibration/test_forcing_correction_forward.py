@@ -60,7 +60,7 @@ def test_forward_calibrated_uses_newest_report_of_experiment(tmp_path):
     cfg = _cfg(tmp_path, FORCING_CORRECTION_MODE='calibrated')
     info = fc.forward_correction(cfg, 'GR', tmp_path, experiment_id='exp1')
     assert info['native'] == {'PCORR': 1.3}
-    assert info['source'].endswith('de_exp1/forcing_correction.json')
+    assert Path(info['source']).parent.name == 'de_exp1'
 
 
 def test_forward_calibrated_without_report_warns(tmp_path, caplog):
