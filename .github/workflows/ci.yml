@@ -288,6 +288,16 @@ jobs:
         if: matrix.python-version == '3.11'
         run: uv run --no-sync python scripts/check_core_coverage.py
 
+      - name: Report binary source pin drift (informational)
+        # Lists recipes whose pinned upstream commit (binary_pins.json) is
+        # behind the branch it was resolved from. Drift never fails the build:
+        # bumping a pin changes what releases contain, so it is a deliberate
+        # PR (scripts/update_binary_pins.py --write), not an automatic one.
+        if: matrix.python-version == '3.11'
+        continue-on-error: true
+        timeout-minutes: 5
+        run: uv run --no-sync python scripts/update_binary_pins.py --check
+
       - name: Package import smoke test
         run: |
           uv run --no-sync python -c "import symfluence; from symfluence.core.registries import R; \

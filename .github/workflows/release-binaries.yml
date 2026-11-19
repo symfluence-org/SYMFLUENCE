@@ -5,9 +5,12 @@ on:
   push:
     tags:
       - 'v[0-9]*'
-  # Weekly rebuild to keep binaries fresh (Sundays at 04:00 UTC)
-  schedule:
-    - cron: '0 4 * * 0'
+  # No scheduled trigger. A weekly cron used to rebuild and re-upload the
+  # latest release's assets, so one release could ship different upstream
+  # model code from week to week. Upstream sources are now pinned to exact
+  # commits (src/symfluence/cli/binary_pins.json); a release's binaries change
+  # only through a tag or an explicit dispatch naming one. Pin drift is
+  # reported by CI (scripts/update_binary_pins.py --check).
   workflow_dispatch:
     inputs:
       tag:
@@ -28,8 +31,8 @@ permissions:
 
 jobs:
   # Release branch gate. publish-npm and test-npm-install hang off
-  # build-and-release, so gating it gates the publishing path too. Scheduled
-  # rebuilds and workflow_dispatch runs are allowed through unchanged.
+  # build-and-release, so gating it gates the publishing path too.
+  # workflow_dispatch runs are allowed through unchanged.
   gate:
     name: Verify release branch
     runs-on: ubuntu-22.04
@@ -630,7 +633,7 @@ jobs:
       # A manual workflow_dispatch without an explicit tag input resolves the tag
       # via `git describe`, which points at the latest release (e.g. v0.9.0).
       # Uploading branch-built binaries there would clobber the real release
-      # assets, so only upload for tag pushes, scheduled rebuilds, or a dispatch
+      # assets, so only upload for tag pushes or a dispatch
       # that explicitly names a tag. Dispatch-without-tag still builds + tests
       # (and keeps the backup workflow artifact) but uploads nothing.
       - name: Upload to Release
@@ -748,9 +751,6 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Skip npm publish (scheduled rebuild)
-        if: github.event_name == 'schedule'
-        run: echo "Scheduled rebuild — skipping npm publish (binaries updated on GitHub Release only)"
 
   # ===========================================================================
   # Test npm Installation

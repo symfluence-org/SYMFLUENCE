@@ -22,6 +22,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Changed parameters/bounds/objective/seed, or a replay that diverges (e.g. changed `NUMBER_OF_ITERATIONS`),
   raise `CalibrationResumeError`; an algorithm class can opt out with `supports_resume = False`. Unseeded runs
   now draw their entropy explicitly so they can be resumed too (same distribution as before).
+- **Reproducible external-tool builds**: every build recipe that clones an upstream repository is now pinned
+  to an exact commit (`src/symfluence/cli/binary_pins.json`, 31 tools resolved 2026-11-19 from the branch each
+  recipe tracked; `raven` and `summa-glacier` keep the commits held in their recipes). The installer fetches
+  that commit (shallow fetch by SHA, full-clone fallback) instead of the branch tip; `--branch` still builds a
+  branch tip on request. ParFlow and ParFlow-CLM source builds now compile the pinned checkout rather than a
+  second fresh clone of `master`, and Enzyme stays on its pinned `main` commit. Each install writes
+  `.symfluence_source.json` (repository, ref, pinned and built commit, patch state), which `toolchain.json`
+  and run provenance (`run_manifest.json` → `executables.<MODEL>.source`) now record next to the binary's
+  SHA-256. `scripts/update_binary_pins.py` shows, checks (`--check`, reported in CI without failing) and bumps
+  (`--write`) the pins.
 - **Elevation corrections of remapped forcing (opt-in)**: the `lapse` config section (`pressure`, `humidity`,
   `longwave`, `shortwave`, `precipitation`, `wind`, with `lw_gradient`, `sw_gradient`, `precip_gradient`,
   `wind_gradient`) is now applied by the forcing remapper, from the elevation difference between each HRU and
@@ -84,6 +94,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requires it.
 
 ### Changed
+- **Release binaries are no longer rebuilt weekly**: the `release-binaries` workflow's Sunday cron re-uploaded
+  the latest release's assets from whatever upstream branches pointed to that week. It is removed; release
+  assets change only on a tag push or a dispatch naming a tag.
 - **SAC-SMA cryosphere replay scores with the engine's KGE/NSE**: `sacsma_cryosphere/replay.py` dropped its own
   KGE/NSE formula for `core.metrics` (identical values to 1e-12 on real series). A constant simulation now scores
   `None` instead of a finite KGE with r = 0. `replay.py` hashes its own source, so specs frozen against the

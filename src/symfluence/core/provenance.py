@@ -102,6 +102,43 @@ def _executable_info(exe_path: Path) -> Dict[str, Any]:
     return info
 
 
+#: Written by ``symfluence binary install`` into each tool's install directory.
+SOURCE_RECORD = ".symfluence_source.json"
+_SOURCE_KEYS = ("repository", "ref", "commit", "pinned_commit", "pinned_by",
+                "tracked_changes", "patched")
+
+
+def _source_info(exe_path: Path, name: str, max_levels: int = 5) -> Dict[str, Any]:
+    """Return the upstream repository and commit *exe_path* was built from.
+
+    Walks up from the executable looking for the per-tool source record the
+    installer writes (``<install_dir>/.symfluence_source.json``), or for a
+    ``toolchain.json`` manifest (the installs root, or an npm/release bundle)
+    with an entry for *name*. Empty when neither is found, e.g. a binary built
+    outside SYMFLUENCE or installed before source records existed.
+    """
+    for parent in list(Path(exe_path).parents)[:max_levels]:
+        record = parent / SOURCE_RECORD
+        if record.is_file():
+            try:
+                data = json.loads(record.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                return {}
+            return {k: data[k] for k in _SOURCE_KEYS if k in data}
+        manifest = parent / "toolchain.json"
+        if manifest.is_file():
+            try:
+                tools = json.loads(manifest.read_text(encoding="utf-8")).get("tools", {})
+            except (OSError, ValueError, AttributeError):
+                return {}
+            entry = tools.get(name.lower()) if isinstance(tools, dict) else None
+            if not isinstance(entry, dict):
+                return {}
+            entry = {**entry, **(entry.get("source") or {})}
+            return {k: entry[k] for k in _SOURCE_KEYS if entry.get(k) not in (None, "unknown")}
+    return {}
+
+
 def _geospatial_versions() -> Dict[str, str]:
     """Return GDAL/PROJ/GEOS versions.
 
@@ -234,7 +271,10 @@ def record_executable(
     name: str,
     exe_path: Path,
 ) -> None:
-    """Capture file hash, size, and best-effort version for *exe_path*.
+    """Capture file hash, size, version, and upstream source for *exe_path*.
+
+    ``source`` (repository, pinned and actual commit) is filled from the
+    install's source record when one is found; see :func:`_source_info`.
 
     No-op when *prov* is ``None`` or the executable does not exist.
     """
@@ -242,7 +282,11 @@ def record_executable(
         return
     exe_path = Path(exe_path)
     if exe_path.exists():
-        prov.executables[name] = _executable_info(exe_path)
+        info = _executable_info(exe_path)
+        source = _source_info(exe_path, name)
+        if source:
+            info["source"] = source
+        prov.executables[name] = info
 
 
 def _input_info(path: Path) -> Dict[str, Any]:
