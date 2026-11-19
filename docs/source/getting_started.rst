@@ -118,14 +118,88 @@ settings files (``forcing/SUMMA_input/``, ``settings/SUMMA/``).
 
 ``run_model`` executes SUMMA and routes the output with mizuRoute
 (10–30 minutes for this domain). ``postprocess_results`` extracts streamflow to
-``results/``, plots it, and prints baseline performance metrics (KGE, NSE,
-bias) against the gauge observations. A low baseline score is normal — see
+``results/``, scores it against the gauge observations and writes the run
+summary described in `Checking results`_. A low baseline score is normal — see
 :doc:`calibration` for parameter optimization.
 
 If a step fails, check the run log in
 ``domain/Bow_at_Banff/_workLog_Bow_at_Banff/`` and see :doc:`troubleshooting`.
 ``symfluence workflow status`` shows how far a run got, and
 ``symfluence workflow resume`` continues from the last completed step.
+
+Checking results
+----------------
+
+Every run that produces streamflow answers "how good is my model?" in
+``domain/<DOMAIN_NAME>/results/<EXPERIMENT_ID>/``:
+
+``metrics.json``
+   Machine-readable scores, written after ``postprocess_results`` and again
+   after the calibration final evaluation (``"stage"`` says which; the latest
+   wins, so after calibration it describes the calibrated model).
+``metrics.csv``
+   The same scores, one row per model and period.
+``summary.png``
+   One page: hydrograph with the calibration / evaluation / test periods
+   shaded (spin-up greyed), flow duration curve and the metrics table.
+   Written after postprocessing; ``SUMMARY_REPORT: false`` turns it off.
+
+``symfluence workflow run`` ends with the same scores as a table::
+
+   Run performance (postprocess): Bow_at_Banff / run_1
+   Model  Period       KGE    r      alpha  beta   NSE    PBIAS %  n
+   SUMMA  calibration  0.612  0.851  1.204  1.081  0.583  +8.1     1826
+   SUMMA  evaluation   0.574  0.822  1.251  1.103  0.540  +10.3    1461
+   SUMMA  full         0.598  0.840  1.222  1.090  0.566  +9.0     3652
+
+Each configured period (``CALIBRATION_PERIOD``, ``EVALUATION_PERIOD`` and,
+where supported, ``TEST_PERIOD``) is scored, plus ``full`` — the whole
+overlapping record after spin-up (``SPINUP_PERIOD`` /
+``EVALUATION_SPINUP_YEARS``). Daily observations are compared with daily-mean
+simulation; when both are sub-daily they are matched at their native step.
+
+The ``metrics.json`` schema (``schema_version: 1``; keys are only added
+within a version):
+
+.. code-block:: text
+
+   schema_version, stage ("postprocess" | "calibration"), generated_at,
+   domain, experiment_id,
+   target:     {variable, station_id, observations_path, observations_found}
+   periods:    {spinup, calibration, evaluation, test}   # [start, end] or null
+   resolution: "daily" | "native"
+   models:
+     <MODEL>:
+       source:     where the simulation (or final evaluation) came from
+       metrics:    {<period>: {KGE, r, alpha, beta, NSE, logNSE, PBIAS,
+                               RMSE, n_obs, start, end}}
+       benchmarks: {<period>: {<benchmark>: {KGE, KGE_skill}}}
+   warnings:   [messages]
+   provenance: {symfluence_version, results_csv, final_evaluation,
+                run_manifest, run_id}
+
+Missing values are ``null``. Benchmark scores (mean flow, day-of-year
+climatology, persistence; fitted on the calibration period) appear when the
+benchmark module is available and a calibration period is set.
+
+If the observations are missing, unreadable or do not overlap the
+simulation, the run still succeeds but logs a WARNING naming the expected
+file (by default
+``data/observations/streamflow/preprocessed/<DOMAIN_NAME>_streamflow_processed.csv``,
+or ``OBSERVATIONS_PATH``), prints it under the table, and records it in
+``warnings``. Run ``process_observed_data`` or set ``OBSERVATIONS_PATH`` and
+rerun ``postprocess_results``.
+
+From Python, the same information comes back from the run itself:
+
+.. code-block:: python
+
+   from symfluence import SYMFLUENCE
+
+   result = SYMFLUENCE("config_Bow_at_Banff.yaml").run()
+   result.status                       # 'completed', 'partial' or 'failed'
+   result.metrics["models"]["SUMMA"]["metrics"]["evaluation"]["KGE"]
+   result.outputs["summary_figure"]    # Path to summary.png
 
 Next Steps
 ----------

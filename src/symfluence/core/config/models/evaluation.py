@@ -298,6 +298,8 @@ class EvaluationConfig(BaseModel):
     sim_reach_id: Optional[int] = Field(default=None, alias='SIM_REACH_ID')
     evaluation_variable: str = Field(default='', alias='EVALUATION_VARIABLE')
     spinup_years: int = Field(default=0, alias='EVALUATION_SPINUP_YEARS')
+    # One-page results/<exp>/summary.png after postprocessing (metrics.json is always written)
+    summary_report: bool = Field(default=True, alias='SUMMARY_REPORT')
 
     # Observation data sources
     streamflow: Optional[StreamflowConfig] = Field(default_factory=StreamflowConfig)

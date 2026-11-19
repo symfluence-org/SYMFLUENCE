@@ -3121,6 +3121,13 @@ EVALUATION_VARIABLE: ""
 #   Description: Number of spinup years to exclude from evaluation
 EVALUATION_SPINUP_YEARS: 0
 
+# SUMMARY_REPORT
+#   Type:        bool
+#   Default:     True
+#   Source:      EvaluationConfig (evaluation.py)
+#   Description: Write the one-page results/<EXPERIMENT_ID>/summary.png (hydrograph, FDC, metrics) after postprocessing; metrics.json is written regardless
+SUMMARY_REPORT: true
+
 # ========================================
 # TWS (Total Water Storage) Evaluation
 # ========================================

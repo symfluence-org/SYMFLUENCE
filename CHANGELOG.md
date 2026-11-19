@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Run metrics after every run**: `postprocess_results` now writes `results/<EXPERIMENT_ID>/metrics.json`
+  (+ `metrics.csv`) with a documented, versioned schema: per model and per configured period (calibration,
+  evaluation, `TEST_PERIOD` when the schema has it, and the full record after spin-up) KGE with r/alpha/beta,
+  NSE, logNSE, PBIAS, RMSE and n_obs; benchmark KGE and skill when `core.metrics.benchmarks` is available;
+  warnings; provenance (results CSV, run manifest, run id). The calibration final evaluation rewrites it with
+  the calibrated scores (`"stage": "calibration"`). A one-page `summary.png` (hydrograph with periods shaded,
+  FDC, metrics table) is written by default; `SUMMARY_REPORT: false` disables it. `symfluence workflow run`
+  (and `workflow step(s)` running postprocessing/calibration) ends with a compact metrics table.
+- **`RunResult` from the Python API**: `SYMFLUENCE.run_workflow()` and `run_individual_steps()` return a
+  `RunResult` (per-step status/duration/error, output paths, parsed metrics.json) instead of None;
+  `SYMFLUENCE.run()` is an alias of `run_workflow()`; `continue_on_error` is an explicit keyword on both (the
+  `config_overrides={"continue_on_error": ...}` path keeps working). `symfluence.RunResult` is exported.
 - **Elevation corrections of remapped forcing (opt-in)**: the `lapse` config section (`pressure`, `humidity`,
   `longwave`, `shortwave`, `precipitation`, `wind`, with `lw_gradient`, `sw_gradient`, `precip_gradient`,
   `wind_gradient`) is now applied by the forcing remapper, from the elevation difference between each HRU and
@@ -72,6 +84,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requires it.
 
 ### Changed
+- Missing, unreadable or non-overlapping streamflow observations after postprocessing are now logged at
+  WARNING level naming the expected observation path (previously a DEBUG message), and recorded in
+  metrics.json.
+- CLI console output no longer forces terminal mode: ANSI colour codes are only written to a TTY (or with
+  `FORCE_COLOR`), never when output is piped or redirected, and `NO_COLOR` is honoured.
 - **SAC-SMA cryosphere replay scores with the engine's KGE/NSE**: `sacsma_cryosphere/replay.py` dropped its own
   KGE/NSE formula for `core.metrics` (identical values to 1e-12 on real series). A constant simulation now scores
   `None` instead of a finite KGE with r = 0. `replay.py` hashes its own source, so specs frozen against the
