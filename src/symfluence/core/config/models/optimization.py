@@ -584,8 +584,9 @@ class OptimizationConfig(BaseModel):
     objective_metrics: Optional[Dict[str, str]] = Field(
         default=None,
         alias='OBJECTIVE_METRICS',
-        description="Primary metric per variable for multivariate objective. "
-                    "Example: {'STREAMFLOW': 'kge', 'SWE': 'nse'}"
+        description="Primary metric per variable for multivariate objective, overriding the "
+                    "bias-sensitive defaults (KGE; NSE for TWS; GMB_SCORE for GLACIER_MB). "
+                    "Example: {'STREAMFLOW': 'kge', 'GLACIER_MB': 'GMB_SCORE'}"
     )
 
     # Worker retry settings

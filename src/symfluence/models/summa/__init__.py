@@ -144,6 +144,7 @@ def register() -> None:
     R.postprocessors.add_lazy("SUMMA", f"{base}.postprocessor.SUMMAPostProcessor")
     R.visualizers.add_lazy("SUMMA", f"{base}.visualizer.visualize_summa")
     R.result_extractors.add_lazy("SUMMA", f"{base}.extractor.SUMMAResultExtractor")
+    R.output_adapters.add_lazy("SUMMA", f"{base}.output_adapter.SUMMAOutputAdapter")
     R.decision_analyzers.add_lazy("SUMMA", f"{base}.structure_analyzer.SummaStructureAnalyzer")
     R.plotters.add_lazy("SUMMA", f"{base}.plotter.SUMMAPlotter")
 

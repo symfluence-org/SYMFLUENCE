@@ -5,7 +5,11 @@
 from __future__ import annotations
 
 from symfluence.core.modeling.evaluators import (
+    BasinETEvaluator,
+    BasinSCAEvaluator,
+    BasinSWEEvaluator,
     ETEvaluator,
+    GlacierMassBalanceEvaluator,
     GroundwaterEvaluator,
     ModelEvaluator,
     SnowEvaluator,
@@ -17,4 +21,5 @@ from symfluence.core.modeling.evaluators import (
 __all__ = [
     "ETEvaluator", "GroundwaterEvaluator", "ModelEvaluator", "SnowEvaluator",
     "SoilMoistureEvaluator", "StreamflowEvaluator", "TWSEvaluator",
+    "GlacierMassBalanceEvaluator", "BasinSWEEvaluator", "BasinSCAEvaluator", "BasinETEvaluator",
 ]

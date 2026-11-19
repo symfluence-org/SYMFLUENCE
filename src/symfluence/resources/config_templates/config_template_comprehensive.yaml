@@ -2412,7 +2412,7 @@ OBJECTIVE_WEIGHTS: null
 #   Type:        dict
 #   Default:     None
 #   Source:      OptimizationConfig (optimization.py)
-#   Description: Primary metric per variable for multivariate objective (e.g., {'STREAMFLOW': 'kge'})
+#   Description: Primary metric per variable for multivariate objective (e.g., {'STREAMFLOW': 'kge', 'GLACIER_MB': 'GMB_SCORE'}); unset variables use bias-sensitive defaults (KGE; NSE for TWS; GMB_SCORE for GLACIER_MB)
 OBJECTIVE_METRICS: null
 
 # WORKER_MAX_RETRIES
@@ -3277,6 +3277,62 @@ ET_GLEAM_MAX_RELATIVE_UNCERTAINTY: 0.5
 #   Source:      ETEvalConfig (evaluation.py)
 #   Description: Path to ET observation data
 ET_OBS_PATH: null
+
+# OUTPUT_ADAPTER_MODEL
+#   Type:        Optional
+#   Default:     None
+#   Source:      MultiVariableEvalConfig (evaluation.py)
+#   Description: Model whose output adapter the GLACIER_MB / BASIN_* evaluators use; default: the single HYDROLOGICAL_MODEL
+OUTPUT_ADAPTER_MODEL: null
+
+# GLACIER_MB_OBS_PATH
+#   Type:        Optional
+#   Default:     None
+#   Source:      MultiVariableEvalConfig (evaluation.py)
+#   Description: CSV/NetCDF of glacier mass-balance periods (start/end dates, rate, optional uncertainty and area); e.g. Hugonnet et al. (2021) dmdtda/err_dmdtda
+GLACIER_MB_OBS_PATH: null
+
+# GLACIER_MB_OBS_UNITS
+#   Type:        Literal
+#   Default:     m_we_per_yr
+#   Source:      MultiVariableEvalConfig (evaluation.py)
+#   Description: Units of the observed mass-balance rate and its uncertainty
+GLACIER_MB_OBS_UNITS: "m_we_per_yr"
+
+# GLACIER_MB_SCALE
+#   Type:        float
+#   Default:     1000.0
+#   Source:      MultiVariableEvalConfig (evaluation.py)
+#   Description: Error scale (mm w.e./yr) for GMB_SCORE when a period has no uncertainty
+GLACIER_MB_SCALE: 1000.0
+
+# GLACIER_MB_ENDPOINT_TOLERANCE_DAYS
+#   Type:        float
+#   Default:     1.0
+#   Source:      MultiVariableEvalConfig (evaluation.py)
+#   Description: Largest gap (days) between a period boundary and the simulated state used for it
+GLACIER_MB_ENDPOINT_TOLERANCE_DAYS: 1.0
+
+# BASIN_SWE_OBS_PATH
+#   Type:        Optional
+#   Default:     None
+#   Source:      MultiVariableEvalConfig (evaluation.py)
+#   Description: Observed basin (or point) SWE series, mm
+BASIN_SWE_OBS_PATH: null
+
+# BASIN_SCA_OBS_PATH
+#   Type:        Optional
+#   Default:     None
+#   Source:      MultiVariableEvalConfig (evaluation.py)
+#   Description: Observed snow-covered fraction series (0-1, or percent)
+BASIN_SCA_OBS_PATH: null
+
+# BASIN_ET_OBS_PATH
+#   Type:        Optional
+#   Default:     None
+#   Source:      MultiVariableEvalConfig (evaluation.py)
+#   Description: Observed basin ET series, mm/d
+BASIN_ET_OBS_PATH: null
 
 
 # 17. Paths & Data Locations
