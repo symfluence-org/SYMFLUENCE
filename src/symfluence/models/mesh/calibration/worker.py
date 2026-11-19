@@ -512,6 +512,8 @@ class MESHWorker(BaseWorker):
                 'beta': float(kge_result['beta']),  # type: ignore[index]
                 'kge_log': kge_log_val,
             }
+            # Configured objective beyond these (LOGLIK_BC_AR1, signatures, ...)
+            metrics.update(self._objective_extras(obs_aligned, sim_aligned, metrics, config))
             if config.get('MESH_CRYOSPHERE_CONSTRAINTS', mesh_config.get('cryosphere_constraints', False)):
                 from symfluence.models.mesh.cryosphere import calculate_constraints
                 observation_dir = resolve_config_value(config, lambda: config.model.mesh.cryosphere_observations, None, 'MESH_CRYOSPHERE_OBSERVATIONS') or mesh_config.get('cryosphere_observations')

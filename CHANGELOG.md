@@ -10,6 +10,117 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Formal streamflow likelihood `LOGLIK_BC_AR1`**: Box-Cox (`LIKELIHOOD_BOX_COX_LAMBDA`, default 0.3) + AR(1)
+  residual error model (Bates & Campbell, 2001; simplified Schoups & Vrugt, 2010). The innovation variance is
+  integrated out under the Jeffreys prior unless `LIKELIHOOD_SIGMA` is set; φ is the conditional least-squares
+  estimate unless `LIKELIHOOD_AR1_PHI` is set; `LIKELIHOOD_EPSILON` offsets zero flows. Usable as
+  `OPTIMIZATION_METRIC` with any algorithm.
+- **DREAM/GLUE samples and scored predictive intervals**: after a DREAM or GLUE run the posterior /
+  behavioural samples (parameters, objective, weights; chain/draw for DREAM) go to `<alg>_uq_samples.nc`; up to
+  `UQ_PREDICTIVE_RUNS` (default 50) of them are re-run over the full period (series stored in the same file);
+  weighted quantiles `UQ_QUANTILES` go to `<alg>_predictive_quantiles.csv` (parameter band, plus a total band
+  with `UQ_RESIDUAL_DRAWS` error-model realisations for formal DREAM); coverage and width of the 90% band and
+  CRPS, per calibration and evaluation period, go to `<alg>_predictive_scores.json`. GLUE bounds are
+  likelihood-weighted. `UQ_PREDICTIVE_RUNS: 0` skips the extra runs.
+- **Design-based global sensitivity analysis**: `run_sensitivity_analysis` now runs a Morris
+  (`SENSITIVITY_METHODS: [morris]`, default; `SENSITIVITY_MORRIS_TRAJECTORIES` 10) and/or Saltelli/Sobol
+  (`sobol`, `SENSITIVITY_SOBOL_N` 256; S1 and ST with bootstrap CIs) design through the model's calibration
+  workers, each point a real model run; `SENSITIVITY_MAX_EVALUATIONS` (5000) refuses larger designs.
+- **Signature-based objectives**: `FDC_SLOPE_ERROR` (|%BiasFMS|), `PEAK_FLOW_BIAS` (|%BiasFHV|, top 2%) and
+  `BFI_ERROR` (|ΔBFI|), all minimised, usable as `OPTIMIZATION_METRIC`, COMPOSITE components or NSGA-II
+  objectives.
+- New docs page "Uncertainty and sensitivity".
+- **Shared forcing correction across models (opt-in)**: the `FORCING_CORRECTION_*` section gives every model
+  one precipitation multiplier (and optional snowfall multiplier / temperature offset) instead of each model's
+  own correction parameter with its own bounds. `FORCING_CORRECTION_MODE`: `off` (none), `fixed` (config values,
+  or `FORCING_CORRECTION_PRECIP_MULTIPLIER: water_balance` = (Q_obs + ET) / P over the calibration period, ET
+  from config or Budyko on Oudin/Hamon PET) or `calibrated` (common parameters `FC_PRECIP_MULT`,
+  `FC_SNOW_MULT`, `FC_TEMP_OFFSET` with common bounds and an optional log-normal prior penalty,
+  `FORCING_CORRECTION_PRIOR_WEIGHT`). Translated to GR `PCORR`/`TCORR`, SUMMA `precip_mult`/`frozenPrecipMultip`,
+  MESH `PRECIP_MULT`, Wflow `PCORR`, mHM `precipCorrectionFactor` and HYPE `pcurain`/`pcusnow`; other models
+  accept only `off`. Superseded per-model parameters are dropped from calibration with a warning. Values are
+  written to `forcing_correction.json` in the results directory. Unset, calibration is unchanged.
+  Also supported: PRMS/GSFLOW (`rain_adj`/`snow_adj`/`tmax_adj`/`tmin_adj` or `*_cbh_adj`), Raven
+  (`PRECIP_CORR`/`SNOW_CORR`/`TEMP_CORR`), MESH temperature (`TEMP_OFFSET`), and corrected forcing copies for
+  FUSE, CLM and ParFlow-CLM (basin mode: `precip_scale` and a new `temp_offset`); HYPE-MODFLOW calibrates
+  through the land model's adapter. Forward runs (`run_models`, forecast pipelines via
+  `apply_forward_forcing_correction`) apply the fixed values, or those of the newest calibration in
+  `calibrated` mode, and record them in `simulations/<exp>/<MODEL>/forcing_correction.json`.
+  The resolved plan is part of the calibration-resume fingerprint, so `--resume` refuses a changed forcing
+  correction. See `docs/source/forcing_correction.rst`.
+- **Data assimilation you can judge (EnKF)**: every EnKF run now also runs the open loop (the same perturbed
+  ensemble, never updated; `ENKF_OPEN_LOOP`, default on) and a persistence benchmark, and writes
+  `*_verification.json` with CRPS, CRPSS vs open loop and vs persistence, spread-error ratio, rank histogram, and
+  NSE/KGE of the ensemble mean. `ENKF_FORECAST_LEAD_DAYS` (default 0 = off) issues ensemble forecasts from each
+  analysis and scores them by lead time (`*_lead_scores.csv`; ensemble-mean scores use the same function signature
+  as `scores` in the forecast-verification module of PR #512, one local function to swap). Streamflow observation
+  error is heteroscedastic, sigma = a + b*Q_obs (`ENKF_OBS_ERROR_STD` = b, default 10 %; `ENKF_OBS_ERROR_ABS` = a
+  in m3/s, default 1 % of mean observed flow); vector observations (several gauges, diagonal R) are supported by
+  the cycle. Forcing perturbations are AR(1) in time (`ENKF_FORCING_CORRELATION_HOURS`, default 24 h) with the
+  lognormal debiasing kept. Optional multiplicative precipitation-bias state (`ENKF_PRECIP_BIAS_STATE`). A
+  model-agnostic state interface (`DAModel`: `get_state`/`set_state`/`step`/`perturbable_forcing`) replaces the
+  HBV-only manager; Xinanjiang (stand-alone, `jxaj`) is the second model. New docs page "Data assimilation".
+
+- **Model-agnostic multi-variable evaluation**: output-variable adapters (`R.output_adapters`,
+  `core.modeling.output_variables`) give glacier storage / area / cumulative specific mass balance, basin SWE,
+  snow-covered fraction and ET in standard units for SUMMA, HYPE, GR (lumped glacier balances), PRMS, GSFLOW,
+  Raven, Wflow and mHM (others raise `UnsupportedVariableError`). New evaluators `GLACIER_MB` (period-mean
+  rates vs geodetic/glaciological observations, `GLACIER_MB_OBS_PATH`, e.g. Hugonnet `dmdtda`; `GMB_BIAS`,
+  `GMB_ABS_BIAS`, `GMB_REL_BIAS`, `GMB_RMSE`, `GMB_SCORE` with observation uncertainty), `BASIN_SWE`,
+  `BASIN_SCA`, `BASIN_ET` (KGE with components), also as calibration targets `glacier_mb`, `basin_*`.
+  `GMB_*` metrics can be `OPTIMIZATION_METRIC`, COMPOSITE components or NSGA-II objectives
+  (`NSGA2_SECONDARY_METRIC: GMB_SCORE`); workers compute them through the evaluator and fail the run if they
+  cannot. New docs page "Multi-variable evaluation" with the support matrix.
+- **Fair, reproducible multi-model comparison** (docs: *Multi-model comparison*):
+  - *Seeds*: with `RANDOM_SEED` unset, calibration draws a seed, logs it and records it in
+    `<exp>_<algo>_calibration_conditions.json`, `*_best_params.json` and `run_manifest.json`; setting
+    `RANDOM_SEED` to that value regenerates the run. Seeded runs are unchanged. A `--resume` of an unseeded run
+    reuses the drawn seed (stored as `rng.entropy` in the resume state), so it still replays exactly; the
+    resume fingerprint covers a configured seed and the calibration budget (`CALIBRATION_BUDGET_MODE`).
+  - *Provenance*: every run writes `resolved_config.yaml` (validated, defaults filled, secrets masked) next to
+    `run_manifest.json`, which records its SHA-256 plus fingerprints of the forcing and observation files
+    (`PROVENANCE_INPUT_HASH`: `listing` (default; names, sizes, mtimes), `content` (full SHA-256) or `none`)
+    and each calibration's seed and budget.
+  - *Budget*: `CALIBRATION_BUDGET_MODE: per_parameter` with `EVALUATIONS_PER_PARAMETER`,
+    `CALIBRATION_BUDGET_MIN_EVALUATIONS` and `CALIBRATION_BUDGET_MAX_EVALUATIONS` gives each model an
+    evaluation budget proportional to its number of calibrated parameters. Default `fixed` = unchanged.
+  - *`symfluence ensemble`* (and `evaluation.multimodel_ensemble.run_ensemble`): equal-weight, skill-weighted
+    (KGE or inverse-MSE weights fitted on the calibration period only), median and vote-weighted combinations of
+    member discharge; scores members and combinations on calibration/evaluation/test periods; writes a score
+    table, JSON, series CSV, a figure and a per-member comparison-conditions table (forcing, forcing correction,
+    discretisation, algorithm, evaluations used, n params, seed, config hash; `unknown` where not recorded).
+- **Run metrics after every run**: `postprocess_results` now writes `results/<EXPERIMENT_ID>/metrics.json`
+  (+ `metrics.csv`) with a documented, versioned schema: per model and per configured period (calibration,
+  evaluation, `TEST_PERIOD` when the schema has it, and the full record after spin-up) KGE with r/alpha/beta,
+  NSE, logNSE, PBIAS, RMSE and n_obs; benchmark KGE and skill when `core.metrics.benchmarks` is available;
+  warnings; provenance (results CSV, run manifest, run id). The calibration final evaluation rewrites it with
+  the calibrated scores (`"stage": "calibration"`). A one-page `summary.png` (hydrograph with periods shaded,
+  FDC, metrics table) is written by default; `SUMMARY_REPORT: false` disables it. `symfluence workflow run`
+  (and `workflow step(s)` running postprocessing/calibration) ends with a compact metrics table.
+- **`RunResult` from the Python API**: `SYMFLUENCE.run_workflow()` and `run_individual_steps()` return a
+  `RunResult` (per-step status/duration/error, output paths, parsed metrics.json) instead of None;
+  `SYMFLUENCE.run()` is an alias of `run_workflow()`; `continue_on_error` is an explicit keyword on both (the
+  `config_overrides={"continue_on_error": ...}` path keeps working). `symfluence.RunResult` is exported.
+- **Split-sample rigour**: optional `TEST_PERIOD`, a third independent hold-out scored and reported in the
+  final evaluation (`Test_*` metrics, `test_metrics` in the final-evaluation JSON) and never used for
+  optimisation or selection. The final evaluation also scores three benchmarks fitted on the calibration
+  period only (mean flow, KGE = -0.41 on calibration; day-of-year climatology; persistence) on exactly the
+  configured periods, with `<Period>_KGE_benchmark_<name>` and skill `<Period>_KGE_skill_<name>`. Config load
+  warns (never raises) when calibration/evaluation/test periods overlap, spin-up does not precede a scored
+  period, or `CALIBRATION_PERIOD` is missing while evaluation/test or optimisation is configured. The silent
+  full-record metrics fallback now logs a `SPLIT-SAMPLE WARNING` and adds `period_warning` to the metrics dict.
+- **Calibration checkpoint/resume**: `symfluence workflow run|step|steps|resume ... --resume` (or
+  `CALIBRATION_RESUME: true`) continues an interrupted calibration from its last checkpoint instead of starting
+  over. Every `CHECKPOINT_INTERVAL` iterations the optimizer now also writes
+  `<experiment>_<algorithm>_resume_state.json` (atomic tmp + rename): the ordered evaluation log, iteration and
+  evaluation counts, RNG seed/entropy and Generator state, best solution, crash counters, history, and a
+  fingerprint of parameters, bounds, objective, calibration period, seed and population size. On resume the
+  algorithm is replayed against the logged evaluations (no model runs) to restore its exact state, verified
+  against the logged parameter sets and RNG state, and then continues; a seeded resumed run ends with the same
+  result as an uninterrupted one (all 18 built-in algorithms). Result files are continued, not rotated aside.
+  Changed parameters/bounds/objective/seed, or a replay that diverges (e.g. changed `NUMBER_OF_ITERATIONS`),
+  raise `CalibrationResumeError`; an algorithm class can opt out with `supports_resume = False`. Unseeded runs
+  now draw their entropy explicitly so they can be resumed too (same distribution as before).
 - **Reproducible external-tool builds**: every build recipe that clones an upstream repository is now pinned
   to an exact commit (`src/symfluence/cli/binary_pins.json`, 31 tools resolved 2026-11-19 from the branch each
   recipe tracked; `raven` and `summa-glacier` keep the commits held in their recipes). The installer fetches
@@ -82,6 +193,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requires it.
 
 ### Changed
+- **DREAM calibrates on the formal likelihood by default (changes results)**: with
+  `ITERATIVE_OPTIMIZATION_ALGORITHM: DREAM` and a streamflow target, `OPTIMIZATION_METRIC` is replaced by
+  `LOGLIK_BC_AR1` (COMPOSITE_METRIC cleared), so DREAM samples a Bayesian posterior instead of the
+  temperature-dependent `exp(KGE / T)` pseudo-posterior. `DREAM_LIKELIHOOD: informal` restores the old
+  behaviour (with a warning); the likelihood settings are part of the calibration-resume fingerprint. Failed runs are now rejected by DREAM instead of being scored at the penalty value.
+  HYPE, MESH, Raven and ngen (direct path) now compute the configured objective beyond KGE/NSE, including the
+  likelihood. A worker that cannot score it (multi-gauge calibration, IGNACIO) makes DREAM fall back to
+  `informal` before sampling, with a warning.
+- **NSGA-II default secondary objective is `KGE_LOG` (changes results)**: both objectives used to default to
+  KGE, so NSGA-II silently ran single-objective; the default now gives a KGE / KGE-of-log-flows front. Workers
+  now compute the NSGA-II / MOEA/D objective metrics, and evaluator-scored workers (e.g. SUMMA) compute a
+  configured objective outside the standard set (KGE_LOG, LOGLIK_BC_AR1, signatures) instead of falling back
+  to KGE.
+- **Sensitivity analysis outputs (changes results)**: the trajectory-surrogate Sobol and RBD-FAST indices
+  and VISCOUS-on-trajectory are gone (see Removed); `run_sensitivity_analysis` writes `morris_sensitivity.csv` /
+  `sobol_sensitivity.csv` and `all_sensitivity_results.csv` from a real design, plus `trajectory_correlation.csv`
+  (`SENSITIVITY_TRAJECTORY_CORRELATION`), and now runs model simulations (r(d+1) for the default Morris
+  design).
+- **EnKF results change** (DA users only): the default observation error is now `heteroscedastic`
+  (was `relative`: max(b*Q, floor)); forcing perturbations are temporally correlated (24 h, was white noise) and are
+  drawn for the whole period up front, so random streams differ from earlier runs; `diagnostics.crps` no longer
+  halves the ensemble-spread term (it overstated CRPS) and `spread_error_ratio` uses the (m+1)/m-corrected spread
+  (a reliable ensemble now scores 1). `ENKF_FORCING_PERTURBATION: false` now switches forcing perturbation off
+  (it was ignored). Set `ENKF_OBS_ERROR_TYPE: relative` and `ENKF_FORCING_CORRELATION_HOURS: 0` for the previous
+  error models.
+- **Multivariate objective defaults are bias-sensitive (changes results)**: the default metric for `SCA` and
+  `ET` in `OBJECTIVE_METRICS` is now KGE instead of correlation (bias-blind); `SWE`, `SNOW` and the new
+  `BASIN_*` default to KGE and `GLACIER_MB` to `GMB_SCORE`. `OBJECTIVE_METRICS` keys are now case-insensitive
+  and merged over the defaults (a lower-case `streamflow: nse` used to be ignored; a variable missing from a
+  user dict now gets its default, e.g. NSE for TWS, instead of KGE). Minimised metrics (RMSE, PBIAS,
+  `GMB_ABS_BIAS`) now contribute `|value|` instead of `1 - value`. A variable whose evaluator returned no
+  metrics is penalised (2.0) instead of raising.
+- Missing, unreadable or non-overlapping streamflow observations after postprocessing are now logged at
+  WARNING level naming the expected observation path (previously a DEBUG message), and recorded in
+  metrics.json.
+- CLI console output no longer forces terminal mode: ANSI colour codes are only written to a TTY (or with
+  `FORCE_COLOR`), never when output is piped or redirected, and `NO_COLOR` is honoured.
+- **One spin-up notion for scoring**: evaluators now exclude output before the end of `SPINUP_PERIOD` from
+  every score (previously only `EVALUATION_SPINUP_YEARS` was honoured). This changes results only where a
+  scored period overlaps spin-up (now also warned) or in the full-record fallback.
+- **hydrobm benchmarking uses the configured periods**: `Benchmarker` fits on `CALIBRATION_PERIOD` and scores on
+  `EVALUATION_PERIOD` (and `TEST_PERIOD`, as `*_test` columns) instead of splitting at the median year; the
+  median-year split remains only as a warned fallback when no calibration period is set.
 - **Release binaries are no longer rebuilt weekly**: the `release-binaries` workflow's Sunday cron re-uploaded
   the latest release's assets from whatever upstream branches pointed to that week. It is removed; release
   assets change only on a tag push or a dispatch naming a tag.
@@ -181,6 +335,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   old filenames need re-keying.
 
 ### Removed
+- **Trajectory-based Sobol, RBD-FAST and VISCOUS sensitivity**: `SensitivityAnalyzer.perform_sobol_analysis`,
+  `perform_rbd_fast_analysis` and `perform_sensitivity_analysis` estimated indices from the optimiser's
+  trajectory through an additive mean-of-1D-interpolations surrogate (S_T ≡ S_1 by construction) or from a
+  non-uniform sample. Use the design-based methods; `trajectory_correlation` remains as a labelled diagnostic.
 - **73 unused back-compat shim modules** (ADR-0011): every shim that neither
   in-tree code nor an installed external plugin imports, including
   `symfluence.models.{templates,coupled,config_resolution,model_manager}`, the
@@ -199,6 +357,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `symfluence.models.<model>.config_schema` homes instead.
 
 ### Deprecated
+- `EVALUATION_SPINUP_YEARS`: use `SPINUP_PERIOD`. It still works and maps onto the same spin-up window
+  (N years from the simulation start); a deprecation warning is logged.
 - **Back-compat shim import paths still used by external plugins** (ADR-0011):
   `symfluence.models.{base,base.base_config,base.standard_postprocessor,
   execution,mixins,mixins.pet_calculator,spatial_modes,state,utilities,

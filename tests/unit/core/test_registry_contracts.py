@@ -52,6 +52,7 @@ from symfluence.core.modeling.base.base_extractor import ModelResultExtractor
 from symfluence.core.modeling.base.base_postprocessor import BaseModelPostProcessor
 from symfluence.core.modeling.base.base_preprocessor import BaseModelPreProcessor
 from symfluence.core.modeling.base.base_runner import BaseModelRunner
+from symfluence.core.modeling.output_variables import OutputVariableAdapter
 from symfluence.core.registries import R
 
 # Base classes that registered components are expected to subclass.
@@ -106,6 +107,9 @@ CONTRACTS: dict[str, Contract] = {
     "optimizers": Contract(BaseModelOptimizer),
     "result_extractors": Contract(
         ModelResultExtractor, methods=("get_output_file_patterns", "extract_variable")
+    ),
+    "output_adapters": Contract(
+        OutputVariableAdapter, methods=("extract", "supported_variables"), attrs=("MODEL_NAME",)
     ),
     "config_adapters": Contract(
         ModelConfigAdapter,

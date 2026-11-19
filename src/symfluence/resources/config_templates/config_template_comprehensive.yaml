@@ -128,6 +128,13 @@ STOP_ON_ERROR: true
 #   Usage:      1
 RECORD_PROVENANCE: true
 
+# PROVENANCE_INPUT_HASH
+#   Type:        Literal['listing', 'content', 'none']
+#   Default:     listing
+#   Source:      SystemConfig (system.py)
+#   Description: Fingerprint forcing/observation inputs by file listing (names, sizes, mtimes), by full content SHA-256, or not at all
+PROVENANCE_INPUT_HASH: "listing"
+
 # SYMFLUENCE_CODE_DIR
 #   Type:        Path
 #   Default:     None
@@ -1488,10 +1495,10 @@ NSGA2_PRIMARY_TARGET: "streamflow"
 
 # NSGA2_SECONDARY_METRIC
 #   Type:        str
-#   Default:     KGE
+#   Default:     KGE_LOG
 #   Source:      NSGA2Config (optimization.py)
 #   Usage:      3
-NSGA2_SECONDARY_METRIC: "KGE"
+NSGA2_SECONDARY_METRIC: "KGE_LOG"
 
 # NSGA2_SECONDARY_TARGET
 #   Type:        str
@@ -1619,6 +1626,13 @@ DREAM_TEMPERATURE: 1.0
 #   Usage:      IQR multiplier for outlier chain detection
 DREAM_OUTLIER_THRESHOLD: 2.0
 
+# DREAM_LIKELIHOOD
+#   Type:        Literal
+#   Default:     formal
+#   Source:      DREAMConfig (optimization.py)
+#   Description: 'formal': DREAM samples the posterior under the Box-Cox AR(1) likelihood (OPTIMIZATION_METRIC is replaced by LOGLIK_BC_AR1). 'informal': exp(OPTIMIZATION_METRIC / DREAM_TEMPERATURE) is used as a pseudo-likelihood -- not a Bayesian posterior.
+DREAM_LIKELIHOOD: "formal"
+
 # GA_CROSSOVER_RATE
 #   Type:        float
 #   Default:     0.9
@@ -1730,6 +1744,76 @@ GLUE_SHAPING_FACTOR: 1.0
 #   Source:      GLUEConfig (optimization.py)
 #   Usage:      Sampling method (lhs or uniform)
 GLUE_SAMPLING: "lhs"
+
+# UQ_SAVE_SAMPLES
+#   Type:        bool
+#   Default:     True
+#   Source:      UncertaintyConfig (optimization.py)
+#   Description: Write DREAM posterior / GLUE behavioural parameter samples (with objective values) to <slug>_uq_samples.nc in the results dir
+UQ_SAVE_SAMPLES: true
+
+# UQ_PREDICTIVE_RUNS
+#   Type:        int
+#   Default:     50
+#   Source:      UncertaintyConfig (optimization.py)
+#   Description: Maximum number of posterior/behavioural parameter sets re-run over the full period to build predictive intervals (0 disables)
+UQ_PREDICTIVE_RUNS: 50
+
+# UQ_QUANTILES
+#   Type:        List
+#   Default:     [0.05, 0.25, 0.5, 0.75, 0.95]
+#   Source:      UncertaintyConfig (optimization.py)
+#   Description: Predictive quantiles written to <slug>_predictive_quantiles.csv
+UQ_QUANTILES: [0.05, 0.25, 0.5, 0.75, 0.95]
+
+# UQ_RESIDUAL_DRAWS
+#   Type:        int
+#   Default:     20
+#   Source:      UncertaintyConfig (optimization.py)
+#   Description: Error-model realisations per parameter set for the total predictive distribution of a formal-likelihood DREAM run (0 = parameter uncertainty only)
+UQ_RESIDUAL_DRAWS: 20
+
+# SENSITIVITY_METHODS
+#   Type:        List
+#   Default:     ['morris']
+#   Source:      SensitivityConfig (optimization.py)
+#   Description: Design-based methods to run: 'morris' (elementary effects, r*(d+1) runs) and/or 'sobol' (Saltelli design, N*(d+2) runs)
+SENSITIVITY_METHODS: ["morris"]
+
+# SENSITIVITY_SOBOL_N
+#   Type:        int
+#   Default:     256
+#   Source:      SensitivityConfig (optimization.py)
+#   Description: Base sample size N of the Saltelli design (power of 2)
+SENSITIVITY_SOBOL_N: 256
+
+# SENSITIVITY_MORRIS_TRAJECTORIES
+#   Type:        int
+#   Default:     10
+#   Source:      SensitivityConfig (optimization.py)
+#   Description: Number of Morris trajectories r
+SENSITIVITY_MORRIS_TRAJECTORIES: 10
+
+# SENSITIVITY_MORRIS_LEVELS
+#   Type:        int
+#   Default:     4
+#   Source:      SensitivityConfig (optimization.py)
+#   Description: Number of grid levels p of the Morris design (even)
+SENSITIVITY_MORRIS_LEVELS: 4
+
+# SENSITIVITY_MAX_EVALUATIONS
+#   Type:        int
+#   Default:     5000
+#   Source:      SensitivityConfig (optimization.py)
+#   Description: Budget guard: refuse a design needing more model runs than this
+SENSITIVITY_MAX_EVALUATIONS: 5000
+
+# SENSITIVITY_TRAJECTORY_CORRELATION
+#   Type:        bool
+#   Default:     True
+#   Source:      SensitivityConfig (optimization.py)
+#   Description: Also write the Spearman correlation of the calibration trajectory (a diagnostic of the optimiser path, not a sensitivity index)
+SENSITIVITY_TRAJECTORY_CORRELATION: true
 
 # BH_STEP_SIZE
 #   Type:        float
@@ -1934,11 +2018,39 @@ LBFGS_STEPS: null
 #   Usage:      10
 NUMBER_OF_ITERATIONS: 1000
 
+# CALIBRATION_BUDGET_MODE
+#   Type:        Literal['fixed', 'per_parameter']
+#   Default:     fixed
+#   Source:      OptimizationConfig (optimization.py)
+#   Description: 'fixed' uses NUMBER_OF_ITERATIONS; 'per_parameter' sets the evaluation budget to EVALUATIONS_PER_PARAMETER x n calibrated parameters (capped)
+CALIBRATION_BUDGET_MODE: "fixed"
+
+# EVALUATIONS_PER_PARAMETER
+#   Type:        int
+#   Default:     100
+#   Source:      OptimizationConfig (optimization.py)
+#   Description: Model evaluations per calibrated parameter in 'per_parameter' budget mode
+EVALUATIONS_PER_PARAMETER: 100
+
+# CALIBRATION_BUDGET_MIN_EVALUATIONS
+#   Type:        int
+#   Default:     100
+#   Source:      OptimizationConfig (optimization.py)
+#   Description: Lower cap on the 'per_parameter' evaluation budget
+CALIBRATION_BUDGET_MIN_EVALUATIONS: 100
+
+# CALIBRATION_BUDGET_MAX_EVALUATIONS
+#   Type:        Optional[int]
+#   Default:     None
+#   Source:      OptimizationConfig (optimization.py)
+#   Description: Upper cap on the 'per_parameter' evaluation budget (unset = no cap)
+CALIBRATION_BUDGET_MAX_EVALUATIONS: null
+
 # OPTIMIZATION_METRIC
 #   Type:        str
 #   Default:     KGE
 #   Source:      OptimizationConfig (optimization.py)
-#   Description: Base metric, COMPOSITE, or transformed variant (e.g. KGE_LOG, KGE_BOX_COX)
+#   Description: Base metric, COMPOSITE, transformed variant (e.g. KGE_LOG, KGE_BOX_COX), formal likelihood LOGLIK_BC_AR1, or signature error (FDC_SLOPE_ERROR, PEAK_FLOW_BIAS, BFI_ERROR)
 OPTIMIZATION_METRIC: "KGE"
 
 # BOX_COX_LAMBDA
@@ -1982,6 +2094,13 @@ CLEANUP_PARALLEL_DIRS: true
 #   Source:      OptimizationConfig (optimization.py)
 #   Usage:      Save best_params.json and iteration results every N iterations during optimization
 CHECKPOINT_INTERVAL: 10
+
+# CALIBRATION_RESUME
+#   Type:        bool
+#   Default:     false
+#   Source:      OptimizationConfig (optimization.py)
+#   Usage:      Resume an interrupted calibration from its resume-state checkpoint (also --resume)
+CALIBRATION_RESUME: false
 
 # INITIAL_GUESS
 #   Type:        dict | None
@@ -2031,6 +2150,34 @@ MODEL_ERROR_BASE: null
 #   Source:      OptimizationConfig (optimization.py)
 #   Description: Model error as a fraction of simulated value
 MODEL_ERROR_FRACTION: null
+
+# LIKELIHOOD_BOX_COX_LAMBDA
+#   Type:        float
+#   Default:     0.3
+#   Source:      OptimizationConfig (optimization.py)
+#   Description: Box-Cox lambda of the LOGLIK_BC_AR1 residual error model (0 = log; controls how error grows with flow)
+LIKELIHOOD_BOX_COX_LAMBDA: 0.3
+
+# LIKELIHOOD_AR1_PHI
+#   Type:        Optional
+#   Default:     None
+#   Source:      OptimizationConfig (optimization.py)
+#   Description: Fixed AR(1) residual coefficient for LOGLIK_BC_AR1; unset = conditional least-squares estimate per simulation
+LIKELIHOOD_AR1_PHI: null
+
+# LIKELIHOOD_SIGMA
+#   Type:        Optional
+#   Default:     None
+#   Source:      OptimizationConfig (optimization.py)
+#   Description: Fixed innovation standard deviation (Box-Cox space) for LOGLIK_BC_AR1; unset = integrated out (Jeffreys prior)
+LIKELIHOOD_SIGMA: null
+
+# LIKELIHOOD_EPSILON
+#   Type:        Optional
+#   Default:     None
+#   Source:      OptimizationConfig (optimization.py)
+#   Description: Zero-flow offset added before the Box-Cox transform; unset = 1% of the mean observed flow
+LIKELIHOOD_EPSILON: null
 
 # TRANSFER_FUNCTION_TYPE
 #   Type:        Optional
@@ -2136,6 +2283,111 @@ MULTI_GAUGE_KGE_FLOOR: null
 #   Source:      MultiGaugeConfig (optimization.py)
 #   Description: Explicit gauge-ID to river-segment mapping
 GAUGE_SEGMENT_MAPPING: null
+
+# FORCING_CORRECTION_MODE
+#   Type:        Optional
+#   Default:     None
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Shared forcing correction for every model: off | fixed | calibrated (unset = each model's own correction parameters, as before)
+FORCING_CORRECTION_MODE: null
+
+# FORCING_CORRECTION_PRECIP_MULTIPLIER
+#   Type:        Optional
+#   Default:     None
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Fixed total-precipitation multiplier, or 'water_balance' to estimate it from (Q_obs + ET) / P over CALIBRATION_PERIOD
+FORCING_CORRECTION_PRECIP_MULTIPLIER: null
+
+# FORCING_CORRECTION_SNOW_MULTIPLIER
+#   Type:        Optional
+#   Default:     None
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Fixed extra snowfall multiplier on top of the precipitation multiplier
+FORCING_CORRECTION_SNOW_MULTIPLIER: null
+
+# FORCING_CORRECTION_TEMP_OFFSET
+#   Type:        Optional
+#   Default:     None
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Fixed additive air-temperature offset (K)
+FORCING_CORRECTION_TEMP_OFFSET: null
+
+# FORCING_CORRECTION_QUANTITIES
+#   Type:        List
+#   Default:     [precip]
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Quantities calibrated in 'calibrated' mode (precip, snow, temp)
+FORCING_CORRECTION_QUANTITIES: [precip]
+
+# FORCING_CORRECTION_PRECIP_BOUNDS
+#   Type:        List
+#   Default:     [0.7, 1.6]
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Common bounds of FC_PRECIP_MULT
+FORCING_CORRECTION_PRECIP_BOUNDS: [0.7, 1.6]
+
+# FORCING_CORRECTION_SNOW_BOUNDS
+#   Type:        List
+#   Default:     [0.7, 1.6]
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Common bounds of FC_SNOW_MULT
+FORCING_CORRECTION_SNOW_BOUNDS: [0.7, 1.6]
+
+# FORCING_CORRECTION_TEMP_BOUNDS
+#   Type:        List
+#   Default:     [-3.0, 3.0]
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Common bounds of FC_TEMP_OFFSET (K)
+FORCING_CORRECTION_TEMP_BOUNDS: [-3.0, 3.0]
+
+# FORCING_CORRECTION_PRIOR_WEIGHT
+#   Type:        float
+#   Default:     0.0
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Weight of the prior penalty subtracted from the objective (0 = no prior)
+FORCING_CORRECTION_PRIOR_WEIGHT: 0.0
+
+# FORCING_CORRECTION_PRIOR_PRECIP_MEDIAN
+#   Type:        float
+#   Default:     1.0
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Median of the log-normal prior on FC_PRECIP_MULT
+FORCING_CORRECTION_PRIOR_PRECIP_MEDIAN: 1.0
+
+# FORCING_CORRECTION_PRIOR_PRECIP_SIGMA
+#   Type:        float
+#   Default:     0.2
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Standard deviation of ln(FC_PRECIP_MULT) in the prior
+FORCING_CORRECTION_PRIOR_PRECIP_SIGMA: 0.2
+
+# FORCING_CORRECTION_PRIOR_SNOW_SIGMA
+#   Type:        float
+#   Default:     0.2
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Standard deviation of ln(FC_SNOW_MULT) in the prior (median 1)
+FORCING_CORRECTION_PRIOR_SNOW_SIGMA: 0.2
+
+# FORCING_CORRECTION_PRIOR_TEMP_SIGMA
+#   Type:        float
+#   Default:     1.0
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Standard deviation (K) of the normal prior on FC_TEMP_OFFSET (mean 0)
+FORCING_CORRECTION_PRIOR_TEMP_SIGMA: 1.0
+
+# FORCING_CORRECTION_ET_MM_PER_YEAR
+#   Type:        Optional
+#   Default:     None
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Actual ET for the water-balance estimate (unset = Budyko curve from PET)
+FORCING_CORRECTION_ET_MM_PER_YEAR: null
+
+# FORCING_CORRECTION_PET_METHOD
+#   Type:        str
+#   Default:     oudin
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: PET formula for the water-balance estimate: oudin | hamon
+FORCING_CORRECTION_PET_METHOD: oudin
 
 # ERROR_LOG_DIR
 #   Type:        str
@@ -2370,7 +2622,7 @@ OBJECTIVE_WEIGHTS: null
 #   Type:        dict
 #   Default:     None
 #   Source:      OptimizationConfig (optimization.py)
-#   Description: Primary metric per variable for multivariate objective (e.g., {'STREAMFLOW': 'kge'})
+#   Description: Primary metric per variable for multivariate objective (e.g., {'STREAMFLOW': 'kge', 'GLACIER_MB': 'GMB_SCORE'}); unset variables use bias-sensitive defaults (KGE; NSE for TWS; GMB_SCORE for GLACIER_MB)
 OBJECTIVE_METRICS: null
 
 # WORKER_MAX_RETRIES
@@ -3115,11 +3367,20 @@ HRU_GAUGE_MAPPING: null
 EVALUATION_VARIABLE: ""
 
 # EVALUATION_SPINUP_YEARS
+# DEPRECATED: use SPINUP_PERIOD. Years from the simulation start, mapped onto
+# the same spin-up window that evaluators exclude from every score.
 #   Type:        int
 #   Default:     0
 #   Source:      EvaluationConfig (evaluation.py)
-#   Description: Number of spinup years to exclude from evaluation
+#   Description: Deprecated spin-up years (use SPINUP_PERIOD)
 EVALUATION_SPINUP_YEARS: 0
+
+# SUMMARY_REPORT
+#   Type:        bool
+#   Default:     True
+#   Source:      EvaluationConfig (evaluation.py)
+#   Description: Write the one-page results/<EXPERIMENT_ID>/summary.png (hydrograph, FDC, metrics) after postprocessing; metrics.json is written regardless
+SUMMARY_REPORT: true
 
 # ========================================
 # TWS (Total Water Storage) Evaluation
@@ -3226,6 +3487,62 @@ ET_GLEAM_MAX_RELATIVE_UNCERTAINTY: 0.5
 #   Source:      ETEvalConfig (evaluation.py)
 #   Description: Path to ET observation data
 ET_OBS_PATH: null
+
+# OUTPUT_ADAPTER_MODEL
+#   Type:        Optional
+#   Default:     None
+#   Source:      MultiVariableEvalConfig (evaluation.py)
+#   Description: Model whose output adapter the GLACIER_MB / BASIN_* evaluators use; default: the single HYDROLOGICAL_MODEL
+OUTPUT_ADAPTER_MODEL: null
+
+# GLACIER_MB_OBS_PATH
+#   Type:        Optional
+#   Default:     None
+#   Source:      MultiVariableEvalConfig (evaluation.py)
+#   Description: CSV/NetCDF of glacier mass-balance periods (start/end dates, rate, optional uncertainty and area); e.g. Hugonnet et al. (2021) dmdtda/err_dmdtda
+GLACIER_MB_OBS_PATH: null
+
+# GLACIER_MB_OBS_UNITS
+#   Type:        Literal
+#   Default:     m_we_per_yr
+#   Source:      MultiVariableEvalConfig (evaluation.py)
+#   Description: Units of the observed mass-balance rate and its uncertainty
+GLACIER_MB_OBS_UNITS: "m_we_per_yr"
+
+# GLACIER_MB_SCALE
+#   Type:        float
+#   Default:     1000.0
+#   Source:      MultiVariableEvalConfig (evaluation.py)
+#   Description: Error scale (mm w.e./yr) for GMB_SCORE when a period has no uncertainty
+GLACIER_MB_SCALE: 1000.0
+
+# GLACIER_MB_ENDPOINT_TOLERANCE_DAYS
+#   Type:        float
+#   Default:     1.0
+#   Source:      MultiVariableEvalConfig (evaluation.py)
+#   Description: Largest gap (days) between a period boundary and the simulated state used for it
+GLACIER_MB_ENDPOINT_TOLERANCE_DAYS: 1.0
+
+# BASIN_SWE_OBS_PATH
+#   Type:        Optional
+#   Default:     None
+#   Source:      MultiVariableEvalConfig (evaluation.py)
+#   Description: Observed basin (or point) SWE series, mm
+BASIN_SWE_OBS_PATH: null
+
+# BASIN_SCA_OBS_PATH
+#   Type:        Optional
+#   Default:     None
+#   Source:      MultiVariableEvalConfig (evaluation.py)
+#   Description: Observed snow-covered fraction series (0-1, or percent)
+BASIN_SCA_OBS_PATH: null
+
+# BASIN_ET_OBS_PATH
+#   Type:        Optional
+#   Default:     None
+#   Source:      MultiVariableEvalConfig (evaluation.py)
+#   Description: Observed basin ET series, mm/d
+BASIN_ET_OBS_PATH: null
 
 
 # 17. Paths & Data Locations
@@ -3777,6 +4094,16 @@ BOUNDING_BOX_COORDS: null
 #   Usage:      7
 EVALUATION_PERIOD: "2008-01-01, 2009-12-31"
 
+# TEST_PERIOD
+# Optional third, independent hold-out period. Scored and reported in the
+# final evaluation (Test_* metrics, benchmark skill), never used for
+# optimisation or model selection. Must lie inside the experiment window and
+# must not overlap CALIBRATION_PERIOD or EVALUATION_PERIOD (overlap warns).
+#   Type:        str
+#   Default:     None
+#   Source:      DomainConfig (domain.py)
+TEST_PERIOD: null
+
 # EXPERIMENT_ID
 #   Type:        str
 #   Default:     None
@@ -3803,6 +4130,8 @@ EXPERIMENT_TIME_END: "2009-12-31 23:00"
 EXPERIMENT_TIME_START: "2002-01-01 01:00"
 
 # SPINUP_PERIOD
+# Model warm-up at the start of the run. Output before its end is excluded
+# from every score; it should end before CALIBRATION_PERIOD starts.
 #   Type:        str
 #   Default:     None
 #   Source:      DomainConfig (domain.py)
@@ -8481,19 +8810,33 @@ ENKF_PRECIP_PERTURBATION_STD: 0.3
 #   Description: Additive std for temperature perturbation (K)
 ENKF_TEMP_PERTURBATION_STD: 1.0
 
+# ENKF_FORCING_CORRELATION_HOURS
+#   Type:        float
+#   Default:     24.0
+#   Source:      EnKFConfig (state_config.py)
+#   Description: e-folding time (hours) of the AR(1) forcing perturbations; 0 = white noise (independent at every timestep)
+ENKF_FORCING_CORRELATION_HOURS: 24.0
+
 # ENKF_OBS_ERROR_STD
 #   Type:        float
 #   Default:     0.1
 #   Source:      EnKFConfig (state_config.py)
-#   Description: Relative observation error standard deviation
+#   Description: Relative observation error b in sigma = a + b*Q_obs (10 %); the std itself in model units for 'absolute'
 ENKF_OBS_ERROR_STD: 0.1
+
+# ENKF_OBS_ERROR_ABS
+#   Type:        float
+#   Default:     None
+#   Source:      EnKFConfig (state_config.py)
+#   Description: Absolute observation error floor a (m3/s) in sigma = a + b*Q_obs ('heteroscedastic'); None = 1% of the mean observed discharge
+ENKF_OBS_ERROR_ABS: null
 
 # ENKF_OBS_ERROR_TYPE
 #   Type:        str
-#   Default:     relative
+#   Default:     heteroscedastic
 #   Source:      EnKFConfig (state_config.py)
-#   Description: Observation error type ('relative' or 'absolute')
-ENKF_OBS_ERROR_TYPE: relative
+#   Description: Streamflow observation error model: 'heteroscedastic' sigma = a + b*Q_obs, 'relative' sigma = max(b*Q_obs, floor), 'absolute' sigma = ENKF_OBS_ERROR_STD
+ENKF_OBS_ERROR_TYPE: heteroscedastic
 
 # ENKF_FILTER_VARIANT
 #   Type:        str
@@ -8550,6 +8893,48 @@ ENKF_ENFORCE_NONNEG: true
 #   Source:      EnKFConfig (state_config.py)
 #   Description: Enable joint state-parameter estimation
 ENKF_ESTIMATE_PARAMS: false
+
+# ENKF_PRECIP_BIAS_STATE
+#   Type:        bool
+#   Default:     False
+#   Source:      EnKFConfig (state_config.py)
+#   Description: Augment the state with a multiplicative precipitation bias (estimated in log space) that the filter updates
+ENKF_PRECIP_BIAS_STATE: false
+
+# ENKF_PRECIP_BIAS_STD
+#   Type:        float
+#   Default:     0.2
+#   Source:      EnKFConfig (state_config.py)
+#   Description: Initial log-space std of the precipitation bias state
+ENKF_PRECIP_BIAS_STD: 0.2
+
+# ENKF_PRECIP_BIAS_WALK_STD
+#   Type:        float
+#   Default:     0.01
+#   Source:      EnKFConfig (state_config.py)
+#   Description: Per-timestep random-walk std of the log precipitation bias (keeps the bias ensemble from collapsing)
+ENKF_PRECIP_BIAS_WALK_STD: 0.01
+
+# ENKF_OPEN_LOOP
+#   Type:        bool
+#   Default:     True
+#   Source:      EnKFConfig (state_config.py)
+#   Description: Also run the same perturbed ensemble without updates (open-loop baseline) and report skill relative to it
+ENKF_OPEN_LOOP: true
+
+# ENKF_FORECAST_LEAD_DAYS
+#   Type:        float
+#   Default:     0.0
+#   Source:      EnKFConfig (state_config.py)
+#   Description: Issue ensemble forecasts of this many days from the analysis and score them by lead time (0 = off)
+ENKF_FORECAST_LEAD_DAYS: 0.0
+
+# ENKF_FORECAST_ISSUE_INTERVAL
+#   Type:        int
+#   Default:     1
+#   Source:      EnKFConfig (state_config.py)
+#   Description: Issue a forecast every N timesteps after warm-up
+ENKF_FORECAST_ISSUE_INTERVAL: 1
 
 # ================================================================================
 # FEWS GENERAL ADAPTER (optional Delft-FEWS integration)

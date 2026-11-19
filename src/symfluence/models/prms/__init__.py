@@ -132,6 +132,7 @@ def register() -> None:
     R.runners.add_lazy("PRMS", f"{base}.runner.PRMSRunner")
     R.postprocessors.add_lazy("PRMS", f"{base}.postprocessor.PRMSPostProcessor")
     R.result_extractors.add_lazy("PRMS", f"{base}.extractor.PRMSResultExtractor")
+    R.output_adapters.add_lazy("PRMS", f"{base}.output_adapter.PRMSOutputAdapter")
     R.optimizers.add_lazy("PRMS", f"{base}.calibration.optimizer.PRMSModelOptimizer")
     R.workers.add_lazy("PRMS", f"{base}.calibration.worker.PRMSWorker")
     R.parameter_managers.add_lazy("PRMS", f"{base}.calibration.parameter_manager.PRMSParameterManager")

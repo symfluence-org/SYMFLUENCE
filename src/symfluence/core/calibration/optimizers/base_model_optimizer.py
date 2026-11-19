@@ -24,6 +24,7 @@ Optional Overrides:
 from __future__ import annotations
 
 import atexit
+import json
 import logging
 import random
 import tempfile
@@ -37,7 +38,9 @@ import pandas as pd
 from symfluence.core import ConfigurableMixin
 from symfluence.core.constants import ModelDefaults
 from symfluence.core.exceptions import OptimizationError, require_not_none
+from symfluence.core.provenance import config_sha256, get_active_provenance, record_calibration, resolve_seed
 
+from ..budget import CalibrationBudget, resolve_budget
 from ..mixins import GradientOptimizationMixin, ParallelExecutionMixin, ResultsTrackingMixin, RetryExecutionMixin
 from ..mixins.parallel.local_scratch_manager import LocalScratchManager
 from ..workers.base_worker import BaseWorker
@@ -47,6 +50,14 @@ from .evaluators import PopulationEvaluator, TaskBuilder
 from .final_evaluation import FinalEvaluationOrchestrator, FinalResultsSaver
 from .lifecycle import adjust_end_time_for_forcing, fallback_simulation_dir
 from .metrics_tracker import EvaluationMetricsTracker
+from .resume import (
+    CalibrationCheckpointer,
+    CalibrationResumeError,
+    load_resume_state,
+    make_fingerprint,
+    resume_state_path,
+    to_jsonable,
+)
 from .run_lock import RunDirectoryLock
 
 if TYPE_CHECKING:
@@ -100,6 +111,11 @@ class BaseModelOptimizer(
         self.logger = logger
         self.reporting_manager = reporting_manager
 
+        # DREAM samples a formal posterior by default: the objective every
+        # worker computes becomes the Box-Cox AR(1) log-likelihood.
+        self._config_before_likelihood = self._config
+        self._config = self._apply_dream_likelihood(self._config)
+
         if isinstance(self._config, dict):
             self.logger.warning(
                 "Configuration could not be fully validated — running with "
@@ -150,8 +166,10 @@ class BaseModelOptimizer(
 
         # Create model-specific components
         self.param_manager = self._create_parameter_manager()
+        self._setup_forcing_correction()
         self.calibration_target = self._create_calibration_target()
         self.worker = self._create_worker()
+        self._check_formal_likelihood_support()
 
         # Algorithm parameters (using typed config with dict_key fallback)
         self.max_iterations = self._get_config_value(
@@ -167,12 +185,16 @@ class BaseModelOptimizer(
             dict_key='OPTIMIZATION_METRIC',
         )
 
-        # Random seed
-        self.random_seed = self._get_config_value(
+        # Random seed. An unset RANDOM_SEED is replaced by a drawn, logged
+        # seed so every stochastic run is regenerable (setting RANDOM_SEED to
+        # the recorded value reproduces it); a configured seed is unchanged.
+        configured_seed = self._get_config_value(
             lambda: self.config.system.random_seed, dict_key='RANDOM_SEED'
         )
-        if self.random_seed is not None and self.random_seed != 'None':
-            self._set_random_seeds(int(self.random_seed))
+        self.random_seed, self.random_seed_source = resolve_seed(
+            configured_seed, self.logger, context="calibration")
+        self._set_random_seeds(self.random_seed)
+        self._n_population_evaluations = 0
 
         # Parallel processing state
         self.parallel_dirs: Dict[int, Dict[str, Any]] = {}
@@ -186,6 +208,9 @@ class BaseModelOptimizer(
         )
         if num_processes >= 1:
             self._setup_parallel_dirs()
+
+        # Active checkpoint/resume driver during run_optimization (resume.py)
+        self._resume_checkpointer: Optional[CalibrationCheckpointer] = None
 
         # Runtime config overrides (for algorithm-specific settings like Adam/LBFGS)
         self._runtime_overrides: Dict[str, Any] = {}
@@ -496,6 +521,50 @@ class BaseModelOptimizer(
             return {k: v for k, v in best_params.items() if k in expected_params}
         return None
 
+    def _setup_forcing_correction(self) -> None:
+        """Hand the shared FORCING_CORRECTION plan to the parameter manager.
+
+        No-op unless FORCING_CORRECTION_MODE is set. Writes the resolved plan
+        to ``forcing_correction.json`` in the results directory; the values at
+        the best parameter set are added when the optimization finishes.
+        """
+        from symfluence.core.calibration import forcing_correction as fc
+
+        plan = fc.build_plan(
+            self.config, self._get_model_name(), project_dir=self.project_dir,
+            domain_name=self.domain_name, log=self.logger)
+        if plan is None:
+            return
+        enable = getattr(self.param_manager, 'enable_forcing_correction', None)
+        if enable is None:
+            if not (plan.fixed or plan.calibrated or plan.superseded_native_names()):
+                return  # nothing to apply for this model
+            raise OptimizationError(
+                f"FORCING_CORRECTION is set but the {self._get_model_name()} parameter "
+                "manager does not support it")
+        conflicts = fc.conflicting_settings(self.config, self.param_manager.all_param_names, plan)
+        dropped = enable(plan)
+        if conflicts:
+            self.logger.warning(
+                f"FORCING_CORRECTION_MODE={plan.mode} supersedes per-model forcing corrections "
+                f"for {self._get_model_name()}: {', '.join(conflicts)}"
+                + (f"; dropped from calibration: {', '.join(dropped)}" if dropped else ''))
+        self.logger.info(
+            f"Forcing correction ({plan.mode}) for {self._get_model_name()}: "
+            f"fixed={plan.fixed} calibrated={plan.calibrated_param_names}")
+        fc.write_report(self.results_dir / fc.REPORT_NAME, plan)
+
+    def _write_forcing_correction_report(self, best_params: Optional[Dict[str, Any]]) -> None:
+        """Record the forcing-correction values applied at ``best_params``."""
+        plan = getattr(self.param_manager, 'forcing_correction', None)
+        if plan is None:
+            return
+        from symfluence.core.calibration import forcing_correction as fc
+        try:
+            fc.write_report(self.results_dir / fc.REPORT_NAME, plan, best_params or {})
+        except (OSError, TypeError, ValueError) as e:
+            self.logger.warning(f"Could not write the forcing-correction report: {e}")
+
     def _create_parameter_manager(self):
         """
         Create the model-specific parameter manager.
@@ -545,6 +614,86 @@ class BaseModelOptimizer(
     # =========================================================================
     # Utility methods
     # =========================================================================
+
+    #: Objective a formal-likelihood DREAM run calibrates against.
+    FORMAL_LIKELIHOOD_METRIC = 'LOGLIK_BC_AR1'
+    _STREAMFLOW_TARGETS = frozenset({'streamflow', 'flow', 'discharge', 'q'})
+
+    def _apply_dream_likelihood(self, config: Any) -> Any:
+        """Return ``config`` with OPTIMIZATION_METRIC = LOGLIK_BC_AR1 for formal DREAM.
+
+        Applies when ITERATIVE_OPTIMIZATION_ALGORITHM is DREAM, DREAM_LIKELIHOOD
+        is ``formal`` (the default) and the target is streamflow. COMPOSITE_METRIC
+        is cleared, since a weighted sum of scores is not a likelihood.
+        """
+        algorithm = str(self._get_config_value(
+            lambda: config.optimization.algorithm,
+            dict_key='ITERATIVE_OPTIMIZATION_ALGORITHM') or '').upper()
+        if algorithm != 'DREAM':
+            return config
+        mode = str(self._get_config_value(
+            lambda: config.optimization.dream.likelihood,
+            dict_key='DREAM_LIKELIHOOD') or 'formal').lower()
+        metric = str(self._get_config_value(
+            lambda: config.optimization.metric, dict_key='OPTIMIZATION_METRIC') or 'KGE').upper()
+        if mode != 'formal':
+            self.logger.warning(
+                f"DREAM_LIKELIHOOD: informal -- DREAM will use exp({metric} / "
+                "DREAM_TEMPERATURE) as a pseudo-likelihood. The resulting samples are "
+                "not a Bayesian posterior; set DREAM_LIKELIHOOD: formal for one."
+            )
+            return config
+        target = str(self._get_config_value(
+            lambda: config.optimization.target, dict_key='OPTIMIZATION_TARGET') or 'streamflow').lower()
+        if target not in self._STREAMFLOW_TARGETS:
+            self.logger.warning(
+                f"DREAM_LIKELIHOOD: formal is defined for streamflow; OPTIMIZATION_TARGET "
+                f"'{target}' keeps the informal objective {metric} (not a Bayesian posterior)."
+            )
+            return config
+        formal = self.FORMAL_LIKELIHOOD_METRIC
+        if metric != formal:
+            self.logger.warning(
+                f"DREAM with DREAM_LIKELIHOOD: formal calibrates against the Box-Cox AR(1) "
+                f"log-likelihood ({formal}) instead of OPTIMIZATION_METRIC={metric}. "
+                "Set DREAM_LIKELIHOOD: informal to keep the old (non-Bayesian) behaviour."
+            )
+        if isinstance(config, dict):
+            return {**config, 'OPTIMIZATION_METRIC': formal, 'COMPOSITE_METRIC': None}
+        optimization = config.optimization.model_copy(
+            update={'metric': formal, 'composite_metric': None})
+        return config.model_copy(update={'optimization': optimization})
+
+    def _check_formal_likelihood_support(self) -> None:
+        """Pre-flight: fall back to informal DREAM when the worker cannot score the likelihood.
+
+        Without this a worker that cannot produce LOGLIK_BC_AR1 would score
+        every DREAM proposal as failed.
+        """
+        original = self._config_before_likelihood
+        if self._config is original:
+            return
+        supports = getattr(self.worker, 'supports_formal_likelihood', None)
+        if supports is None or supports(self._config):
+            return
+        self.logger.warning(
+            f"{type(self.worker).__name__} cannot compute the formal likelihood "
+            f"{self.FORMAL_LIKELIHOOD_METRIC} for this configuration (e.g. multi-gauge "
+            "or non-streamflow scoring). DREAM falls back to DREAM_LIKELIHOOD: informal "
+            "on the configured OPTIMIZATION_METRIC -- the samples are NOT a Bayesian "
+            "posterior."
+        )
+        self._config = self._with_informal_dream(original)
+        self.worker = self._create_worker()
+
+    @staticmethod
+    def _with_informal_dream(config: Any) -> Any:
+        """``config`` with DREAM_LIKELIHOOD = informal."""
+        if isinstance(config, dict):
+            return {**config, 'DREAM_LIKELIHOOD': 'informal'}
+        dream = config.optimization.dream.model_copy(update={'likelihood': 'informal'})
+        optimization = config.optimization.model_copy(update={'dream': dream})
+        return config.model_copy(update={'optimization': optimization})
 
     def _get_nsga2_objective_names(self) -> List[str]:
         """Resolve NSGA-II objective metric names in priority order."""
@@ -734,6 +883,79 @@ class BaseModelOptimizer(
             )
         except (KeyError, IndexError, TypeError, ValueError) as e:
             self.logger.debug(f"Calibration alignment check failed: {e}")
+
+    def _apply_calibration_budget(self, algorithm: Any, n_params: int) -> CalibrationBudget:
+        """Resolve CALIBRATION_BUDGET_MODE and set the algorithm's iteration count.
+
+        ``fixed`` (default) leaves NUMBER_OF_ITERATIONS untouched;
+        ``per_parameter`` scales the evaluation budget with ``n_params`` (see
+        :mod:`symfluence.core.calibration.budget`).
+        """
+        budget = resolve_budget(
+            mode=self._get_config_value(lambda: self.config.optimization.budget_mode, default='fixed',
+                                        dict_key='CALIBRATION_BUDGET_MODE'),
+            n_params=n_params,
+            iterations=algorithm.max_iterations,
+            algorithm_name=algorithm.name,
+            population_size=algorithm.population_size,
+            evaluations_per_parameter=self._get_config_value(
+                lambda: self.config.optimization.evaluations_per_parameter, default=100,
+                dict_key='EVALUATIONS_PER_PARAMETER'),
+            min_evaluations=self._get_config_value(
+                lambda: self.config.optimization.budget_min_evaluations, default=100,
+                dict_key='CALIBRATION_BUDGET_MIN_EVALUATIONS'),
+            max_evaluations=self._get_config_value(
+                lambda: self.config.optimization.budget_max_evaluations,
+                dict_key='CALIBRATION_BUDGET_MAX_EVALUATIONS'),
+        )
+        if budget.mode == 'per_parameter':
+            algorithm.max_iterations = budget.iterations
+            self.max_iterations = budget.iterations
+            self._metrics_tracker.max_iterations = budget.iterations
+            self.logger.info(
+                f"Per-parameter budget: {budget.evaluations_per_parameter} evaluations x "
+                f"{n_params} parameters -> {budget.target_evaluations} evaluations "
+                f"= {budget.iterations} {algorithm.name} iterations "
+                f"(~{budget.evaluations_per_iteration} evaluations each)"
+            )
+        return budget
+
+    def _record_calibration_conditions(self, file_slug: str, algorithm: Any,
+                                       budget: CalibrationBudget) -> Optional[Path]:
+        """Write ``<experiment>_<algo>_calibration_conditions.json`` and add it to provenance.
+
+        Carries what a fair multi-model comparison must report per member:
+        algorithm, seed (and whether it was drawn), budget, evaluations
+        actually used, number and names of calibrated parameters, and the
+        resolved config hash. ``symfluence ensemble`` reads it.
+        """
+        crash = self.get_crash_stats()
+        used = int(crash.get('total_evaluations', 0)) + int(getattr(self, '_n_population_evaluations', 0))
+        info: Dict[str, Any] = {
+            'model': self._get_model_name(),
+            'experiment_id': self.experiment_id,
+            'algorithm': algorithm.name,
+            'random_seed': self.random_seed,
+            'random_seed_source': self.random_seed_source,
+            'n_params': budget.n_params,
+            'param_names': list(self.param_manager.all_param_names),
+            'budget': budget.to_dict(),
+            'evaluations_used': used if used > 0 else len(self._iteration_history),
+            'metric': self.target_metric,
+        }
+        try:
+            info['resolved_config_sha256'] = config_sha256(self.config)
+        except (TypeError, ValueError, AttributeError) as e:
+            self.logger.debug(f"Could not hash resolved config: {e}")
+        record_calibration(get_active_provenance(), info)
+        path = Path(self.results_dir) / f"{self.experiment_id}_{file_slug}_calibration_conditions.json"
+        try:
+            with open(path, 'w', encoding='utf-8') as fh:
+                json.dump(info, fh, indent=2, default=str)
+        except OSError as e:
+            self.logger.warning(f"Could not write calibration conditions: {e}")
+            return None
+        return path
 
     def _set_random_seeds(self, seed: int) -> None:
         """Set random seeds for reproducibility."""
@@ -1034,9 +1256,48 @@ class BaseModelOptimizer(
             Array shape (n_individuals,) with fitness scores
         """
         base_seed = self.random_seed if hasattr(self, 'random_seed') else None
+        self._n_population_evaluations = getattr(self, '_n_population_evaluations', 0) + len(population)
         return self.population_evaluator.evaluate_population(
             population, iteration, base_random_seed=base_seed
         )
+
+    def evaluate_design(self, design: np.ndarray, batch_size: Optional[int] = None) -> np.ndarray:
+        """Evaluate a sampling design (e.g. a sensitivity design) with real model runs.
+
+        Each row of ``design`` is a normalized [0, 1] parameter set; rows are
+        evaluated in batches through the same worker / parallel machinery as a
+        calibration population, so every point is a model run scored on the
+        calibration period with the configured objective.
+
+        Args:
+            design: Array ``(n_runs, n_params)`` in [0, 1].
+            batch_size: Rows per parallel batch (default: the larger of
+                POPULATION_SIZE and NUM_PROCESSES).
+
+        Returns:
+            Scores ``(n_runs,)`` in maximisation convention; NaN for failed runs.
+        """
+        from symfluence.core.metrics.penalty import is_penalty
+
+        design = np.atleast_2d(np.asarray(design, dtype=float))
+        if design.shape[1] != len(self.param_manager.all_param_names):
+            raise ValueError(
+                f"Design has {design.shape[1]} columns but the model has "
+                f"{len(self.param_manager.all_param_names)} calibration parameters"
+            )
+        n_proc = int(self._get_config_value(
+            lambda: self.config.system.num_processes, dict_key='NUM_PROCESSES') or 1)
+        size = int(batch_size or max(int(self.population_size), n_proc, 1))
+        scores = np.empty(design.shape[0])
+        n_batches = (design.shape[0] + size - 1) // size
+        for b in range(n_batches):
+            rows = slice(b * size, min((b + 1) * size, design.shape[0]))
+            scores[rows] = self._evaluate_population(design[rows], b)
+            self.logger.info(
+                f"Design batch {b + 1}/{n_batches}: {rows.stop}/{design.shape[0]} runs evaluated")
+        scores = scores.astype(float)
+        scores[is_penalty(scores, self.DEFAULT_PENALTY_SCORE)] = np.nan
+        return scores
 
     def _evaluate_population_objectives(
         self,
@@ -1098,6 +1359,9 @@ class BaseModelOptimizer(
 
             # Add denormalized parameters
             params_dict = self.param_manager.denormalize_parameters(solution)
+            plan = getattr(self.param_manager, 'forcing_correction', None)
+            if plan is not None:
+                params_dict = {**params_dict, **plan.common_values_from_native(params_dict)}
             for param_name in param_names:
                 val = params_dict.get(param_name)
                 if isinstance(val, (list, np.ndarray)):
@@ -1128,7 +1392,11 @@ class BaseModelOptimizer(
         )
 
         score = self.DEFAULT_PENALTY_SCORE
-        final_result = self.run_final_evaluation({})
+        # Fixed shared forcing corrections still apply with nothing calibrated
+        plan = getattr(self.param_manager, 'forcing_correction', None)
+        default_params: Dict[str, Any] = plan.to_native({}) if plan is not None else {}
+        final_result = self.run_final_evaluation(default_params)
+        self._write_forcing_correction_report(default_params)
         if final_result and isinstance(final_result, dict):
             metrics = final_result.get('final_metrics', {})
             score = metrics.get(self.target_metric, self.DEFAULT_PENALTY_SCORE)
@@ -1176,14 +1444,31 @@ class BaseModelOptimizer(
             return self.param_manager.denormalize_parameters(normalized)
 
         def save_checkpoint(iteration: int):
+            checkpointer = getattr(self, "_resume_checkpointer", None)
+            if checkpointer is not None and checkpointer.replaying:
+                # Resuming: the files already hold this state.
+                return
             try:
                 self.save_results(algorithm_name, standard_filename=True)
                 self.save_best_params(algorithm_name)
                 self.logger.debug(f"Checkpoint saved at iteration {iteration}")
             except Exception as e:  # noqa: BLE001 — must-not-raise contract
                 self.logger.warning(f"Checkpoint save failed at iteration {iteration}: {e}")
+            if checkpointer is not None:
+                # Outside the try: a resume replay that diverged must stop the
+                # run (CalibrationResumeError), not be logged and ignored.
+                try:
+                    checkpointer.on_checkpoint(iteration)
+                except OSError as e:
+                    self.logger.warning(
+                        f"Resume-state save failed at iteration {iteration}: {e}"
+                    )
 
         def record_iteration(iteration, score, params, additional_metrics=None):
+            checkpointer = getattr(self, "_resume_checkpointer", None)
+            if checkpointer is not None and checkpointer.skip_record():
+                # Resuming: this row was restored from the checkpoint.
+                return
             crash_stats = self.get_crash_stats()
             merged = dict(additional_metrics or {}, **{
                 'crash_count': crash_stats['crash_count'],
@@ -1226,6 +1511,146 @@ class BaseModelOptimizer(
         }
 
         return callbacks, kwargs
+
+    # =========================================================================
+    # Checkpoint / resume
+    # =========================================================================
+
+    def _load_resume_state(self, algorithm: Any, state_path: Path) -> Optional[Dict[str, Any]]:
+        """Load the resume state for ``--resume`` / CALIBRATION_RESUME.
+
+        Returns None (start a new run) when there is no checkpoint; raises
+        :class:`CalibrationResumeError` when the algorithm cannot be resumed.
+        """
+        if not getattr(algorithm, 'supports_resume', True):
+            raise CalibrationResumeError(
+                f"{algorithm.name} does not support calibration resume. Start a new run "
+                "without --resume (CALIBRATION_RESUME: false)."
+            )
+        if not state_path.is_file():
+            self.logger.warning(
+                f"CALIBRATION_RESUME is set but there is no resume state at {state_path}; "
+                "starting a new calibration."
+            )
+            return None
+        state = load_resume_state(state_path)
+        self.logger.info(
+            f"Resuming {algorithm.name} calibration from {state_path}: "
+            f"{state.get('n_evaluations')} evaluations, iteration {state.get('iteration')}, "
+            f"written {state.get('written')}"
+            + (" (run had completed)" if state.get('complete') else "")
+        )
+        return state
+
+    def _resume_fingerprint(self, algorithm: Any, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        """What a checkpoint is only valid for: parameter space and objective."""
+        calibration_period = self._get_config_value(
+            lambda: self.config.domain.calibration_period,
+            default=None,
+            dict_key='CALIBRATION_PERIOD',
+        )
+        return make_fingerprint({
+            'algorithm': algorithm.name,
+            'model': self._get_model_name(),
+            'parameters': list(self.param_manager.all_param_names),
+            'bounds': self.param_manager.get_parameter_bounds(),
+            'metric': self.target_metric,
+            'objective_names': kwargs.get('objective_names'),
+            'calibration_period': calibration_period,
+            # Only a configured seed is part of the fingerprint; a drawn one is
+            # restored from the resume state (see _restore_drawn_seed).
+            'random_seed': (int(self.random_seed)
+                            if getattr(self, 'random_seed_source', 'config') == 'config'
+                            and self.random_seed is not None else None),
+            'population_size': self.population_size,
+            'budget': self._fingerprint_budget(),
+            'likelihood': self._fingerprint_likelihood(algorithm),
+            # Shared forcing correction (mode, fixed values, prior, bounds):
+            # a fixed multiplier or prior change alters the objective without
+            # changing the calibrated parameter list.
+            'forcing_correction': self._fingerprint_forcing_correction(),
+        })
+
+    def _fingerprint_likelihood(self, algorithm: Any) -> Optional[Dict[str, Any]]:
+        """DREAM likelihood settings for the resume fingerprint (None for other algorithms).
+
+        The formal Box-Cox AR(1) objective depends on these without any change to
+        OPTIMIZATION_METRIC, so a resumed DREAM run must use the same ones.
+        """
+        if str(getattr(algorithm, 'name', '')).upper() != 'DREAM':
+            return None
+        opt = lambda: self.config.optimization  # noqa: E731
+        return {
+            'dream_likelihood': self._get_config_value(
+                lambda: opt().dream.likelihood, default='formal', dict_key='DREAM_LIKELIHOOD'),
+            'dream_temperature': self._get_config_value(
+                lambda: opt().dream.temperature, default=1.0, dict_key='DREAM_TEMPERATURE'),
+            'box_cox_lambda': self._get_config_value(
+                lambda: opt().likelihood_box_cox_lambda, default=0.3,
+                dict_key='LIKELIHOOD_BOX_COX_LAMBDA'),
+            'ar1_phi': self._get_config_value(
+                lambda: opt().likelihood_ar1_phi, dict_key='LIKELIHOOD_AR1_PHI'),
+            'sigma': self._get_config_value(
+                lambda: opt().likelihood_sigma, dict_key='LIKELIHOOD_SIGMA'),
+            'epsilon': self._get_config_value(
+                lambda: opt().likelihood_epsilon, dict_key='LIKELIHOOD_EPSILON'),
+        }
+    def _fingerprint_forcing_correction(self) -> Optional[Dict[str, Any]]:
+        """Forcing-correction part of the resume fingerprint (None when off)."""
+        plan = getattr(self.param_manager, 'forcing_correction', None)
+        return plan.to_dict() if plan is not None else None
+
+    def _fingerprint_budget(self) -> Any:
+        """Budget part of the resume fingerprint ('fixed' or the per-parameter budget)."""
+        budget = getattr(self, '_calibration_budget', None)
+        if budget is None or budget.mode != 'per_parameter':
+            return 'fixed'
+        return budget.to_dict()
+
+    def _restore_drawn_seed(self, resumed_state: Optional[Dict[str, Any]]) -> None:
+        """On resume of an unseeded run, reuse the seed the original run drew.
+
+        The drawn seed is stored as the algorithm's run entropy
+        (``rng.entropy`` in the resume state), the same field a standalone
+        unseeded algorithm records, so the resumed run replays exactly.
+        """
+        if not resumed_state or getattr(self, 'random_seed_source', 'config') != 'drawn':
+            return
+        entropy = (resumed_state.get('rng') or {}).get('entropy')
+        if entropy is None:
+            return
+        self.random_seed = int(entropy)
+        self._set_random_seeds(self.random_seed)
+        self.logger.info(f"Calibration resume: reusing the original run's drawn seed {self.random_seed}")
+
+    def _resume_snapshot(self) -> Dict[str, Any]:
+        """Optimizer-side state stored with each resume checkpoint."""
+        return to_jsonable({
+            'best': {
+                'score': self.best_score,
+                'iteration': self.best_iteration,
+                'params': self.best_params,
+            },
+            'crash_counters': {
+                'total_evaluations': self._metrics_tracker._total_evaluations,
+                'crash_count': self._metrics_tracker._crash_count,
+                'last_crash_warning': self._metrics_tracker._last_crash_warning,
+            },
+            'history': self._iteration_history,
+        })
+
+    def _restore_from_resume_state(self, state: Dict[str, Any]) -> None:
+        """Restore the history and crash counters before the replay."""
+        self._iteration_history = list(state.get('history', []))
+        counters = state.get('crash_counters') or {}
+        tracker = self._metrics_tracker
+        tracker._total_evaluations = int(counters.get('total_evaluations', 0))
+        tracker._crash_count = int(counters.get('crash_count', 0))
+        tracker._last_crash_warning = int(counters.get('last_crash_warning', 0))
+        self.logger.info(
+            f"Replaying {len(state.get('evaluations', []))} logged evaluation requests "
+            "(no model runs) to restore the algorithm state"
+        )
 
     def run_optimization(self, algorithm_name: str) -> Path:
         """Run optimization using a specified algorithm from the registry.
@@ -1277,16 +1702,41 @@ class BaseModelOptimizer(
         # best params, Pareto front, final evaluation) -- see algorithm_slug.
         file_slug = algorithm_slug(algorithm_name)
 
-        # A restarted run must not overwrite the previous run's results at
-        # its first checkpoint: move them aside first.
-        self.rotate_previous_results()
+        resume_requested = bool(self._get_config_value(
+            lambda: self.config.optimization.calibration_resume,
+            default=False,
+            dict_key='CALIBRATION_RESUME',
+        ))
+        state_path = resume_state_path(self.results_dir, self.experiment_id, file_slug)
+        self._resume_checkpointer = None
 
         n_params = len(self.param_manager.all_param_names)
-        if n_params == 0:
-            return self._run_default_only(file_slug)
 
         # Get algorithm instance from registry
-        algorithm = get_algorithm(algorithm_name, self.config, self.logger)
+        algorithm = get_algorithm(algorithm_name, self.config, self.logger) if n_params else None
+
+        resumed_state = None
+        if resume_requested and algorithm is not None:
+            resumed_state = self._load_resume_state(algorithm, state_path)
+            self._restore_drawn_seed(resumed_state)
+
+        if resumed_state is None:
+            # A restarted run must not overwrite the previous run's results at
+            # its first checkpoint: move them aside first.
+            self.rotate_previous_results()
+
+        if algorithm is None:
+            return self._run_default_only(file_slug)
+
+        # The algorithm draws from this run's (configured, or drawn and
+        # recorded) seed. A drawn seed is also kept as the algorithm's run
+        # entropy, which the resume state stores (rng.entropy) so a resumed
+        # unseeded run replays with the same seed.
+        algorithm.random_seed = self.random_seed
+        if getattr(self, 'random_seed_source', 'config') == 'drawn':
+            algorithm._run_entropy = int(self.random_seed)
+        budget = self._apply_calibration_budget(algorithm, n_params)
+        self._calibration_budget = budget
 
         # Build callbacks and kwargs for the algorithm
         callbacks, kwargs = self._build_algorithm_callbacks(file_slug)
@@ -1388,16 +1838,44 @@ class BaseModelOptimizer(
             if value is not None:
                 kwargs[kwarg_name] = value
 
-        # Run the algorithm
-        result = algorithm.optimize(
-            n_params=n_params,
-            **callbacks,
-            **kwargs
+        if (budget.mode == 'per_parameter' and 'steps' not in kwargs
+                and algorithm_name.lower() in ('adam', 'lbfgs')):
+            kwargs['steps'] = budget.iterations
+
+        # Checkpoint/resume: log every evaluation so the run can be replayed
+        # (see optimizers/resume.py), and on resume restore the history.
+        checkpointer = CalibrationCheckpointer(
+            state_path,
+            self._resume_fingerprint(algorithm, kwargs),
+            algorithm,
+            self.logger,
+            snapshot_extra=self._resume_snapshot,
+            resumed_state=resumed_state,
         )
+        checkpointer.wrap(callbacks, kwargs)
+        if resumed_state is not None:
+            self._restore_from_resume_state(resumed_state)
+        self._resume_checkpointer = checkpointer
+
+        # Run the algorithm
+        try:
+            result = algorithm.optimize(
+                n_params=n_params,
+                **callbacks,
+                **kwargs
+            )
+        finally:
+            self._resume_checkpointer = None
+        try:
+            checkpointer.on_complete(self.best_iteration)
+        except OSError as e:
+            self.logger.warning(f"Final resume-state save failed: {e}")
+        self._record_calibration_conditions(file_slug, algorithm, budget)
 
         # Save results
         results_path = self.save_results(file_slug, standard_filename=True)
         self.save_best_params(file_slug)
+        self._write_forcing_correction_report(result.get('best_params'))
         self._visualize_progress(file_slug)
 
         # Save Pareto front for multi-objective algorithms
@@ -1405,6 +1883,13 @@ class BaseModelOptimizer(
             self._save_pareto_front(result, file_slug)
 
         self.logger.info(f"{algorithm.name} completed in {self.format_elapsed_time()}")
+
+        # Posterior (DREAM) / behavioural (GLUE) samples: persist them and build
+        # scored predictive intervals. Runs before the final evaluation so the
+        # model is left with the best parameters applied.
+        if result.get('posterior_samples') is not None or result.get('behavioral_samples') is not None:
+            from .uncertainty import UncertaintyPostprocessor
+            UncertaintyPostprocessor(self).run(result, file_slug)
 
         # Run final evaluation on full period
         if result.get('best_params'):
@@ -1608,13 +2093,21 @@ class BaseModelOptimizer(
                 self.logger.error("Failed to calculate final evaluation metrics")
                 return None
 
+            # Independent test period: reported only, never used for selection
+            test_metrics = self._extract_period_metrics(metrics, 'Test')
+            period_warning = metrics.get('period_warning')
+
             # Log detailed results
-            self._log_final_evaluation_results(calib_metrics, eval_metrics)
+            self._log_final_evaluation_results(
+                calib_metrics, eval_metrics, test_metrics, period_warning
+            )
 
             final_result = {
                 'final_metrics': metrics,
                 'calibration_metrics': calib_metrics,
                 'evaluation_metrics': eval_metrics,
+                'test_metrics': test_metrics,
+                'period_warning': period_warning,
                 'success': True,
                 'best_params': best_params
             }
@@ -1749,9 +2242,15 @@ class BaseModelOptimizer(
         """Extract metrics for a specific period. Delegates to FinalEvaluationOrchestrator."""
         return self.final_orchestrator.extract_period_metrics(all_metrics, period_prefix)
 
-    def _log_final_evaluation_results(self, calib_metrics: Dict, eval_metrics: Dict) -> None:
+    def _log_final_evaluation_results(
+        self,
+        calib_metrics: Dict,
+        eval_metrics: Dict,
+        test_metrics: Optional[Dict] = None,
+        period_warning: Optional[str] = None,
+    ) -> None:
         """Log final evaluation results. Delegates to FinalEvaluationOrchestrator."""
-        self.final_orchestrator.log_results(calib_metrics, eval_metrics)
+        self.final_orchestrator.log_results(calib_metrics, eval_metrics, test_metrics, period_warning)
 
     def _update_file_manager_for_final_run(self) -> None:
         """Update file manager for full experiment period. Delegates to FinalEvaluationOrchestrator."""

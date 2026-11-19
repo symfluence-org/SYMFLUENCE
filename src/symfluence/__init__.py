@@ -13,12 +13,15 @@ and automated workflow management.
 Main entry points:
     SYMFLUENCE: Main workflow orchestrator class
     SymfluenceConfig: Configuration management for workflows
+    RunResult: What ``SYMFLUENCE.run()`` returns (step outcomes, outputs, metrics)
 
 Example:
     >>> from symfluence import SYMFLUENCE, SymfluenceConfig
     >>> config = SymfluenceConfig.from_file('config.yaml')
     >>> workflow = SYMFLUENCE(config)
-    >>> workflow.run()
+    >>> result = workflow.run()            # alias of workflow.run_workflow()
+    >>> result.status                      # 'completed', 'partial' or 'failed'
+    >>> result.metrics["models"]           # parsed results/<experiment>/metrics.json
 
 For CLI usage:
     $ symfluence workflow run --config config.yaml
@@ -153,11 +156,16 @@ def __getattr__(name: str):
         from .project.system import SYMFLUENCE
         globals()["SYMFLUENCE"] = SYMFLUENCE
         return SYMFLUENCE
+    if name == "RunResult":
+        from .project.run_result import RunResult
+        globals()["RunResult"] = RunResult
+        return RunResult
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 __all__ = [
     "SYMFLUENCE",
+    "RunResult",
     "SymfluenceConfig",
     "SYMFLUENCEError",
     "ConfigurationError",

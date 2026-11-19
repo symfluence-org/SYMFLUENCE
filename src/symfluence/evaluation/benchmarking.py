@@ -5,15 +5,18 @@
 Hydrological model benchmarking using HydroBM library.
 
 Provides benchmark calculation against simple models (mean flow, rainfall-runoff
-ratios, etc.) with configurable calibration/validation period splitting.
+ratios, etc.). Benchmarks are fitted on CALIBRATION_PERIOD and scored on the
+configured calibration, EVALUATION_PERIOD and TEST_PERIOD windows -- the same
+windows the model is scored on.
 """
 from __future__ import annotations
 
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 import xarray as xr
 from hydrobm.calculate import calc_bm
@@ -43,8 +46,82 @@ class Benchmarker(ConfigMixin):
         data.index = pd.to_datetime(data.index)
         return data
 
+    def _configured_masks(self, index: pd.DatetimeIndex) -> Tuple[Dict[str, np.ndarray], Optional[str]]:
+        """Boolean masks for the configured calibration/evaluation/test periods.
+
+        Benchmarks are scored on exactly the periods the model is scored on.
+        Spin-up (SPINUP_PERIOD / deprecated EVALUATION_SPINUP_YEARS) is
+        excluded from every mask. Without CALIBRATION_PERIOD the old
+        median-year split is used, with a warning (returned as the second
+        element) because it ignores the configured design.
+        """
+        from symfluence.core.modeling.utilities.periods import (
+            parse_period,
+            period_end_exclusive,
+            spinup_window,
+        )
+
+        def _period(getter, key):
+            value = self._get_config_value(getter, default='', dict_key=key)
+            if not isinstance(value, str) or not value.strip():
+                return None
+            try:
+                return parse_period(value, allow_extra=True)
+            except (ValueError, TypeError):
+                return None
+
+        def _mask(period):
+            return np.asarray((index >= period[0]) & (index < period_end_exclusive(period[1])))
+
+        window = spinup_window(
+            self._get_config_value(lambda: self.config.domain.spinup_period, default='', dict_key='SPINUP_PERIOD'),
+            self._get_config_value(lambda: self.config.evaluation.spinup_years, default=0, dict_key='EVALUATION_SPINUP_YEARS'),
+            self._get_config_value(lambda: self.config.domain.time_start, default=None, dict_key='EXPERIMENT_TIME_START'),
+        )
+        not_spinup = np.asarray(index >= window[1]) if window is not None else np.ones(len(index), dtype=bool)
+
+        cal = _period(lambda: self.config.domain.calibration_period, 'CALIBRATION_PERIOD')
+        val = _period(lambda: self.config.domain.evaluation_period, 'EVALUATION_PERIOD')
+        test = _period(lambda: self.config.domain.test_period, 'TEST_PERIOD')
+
+        masks: Dict[str, np.ndarray] = {}
+        warning: Optional[str] = None
+        if cal is not None:
+            masks['cal'] = _mask(cal) & not_spinup
+            if val is not None:
+                masks['val'] = _mask(val) & not_spinup
+            if test is not None:
+                masks['test'] = _mask(test) & not_spinup
+        else:
+            years = sorted(index.year.unique())
+            mid_year = years[len(years) // 2]
+            warning = (
+                "CALIBRATION_PERIOD is not set: benchmarks are split at the median year "
+                f"({mid_year}) instead of the configured split-sample periods"
+            )
+            masks['cal'] = np.asarray(index.year < mid_year) & not_spinup
+            masks['val'] = np.asarray(index.year >= mid_year) & not_spinup
+        return masks, warning
+
+    @staticmethod
+    def _period_info(index: pd.DatetimeIndex, mask: np.ndarray) -> Dict[str, Any]:
+        sel = index[mask]
+        if len(sel) == 0:
+            return {"start": None, "end": None, "points": 0, "years": []}
+        return {
+            "start": str(sel[0]),
+            "end": str(sel[-1]),
+            "points": int(mask.sum()),
+            "years": [int(y) for y in sorted(sel.year.unique())],
+        }
+
     def run_benchmarking(self) -> Dict[str, Any]:
-        """Run hydrobm benchmarking using preprocessed data with year-based split."""
+        """Run hydrobm benchmarking on the configured split-sample periods.
+
+        Benchmarks are fitted on CALIBRATION_PERIOD and scored on the
+        calibration, EVALUATION_PERIOD and (optional) TEST_PERIOD windows, the
+        same windows used to score the model.
+        """
         self.logger.info("Starting hydrobm benchmarking")
 
         try:
@@ -52,42 +129,25 @@ class Benchmarker(ConfigMixin):
             input_data = self.load_preprocessed_data()
             input_data = input_data.dropna()
 
-            # Get unique years and find split point
-            years = sorted(input_data.index.year.unique())
-            mid_year = years[len(years) // 2]
-
-            self.logger.info(f"Available years: {years}")
-            self.logger.info(f"Split year: {mid_year}")
-
-            # Split the data
-            cal_data = input_data[input_data.index.year < mid_year]
-            val_data = input_data[input_data.index.year >= mid_year]
-
-            # Debug information
-            self.logger.info("\nPeriod Information:")
-            self.logger.info(f"Calibration: {cal_data.index[0]} to {cal_data.index[-1]} ({len(cal_data)} points)")
-            self.logger.info(f"Validation: {val_data.index[0]} to {val_data.index[-1]} ({len(val_data)} points)")
-            self.logger.info(f"Calibration years: {sorted(cal_data.index.year.unique())}")
-            self.logger.info(f"Validation years: {sorted(val_data.index.year.unique())}")
-
-            # Sample data
-            self.logger.info("\nCalibration data sample:")
-            self.logger.info(cal_data.head())
-            self.logger.info("\nValidation data sample:")
-            self.logger.info(val_data.head())
-
             # Convert to xarray and create masks
             data = input_data.to_xarray()
+            time_index = pd.DatetimeIndex(data.indexes[list(data.coords.keys())[0]])
+            masks, split_warning = self._configured_masks(time_index)
+            if split_warning:
+                self.logger.warning(f"SPLIT-SAMPLE WARNING (benchmarks): {split_warning}")
 
-            # Create masks based on years
-            cal_mask = data.indexes[list(data.coords.keys())[0]].year < mid_year
-            val_mask = data.indexes[list(data.coords.keys())[0]].year >= mid_year
+            cal_mask = masks['cal']
+            val_mask = masks.get('val')
+            test_mask = masks.get('test')
 
-            # Verify the split
-            n_cal = cal_mask.sum()
-            n_val = val_mask.sum()
+            n_cal = int(cal_mask.sum())
+            n_val = int(val_mask.sum()) if val_mask is not None else 0
+            self.logger.info(
+                f"Benchmark periods: calibration {n_cal} points, evaluation {n_val} points"
+                + (f", test {int(test_mask.sum())} points" if test_mask is not None else "")
+            )
 
-            if n_cal < 30 or n_val < 30:
+            if n_cal < 30 or (val_mask is not None and n_val < 30):
                 raise ValueError(f"Insufficient data in periods: cal={n_cal}, val={n_val}")
 
             # Define benchmarks
@@ -124,10 +184,7 @@ class Benchmarker(ConfigMixin):
 
             # Run benchmarking
             self.logger.info("Running HydroBM calculations...")
-            benchmark_flows, scores = calc_bm(
-                data,
-                cal_mask,
-                val_mask=val_mask,
+            bm_kwargs = dict(
                 precipitation="precipitation",
                 streamflow="streamflow",
                 benchmarks=benchmarks,
@@ -135,29 +192,39 @@ class Benchmarker(ConfigMixin):
                 calc_snowmelt=True,
                 temperature="temperature",
                 snowmelt_threshold=273.15,
-                snowmelt_rate=3.0
+                snowmelt_rate=3.0,
             )
-
+            benchmark_flows, scores = calc_bm(
+                data,
+                cal_mask,
+                val_mask=val_mask if val_mask is not None else [],
+                **bm_kwargs,
+            )
             scores_df = pd.DataFrame(scores)
+
+            # Test period: same calibration fit, scored on the test window
+            if test_mask is not None and int(test_mask.sum()) > 0:
+                _, test_scores = calc_bm(data, cal_mask, val_mask=test_mask, **bm_kwargs)
+                test_df = pd.DataFrame(test_scores)
+                for col in [c for c in test_df.columns if c.endswith('_val')]:
+                    scores_df[col[:-len('_val')] + '_test'] = test_df[col].values
+
             self._save_results(benchmark_flows, scores_df)
 
             # Create return dictionary with basic types
-            return {
+            result: Dict[str, Any] = {
                 "benchmark_flows": benchmark_flows,
                 "scores": scores_df,
-                "cal_period": {
-                    "start": str(cal_data.index[0]),
-                    "end": str(cal_data.index[-1]),
-                    "points": int(n_cal),
-                    "years": [int(year) for year in sorted(cal_data.index.year.unique())]
-                },
-                "val_period": {
-                    "start": str(val_data.index[0]),
-                    "end": str(val_data.index[-1]),
-                    "points": int(n_val),
-                    "years": [int(year) for year in sorted(val_data.index.year.unique())]
-                }
+                "cal_period": self._period_info(time_index, cal_mask),
+                "val_period": (
+                    self._period_info(time_index, val_mask) if val_mask is not None else None
+                ),
             }
+            if test_mask is not None:
+                result["test_period"] = self._period_info(time_index, test_mask)
+            if split_warning:
+                result["period_warning"] = split_warning
+            return result
 
         except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
             self.logger.error(f"Error during benchmark calculation: {e}")

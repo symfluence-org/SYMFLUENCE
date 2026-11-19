@@ -17,6 +17,7 @@ def register():
     )
     base = "symfluence.models.raven"
     R.result_extractors.add_lazy("RAVEN", f"{base}.extractor.RavenResultExtractor")
+    R.output_adapters.add_lazy("RAVEN", f"{base}.output_adapter.RavenOutputAdapter")
     for registry, name in [
         (R.preprocessors, "RavenPreProcessor"),
         (R.postprocessors, "RavenPostProcessor"),

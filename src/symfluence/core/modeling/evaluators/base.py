@@ -21,8 +21,14 @@ import pandas as pd
 import xarray as xr
 
 from symfluence.core import metrics
+from symfluence.core.metrics.benchmarks import (
+    BENCHMARK_NAMES,
+    benchmark_series,
+    constant_benchmark_kge,
+    skill_score,
+)
 from symfluence.core.mixins import ConfigurableMixin
-from symfluence.core.modeling.utilities.periods import parse_period
+from symfluence.core.modeling.utilities.periods import parse_period, spinup_window
 
 if TYPE_CHECKING:
     from symfluence.core.config.models import SymfluenceConfig
@@ -167,19 +173,52 @@ class ModelEvaluator(ConfigurableMixin, ABC):
             return np.asarray((index >= start) & (index < end + pd.Timedelta(days=1)))
         return np.asarray((index >= start) & (index <= end))
 
-    def _spinup_cutoff(self, sim_data: pd.Series) -> Optional[pd.Timestamp]:
-        """First stamp after EVALUATION_SPINUP_YEARS, counted from the simulation start."""
+    @property
+    def test_period(self) -> Tuple[Optional[pd.Timestamp], Optional[pd.Timestamp]]:
+        """Optional independent TEST_PERIOD (scored in final evaluation only).
+
+        Read lazily: it is never used while optimising, only when metrics are
+        requested with ``calibration_only=False``.
+        """
+        cached = self.__dict__.get('_test_period')
+        if cached is None:
+            value = self._get_config_value(
+                lambda: self.config.domain.test_period,
+                default='',
+                dict_key='TEST_PERIOD',
+            )
+            cached = self._parse_date_range(value) if isinstance(value, str) else (None, None)
+            self.__dict__['_test_period'] = cached
+        return cached
+
+    @test_period.setter
+    def test_period(self, value: Tuple[Optional[pd.Timestamp], Optional[pd.Timestamp]]) -> None:
+        self.__dict__['_test_period'] = value
+
+    def _spinup_window(self, simulation_start: Any) -> Optional[Tuple[pd.Timestamp, pd.Timestamp]]:
+        """The one spin-up window excluded from every score.
+
+        ``SPINUP_PERIOD`` defines it; the deprecated ``EVALUATION_SPINUP_YEARS``
+        (N years from the simulation start) maps onto the same window. See
+        :func:`symfluence.core.modeling.utilities.periods.spinup_window`.
+        """
+        spinup_period = self._get_config_value(
+            lambda: self.config.domain.spinup_period,
+            default='',
+            dict_key='SPINUP_PERIOD',
+        )
         spinup_years = self._get_config_value(
             lambda: self.config.evaluation.spinup_years,
             dict_key='EVALUATION_SPINUP_YEARS',
         )
-        try:
-            spinup_years = int(float(spinup_years))
-        except (TypeError, ValueError):
-            spinup_years = 0
-        if spinup_years <= 0 or sim_data is None or len(sim_data) == 0:
+        return spinup_window(spinup_period, spinup_years, simulation_start)
+
+    def _spinup_cutoff(self, sim_data: pd.Series) -> Optional[pd.Timestamp]:
+        """First stamp after the spin-up window (see :meth:`_spinup_window`)."""
+        if sim_data is None or len(sim_data) == 0:
             return None
-        return pd.Timestamp(sim_data.index.min()) + pd.DateOffset(years=spinup_years)
+        window = self._spinup_window(pd.Timestamp(sim_data.index.min()))
+        return window[1] if window is not None else None
 
     def _aggregate_to_observation_steps(self, sim: pd.Series, obs: pd.Series) -> pd.Series:
         """Aggregate a finer simulation onto coarser observation intervals.
@@ -296,10 +335,11 @@ class ModelEvaluator(ConfigurableMixin, ABC):
             self.logger.debug(f"Loaded {len(obs_data)} observed data points")
 
             # 3. Align time series and calculate metrics
-            metrics_dict = {}
+            metrics_dict: Dict[str, Any] = {}
+            has_calibration = bool(self.calibration_period[0] and self.calibration_period[1])
 
             # Always calculate metrics for calibration period if available
-            if self.calibration_period[0] and self.calibration_period[1]:
+            if has_calibration:
                 calib_metrics = self._calculate_period_metrics(
                     obs_data, sim_data, self.calibration_period, "Calib"
                 )
@@ -312,23 +352,106 @@ class ModelEvaluator(ConfigurableMixin, ABC):
                     if unprefixed_key not in metrics_dict:
                         metrics_dict[unprefixed_key] = v
 
-            # Only calculate evaluation period metrics if requested (final evaluation)
-            if not calibration_only and self.evaluation_period[0] and self.evaluation_period[1]:
-                eval_metrics = self._calculate_period_metrics(
-                    obs_data, sim_data, self.evaluation_period, "Eval"
-                )
-                metrics_dict.update(eval_metrics)
+            # Held-out periods are only scored when requested (final evaluation);
+            # they are never part of the optimisation objective.
+            if not calibration_only:
+                for prefix, period in (("Eval", self.evaluation_period), ("Test", self.test_period)):
+                    if period[0] and period[1]:
+                        metrics_dict.update(
+                            self._calculate_period_metrics(obs_data, sim_data, period, prefix)
+                        )
 
-            # If no specific periods, calculate for full overlap (fallback)
+            # If no specific periods, calculate for full overlap (fallback).
+            # This is not a split-sample score: say so loudly and flag it.
             if not metrics_dict:
+                if has_calibration:
+                    reason = (
+                        f"no simulated/observed overlap in CALIBRATION_PERIOD "
+                        f"({self.calibration_period[0]:%Y-%m-%d} to {self.calibration_period[1]:%Y-%m-%d})"
+                    )
+                else:
+                    reason = "CALIBRATION_PERIOD is not set"
+                warning = (
+                    f"{reason}; metrics use the full simulation/observation record, which "
+                    "includes any evaluation/test years, so they are not out-of-sample"
+                )
+                self._warn_period_fallback(warning)
                 full_metrics = self._calculate_period_metrics(obs_data, sim_data, (None, None), "")
                 metrics_dict.update(full_metrics)
+                if metrics_dict:
+                    metrics_dict['period_warning'] = warning
+            elif not calibration_only and has_calibration:
+                metrics_dict.update(self._benchmark_skill_metrics(obs_data, sim_data, metrics_dict))
 
             return metrics_dict
 
         except Exception as e:  # noqa: BLE001 — must-not-raise contract
             self.logger.error(f"Error calculating metrics for {self.__class__.__name__}: {str(e)}")
             return None
+
+    _FALLBACK_WARNED: set = set()
+
+    def _warn_period_fallback(self, warning: str) -> None:
+        """Log the full-record fallback once per evaluator class and reason."""
+        key = (self.__class__.__name__, warning)
+        if key in ModelEvaluator._FALLBACK_WARNED:
+            self.logger.debug(f"{self.__class__.__name__}: {warning}")
+            return
+        ModelEvaluator._FALLBACK_WARNED.add(key)
+        self.logger.warning(f"SPLIT-SAMPLE WARNING ({self.__class__.__name__}): {warning}")
+
+    def _benchmark_skill_metrics(
+        self, obs_data: pd.Series, sim_data: pd.Series, model_metrics: Dict[str, Any]
+    ) -> Dict[str, float]:
+        """Benchmark KGE and model skill vs benchmark on each configured period.
+
+        Benchmarks (mean flow, day-of-year climatology, persistence; see
+        :mod:`symfluence.core.metrics.benchmarks`) are fitted on the
+        calibration period only and scored on exactly the periods the model is
+        scored on (Calib, Eval, Test), after the same spin-up removal and
+        alignment. Keys: ``<Period>_KGE_benchmark_<name>`` and
+        ``<Period>_KGE_skill_<name>``.
+        """
+        out: Dict[str, float] = {}
+        try:
+            obs = obs_data.copy()
+            if not isinstance(obs.index, pd.DatetimeIndex):
+                obs.index = pd.to_datetime(obs.index)
+            sim_index = pd.to_datetime(sim_data.index)
+            cutoff = self._spinup_cutoff(pd.Series(0.0, index=sim_index))
+            if cutoff is not None:
+                obs = obs[obs.index >= cutoff]
+            benchmarks = benchmark_series(obs, self.calibration_period)
+            # Score each benchmark only where the model itself was scored.
+            obs_in_sim = obs[obs.index.round('h').isin(sim_index.round('h'))] if len(sim_index) else obs
+            periods = (
+                ('Calib', self.calibration_period),
+                ('Eval', self.evaluation_period),
+                ('Test', self.test_period),
+            )
+            for prefix, period in periods:
+                model_kge = model_metrics.get(f'{prefix}_KGE')
+                if not (period[0] and period[1]) or model_kge is None:
+                    continue
+                for name in BENCHMARK_NAMES:
+                    bm = benchmarks.get(name)
+                    if bm is None:
+                        continue
+                    bm = bm.reindex(obs_in_sim.index).dropna()
+                    scored = self._calculate_period_metrics(
+                        obs_in_sim, bm, period, '', apply_spinup=False
+                    )
+                    bm_kge = scored.get('KGE', np.nan)
+                    if name == 'mean_flow' and not np.isfinite(bm_kge):
+                        # Constant predictor: r is undefined, taken as 0 and
+                        # alpha = 0, so KGE = 1 - sqrt(2 + (beta - 1)^2)
+                        # (= 1 - sqrt(2) = -0.41 on the calibration period).
+                        bm_kge = constant_benchmark_kge(scored.get('beta', np.nan))
+                    out[f'{prefix}_KGE_benchmark_{name}'] = bm_kge
+                    out[f'{prefix}_KGE_skill_{name}'] = skill_score(model_kge, bm_kge)
+        except Exception as e:  # noqa: BLE001 — must-not-raise contract
+            self.logger.warning(f"Benchmark skill scores not computed: {e}")
+        return out
 
     @abstractmethod
     def get_simulation_files(self, sim_dir: Path) -> List[Path]:
@@ -534,8 +657,13 @@ class ModelEvaluator(ConfigurableMixin, ABC):
         pass
 
     def _calculate_period_metrics(self, obs_data: pd.Series, sim_data: pd.Series,
-                                period: Tuple, prefix: str) -> Dict[str, float]:
-        """Calculate metrics for a specific time period with explicit filtering"""
+                                period: Tuple, prefix: str,
+                                apply_spinup: bool = True) -> Dict[str, float]:
+        """Calculate metrics for a specific time period with explicit filtering.
+
+        ``apply_spinup=False`` skips spin-up removal for callers whose series
+        were already trimmed (benchmark scoring).
+        """
         try:
             # Ensure indices are DatetimeIndex
             if not isinstance(obs_data.index, pd.DatetimeIndex):
@@ -551,7 +679,7 @@ class ModelEvaluator(ConfigurableMixin, ABC):
 
             # Spin-up is removed once, counted from the simulation start, so it
             # trims only the start of the run, never the start of every period.
-            cutoff = self._spinup_cutoff(sim_data)
+            cutoff = self._spinup_cutoff(sim_data) if apply_spinup else None
             if cutoff is not None:
                 obs_data = obs_data[obs_data.index >= cutoff]
                 sim_data = sim_data[sim_data.index >= cutoff]
@@ -623,6 +751,11 @@ class ModelEvaluator(ConfigurableMixin, ABC):
 
             # Calculate metrics
             base_metrics = self._calculate_performance_metrics(obs_common, sim_common)
+
+            # The configured objective(s) when not in the standard set
+            # (KGE_LOG, LOGLIK_BC_AR1, signature errors, NSGA-II objectives)
+            base_metrics.update(self._calculate_objective_metrics(
+                obs_common, sim_common, base_metrics))
 
             # Optionally compute log-likelihood if observation uncertainties are available
             likelihood_metrics = self._calculate_likelihood_metrics(obs_common, sim_common)
@@ -740,6 +873,38 @@ class ModelEvaluator(ConfigurableMixin, ABC):
         if agg_func == 'sum':
             return pd.Series(resampler.sum(min_count=1))
         return pd.Series(resampler.mean())
+
+    def _calculate_objective_metrics(
+        self,
+        obs_common: pd.Series,
+        sim_common: pd.Series,
+        existing: Dict[str, float],
+    ) -> Dict[str, float]:
+        """Configured objective metrics missing from the standard metric set.
+
+        Without this, a worker scoring through an evaluator (e.g. SUMMA) found
+        no KGE_LOG / LOGLIK_BC_AR1 / signature value and fell back to KGE.
+        """
+        from symfluence.core.metrics.streamflow_metrics import (
+            StreamflowMetrics,
+            configured_objective_metrics,
+        )
+        try:
+            wanted = [
+                name for name in configured_objective_metrics(self.config)
+                if name not in existing and StreamflowMetrics.supports(name.lower())
+            ]
+        except (AttributeError, TypeError, ValueError):
+            return {}
+        if not wanted:
+            return {}
+        calc = StreamflowMetrics.from_config(self.config)
+        values = calc.calculate_metrics(
+            np.asarray(obs_common.values, dtype=float),
+            np.asarray(sim_common.values, dtype=float),
+            metrics=[name.lower() for name in wanted],
+        )
+        return {name: float(values[name.lower()]) for name in wanted if name.lower() in values}
 
     def _calculate_likelihood_metrics(
         self,
@@ -874,26 +1039,15 @@ class ModelEvaluator(ConfigurableMixin, ABC):
         return None, None
 
     def align_series(self, sim: pd.Series, obs: pd.Series) -> Tuple[pd.Series, pd.Series]:
-        """Align simulation and observation series after dropping spinup years."""
-        spinup_years = self._get_config_value(
-            lambda: self.config.evaluation.spinup_years,
-            dict_key='EVALUATION_SPINUP_YEARS',
-        )
-        try:
-            spinup_years = int(float(spinup_years))
-        except (TypeError, ValueError):
-            spinup_years = 0
-        spinup_years = max(0, spinup_years)
-
+        """Align simulation and observation series after dropping the spin-up window."""
         if sim.empty or obs.empty:
             return sim, obs
 
-        # Spin-up is counted from the simulation start, not the first observation
+        # Spin-up (SPINUP_PERIOD, or the deprecated EVALUATION_SPINUP_YEARS
+        # counted from the simulation start) is the same window used for scoring.
         common_start = max(sim.index.min(), obs.index.min())
-        cutoff = (
-            max(sim.index.min() + pd.DateOffset(years=spinup_years), common_start)
-            if spinup_years else common_start
-        )
+        spinup_end = self._spinup_cutoff(sim)
+        cutoff = max(spinup_end, common_start) if spinup_end is not None else common_start
 
         sim_trimmed = sim[sim.index >= cutoff]
         obs_trimmed = obs[obs.index >= cutoff]

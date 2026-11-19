@@ -17,7 +17,7 @@ Overview
 The CLI follows a two-level hierarchical structure:
 
 - **Level 1**: Command categories (workflow, project, binary, config, job, example, agent,
-  gui, tui, data, fews, list) plus the top-level ``doctor`` command
+  gui, tui, data, fews, list) plus the top-level ``doctor`` and ``ensemble`` commands
 - **Level 2**: Specific actions within each category
 
 Basic usage:
@@ -82,12 +82,15 @@ Execute the complete workflow from start to finish.
 
 .. code-block:: bash
 
-   symfluence workflow run [--config CONFIG] [--force-rerun] [--continue-on-error]
+   symfluence workflow run [--config CONFIG] [--force-rerun] [--continue-on-error] [--resume]
 
 **Options:**
 
 - ``--force-rerun``: Force rerun of all steps (skip caching)
 - ``--continue-on-error``: Continue executing steps on errors
+- ``--resume``: Continue an interrupted calibration from its checkpoint
+  (sets ``CALIBRATION_RESUME``; see :ref:`calibration` > Checkpoint and Resume).
+  Also accepted by ``workflow step``, ``workflow steps`` and ``workflow resume``.
 
 **Example:**
 
@@ -102,7 +105,7 @@ Execute a single workflow step.
 
 .. code-block:: bash
 
-   symfluence workflow step STEP_NAME [--config CONFIG] [--force-rerun]
+   symfluence workflow step STEP_NAME [--config CONFIG] [--force-rerun] [--resume]
 
 **Available Steps:**
 
@@ -141,7 +144,7 @@ Execute multiple workflow steps in sequence.
 
 .. code-block:: bash
 
-   symfluence workflow steps STEP1 STEP2 ... [--config CONFIG] [--force-rerun]
+   symfluence workflow steps STEP1 STEP2 ... [--config CONFIG] [--force-rerun] [--resume]
 
 **Example:**
 
@@ -183,13 +186,17 @@ Resume workflow from a specific step.
 
 .. code-block:: bash
 
-   symfluence workflow resume STEP_NAME [--config CONFIG] [--force-rerun]
+   symfluence workflow resume STEP_NAME [--config CONFIG] [--force-rerun] [--resume]
+
+``workflow resume`` restarts the *workflow* at a step; the step itself starts
+from scratch. To continue an interrupted *calibration* from its last
+checkpoint, add ``--resume``.
 
 **Example:**
 
 .. code-block:: bash
 
-   symfluence workflow resume calibrate_model --config config.yaml
+   symfluence workflow resume calibrate_model --config config.yaml --resume
 
 workflow clean
 --------------
@@ -801,6 +808,21 @@ scoped to installed binaries).
 .. code-block:: bash
 
    symfluence doctor
+
+Ensemble Command
+================
+
+Combine and compare multi-model members: equal-weight, skill-weighted (weights
+fitted on the calibration period only), median and vote-weighted combinations,
+scored with every member on the calibration/evaluation/test periods, plus a
+per-member comparison-conditions table. See :ref:`multi_model_comparison`.
+
+.. code-block:: bash
+
+   symfluence ensemble --manifest ensemble.yaml [-o DIR]
+   symfluence ensemble --member NAME=PATH --member NAME=PATH --obs PATH \
+       --calibration-period "START, END" [--evaluation-period ...] [--test-period ...] \
+       [--period-config CONFIG] [--weighting {kge,inverse_mse}] [--median] [--resample D] [-o DIR]
 
 FEWS Commands
 =============

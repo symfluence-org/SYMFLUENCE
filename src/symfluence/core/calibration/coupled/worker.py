@@ -178,6 +178,10 @@ class CoupledModelWorker(BaseWorker):
             prev_output = mdir
         return True
 
+    def supports_formal_likelihood(self, config: Any = None) -> bool:
+        """Delegates to the objective model's worker, which computes the score."""
+        return self._worker(self.objective_model).supports_formal_likelihood(config)
+
     def calculate_metrics(self, output_dir: Path, config: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         # The objective model (routing if present, else land) owns the shared objective.
         obj_dir = Path(output_dir) / self.objective_model

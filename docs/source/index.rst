@@ -71,6 +71,11 @@
 
    configuration
    calibration
+   uncertainty_sensitivity
+   forcing_correction
+   data_assimilation
+   multivariable_evaluation
+   multi_model_comparison
 
 .. toctree::
    :maxdepth: 1

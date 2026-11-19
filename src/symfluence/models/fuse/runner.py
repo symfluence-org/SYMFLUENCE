@@ -123,6 +123,11 @@ class FUSERunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, Miz
         """Set up FUSE-specific paths."""
         self.setup_dir = self.project_dir / "settings" / "FUSE"
         self.forcing_fuse_path = self.project_forcing_dir / 'FUSE_input'
+        # Shared FORCING_CORRECTION: corrected copies written before the run
+        from .forcing_correction import corrected_forcing_dir
+        corrected = corrected_forcing_dir(self.config, self.project_forcing_dir)
+        if corrected is not None:
+            self.forcing_fuse_path = corrected
 
         # FUSE executable path (installation dir + exe name)
         self.fuse_exe = self.get_model_executable(

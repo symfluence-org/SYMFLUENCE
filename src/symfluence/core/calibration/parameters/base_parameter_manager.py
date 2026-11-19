@@ -42,6 +42,7 @@ from symfluence.core.logging_utils import log_once
 from symfluence.core.mixins import ConfigMixin
 
 if TYPE_CHECKING:
+    from symfluence.core.calibration.forcing_correction import ForcingCorrectionPlan
     from symfluence.core.config.models import SymfluenceConfig
 
 
@@ -103,6 +104,8 @@ class BaseParameterManager(ConfigMixin, ABC):
         # Lazy-loaded caches (populated by subclass implementations)
         self._param_names: List[str] = []
         self._param_bounds: Dict[str, Dict[str, Any]] = {}
+        # Shared FORCING_CORRECTION plan (None = per-model behaviour)
+        self._forcing_correction: Optional['ForcingCorrectionPlan'] = None
 
     # ========================================================================
     # ABSTRACT METHODS (Model-specific - must be implemented by subclasses)
@@ -207,7 +210,7 @@ class BaseParameterManager(ConfigMixin, ABC):
         Returns:
             Ordered list of parameter names for calibration.
         """
-        if not self._param_names:
+        if not self._param_names and getattr(self, '_forcing_correction', None) is None:
             self._param_names = self._get_parameter_names()
         return self._param_names
 
@@ -253,6 +256,10 @@ class BaseParameterManager(ConfigMixin, ABC):
         this for a partial INITIAL_GUESS).
         """
         normalized = np.zeros(len(self.all_param_names))
+        plan = getattr(self, '_forcing_correction', None)
+        if plan is not None and plan.calibrated:
+            # Model-native values (e.g. an initial PCORR) seed the common parameter
+            params = {**plan.initial_common_values(params), **params}
 
         for i, param_name in enumerate(self.all_param_names):
             # Handle missing parameters
@@ -346,6 +353,13 @@ class BaseParameterManager(ConfigMixin, ABC):
             # Format based on model-specific needs (hook for subclasses)
             params[param_name] = self._format_parameter_value(param_name, denorm_value)
 
+        plan = getattr(self, '_forcing_correction', None)
+        if plan is not None:
+            # Common forcing-correction names -> this model's own parameters
+            native = plan.to_native(params)
+            params = {k: v for k, v in params.items() if k not in plan.calibrated_param_names}
+            params.update({k: self._format_parameter_value(k, v) for k, v in native.items()})
+
         return params
 
     def validate_parameters(self, params: Dict[str, Any]) -> bool:
@@ -379,6 +393,36 @@ class BaseParameterManager(ConfigMixin, ABC):
                 return False
 
         return True
+
+    def enable_forcing_correction(self, plan: 'ForcingCorrectionPlan') -> List[str]:
+        """Use the shared FORCING_CORRECTION ``plan`` instead of per-model corrections.
+
+        Drops the model's own precipitation/temperature correction parameters
+        (those the plan supersedes) from the calibrated set and appends the
+        common calibrated parameters with the common bounds. Denormalized
+        parameter sets then carry the model's native correction parameters
+        (fixed values and translated common values), so workers and model files
+        are unchanged.
+
+        Returns:
+            The model parameters that were dropped.
+        """
+        names = list(self.all_param_names)
+        bounds = dict(self.param_bounds)
+        superseded = set(plan.superseded_native_names())
+        dropped = [n for n in names if n in superseded]
+        self._param_names = [n for n in names if n not in superseded] + plan.calibrated_param_names
+        for name in superseded:
+            bounds.pop(name, None)
+        bounds.update(plan.calibrated_param_bounds())
+        self._param_bounds = bounds
+        self._forcing_correction = plan
+        return dropped
+
+    @property
+    def forcing_correction(self) -> Optional['ForcingCorrectionPlan']:
+        """Active shared forcing-correction plan, or None."""
+        return getattr(self, '_forcing_correction', None)
 
     def get_parameter_bounds(self) -> Dict[str, Dict[str, Any]]:
         """

@@ -51,6 +51,8 @@ src/symfluence/core/calibration/optimizers/base_model_optimizer.py:BaseModelOpti
 src/symfluence/core/calibration/optimizers/base_model_optimizer.py:BaseModelOptimizer.run_optimization:except Exception as exc:  # noqa: BLE001 — cleanup must not mask the run
 src/symfluence/core/calibration/optimizers/final_evaluation/runner.py:FinalEvaluationRunner._worker_period_metrics:except Exception as e:  # noqa: BLE001 — resilience in final eval
 src/symfluence/core/calibration/optimizers/final_evaluation/self_training.py:persist_run_evaluation:except Exception as e:  # noqa: BLE001 — model execution resilience
+src/symfluence/core/calibration/optimizers/uncertainty.py:UncertaintyPostprocessor._simulate_members:except Exception as e:  # noqa: BLE001 — one failed member must not stop the rest
+src/symfluence/core/calibration/optimizers/uncertainty.py:UncertaintyPostprocessor.run:except Exception as e:  # noqa: BLE001 — post-processing must not fail a finished calibration
 src/symfluence/core/calibration/workers/base_worker.py:run_worker_task:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/core/calibration/workers/streamflow_worker.py:StreamflowWorker.calculate_metrics:except Exception as e:  # noqa: BLE001 — calibration resilience
 src/symfluence/core/config/legacy_aliases.py:iter_legacy_flat_to_nested_aliases:except Exception:  # noqa: BLE001 — registry unavailable in stripped contexts
@@ -80,6 +82,7 @@ src/symfluence/core/modeling/base/standard_postprocessor.py:StandardModelPostPro
 src/symfluence/core/modeling/base/standard_postprocessor.py:StandardModelPostProcessor._read_single_output_file:except Exception as e:  # noqa: BLE001 — model execution resilience
 src/symfluence/core/modeling/base/standard_postprocessor.py:StandardModelPostProcessor.extract_streamflow:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/core/modeling/base_settings.py:get_base_settings_dir:except Exception:  # noqa: BLE001 — registry unavailable in stripped contexts
+src/symfluence/core/modeling/evaluators/base.py:ModelEvaluator._benchmark_skill_metrics:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/core/modeling/evaluators/base.py:ModelEvaluator._calculate_likelihood_metrics:except Exception as e:  # noqa: BLE001 — optional feature, must not break metrics
 src/symfluence/core/modeling/evaluators/base.py:ModelEvaluator._calculate_performance_metrics:except Exception as e:  # noqa: BLE001 — must-not-raise contract
 src/symfluence/core/modeling/evaluators/base.py:ModelEvaluator._calculate_period_metrics:except Exception as e:  # noqa: BLE001 — must-not-raise contract
@@ -458,8 +461,6 @@ src/symfluence/evaluation/analysis_manager.py:AnalysisManager.run_sensitivity_an
 src/symfluence/evaluation/benchmarking.py:Benchmarker._save_results:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/evaluation/benchmarking.py:Benchmarker.run_benchmarking:except Exception as e:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/evaluation/koopman_analysis.py:KoopmanAnalyzer.run_koopman_analysis:except Exception as e:  # noqa: BLE001 — must-not-raise contract
-src/symfluence/evaluation/sensitivity_analysis.py:SensitivityAnalyzer.perform_sensitivity_analysis:except Exception as e:  # noqa: BLE001 — must-not-raise contract
-src/symfluence/evaluation/sensitivity_analysis.py:SensitivityAnalyzer.run_sensitivity_analysis:except Exception as e:  # noqa: BLE001 — resilience across SA methods
 src/symfluence/fews/id_map.py:IDMapper._load_yaml:except Exception as exc:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/fews/netcdf_cf.py:read_fews_netcdf:except Exception as exc:  # noqa: BLE001 — wrap-and-raise to domain error
 src/symfluence/fews/netcdf_cf.py:write_fews_netcdf:except Exception as exc:  # noqa: BLE001 — wrap-and-raise to domain error
