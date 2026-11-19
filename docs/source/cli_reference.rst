@@ -17,7 +17,7 @@ Overview
 The CLI follows a two-level hierarchical structure:
 
 - **Level 1**: Command categories (workflow, project, binary, config, job, example, agent,
-  gui, tui, data, fews, list) plus the top-level ``doctor`` command
+  gui, tui, data, fews, list) plus the top-level ``doctor`` and ``ensemble`` commands
 - **Level 2**: Specific actions within each category
 
 Basic usage:
@@ -779,6 +779,21 @@ scoped to installed binaries).
 .. code-block:: bash
 
    symfluence doctor
+
+Ensemble Command
+================
+
+Combine and compare multi-model members: equal-weight, skill-weighted (weights
+fitted on the calibration period only), median and vote-weighted combinations,
+scored with every member on the calibration/evaluation/test periods, plus a
+per-member comparison-conditions table. See :ref:`multi_model_comparison`.
+
+.. code-block:: bash
+
+   symfluence ensemble --manifest ensemble.yaml [-o DIR]
+   symfluence ensemble --member NAME=PATH --member NAME=PATH --obs PATH \
+       --calibration-period "START, END" [--evaluation-period ...] [--test-period ...] \
+       [--period-config CONFIG] [--weighting {kge,inverse_mse}] [--median] [--resample D] [-o DIR]
 
 FEWS Commands
 =============

@@ -100,11 +100,16 @@ class OptimizationAlgorithm(ConfigMixin, ABC):
         Two runs of the same config on the same machine were producing KGE
         0.843 vs 0.728 for exactly this reason. A dedicated Generator seeded
         per run isolates the algorithm's randomness and makes it reproducible.
+
+        With RANDOM_SEED unset a seed is drawn, logged and kept in
+        ``self.random_seed`` (the optimizer records it), so even an
+        unseeded run can be regenerated.
         """
-        seed = self.random_seed
-        if seed in (None, "None", ""):
-            return np.random.default_rng()
-        return np.random.default_rng(int(seed))
+        from symfluence.core.provenance import resolve_seed
+
+        seed, _source = resolve_seed(self.random_seed, self.logger, context=f"{self.name} run")
+        self.random_seed = seed
+        return np.random.default_rng(seed)
 
     def _initial_guess(self, n_params: int, kwargs: Dict[str, Any]) -> Optional[np.ndarray]:
         """Normalized ``INITIAL_GUESS`` passed by the optimizer, or None.

@@ -31,7 +31,13 @@ from symfluence.core.config.models import SymfluenceConfig
 from symfluence.core.exceptions import SYMFLUENCEError
 from symfluence.core.mixins.project import resolve_data_subdir
 from symfluence.core.path_resolver import find_basin_shapefile, find_river_basins_shapefile
-from symfluence.core.provenance import capture_provenance, record_input
+from symfluence.core.provenance import (
+    capture_provenance,
+    record_input,
+    record_input_tree,
+    set_active_provenance,
+    write_resolved_config,
+)
 from symfluence.core.provenance import finalize as finalize_provenance
 from symfluence.project.logging_manager import LoggingManager
 from symfluence.project.manager_factory import LazyManagerDict
@@ -265,9 +271,13 @@ class SYMFLUENCE:
                 domain_name=getattr(self.typed_config.domain, 'name', 'unknown') or 'unknown',
                 config_path=str(self.config_path) if self.config_path else None,
             )
+            # Components inside steps (the calibration optimizer) append the
+            # seed and evaluation budget they actually used to this record.
+            set_active_provenance(self.provenance)
         else:
             self.logger.info("Provenance capture disabled via configuration")
             self.provenance = None
+            set_active_provenance(None)
 
         # Initialize managers (lazy loaded)
         self.managers = LazyManagerDict(self.typed_config, self.logger, self.visualize, self.diagnostic)
@@ -365,13 +375,29 @@ class SYMFLUENCE:
             self._record_input_provenance()
             finalize_provenance(self.provenance, status,
                                 errors=[e.get("error", str(e)) for e in errors] if errors else None)
-            if self.provenance is not None:
-                manifest = self.provenance.write(self.logging_manager.log_dir)
-                self.logger.info(f"Run manifest written to: {manifest}")
+            self._write_run_manifest()
 
+
+    def _write_run_manifest(self) -> None:
+        """Write ``resolved_config.yaml`` and ``run_manifest.json`` into the log dir.
+
+        The resolved config (validated, defaults filled) sits next to the
+        manifest, which records its SHA-256: two runs used the same
+        configuration iff the hashes match.
+        """
+        if self.provenance is None:
+            return
+        log_dir = self.logging_manager.log_dir
+        try:
+            path, sha = write_resolved_config(self.typed_config, log_dir, prov=self.provenance)
+            self.logger.info(f"Resolved config written to {path} (sha256 {sha[:12]})")
+        except (OSError, TypeError, ValueError) as e:
+            self.logger.warning(f"Could not write resolved config: {e}")
+        manifest = self.provenance.write(log_dir)
+        self.logger.info(f"Run manifest written to: {manifest}")
 
     def _record_input_provenance(self) -> None:
-        """Hash the source DEM into the run manifest.
+        """Hash the source DEM, forcing and observations into the run manifest.
 
         The DEM is the input that decides delineation geometry, so a change in
         it shifts discretization counts in ways that otherwise look identical
@@ -388,6 +414,19 @@ class SYMFLUENCE:
                 break
         except (AttributeError, OSError, TypeError):
             pass
+        # Forcing and observations: by default a listing fingerprint (names,
+        # sizes, mtimes); PROVENANCE_INPUT_HASH: content hashes every byte.
+        try:
+            mode = getattr(self.typed_config.system, 'provenance_input_hash', 'listing') or 'listing'
+            project_dir = Path(self.typed_config.paths.root_path) / f"domain_{self.typed_config.domain.name}"
+            forcing_dir = resolve_data_subdir(project_dir, 'forcing') / 'basin_averaged_data'
+            record_input_tree(self.provenance, "forcing", forcing_dir, mode=mode,
+                              patterns=("*.nc", "*.csv"))
+            obs_dir = resolve_data_subdir(project_dir, 'observations')
+            record_input_tree(self.provenance, "observations", obs_dir, mode=mode,
+                              patterns=("*_processed.csv", "*.nc"))
+        except (AttributeError, OSError, TypeError, ValueError) as e:
+            self.logger.debug(f"Input fingerprinting skipped: {e}")
 
     def run_individual_steps(self, step_names: List[str]) -> None:
         """
@@ -437,9 +476,7 @@ class SYMFLUENCE:
             self._record_input_provenance()
             finalize_provenance(self.provenance, status,
                                 errors=[e.get("error", str(e)) for e in errors] if errors else None)
-            if self.provenance is not None:
-                manifest = self.provenance.write(self.logging_manager.log_dir)
-                self.logger.info(f"Run manifest written to: {manifest}")
+            self._write_run_manifest()
 
     def get_failed_steps(self) -> List[str]:
         """CLI names of the steps that failed in the most recent workflow/steps run."""
