@@ -230,8 +230,9 @@ class ResultsTrackingMixin(ConfigMixin):
         directory, so a restarted calibration used to overwrite the previous
         run's ``<experiment>_parallel_iteration_results.csv`` (and best-params
         JSON) at its first checkpoint -- hundreds of evaluations gone, with
-        nothing in the log. This is not a resume: the new run starts from
-        scratch, but the old results are kept, renamed to
+        nothing in the log. The new run starts from scratch (a resume, via
+        ``CALIBRATION_RESUME`` / ``--resume``, skips this and continues the
+        previous run's files instead), but the old results are kept, renamed to
         ``<stem>.prev-<YYYYmmdd-HHMMSS>[-N]<suffix>`` in the same directory
         (a name none of the result-file globs match), and the move is logged.
 
@@ -251,6 +252,7 @@ class ResultsTrackingMixin(ConfigMixin):
             f"{experiment_id}_*_best_params.json",
             f"{experiment_id}_*_pareto_front.csv",
             f"{experiment_id}_*_final_evaluation.json",
+            f"{experiment_id}_*_resume_state.json",
         ):
             previous.extend(sorted(p for p in results_dir.glob(pattern) if p.is_file()))
         if not previous:
@@ -278,7 +280,8 @@ class ResultsTrackingMixin(ConfigMixin):
             self.logger.warning(
                 f"Found results of a previous run in {results_dir}; kept them as "
                 + ", ".join(b.name for b in backups)
-                + ". This run starts from scratch (calibration resume is not supported)."
+                + ". This run starts from scratch; set CALIBRATION_RESUME: true (or pass "
+                "--resume) to continue an interrupted calibration instead."
             )
         return backups
 

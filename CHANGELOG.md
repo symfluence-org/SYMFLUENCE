@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Calibration checkpoint/resume**: `symfluence workflow run|step|steps|resume ... --resume` (or
+  `CALIBRATION_RESUME: true`) continues an interrupted calibration from its last checkpoint instead of starting
+  over. Every `CHECKPOINT_INTERVAL` iterations the optimizer now also writes
+  `<experiment>_<algorithm>_resume_state.json` (atomic tmp + rename): the ordered evaluation log, iteration and
+  evaluation counts, RNG seed/entropy and Generator state, best solution, crash counters, history, and a
+  fingerprint of parameters, bounds, objective, calibration period, seed and population size. On resume the
+  algorithm is replayed against the logged evaluations (no model runs) to restore its exact state, verified
+  against the logged parameter sets and RNG state, and then continues; a seeded resumed run ends with the same
+  result as an uninterrupted one (all 18 built-in algorithms). Result files are continued, not rotated aside.
+  Changed parameters/bounds/objective/seed, or a replay that diverges (e.g. changed `NUMBER_OF_ITERATIONS`),
+  raise `CalibrationResumeError`; an algorithm class can opt out with `supports_resume = False`. Unseeded runs
+  now draw their entropy explicitly so they can be resumed too (same distribution as before).
 - **Reproducible external-tool builds**: every build recipe that clones an upstream repository is now pinned
   to an exact commit (`src/symfluence/cli/binary_pins.json`, 31 tools resolved 2026-11-19 from the branch each
   recipe tracked; `raven` and `summa-glacier` keep the commits held in their recipes). The installer fetches

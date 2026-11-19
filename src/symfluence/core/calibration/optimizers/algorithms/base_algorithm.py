@@ -12,7 +12,7 @@ Abstract base class for optimization algorithms using the Strategy pattern.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Dict, Optional, Tuple, Union
 
 import numpy as np
 
@@ -35,7 +35,20 @@ class OptimizationAlgorithm(ConfigMixin, ABC):
     Algorithms receive evaluation callbacks from the optimizer and return
     optimization results. This allows algorithms to be easily swapped
     while maintaining a consistent interface.
+
+    Checkpoint/resume (``CALIBRATION_RESUME`` / ``--resume``) replays the
+    logged evaluations through ``optimize`` (see
+    :mod:`symfluence.core.calibration.optimizers.resume`). That needs an
+    algorithm whose trajectory depends only on its per-run Generator
+    (``self._rng`` from :meth:`_new_rng`) and the values the evaluation
+    callbacks return. An algorithm that also depends on anything else (wall
+    clock, completion order of asynchronous workers, an unseeded external
+    library) must set ``supports_resume = False`` so a resume is refused
+    instead of silently restarting.
     """
+
+    #: Whether a checkpointed run of this algorithm can be resumed by replay.
+    supports_resume: ClassVar[bool] = True
 
     def __init__(self, config: Union['SymfluenceConfig', Dict[str, Any]], logger):
         """
@@ -103,7 +116,14 @@ class OptimizationAlgorithm(ConfigMixin, ABC):
         """
         seed = self.random_seed
         if seed in (None, "None", ""):
-            return np.random.default_rng()
+            # Unseeded: draw fresh entropy, but remember it so a checkpointed
+            # run can be resumed (replayed) with the same stream. A resume
+            # sets ``_resume_entropy`` to the entropy of the original run.
+            entropy = self.__dict__.get("_resume_entropy")
+            if entropy is None:
+                entropy = int(np.random.SeedSequence().entropy)
+            self._run_entropy = int(entropy)
+            return np.random.default_rng(self._run_entropy)
         return np.random.default_rng(int(seed))
 
     def _initial_guess(self, n_params: int, kwargs: Dict[str, Any]) -> Optional[np.ndarray]:
