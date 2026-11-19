@@ -99,3 +99,80 @@ def test_run_without_cli_flag_uses_config_force_run(facade):
     )
     facade.run_workflow(force_run=None)
     orch.run_workflow.assert_called_once_with(force_run=True)
+
+
+# ---------------------------------------------------------------------------
+# RunResult (audit item 4)
+# ---------------------------------------------------------------------------
+
+def _orch_ok(facade):
+    orch = facade.workflow_orchestrator
+    orch.last_step_results = [
+        {"name": "run_models", "cli_name": "run_model", "status": "completed", "duration_s": 1.5},
+        {"name": "postprocess_results", "cli_name": "postprocess_results", "status": "failed",
+         "duration_s": 0.0, "error": "boom"},
+    ]
+    orch.failed_step_names.return_value = ["postprocess_results"]
+    return orch
+
+
+def test_run_workflow_returns_run_result_with_metrics(facade, tmp_path):
+    import json
+
+    from symfluence.project.run_result import RunResult, StepResult
+
+    facade.typed_config = facade.typed_config.model_copy(
+        update={"system": facade.typed_config.system.model_copy(update={"data_dir": tmp_path})}
+    )
+    exp = facade.typed_config.domain.experiment_id
+    metrics = tmp_path / "domain_test_basin" / "results" / exp / "metrics.json"
+    metrics.parent.mkdir(parents=True)
+    metrics.write_text(json.dumps({"schema_version": 1, "models": {"SUMMA": {}}}))
+    _orch_ok(facade)
+
+    result = facade.run_workflow(force_run=False)
+
+    assert isinstance(result, RunResult)
+    assert result.status == "partial" and not result.ok
+    assert result.failed_steps == ["postprocess_results"]
+    assert result.steps[0] == StepResult("run_models", "run_model", "completed", 1.5, None)
+    assert result.steps[1].error == "boom"
+    assert result.metrics == {"schema_version": 1, "models": {"SUMMA": {}}}
+    assert result.outputs["metrics_json"] == metrics
+    assert "summary_figure" not in result.outputs  # only existing paths are listed
+    assert result.experiment_id == exp
+
+
+def test_run_alias_and_continue_on_error_keyword(facade):
+    _orch_ok(facade)
+    facade.run(force_run=True, continue_on_error=True)
+    facade.workflow_orchestrator.run_workflow.assert_called_once_with(
+        force_run=True, stop_on_error=False
+    )
+
+
+def test_continue_on_error_override_still_works(facade):
+    facade.config_overrides = {"continue_on_error": True}
+    facade.workflow_orchestrator.run_individual_steps.return_value = []
+    result = facade.run_individual_steps(["setup_project"])
+    facade.workflow_orchestrator.run_individual_steps.assert_called_once_with(
+        ["setup_project"], True
+    )
+    assert result.status == "completed"
+
+
+def test_run_individual_steps_explicit_keyword_wins(facade):
+    facade.config_overrides = {"continue_on_error": True}
+    facade.run_individual_steps(["setup_project"], continue_on_error=False)
+    facade.workflow_orchestrator.run_individual_steps.assert_called_once_with(
+        ["setup_project"], False
+    )
+
+
+def test_package_exports_run_result():
+    import symfluence
+    from symfluence.project.run_result import RunResult
+
+    assert symfluence.RunResult is RunResult
+    assert "workflow.run()" in symfluence.__doc__
+    assert callable(SYMFLUENCE.run)

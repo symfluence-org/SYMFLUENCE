@@ -40,6 +40,52 @@ def _report_failed_steps(symfluence, what: str) -> int:
     return ExitCode.SUCCESS
 
 
+# Steps that (re)write results/<experiment>/metrics.json.
+_SCORING_STEPS = frozenset({'postprocess_results', 'calibrate_model'})
+
+
+def _fmt_metric(value, spec: str = '.3f') -> str:
+    if value is None:
+        return '-'
+    try:
+        return format(float(value), spec)
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _print_run_summary(result) -> None:
+    """Compact end-of-run table from ``result.metrics`` (metrics.json).
+
+    Silent when the run produced no metrics (e.g. a preprocessing-only run)
+    or ``result`` is not a RunResult (mocked facades in tests).
+    """
+    from symfluence.core.metrics.run_metrics import summary_rows
+    from symfluence.project.run_result import RunResult
+
+    if not isinstance(result, RunResult) or not result.metrics:
+        return
+    doc = result.metrics
+    rows = summary_rows(doc)
+    console = BaseCommand._console
+    if rows:
+        console.newline()
+        console.table(
+            ['Model', 'Period', 'KGE', 'r', 'alpha', 'beta', 'NSE', 'PBIAS %', 'n'],
+            [[r['model'], r['period'], _fmt_metric(r['KGE']), _fmt_metric(r['r']),
+              _fmt_metric(r['alpha']), _fmt_metric(r['beta']), _fmt_metric(r['NSE']),
+              _fmt_metric(r['PBIAS'], '+.1f'), '-' if r['n_obs'] is None else str(r['n_obs'])]
+             for r in rows],
+            title=f"Run performance ({doc.get('stage', '?')}): "
+                  f"{doc.get('domain', '')} / {doc.get('experiment_id', '')}",
+        )
+    for message in doc.get('warnings') or []:
+        console.warning(message)
+    for key, label in (('metrics_json', 'Metrics'), ('summary_figure', 'Summary figure')):
+        path = result.outputs.get(key)
+        if path is not None:
+            console.indent(f"{label}: {path}")
+
+
 def _force_rerun_overrides(args: Namespace) -> dict:
     """Config overrides from the workflow flags.
 
@@ -205,9 +251,10 @@ class WorkflowCommands(BaseCommand):
 
         # Execute full workflow. Without --force-rerun pass None so the
         # config's FORCE_RUN_ALL_STEPS decides (False would override it).
-        symfluence.run_workflow(
+        result = symfluence.run_workflow(
             force_run=True if BaseCommand.get_arg(args, 'force_rerun', False) else None
         )
+        _print_run_summary(result)
 
         exit_code = _report_failed_steps(symfluence, "Workflow")
         if exit_code == ExitCode.SUCCESS:
@@ -253,7 +300,9 @@ class WorkflowCommands(BaseCommand):
         )
 
         # Run single step
-        symfluence.run_individual_steps([args.step_name])
+        result = symfluence.run_individual_steps([args.step_name])
+        if args.step_name in _SCORING_STEPS:
+            _print_run_summary(result)
 
         exit_code = _report_failed_steps(symfluence, f"Step '{args.step_name}'")
         if exit_code == ExitCode.SUCCESS:
@@ -299,7 +348,9 @@ class WorkflowCommands(BaseCommand):
         )
 
         # Run multiple steps in order
-        symfluence.run_individual_steps(args.step_names)
+        result = symfluence.run_individual_steps(args.step_names)
+        if _SCORING_STEPS.intersection(args.step_names):
+            _print_run_summary(result)
 
         exit_code = _report_failed_steps(symfluence, "Steps")
         if exit_code == ExitCode.SUCCESS:
