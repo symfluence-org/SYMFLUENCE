@@ -27,7 +27,11 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from symfluence.core.modeling.evaluation_registry import EvaluationRegistry
+from symfluence.evaluation.evaluators import BasinETEvaluator as BasinETTarget
+from symfluence.evaluation.evaluators import BasinSCAEvaluator as BasinSCATarget
+from symfluence.evaluation.evaluators import BasinSWEEvaluator as BasinSWETarget
 from symfluence.evaluation.evaluators import ETEvaluator as ETTarget
+from symfluence.evaluation.evaluators import GlacierMassBalanceEvaluator as GlacierMBTarget
 from symfluence.evaluation.evaluators import GroundwaterEvaluator as GroundwaterTarget
 from symfluence.evaluation.evaluators import ModelEvaluator as CalibrationTarget
 from symfluence.evaluation.evaluators import SnowEvaluator as SnowTarget
@@ -185,5 +189,9 @@ __all__ = [
     'SnowTarget',
     'GroundwaterTarget',
     'TWSTarget',
-    'MultivariateTarget'
+    'MultivariateTarget',
+    'GlacierMBTarget',
+    'BasinSWETarget',
+    'BasinSCATarget',
+    'BasinETTarget',
 ]

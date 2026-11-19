@@ -30,6 +30,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `BFI_ERROR` (|ΔBFI|), all minimised, usable as `OPTIMIZATION_METRIC`, COMPOSITE components or NSGA-II
   objectives.
 - New docs page "Uncertainty and sensitivity".
+- **Shared forcing correction across models (opt-in)**: the `FORCING_CORRECTION_*` section gives every model
+  one precipitation multiplier (and optional snowfall multiplier / temperature offset) instead of each model's
+  own correction parameter with its own bounds. `FORCING_CORRECTION_MODE`: `off` (none), `fixed` (config values,
+  or `FORCING_CORRECTION_PRECIP_MULTIPLIER: water_balance` = (Q_obs + ET) / P over the calibration period, ET
+  from config or Budyko on Oudin/Hamon PET) or `calibrated` (common parameters `FC_PRECIP_MULT`,
+  `FC_SNOW_MULT`, `FC_TEMP_OFFSET` with common bounds and an optional log-normal prior penalty,
+  `FORCING_CORRECTION_PRIOR_WEIGHT`). Translated to GR `PCORR`/`TCORR`, SUMMA `precip_mult`/`frozenPrecipMultip`,
+  MESH `PRECIP_MULT`, Wflow `PCORR`, mHM `precipCorrectionFactor` and HYPE `pcurain`/`pcusnow`; other models
+  accept only `off`. Superseded per-model parameters are dropped from calibration with a warning. Values are
+  written to `forcing_correction.json` in the results directory. Unset, calibration is unchanged.
+  Also supported: PRMS/GSFLOW (`rain_adj`/`snow_adj`/`tmax_adj`/`tmin_adj` or `*_cbh_adj`), Raven
+  (`PRECIP_CORR`/`SNOW_CORR`/`TEMP_CORR`), MESH temperature (`TEMP_OFFSET`), and corrected forcing copies for
+  FUSE, CLM and ParFlow-CLM (basin mode: `precip_scale` and a new `temp_offset`); HYPE-MODFLOW calibrates
+  through the land model's adapter. Forward runs (`run_models`, forecast pipelines via
+  `apply_forward_forcing_correction`) apply the fixed values, or those of the newest calibration in
+  `calibrated` mode, and record them in `simulations/<exp>/<MODEL>/forcing_correction.json`.
+  The resolved plan is part of the calibration-resume fingerprint, so `--resume` refuses a changed forcing
+  correction. See `docs/source/forcing_correction.rst`.
+- **Data assimilation you can judge (EnKF)**: every EnKF run now also runs the open loop (the same perturbed
+  ensemble, never updated; `ENKF_OPEN_LOOP`, default on) and a persistence benchmark, and writes
+  `*_verification.json` with CRPS, CRPSS vs open loop and vs persistence, spread-error ratio, rank histogram, and
+  NSE/KGE of the ensemble mean. `ENKF_FORECAST_LEAD_DAYS` (default 0 = off) issues ensemble forecasts from each
+  analysis and scores them by lead time (`*_lead_scores.csv`; ensemble-mean scores use the same function signature
+  as `scores` in the forecast-verification module of PR #512, one local function to swap). Streamflow observation
+  error is heteroscedastic, sigma = a + b*Q_obs (`ENKF_OBS_ERROR_STD` = b, default 10 %; `ENKF_OBS_ERROR_ABS` = a
+  in m3/s, default 1 % of mean observed flow); vector observations (several gauges, diagonal R) are supported by
+  the cycle. Forcing perturbations are AR(1) in time (`ENKF_FORCING_CORRELATION_HOURS`, default 24 h) with the
+  lognormal debiasing kept. Optional multiplicative precipitation-bias state (`ENKF_PRECIP_BIAS_STATE`). A
+  model-agnostic state interface (`DAModel`: `get_state`/`set_state`/`step`/`perturbable_forcing`) replaces the
+  HBV-only manager; Xinanjiang (stand-alone, `jxaj`) is the second model. New docs page "Data assimilation".
+
+- **Model-agnostic multi-variable evaluation**: output-variable adapters (`R.output_adapters`,
+  `core.modeling.output_variables`) give glacier storage / area / cumulative specific mass balance, basin SWE,
+  snow-covered fraction and ET in standard units for SUMMA, HYPE, GR (lumped glacier balances), PRMS, GSFLOW,
+  Raven, Wflow and mHM (others raise `UnsupportedVariableError`). New evaluators `GLACIER_MB` (period-mean
+  rates vs geodetic/glaciological observations, `GLACIER_MB_OBS_PATH`, e.g. Hugonnet `dmdtda`; `GMB_BIAS`,
+  `GMB_ABS_BIAS`, `GMB_REL_BIAS`, `GMB_RMSE`, `GMB_SCORE` with observation uncertainty), `BASIN_SWE`,
+  `BASIN_SCA`, `BASIN_ET` (KGE with components), also as calibration targets `glacier_mb`, `basin_*`.
+  `GMB_*` metrics can be `OPTIMIZATION_METRIC`, COMPOSITE components or NSGA-II objectives
+  (`NSGA2_SECONDARY_METRIC: GMB_SCORE`); workers compute them through the evaluator and fail the run if they
+  cannot. New docs page "Multi-variable evaluation" with the support matrix.
 - **Fair, reproducible multi-model comparison** (docs: *Multi-model comparison*):
   - *Seeds*: with `RANDOM_SEED` unset, calibration draws a seed, logs it and records it in
     `<exp>_<algo>_calibration_conditions.json`, `*_best_params.json` and `run_manifest.json`; setting
@@ -170,6 +211,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `sobol_sensitivity.csv` and `all_sensitivity_results.csv` from a real design, plus `trajectory_correlation.csv`
   (`SENSITIVITY_TRAJECTORY_CORRELATION`), and now runs model simulations (r(d+1) for the default Morris
   design).
+- **EnKF results change** (DA users only): the default observation error is now `heteroscedastic`
+  (was `relative`: max(b*Q, floor)); forcing perturbations are temporally correlated (24 h, was white noise) and are
+  drawn for the whole period up front, so random streams differ from earlier runs; `diagnostics.crps` no longer
+  halves the ensemble-spread term (it overstated CRPS) and `spread_error_ratio` uses the (m+1)/m-corrected spread
+  (a reliable ensemble now scores 1). `ENKF_FORCING_PERTURBATION: false` now switches forcing perturbation off
+  (it was ignored). Set `ENKF_OBS_ERROR_TYPE: relative` and `ENKF_FORCING_CORRELATION_HOURS: 0` for the previous
+  error models.
+- **Multivariate objective defaults are bias-sensitive (changes results)**: the default metric for `SCA` and
+  `ET` in `OBJECTIVE_METRICS` is now KGE instead of correlation (bias-blind); `SWE`, `SNOW` and the new
+  `BASIN_*` default to KGE and `GLACIER_MB` to `GMB_SCORE`. `OBJECTIVE_METRICS` keys are now case-insensitive
+  and merged over the defaults (a lower-case `streamflow: nse` used to be ignored; a variable missing from a
+  user dict now gets its default, e.g. NSE for TWS, instead of KGE). Minimised metrics (RMSE, PBIAS,
+  `GMB_ABS_BIAS`) now contribute `|value|` instead of `1 - value`. A variable whose evaluator returned no
+  metrics is penalised (2.0) instead of raising.
 - Missing, unreadable or non-overlapping streamflow observations after postprocessing are now logged at
   WARNING level naming the expected observation path (previously a DEBUG message), and recorded in
   metrics.json.

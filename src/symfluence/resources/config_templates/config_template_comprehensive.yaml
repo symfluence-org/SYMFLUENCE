@@ -2284,6 +2284,111 @@ MULTI_GAUGE_KGE_FLOOR: null
 #   Description: Explicit gauge-ID to river-segment mapping
 GAUGE_SEGMENT_MAPPING: null
 
+# FORCING_CORRECTION_MODE
+#   Type:        Optional
+#   Default:     None
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Shared forcing correction for every model: off | fixed | calibrated (unset = each model's own correction parameters, as before)
+FORCING_CORRECTION_MODE: null
+
+# FORCING_CORRECTION_PRECIP_MULTIPLIER
+#   Type:        Optional
+#   Default:     None
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Fixed total-precipitation multiplier, or 'water_balance' to estimate it from (Q_obs + ET) / P over CALIBRATION_PERIOD
+FORCING_CORRECTION_PRECIP_MULTIPLIER: null
+
+# FORCING_CORRECTION_SNOW_MULTIPLIER
+#   Type:        Optional
+#   Default:     None
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Fixed extra snowfall multiplier on top of the precipitation multiplier
+FORCING_CORRECTION_SNOW_MULTIPLIER: null
+
+# FORCING_CORRECTION_TEMP_OFFSET
+#   Type:        Optional
+#   Default:     None
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Fixed additive air-temperature offset (K)
+FORCING_CORRECTION_TEMP_OFFSET: null
+
+# FORCING_CORRECTION_QUANTITIES
+#   Type:        List
+#   Default:     [precip]
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Quantities calibrated in 'calibrated' mode (precip, snow, temp)
+FORCING_CORRECTION_QUANTITIES: [precip]
+
+# FORCING_CORRECTION_PRECIP_BOUNDS
+#   Type:        List
+#   Default:     [0.7, 1.6]
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Common bounds of FC_PRECIP_MULT
+FORCING_CORRECTION_PRECIP_BOUNDS: [0.7, 1.6]
+
+# FORCING_CORRECTION_SNOW_BOUNDS
+#   Type:        List
+#   Default:     [0.7, 1.6]
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Common bounds of FC_SNOW_MULT
+FORCING_CORRECTION_SNOW_BOUNDS: [0.7, 1.6]
+
+# FORCING_CORRECTION_TEMP_BOUNDS
+#   Type:        List
+#   Default:     [-3.0, 3.0]
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Common bounds of FC_TEMP_OFFSET (K)
+FORCING_CORRECTION_TEMP_BOUNDS: [-3.0, 3.0]
+
+# FORCING_CORRECTION_PRIOR_WEIGHT
+#   Type:        float
+#   Default:     0.0
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Weight of the prior penalty subtracted from the objective (0 = no prior)
+FORCING_CORRECTION_PRIOR_WEIGHT: 0.0
+
+# FORCING_CORRECTION_PRIOR_PRECIP_MEDIAN
+#   Type:        float
+#   Default:     1.0
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Median of the log-normal prior on FC_PRECIP_MULT
+FORCING_CORRECTION_PRIOR_PRECIP_MEDIAN: 1.0
+
+# FORCING_CORRECTION_PRIOR_PRECIP_SIGMA
+#   Type:        float
+#   Default:     0.2
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Standard deviation of ln(FC_PRECIP_MULT) in the prior
+FORCING_CORRECTION_PRIOR_PRECIP_SIGMA: 0.2
+
+# FORCING_CORRECTION_PRIOR_SNOW_SIGMA
+#   Type:        float
+#   Default:     0.2
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Standard deviation of ln(FC_SNOW_MULT) in the prior (median 1)
+FORCING_CORRECTION_PRIOR_SNOW_SIGMA: 0.2
+
+# FORCING_CORRECTION_PRIOR_TEMP_SIGMA
+#   Type:        float
+#   Default:     1.0
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Standard deviation (K) of the normal prior on FC_TEMP_OFFSET (mean 0)
+FORCING_CORRECTION_PRIOR_TEMP_SIGMA: 1.0
+
+# FORCING_CORRECTION_ET_MM_PER_YEAR
+#   Type:        Optional
+#   Default:     None
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: Actual ET for the water-balance estimate (unset = Budyko curve from PET)
+FORCING_CORRECTION_ET_MM_PER_YEAR: null
+
+# FORCING_CORRECTION_PET_METHOD
+#   Type:        str
+#   Default:     oudin
+#   Source:      ForcingCorrectionConfig (optimization.py)
+#   Description: PET formula for the water-balance estimate: oudin | hamon
+FORCING_CORRECTION_PET_METHOD: oudin
+
 # ERROR_LOG_DIR
 #   Type:        str
 #   Default:     error_logs
@@ -2517,7 +2622,7 @@ OBJECTIVE_WEIGHTS: null
 #   Type:        dict
 #   Default:     None
 #   Source:      OptimizationConfig (optimization.py)
-#   Description: Primary metric per variable for multivariate objective (e.g., {'STREAMFLOW': 'kge'})
+#   Description: Primary metric per variable for multivariate objective (e.g., {'STREAMFLOW': 'kge', 'GLACIER_MB': 'GMB_SCORE'}); unset variables use bias-sensitive defaults (KGE; NSE for TWS; GMB_SCORE for GLACIER_MB)
 OBJECTIVE_METRICS: null
 
 # WORKER_MAX_RETRIES
@@ -3382,6 +3487,62 @@ ET_GLEAM_MAX_RELATIVE_UNCERTAINTY: 0.5
 #   Source:      ETEvalConfig (evaluation.py)
 #   Description: Path to ET observation data
 ET_OBS_PATH: null
+
+# OUTPUT_ADAPTER_MODEL
+#   Type:        Optional
+#   Default:     None
+#   Source:      MultiVariableEvalConfig (evaluation.py)
+#   Description: Model whose output adapter the GLACIER_MB / BASIN_* evaluators use; default: the single HYDROLOGICAL_MODEL
+OUTPUT_ADAPTER_MODEL: null
+
+# GLACIER_MB_OBS_PATH
+#   Type:        Optional
+#   Default:     None
+#   Source:      MultiVariableEvalConfig (evaluation.py)
+#   Description: CSV/NetCDF of glacier mass-balance periods (start/end dates, rate, optional uncertainty and area); e.g. Hugonnet et al. (2021) dmdtda/err_dmdtda
+GLACIER_MB_OBS_PATH: null
+
+# GLACIER_MB_OBS_UNITS
+#   Type:        Literal
+#   Default:     m_we_per_yr
+#   Source:      MultiVariableEvalConfig (evaluation.py)
+#   Description: Units of the observed mass-balance rate and its uncertainty
+GLACIER_MB_OBS_UNITS: "m_we_per_yr"
+
+# GLACIER_MB_SCALE
+#   Type:        float
+#   Default:     1000.0
+#   Source:      MultiVariableEvalConfig (evaluation.py)
+#   Description: Error scale (mm w.e./yr) for GMB_SCORE when a period has no uncertainty
+GLACIER_MB_SCALE: 1000.0
+
+# GLACIER_MB_ENDPOINT_TOLERANCE_DAYS
+#   Type:        float
+#   Default:     1.0
+#   Source:      MultiVariableEvalConfig (evaluation.py)
+#   Description: Largest gap (days) between a period boundary and the simulated state used for it
+GLACIER_MB_ENDPOINT_TOLERANCE_DAYS: 1.0
+
+# BASIN_SWE_OBS_PATH
+#   Type:        Optional
+#   Default:     None
+#   Source:      MultiVariableEvalConfig (evaluation.py)
+#   Description: Observed basin (or point) SWE series, mm
+BASIN_SWE_OBS_PATH: null
+
+# BASIN_SCA_OBS_PATH
+#   Type:        Optional
+#   Default:     None
+#   Source:      MultiVariableEvalConfig (evaluation.py)
+#   Description: Observed snow-covered fraction series (0-1, or percent)
+BASIN_SCA_OBS_PATH: null
+
+# BASIN_ET_OBS_PATH
+#   Type:        Optional
+#   Default:     None
+#   Source:      MultiVariableEvalConfig (evaluation.py)
+#   Description: Observed basin ET series, mm/d
+BASIN_ET_OBS_PATH: null
 
 
 # 17. Paths & Data Locations
@@ -8649,19 +8810,33 @@ ENKF_PRECIP_PERTURBATION_STD: 0.3
 #   Description: Additive std for temperature perturbation (K)
 ENKF_TEMP_PERTURBATION_STD: 1.0
 
+# ENKF_FORCING_CORRELATION_HOURS
+#   Type:        float
+#   Default:     24.0
+#   Source:      EnKFConfig (state_config.py)
+#   Description: e-folding time (hours) of the AR(1) forcing perturbations; 0 = white noise (independent at every timestep)
+ENKF_FORCING_CORRELATION_HOURS: 24.0
+
 # ENKF_OBS_ERROR_STD
 #   Type:        float
 #   Default:     0.1
 #   Source:      EnKFConfig (state_config.py)
-#   Description: Relative observation error standard deviation
+#   Description: Relative observation error b in sigma = a + b*Q_obs (10 %); the std itself in model units for 'absolute'
 ENKF_OBS_ERROR_STD: 0.1
+
+# ENKF_OBS_ERROR_ABS
+#   Type:        float
+#   Default:     None
+#   Source:      EnKFConfig (state_config.py)
+#   Description: Absolute observation error floor a (m3/s) in sigma = a + b*Q_obs ('heteroscedastic'); None = 1% of the mean observed discharge
+ENKF_OBS_ERROR_ABS: null
 
 # ENKF_OBS_ERROR_TYPE
 #   Type:        str
-#   Default:     relative
+#   Default:     heteroscedastic
 #   Source:      EnKFConfig (state_config.py)
-#   Description: Observation error type ('relative' or 'absolute')
-ENKF_OBS_ERROR_TYPE: relative
+#   Description: Streamflow observation error model: 'heteroscedastic' sigma = a + b*Q_obs, 'relative' sigma = max(b*Q_obs, floor), 'absolute' sigma = ENKF_OBS_ERROR_STD
+ENKF_OBS_ERROR_TYPE: heteroscedastic
 
 # ENKF_FILTER_VARIANT
 #   Type:        str
@@ -8718,6 +8893,48 @@ ENKF_ENFORCE_NONNEG: true
 #   Source:      EnKFConfig (state_config.py)
 #   Description: Enable joint state-parameter estimation
 ENKF_ESTIMATE_PARAMS: false
+
+# ENKF_PRECIP_BIAS_STATE
+#   Type:        bool
+#   Default:     False
+#   Source:      EnKFConfig (state_config.py)
+#   Description: Augment the state with a multiplicative precipitation bias (estimated in log space) that the filter updates
+ENKF_PRECIP_BIAS_STATE: false
+
+# ENKF_PRECIP_BIAS_STD
+#   Type:        float
+#   Default:     0.2
+#   Source:      EnKFConfig (state_config.py)
+#   Description: Initial log-space std of the precipitation bias state
+ENKF_PRECIP_BIAS_STD: 0.2
+
+# ENKF_PRECIP_BIAS_WALK_STD
+#   Type:        float
+#   Default:     0.01
+#   Source:      EnKFConfig (state_config.py)
+#   Description: Per-timestep random-walk std of the log precipitation bias (keeps the bias ensemble from collapsing)
+ENKF_PRECIP_BIAS_WALK_STD: 0.01
+
+# ENKF_OPEN_LOOP
+#   Type:        bool
+#   Default:     True
+#   Source:      EnKFConfig (state_config.py)
+#   Description: Also run the same perturbed ensemble without updates (open-loop baseline) and report skill relative to it
+ENKF_OPEN_LOOP: true
+
+# ENKF_FORECAST_LEAD_DAYS
+#   Type:        float
+#   Default:     0.0
+#   Source:      EnKFConfig (state_config.py)
+#   Description: Issue ensemble forecasts of this many days from the analysis and score them by lead time (0 = off)
+ENKF_FORECAST_LEAD_DAYS: 0.0
+
+# ENKF_FORECAST_ISSUE_INTERVAL
+#   Type:        int
+#   Default:     1
+#   Source:      EnKFConfig (state_config.py)
+#   Description: Issue a forecast every N timesteps after warm-up
+ENKF_FORECAST_ISSUE_INTERVAL: 1
 
 # ================================================================================
 # FEWS GENERAL ADAPTER (optional Delft-FEWS integration)

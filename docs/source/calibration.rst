@@ -119,6 +119,10 @@ Noah-OWP parameters:
      - psisat          # saturated soil potential
      - refkdt          # reference infiltration parameter
 
+Forcing corrections (precipitation multipliers such as GR ``PCORR`` or SUMMA
+``precip_mult``) can be shared by every model of an ensemble, fixed or
+calibrated with common bounds and a prior: see :ref:`forcing_correction`.
+
 Optimization Algorithms
 -----------------------
 
@@ -237,6 +241,12 @@ Combine multiple target variables with per-variable weights and metrics:
      streamflow: 0.7
      swe: 0.3
 
+Unset variables use bias-sensitive default metrics (KGE; NSE for TWS;
+``GMB_SCORE`` for ``GLACIER_MB``). Glacier mass balance, basin SWE, SCA and ET
+can be evaluated for any model with an output adapter, and glacier mass
+balance can be a COMPOSITE component or an NSGA-II objective; see
+:doc:`multivariable_evaluation`.
+
 Calibration Execution
 ---------------------
 
@@ -344,8 +354,9 @@ over when:
 - the calibrated parameters, their bounds, the algorithm, the model,
   ``OPTIMIZATION_METRIC``, ``CALIBRATION_PERIOD``, ``RANDOM_SEED``,
   ``POPULATION_SIZE``, the calibration budget (``CALIBRATION_BUDGET_MODE``
-  and its settings) or, for DREAM, the likelihood settings
-  (``DREAM_LIKELIHOOD``, ``DREAM_TEMPERATURE``, ``LIKELIHOOD_*``) changed since the checkpoint (the error names the
+  and its settings), the shared forcing correction (``FORCING_CORRECTION_*``)
+  or, for DREAM, the likelihood settings (``DREAM_LIKELIHOOD``,
+  ``DREAM_TEMPERATURE``, ``LIKELIHOOD_*``) changed since the checkpoint (the error names the
   setting);
 - the replay diverges from the log: the algorithm asks for different
   parameter sets than were recorded, or its random-number generator is not in
@@ -425,6 +436,7 @@ Example Workflows
 **See Also**
 
 - :doc:`uncertainty_sensitivity` — DREAM/GLUE predictive uncertainty and global sensitivity analysis
+- :doc:`multivariable_evaluation` — glacier mass balance, SWE, SCA and ET for any model
 - :doc:`configuration` — Complete parameter reference
 - :doc:`troubleshooting` — Calibration troubleshooting and diagnostics
 - :doc:`api` — Programmatic calibration control

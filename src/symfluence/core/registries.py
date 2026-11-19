@@ -61,6 +61,10 @@ class Registries:
     # Result extraction
     # ==================================================================
     result_extractors: Registry = Registry("result_extractors", normalize=_model_key, doc="Result extractor classes")
+    output_adapters: Registry = Registry(
+        "output_adapters", normalize=_model_key,
+        doc="Standard output-variable adapters (glacier, SWE, SCA, ET) per model",
+    )
 
     # ==================================================================
     # Optimization

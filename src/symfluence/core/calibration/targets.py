@@ -20,6 +20,8 @@ _TARGET_EXPORTS: Mapping[str, str] = {
     "tws": "TWSTarget", "grace": "TWSTarget", "grace_tws": "TWSTarget",
     "total_storage": "TWSTarget", "stor_grace": "TWSTarget", "stor_mb": "TWSTarget",
     "multivariate": "MultivariateTarget",
+    "glacier_mb": "GlacierMBTarget", "glacier_mass_balance": "GlacierMBTarget",
+    "basin_swe": "BasinSWETarget", "basin_sca": "BasinSCATarget", "basin_et": "BasinETTarget",
 }
 
 

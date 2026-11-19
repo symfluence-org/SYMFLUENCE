@@ -518,6 +518,72 @@ class SensitivityConfig(BaseModel):
         if isinstance(v, str):
             v = [m for m in v.split(',')]
         return [str(m).strip().lower() for m in v if str(m).strip()]
+class ForcingCorrectionConfig(BaseModel):
+    """Shared forcing correction for every model (the FORCING_CORRECTION_* section).
+
+    ``mode`` unset (the default) keeps every model's own precipitation /
+    temperature correction parameters exactly as before. When set, it replaces
+    them with one definition shared by every model; see
+    ``docs/source/forcing_correction.rst``.
+    """
+    model_config = FROZEN_CONFIG
+
+    mode: Optional[Literal['off', 'fixed', 'calibrated']] = Field(
+        default=None, alias='FORCING_CORRECTION_MODE',
+        description="'off' (no correction), 'fixed' (given or water-balance values) or "
+                    "'calibrated' (common parameters); unset = per-model behaviour")
+    precip_multiplier: Optional[Union[float, Literal['water_balance']]] = Field(
+        default=None, alias='FORCING_CORRECTION_PRECIP_MULTIPLIER',
+        description="Fixed total-precipitation multiplier, or 'water_balance' to estimate it "
+                    "once from (Q_obs + ET) / P over the calibration period")
+    snow_multiplier: Optional[float] = Field(
+        default=None, alias='FORCING_CORRECTION_SNOW_MULTIPLIER', gt=0,
+        description='Fixed extra snowfall multiplier (on top of the precipitation multiplier)')
+    temp_offset: Optional[float] = Field(
+        default=None, alias='FORCING_CORRECTION_TEMP_OFFSET',
+        description='Fixed additive air-temperature offset (K)')
+    quantities: List[Literal['precip', 'snow', 'temp']] = Field(
+        default_factory=lambda: ['precip'], alias='FORCING_CORRECTION_QUANTITIES',
+        description="Quantities calibrated in 'calibrated' mode")
+    precip_bounds: List[float] = Field(
+        default_factory=lambda: [0.7, 1.6], alias='FORCING_CORRECTION_PRECIP_BOUNDS')
+    snow_bounds: List[float] = Field(
+        default_factory=lambda: [0.7, 1.6], alias='FORCING_CORRECTION_SNOW_BOUNDS')
+    temp_bounds: List[float] = Field(
+        default_factory=lambda: [-3.0, 3.0], alias='FORCING_CORRECTION_TEMP_BOUNDS')
+    prior_weight: float = Field(
+        default=0.0, alias='FORCING_CORRECTION_PRIOR_WEIGHT', ge=0,
+        description='Weight of the prior penalty subtracted from the objective (0 = no prior)')
+    prior_precip_median: float = Field(
+        default=1.0, alias='FORCING_CORRECTION_PRIOR_PRECIP_MEDIAN', gt=0)
+    prior_precip_sigma: float = Field(
+        default=0.2, alias='FORCING_CORRECTION_PRIOR_PRECIP_SIGMA', gt=0,
+        description='Standard deviation of ln(precipitation multiplier) in the log-normal prior')
+    prior_snow_sigma: float = Field(
+        default=0.2, alias='FORCING_CORRECTION_PRIOR_SNOW_SIGMA', gt=0)
+    prior_temp_sigma: float = Field(
+        default=1.0, alias='FORCING_CORRECTION_PRIOR_TEMP_SIGMA', gt=0,
+        description='Standard deviation (K) of the normal prior on the temperature offset')
+    et_mm_per_year: Optional[float] = Field(
+        default=None, alias='FORCING_CORRECTION_ET_MM_PER_YEAR', ge=0,
+        description='Actual ET for the water-balance estimate; unset = Budyko from PET')
+    pet_method: Literal['oudin', 'hamon'] = Field(
+        default='oudin', alias='FORCING_CORRECTION_PET_METHOD',
+        description='PET formula for the water-balance estimate when no ET is given')
+
+    @field_validator('quantities', mode='before')
+    @classmethod
+    def _split_quantities(cls, v):
+        if isinstance(v, str):
+            return [item.strip().lower() for item in v.split(',') if item.strip()]
+        return v
+
+    @field_validator('precip_bounds', 'snow_bounds', 'temp_bounds')
+    @classmethod
+    def _check_bounds(cls, v):
+        if len(v) != 2 or not v[0] < v[1]:
+            raise ValueError(f'bounds must be [min, max] with min < max, got {v}')
+        return [float(x) for x in v]
 
 
 class OptimizationConfig(BaseModel):
@@ -696,8 +762,9 @@ class OptimizationConfig(BaseModel):
     objective_metrics: Optional[Dict[str, str]] = Field(
         default=None,
         alias='OBJECTIVE_METRICS',
-        description="Primary metric per variable for multivariate objective. "
-                    "Example: {'STREAMFLOW': 'kge', 'SWE': 'nse'}"
+        description="Primary metric per variable for multivariate objective, overriding the "
+                    "bias-sensitive defaults (KGE; NSE for TWS; GMB_SCORE for GLACIER_MB). "
+                    "Example: {'STREAMFLOW': 'kge', 'GLACIER_MB': 'GMB_SCORE'}"
     )
 
     # Worker retry settings
@@ -773,6 +840,7 @@ class OptimizationConfig(BaseModel):
     multi_gauge: Optional[MultiGaugeConfig] = Field(default_factory=MultiGaugeConfig)
     uncertainty: Optional[UncertaintyConfig] = Field(default_factory=UncertaintyConfig)
     sensitivity: Optional[SensitivityConfig] = Field(default_factory=SensitivityConfig)
+    forcing_correction: Optional[ForcingCorrectionConfig] = Field(default_factory=ForcingCorrectionConfig)
 
     @field_validator('methods', mode='before')
     @classmethod

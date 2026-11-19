@@ -387,6 +387,18 @@ def test_dream_resume_refuses_changed_likelihood_settings(tmp_path):
     _run(tmp_path, 'dream', run_dir, budget=40)
     with pytest.raises(CalibrationResumeError, match="likelihood"):
         _run(tmp_path, 'dream', run_dir, CALIBRATION_RESUME=True, LIKELIHOOD_BOX_COX_LAMBDA=0.5)
+def test_resume_refuses_changed_forcing_correction(tmp_path, monkeypatch):
+    from symfluence.core.calibration.forcing_correction import ForcingCorrectionPlan
+
+    def plan(multiplier):
+        return ForcingCorrectionPlan(mode='fixed', model='SYNTH', fixed={'precip': multiplier})
+
+    run_dir = tmp_path / 'run'
+    monkeypatch.setattr(_ParamManager, 'forcing_correction', plan(1.1), raising=False)
+    _run(tmp_path, 'dds', run_dir, budget=15)
+    monkeypatch.setattr(_ParamManager, 'forcing_correction', plan(1.3), raising=False)
+    with pytest.raises(CalibrationResumeError, match="forcing_correction"):
+        _run(tmp_path, 'dds', run_dir, CALIBRATION_RESUME=True)
 
 
 def test_resume_with_changed_iterations_diverges_loudly(tmp_path):

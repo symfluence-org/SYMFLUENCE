@@ -18,6 +18,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
+from symfluence.core.calibration.forcing_correction import PENALTY_METRIC as FORCING_CORRECTION_PENALTY_METRIC
+from symfluence.core.calibration.forcing_correction import TASK_KEY as FORCING_CORRECTION_TASK_KEY
+from symfluence.core.calibration.forcing_correction import apply_prior_to_score
 from symfluence.core.constants import ModelDefaults
 from symfluence.core.exceptions import RetryExhaustedError
 from symfluence.core.logging_utils import log_once
@@ -496,6 +499,11 @@ class BaseWorker(ABC):
         Returns:
             WorkerResult from evaluation
         """
+        # The shared forcing-correction prior travels with the task; it is
+        # not a model argument.
+        additional_data = dict(task.additional_data)
+        forcing_correction = additional_data.pop(FORCING_CORRECTION_TASK_KEY, None)
+
         # Step 1: Apply parameters
         # Note: proc_output_dir, sim_dir, proc_id must be passed explicitly because
         # they're excluded from additional_data (since they're primary fields in WorkerTask)
@@ -507,7 +515,7 @@ class BaseWorker(ABC):
             output_dir=task.output_dir,
             sim_dir=task.sim_dir,
             proc_id=task.proc_id,
-            **task.additional_data
+            **additional_data
         ):
             return WorkerResult.failure(
                 individual_id=task.individual_id,
@@ -524,7 +532,7 @@ class BaseWorker(ABC):
             sim_dir=task.sim_dir,
             proc_id=task.proc_id,
             params=task.params,
-            **task.additional_data
+            **additional_data
         ):
             return WorkerResult.failure(
                 individual_id=task.individual_id,
@@ -540,11 +548,20 @@ class BaseWorker(ABC):
             sim_dir=task.sim_dir,
             settings_dir=str(task.settings_dir),
             proc_id=task.proc_id,
-            **task.additional_data
+            **additional_data
         )
+
+        # Glacier mass-balance objectives (GMB_*) come from the model-agnostic
+        # GLACIER_MB evaluator, not from the worker's own metrics.
+        if isinstance(metrics, dict):
+            self._add_glacier_mb_metrics(metrics, task)
 
         # Determine primary score
         score = self._extract_primary_score(metrics, task.config)
+        if forcing_correction and not is_penalty(score):
+            score, prior_penalty = apply_prior_to_score(score, forcing_correction, task.params)
+            if isinstance(metrics, dict):
+                metrics[FORCING_CORRECTION_PENALTY_METRIC] = prior_penalty
 
         return WorkerResult(
             individual_id=task.individual_id,
@@ -553,6 +570,22 @@ class BaseWorker(ABC):
             metrics=metrics,
             iteration=task.iteration
         )
+
+    def _add_glacier_mb_metrics(self, metrics: Dict[str, Any], task: WorkerTask) -> None:
+        """Add GMB_* metrics when a configured objective asks for them."""
+        from symfluence.core.modeling.evaluators.multivariable import (
+            glacier_mb_metrics_for_run,
+            requested_glacier_mb_metrics,
+        )
+        config = task.config if task.config is not None else self.config
+        wanted = requested_glacier_mb_metrics(config)
+        if not wanted or all(self._find_metric_value(metrics, n) is not None for n in wanted):
+            return
+        data_dir = resolve_config_value(config, lambda: config.system.data_dir, dict_key='SYMFLUENCE_DATA_DIR')
+        domain = resolve_config_value(config, lambda: config.domain.name, dict_key='DOMAIN_NAME')
+        project_dir = Path(str(data_dir)) / f'domain_{domain}' if data_dir and domain else None
+        metrics.update(glacier_mb_metrics_for_run(
+            config, [task.output_dir, task.sim_dir], project_dir, self.logger))
 
     @staticmethod
     def _configured_metric(config: Any) -> Tuple[str, Optional[Dict[str, float]]]:
