@@ -10,6 +10,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Fair, reproducible multi-model comparison** (docs: *Multi-model comparison*):
+  - *Seeds*: with `RANDOM_SEED` unset, calibration draws a seed, logs it and records it in
+    `<exp>_<algo>_calibration_conditions.json`, `*_best_params.json` and `run_manifest.json`; setting
+    `RANDOM_SEED` to that value regenerates the run. Seeded runs are unchanged. A `--resume` of an unseeded run
+    reuses the drawn seed (stored as `rng.entropy` in the resume state), so it still replays exactly; the
+    resume fingerprint covers a configured seed and the calibration budget (`CALIBRATION_BUDGET_MODE`).
+  - *Provenance*: every run writes `resolved_config.yaml` (validated, defaults filled, secrets masked) next to
+    `run_manifest.json`, which records its SHA-256 plus fingerprints of the forcing and observation files
+    (`PROVENANCE_INPUT_HASH`: `listing` (default; names, sizes, mtimes), `content` (full SHA-256) or `none`)
+    and each calibration's seed and budget.
+  - *Budget*: `CALIBRATION_BUDGET_MODE: per_parameter` with `EVALUATIONS_PER_PARAMETER`,
+    `CALIBRATION_BUDGET_MIN_EVALUATIONS` and `CALIBRATION_BUDGET_MAX_EVALUATIONS` gives each model an
+    evaluation budget proportional to its number of calibrated parameters. Default `fixed` = unchanged.
+  - *`symfluence ensemble`* (and `evaluation.multimodel_ensemble.run_ensemble`): equal-weight, skill-weighted
+    (KGE or inverse-MSE weights fitted on the calibration period only), median and vote-weighted combinations of
+    member discharge; scores members and combinations on calibration/evaluation/test periods; writes a score
+    table, JSON, series CSV, a figure and a per-member comparison-conditions table (forcing, forcing correction,
+    discretisation, algorithm, evaluations used, n params, seed, config hash; `unknown` where not recorded).
 - **Run metrics after every run**: `postprocess_results` now writes `results/<EXPERIMENT_ID>/metrics.json`
   (+ `metrics.csv`) with a documented, versioned schema: per model and per configured period (calibration,
   evaluation, `TEST_PERIOD` when the schema has it, and the full record after spin-up) KGE with r/alpha/beta,

@@ -71,6 +71,7 @@
 
    configuration
    calibration
+   multi_model_comparison
 
 .. toctree::
    :maxdepth: 1

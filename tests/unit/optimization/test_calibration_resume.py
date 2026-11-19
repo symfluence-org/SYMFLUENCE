@@ -214,7 +214,10 @@ class _Optimizer(BaseModelOptimizer):
         self.max_iterations = config['NUMBER_OF_ITERATIONS']
         self.population_size = config.get('POPULATION_SIZE', 8)
         self.target_metric = 'KGE'
-        self.random_seed = config.get('RANDOM_SEED')
+        # As BaseModelOptimizer.__init__: an unset RANDOM_SEED is drawn and recorded.
+        from symfluence.core.provenance import resolve_seed
+        self.random_seed, self.random_seed_source = resolve_seed(
+            config.get('RANDOM_SEED'), LOG, context="calibration")
         self._runtime_overrides = {}
         self._metrics_tracker = EvaluationMetricsTracker(self.max_iterations, LOG, lambda: "0s")
         self._resume_checkpointer = None
@@ -331,6 +334,30 @@ def test_resumed_seeded_run_matches_uninterrupted_run(tmp_path, algorithm, caplo
     assert best['best_score'] == reference.best_score
 
 
+def test_unseeded_optimizer_run_resumes_with_its_drawn_seed(tmp_path, caplog):
+    """A drawn seed is restored on resume, so the run replays and ends as a seeded one would."""
+    run_dir = tmp_path / 'run'
+    dead = _run(tmp_path, 'dds', run_dir, budget=20, RANDOM_SEED=None)
+    assert dead.random_seed_source == 'drawn'
+    drawn = dead.random_seed
+    state = load_resume_state(resume_state_path(run_dir, 'resume_test', 'dds'))
+    assert state['fingerprint']['fields']['random_seed'] is None
+    assert state['rng']['entropy'] == drawn
+
+    with caplog.at_level(logging.INFO, logger=LOG.name):
+        resumed = _run(tmp_path, 'dds', run_dir, CALIBRATION_RESUME=True, RANDOM_SEED=None)
+    assert "replay verified against the checkpoint" in caplog.text
+    assert resumed.random_seed == drawn
+
+    reference = _run(tmp_path, 'dds', tmp_path / 'reference', RANDOM_SEED=drawn)
+    assert resumed.best_score == reference.best_score
+    assert resumed.best_params == reference.best_params
+    conditions = json.loads(
+        (run_dir / 'resume_test_dds_calibration_conditions.json').read_text())
+    assert conditions['random_seed'] == drawn
+    assert conditions['random_seed_source'] == 'drawn'
+
+
 def test_resume_refuses_changed_bounds(tmp_path):
     run_dir = tmp_path / 'run'
     _run(tmp_path, 'dds', run_dir, budget=15)
@@ -345,6 +372,14 @@ def test_resume_refuses_changed_seed(tmp_path):
     _run(tmp_path, 'dds', run_dir, budget=15)
     with pytest.raises(CalibrationResumeError, match="random_seed"):
         _run(tmp_path, 'dds', run_dir, CALIBRATION_RESUME=True, RANDOM_SEED=43)
+
+
+def test_resume_refuses_changed_budget_mode(tmp_path):
+    run_dir = tmp_path / 'run'
+    _run(tmp_path, 'dds', run_dir, budget=15)
+    with pytest.raises(CalibrationResumeError, match="budget"):
+        _run(tmp_path, 'dds', run_dir, CALIBRATION_RESUME=True,
+             CALIBRATION_BUDGET_MODE='per_parameter', EVALUATIONS_PER_PARAMETER=20)
 
 
 def test_resume_with_changed_iterations_diverges_loudly(tmp_path):

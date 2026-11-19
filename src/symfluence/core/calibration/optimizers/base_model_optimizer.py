@@ -24,6 +24,7 @@ Optional Overrides:
 from __future__ import annotations
 
 import atexit
+import json
 import logging
 import random
 import tempfile
@@ -37,7 +38,9 @@ import pandas as pd
 from symfluence.core import ConfigurableMixin
 from symfluence.core.constants import ModelDefaults
 from symfluence.core.exceptions import OptimizationError, require_not_none
+from symfluence.core.provenance import config_sha256, get_active_provenance, record_calibration, resolve_seed
 
+from ..budget import CalibrationBudget, resolve_budget
 from ..mixins import GradientOptimizationMixin, ParallelExecutionMixin, ResultsTrackingMixin, RetryExecutionMixin
 from ..mixins.parallel.local_scratch_manager import LocalScratchManager
 from ..workers.base_worker import BaseWorker
@@ -175,12 +178,16 @@ class BaseModelOptimizer(
             dict_key='OPTIMIZATION_METRIC',
         )
 
-        # Random seed
-        self.random_seed = self._get_config_value(
+        # Random seed. An unset RANDOM_SEED is replaced by a drawn, logged
+        # seed so every stochastic run is regenerable (setting RANDOM_SEED to
+        # the recorded value reproduces it); a configured seed is unchanged.
+        configured_seed = self._get_config_value(
             lambda: self.config.system.random_seed, dict_key='RANDOM_SEED'
         )
-        if self.random_seed is not None and self.random_seed != 'None':
-            self._set_random_seeds(int(self.random_seed))
+        self.random_seed, self.random_seed_source = resolve_seed(
+            configured_seed, self.logger, context="calibration")
+        self._set_random_seeds(self.random_seed)
+        self._n_population_evaluations = 0
 
         # Parallel processing state
         self.parallel_dirs: Dict[int, Dict[str, Any]] = {}
@@ -746,6 +753,79 @@ class BaseModelOptimizer(
         except (KeyError, IndexError, TypeError, ValueError) as e:
             self.logger.debug(f"Calibration alignment check failed: {e}")
 
+    def _apply_calibration_budget(self, algorithm: Any, n_params: int) -> CalibrationBudget:
+        """Resolve CALIBRATION_BUDGET_MODE and set the algorithm's iteration count.
+
+        ``fixed`` (default) leaves NUMBER_OF_ITERATIONS untouched;
+        ``per_parameter`` scales the evaluation budget with ``n_params`` (see
+        :mod:`symfluence.core.calibration.budget`).
+        """
+        budget = resolve_budget(
+            mode=self._get_config_value(lambda: self.config.optimization.budget_mode, default='fixed',
+                                        dict_key='CALIBRATION_BUDGET_MODE'),
+            n_params=n_params,
+            iterations=algorithm.max_iterations,
+            algorithm_name=algorithm.name,
+            population_size=algorithm.population_size,
+            evaluations_per_parameter=self._get_config_value(
+                lambda: self.config.optimization.evaluations_per_parameter, default=100,
+                dict_key='EVALUATIONS_PER_PARAMETER'),
+            min_evaluations=self._get_config_value(
+                lambda: self.config.optimization.budget_min_evaluations, default=100,
+                dict_key='CALIBRATION_BUDGET_MIN_EVALUATIONS'),
+            max_evaluations=self._get_config_value(
+                lambda: self.config.optimization.budget_max_evaluations,
+                dict_key='CALIBRATION_BUDGET_MAX_EVALUATIONS'),
+        )
+        if budget.mode == 'per_parameter':
+            algorithm.max_iterations = budget.iterations
+            self.max_iterations = budget.iterations
+            self._metrics_tracker.max_iterations = budget.iterations
+            self.logger.info(
+                f"Per-parameter budget: {budget.evaluations_per_parameter} evaluations x "
+                f"{n_params} parameters -> {budget.target_evaluations} evaluations "
+                f"= {budget.iterations} {algorithm.name} iterations "
+                f"(~{budget.evaluations_per_iteration} evaluations each)"
+            )
+        return budget
+
+    def _record_calibration_conditions(self, file_slug: str, algorithm: Any,
+                                       budget: CalibrationBudget) -> Optional[Path]:
+        """Write ``<experiment>_<algo>_calibration_conditions.json`` and add it to provenance.
+
+        Carries what a fair multi-model comparison must report per member:
+        algorithm, seed (and whether it was drawn), budget, evaluations
+        actually used, number and names of calibrated parameters, and the
+        resolved config hash. ``symfluence ensemble`` reads it.
+        """
+        crash = self.get_crash_stats()
+        used = int(crash.get('total_evaluations', 0)) + int(getattr(self, '_n_population_evaluations', 0))
+        info: Dict[str, Any] = {
+            'model': self._get_model_name(),
+            'experiment_id': self.experiment_id,
+            'algorithm': algorithm.name,
+            'random_seed': self.random_seed,
+            'random_seed_source': self.random_seed_source,
+            'n_params': budget.n_params,
+            'param_names': list(self.param_manager.all_param_names),
+            'budget': budget.to_dict(),
+            'evaluations_used': used if used > 0 else len(self._iteration_history),
+            'metric': self.target_metric,
+        }
+        try:
+            info['resolved_config_sha256'] = config_sha256(self.config)
+        except (TypeError, ValueError, AttributeError) as e:
+            self.logger.debug(f"Could not hash resolved config: {e}")
+        record_calibration(get_active_provenance(), info)
+        path = Path(self.results_dir) / f"{self.experiment_id}_{file_slug}_calibration_conditions.json"
+        try:
+            with open(path, 'w', encoding='utf-8') as fh:
+                json.dump(info, fh, indent=2, default=str)
+        except OSError as e:
+            self.logger.warning(f"Could not write calibration conditions: {e}")
+            return None
+        return path
+
     def _set_random_seeds(self, seed: int) -> None:
         """Set random seeds for reproducibility."""
         random.seed(seed)
@@ -1045,6 +1125,7 @@ class BaseModelOptimizer(
             Array shape (n_individuals,) with fitness scores
         """
         base_seed = self.random_seed if hasattr(self, 'random_seed') else None
+        self._n_population_evaluations = getattr(self, '_n_population_evaluations', 0) + len(population)
         return self.population_evaluator.evaluate_population(
             population, iteration, base_random_seed=base_seed
         )
@@ -1300,9 +1381,37 @@ class BaseModelOptimizer(
             'metric': self.target_metric,
             'objective_names': kwargs.get('objective_names'),
             'calibration_period': calibration_period,
-            'random_seed': None if self.random_seed in (None, 'None', '') else int(self.random_seed),
+            # Only a configured seed is part of the fingerprint; a drawn one is
+            # restored from the resume state (see _restore_drawn_seed).
+            'random_seed': (int(self.random_seed)
+                            if getattr(self, 'random_seed_source', 'config') == 'config'
+                            and self.random_seed is not None else None),
             'population_size': self.population_size,
+            'budget': self._fingerprint_budget(),
         })
+
+    def _fingerprint_budget(self) -> Any:
+        """Budget part of the resume fingerprint ('fixed' or the per-parameter budget)."""
+        budget = getattr(self, '_calibration_budget', None)
+        if budget is None or budget.mode != 'per_parameter':
+            return 'fixed'
+        return budget.to_dict()
+
+    def _restore_drawn_seed(self, resumed_state: Optional[Dict[str, Any]]) -> None:
+        """On resume of an unseeded run, reuse the seed the original run drew.
+
+        The drawn seed is stored as the algorithm's run entropy
+        (``rng.entropy`` in the resume state), the same field a standalone
+        unseeded algorithm records, so the resumed run replays exactly.
+        """
+        if not resumed_state or getattr(self, 'random_seed_source', 'config') != 'drawn':
+            return
+        entropy = (resumed_state.get('rng') or {}).get('entropy')
+        if entropy is None:
+            return
+        self.random_seed = int(entropy)
+        self._set_random_seeds(self.random_seed)
+        self.logger.info(f"Calibration resume: reusing the original run's drawn seed {self.random_seed}")
 
     def _resume_snapshot(self) -> Dict[str, Any]:
         """Optimizer-side state stored with each resume checkpoint."""
@@ -1399,6 +1508,7 @@ class BaseModelOptimizer(
         resumed_state = None
         if resume_requested and algorithm is not None:
             resumed_state = self._load_resume_state(algorithm, state_path)
+            self._restore_drawn_seed(resumed_state)
 
         if resumed_state is None:
             # A restarted run must not overwrite the previous run's results at
@@ -1407,6 +1517,16 @@ class BaseModelOptimizer(
 
         if algorithm is None:
             return self._run_default_only(file_slug)
+
+        # The algorithm draws from this run's (configured, or drawn and
+        # recorded) seed. A drawn seed is also kept as the algorithm's run
+        # entropy, which the resume state stores (rng.entropy) so a resumed
+        # unseeded run replays with the same seed.
+        algorithm.random_seed = self.random_seed
+        if getattr(self, 'random_seed_source', 'config') == 'drawn':
+            algorithm._run_entropy = int(self.random_seed)
+        budget = self._apply_calibration_budget(algorithm, n_params)
+        self._calibration_budget = budget
 
         # Build callbacks and kwargs for the algorithm
         callbacks, kwargs = self._build_algorithm_callbacks(file_slug)
@@ -1508,6 +1628,10 @@ class BaseModelOptimizer(
             if value is not None:
                 kwargs[kwarg_name] = value
 
+        if (budget.mode == 'per_parameter' and 'steps' not in kwargs
+                and algorithm_name.lower() in ('adam', 'lbfgs')):
+            kwargs['steps'] = budget.iterations
+
         # Checkpoint/resume: log every evaluation so the run can be replayed
         # (see optimizers/resume.py), and on resume restore the history.
         checkpointer = CalibrationCheckpointer(
@@ -1536,6 +1660,7 @@ class BaseModelOptimizer(
             checkpointer.on_complete(self.best_iteration)
         except OSError as e:
             self.logger.warning(f"Final resume-state save failed: {e}")
+        self._record_calibration_conditions(file_slug, algorithm, budget)
 
         # Save results
         results_path = self.save_results(file_slug, standard_filename=True)
