@@ -9,6 +9,7 @@ from typing import Callable, Dict, List, Optional, Union, cast
 
 import numpy as np
 
+from symfluence.core.metrics.formal_likelihood import boxcox_ar1_log_likelihood
 from symfluence.core.metrics.metrics_core import (
     bias,
     correlation,
@@ -24,6 +25,11 @@ from symfluence.core.metrics.metrics_core import (
     r_squared,
     rmse,
     volumetric_efficiency,
+)
+from symfluence.core.metrics.metrics_signatures import (
+    bfi_error,
+    fdc_slope_error,
+    peak_flow_bias,
 )
 from symfluence.core.metrics.metrics_types import MetricInfo
 
@@ -226,6 +232,66 @@ METRIC_REGISTRY["log_likelihood"] = {
     ),
 }
 
+# Formal likelihood (Box-Cox + AR(1) residuals). The registry function uses
+# the default error model (lambda 0.3, phi estimated, sigma integrated out);
+# calibration workers pass the configured LIKELIHOOD_* settings through
+# StreamflowMetrics.
+METRIC_REGISTRY["LOGLIK_BC_AR1"] = {
+    "function": boxcox_ar1_log_likelihood,
+    "info": MetricInfo(
+        name="LOGLIK_BC_AR1",
+        full_name="Box-Cox AR(1) log-likelihood",
+        range=(float("-inf"), float("inf")),
+        optimal=float("inf"),
+        direction="maximize",
+        units="log density",
+        description="Formal log-likelihood of observed flows with heteroscedastic "
+                    "(Box-Cox) and autocorrelated (AR(1)) Gaussian residuals",
+        reference="Bates & Campbell (2001); Schoups & Vrugt (2010)",
+    ),
+}
+
+# Signature-based objectives (non-negative errors, minimised).
+METRIC_REGISTRY["FDC_SLOPE_ERROR"] = {
+    "function": fdc_slope_error,
+    "info": MetricInfo(
+        name="FDC_SLOPE_ERROR",
+        full_name="Flow-duration-curve mid-segment slope error",
+        range=(0.0, float("inf")),
+        optimal=0.0,
+        direction="minimize",
+        units="percent",
+        description="|%BiasFMS|: error of the 20-70% exceedance slope of the log FDC",
+        reference="Yilmaz et al. (2008)",
+    ),
+}
+METRIC_REGISTRY["PEAK_FLOW_BIAS"] = {
+    "function": peak_flow_bias,
+    "info": MetricInfo(
+        name="PEAK_FLOW_BIAS",
+        full_name="High-flow volume bias",
+        range=(0.0, float("inf")),
+        optimal=0.0,
+        direction="minimize",
+        units="percent",
+        description="|%BiasFHV|: volume error of the highest 2% of flows",
+        reference="Yilmaz et al. (2008)",
+    ),
+}
+METRIC_REGISTRY["BFI_ERROR"] = {
+    "function": bfi_error,
+    "info": MetricInfo(
+        name="BFI_ERROR",
+        full_name="Baseflow index error",
+        range=(0.0, 1.0),
+        optimal=0.0,
+        direction="minimize",
+        units="dimensionless",
+        description="|BFI_sim - BFI_obs| from the Lyne-Hollick digital filter",
+        reference="Lyne & Hollick (1979); Ladson et al. (2013)",
+    ),
+}
+
 # ---------------------------------------------------------------------------
 # Alias → canonical name mapping (kept separate from the registry so that
 # provenance records and config diffs always use the canonical name).
@@ -250,6 +316,10 @@ _METRIC_ALIASES: Dict[str, str] = {
     "mare": "MARE",
     "pbias": "PBIAS",
     "bias": "bias",
+    "loglik_bc_ar1": "LOGLIK_BC_AR1",
+    "fdc_slope_error": "FDC_SLOPE_ERROR",
+    "peak_flow_bias": "PEAK_FLOW_BIAS",
+    "bfi_error": "BFI_ERROR",
 }
 
 
@@ -296,6 +366,10 @@ def list_available_metrics() -> List[str]:
         "PBIAS",
         "correlation",
         "R2",
+        "LOGLIK_BC_AR1",
+        "FDC_SLOPE_ERROR",
+        "PEAK_FLOW_BIAS",
+        "BFI_ERROR",
     ]
 
 

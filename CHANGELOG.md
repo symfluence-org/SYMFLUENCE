@@ -10,6 +10,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Formal streamflow likelihood `LOGLIK_BC_AR1`**: Box-Cox (`LIKELIHOOD_BOX_COX_LAMBDA`, default 0.3) + AR(1)
+  residual error model (Bates & Campbell, 2001; simplified Schoups & Vrugt, 2010). The innovation variance is
+  integrated out under the Jeffreys prior unless `LIKELIHOOD_SIGMA` is set; φ is the conditional least-squares
+  estimate unless `LIKELIHOOD_AR1_PHI` is set; `LIKELIHOOD_EPSILON` offsets zero flows. Usable as
+  `OPTIMIZATION_METRIC` with any algorithm.
+- **DREAM/GLUE samples and scored predictive intervals**: after a DREAM or GLUE run the posterior /
+  behavioural samples (parameters, objective, weights; chain/draw for DREAM) go to `<alg>_uq_samples.nc`; up to
+  `UQ_PREDICTIVE_RUNS` (default 50) of them are re-run over the full period (series stored in the same file);
+  weighted quantiles `UQ_QUANTILES` go to `<alg>_predictive_quantiles.csv` (parameter band, plus a total band
+  with `UQ_RESIDUAL_DRAWS` error-model realisations for formal DREAM); coverage and width of the 90% band and
+  CRPS, per calibration and evaluation period, go to `<alg>_predictive_scores.json`. GLUE bounds are
+  likelihood-weighted. `UQ_PREDICTIVE_RUNS: 0` skips the extra runs.
+- **Design-based global sensitivity analysis**: `run_sensitivity_analysis` now runs a Morris
+  (`SENSITIVITY_METHODS: [morris]`, default; `SENSITIVITY_MORRIS_TRAJECTORIES` 10) and/or Saltelli/Sobol
+  (`sobol`, `SENSITIVITY_SOBOL_N` 256; S1 and ST with bootstrap CIs) design through the model's calibration
+  workers, each point a real model run; `SENSITIVITY_MAX_EVALUATIONS` (5000) refuses larger designs.
+- **Signature-based objectives**: `FDC_SLOPE_ERROR` (|%BiasFMS|), `PEAK_FLOW_BIAS` (|%BiasFHV|, top 2%) and
+  `BFI_ERROR` (|ΔBFI|), all minimised, usable as `OPTIMIZATION_METRIC`, COMPOSITE components or NSGA-II
+  objectives.
+- New docs page "Uncertainty and sensitivity".
 - **Elevation corrections of remapped forcing (opt-in)**: the `lapse` config section (`pressure`, `humidity`,
   `longwave`, `shortwave`, `precipitation`, `wind`, with `lw_gradient`, `sw_gradient`, `precip_gradient`,
   `wind_gradient`) is now applied by the forcing remapper, from the elevation difference between each HRU and
@@ -72,6 +92,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requires it.
 
 ### Changed
+- **DREAM calibrates on the formal likelihood by default (changes results)**: with
+  `ITERATIVE_OPTIMIZATION_ALGORITHM: DREAM` and a streamflow target, `OPTIMIZATION_METRIC` is replaced by
+  `LOGLIK_BC_AR1` (COMPOSITE_METRIC cleared), so DREAM samples a Bayesian posterior instead of the
+  temperature-dependent `exp(KGE / T)` pseudo-posterior. `DREAM_LIKELIHOOD: informal` restores the old
+  behaviour (with a warning). Failed runs are now rejected by DREAM instead of being scored at the penalty value.
+- **NSGA-II default secondary objective is `KGE_LOG` (changes results)**: both objectives used to default to
+  KGE, so NSGA-II silently ran single-objective; the default now gives a KGE / KGE-of-log-flows front. Workers
+  now compute the NSGA-II / MOEA/D objective metrics, and evaluator-scored workers (e.g. SUMMA) compute a
+  configured objective outside the standard set (KGE_LOG, LOGLIK_BC_AR1, signatures) instead of falling back
+  to KGE.
+- **Sensitivity analysis outputs (changes results)**: the trajectory-surrogate Sobol and RBD-FAST indices
+  and VISCOUS-on-trajectory are gone (see Removed); `run_sensitivity_analysis` writes `morris_sensitivity.csv` /
+  `sobol_sensitivity.csv` and `all_sensitivity_results.csv` from a real design, plus `trajectory_correlation.csv`
+  (`SENSITIVITY_TRAJECTORY_CORRELATION`), and now runs model simulations (r(d+1) for the default Morris
+  design).
 - **SAC-SMA cryosphere replay scores with the engine's KGE/NSE**: `sacsma_cryosphere/replay.py` dropped its own
   KGE/NSE formula for `core.metrics` (identical values to 1e-12 on real series). A constant simulation now scores
   `None` instead of a finite KGE with r = 0. `replay.py` hashes its own source, so specs frozen against the
@@ -159,6 +194,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   old filenames need re-keying.
 
 ### Removed
+- **Trajectory-based Sobol, RBD-FAST and VISCOUS sensitivity**: `SensitivityAnalyzer.perform_sobol_analysis`,
+  `perform_rbd_fast_analysis` and `perform_sensitivity_analysis` estimated indices from the optimiser's
+  trajectory through an additive mean-of-1D-interpolations surrogate (S_T ≡ S_1 by construction) or from a
+  non-uniform sample. Use the design-based methods; `trajectory_correlation` remains as a labelled diagnostic.
 - **73 unused back-compat shim modules** (ADR-0011): every shim that neither
   in-tree code nor an installed external plugin imports, including
   `symfluence.models.{templates,coupled,config_resolution,model_manager}`, the

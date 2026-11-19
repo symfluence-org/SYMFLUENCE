@@ -71,6 +71,7 @@
 
    configuration
    calibration
+   uncertainty_sensitivity
 
 .. toctree::
    :maxdepth: 1

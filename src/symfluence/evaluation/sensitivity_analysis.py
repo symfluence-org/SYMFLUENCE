@@ -2,40 +2,57 @@
 # Copyright (C) 2024-2026 SYMFLUENCE Team <dev@symfluence.org>
 
 """
-Sensitivity analysis of model parameters using multiple statistical methods.
+Global sensitivity analysis of model parameters on a dedicated sampling design.
 
-Provides parameter sensitivity analysis using Sobol, RBD-FAST, and correlation
-methods on calibration results, with visualization and reporting support.
+Variance-based (Sobol) and elementary-effects (Morris) indices are only
+meaningful for responses evaluated on the design they were derived for: a
+Saltelli design for Sobol (Saltelli et al., 2010) and Morris trajectories for
+elementary effects (Morris, 1991; Campolongo et al., 2007). Each design point
+here is a real model run, evaluated through the calibration worker / parallel
+infrastructure (:meth:`BaseModelOptimizer.evaluate_design`), and the response
+is the calibration objective (OPTIMIZATION_METRIC, in maximisation
+convention) on the calibration period.
+
+Earlier versions estimated "Sobol" and RBD-FAST indices from the optimiser's
+trajectory through an additive mean-of-1D-interpolations surrogate. That
+surrogate has no interactions by construction (S_T == S_1) and the
+trajectory is not a uniform design, so those indices were artefacts; the
+path was removed. The only trajectory-based output left is
+:meth:`SensitivityAnalyzer.trajectory_correlation`, a Spearman correlation of
+the calibration samples that describes the optimiser path, not sensitivity.
+
+References:
+    Saltelli, A., et al. (2010). Variance based sensitivity analysis of model
+    output. Design and estimator for the total sensitivity index. Computer
+    Physics Communications, 181(2), 259-270.
+
+    Campolongo, F., Cariboni, J. and Saltelli, A. (2007). An effective
+    screening design for sensitivity analysis of large models. Environmental
+    Modelling & Software, 22(10), 1509-1518.
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+from typing import Callable, Dict, List, Optional, Sequence
 
 import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
-from tqdm import tqdm
 
 from symfluence.core.exceptions import OptionalDependencyError
 from symfluence.core.mixins import ConfigMixin
 
 try:
-    from SALib.analyze import rbd_fast, sobol
+    from SALib.analyze import morris as morris_analyze
+    from SALib.analyze import sobol
+    from SALib.sample import morris as morris_sample
     from SALib.sample import sobol as sobol_sample
 except ImportError:  # SALib is provided by the optional ``sensitivity`` extra.
-    rbd_fast = None
     sobol = None
     sobol_sample = None
-
-# Hoist pyviscous to module scope so the VISCOUS path is patchable from
-# tests (see test_sa_viscous_nan_handling). Leaving the import inside
-# perform_sensitivity_analysis kept viscous un-patchable because
-# ``from pyviscous import viscous`` re-binds the real attribute inside
-# the function's local scope on every call.
-try:
-    from pyviscous import viscous as _pyviscous
-except ImportError:  # pragma: no cover — pyviscous is an optional dep
-    _pyviscous = None
+    morris_analyze = None
+    morris_sample = None
 
 # Columns in the calibration-results CSV that are NOT calibration
 # parameters and must be excluded from sensitivity analysis.
@@ -72,13 +89,112 @@ _NON_PARAM_COLS = frozenset({
 })
 
 
+def salib_available() -> bool:
+    """True when SALib (the ``sensitivity`` extra) is installed."""
+    return None not in (sobol, sobol_sample, morris_analyze, morris_sample)
+
+
 def _require_salib():
     """Return SALib modules or explain how to enable global methods."""
-    if rbd_fast is None or sobol is None or sobol_sample is None:
+    if None in (sobol, sobol_sample, morris_analyze, morris_sample):
         raise OptionalDependencyError(
-            "Sobol and RBD-FAST sensitivity analysis", "sensitivity", dependency="SALib"
+            "Sobol and Morris sensitivity analysis", "sensitivity", dependency="SALib"
         )
-    return rbd_fast, sobol, sobol_sample
+    return sobol, sobol_sample, morris_analyze, morris_sample
+
+
+def design_size(method: str, n_params: int, sobol_n: int = 256, morris_trajectories: int = 10) -> int:
+    """Number of model runs a design needs (first- and total-order Sobol)."""
+    if method == 'sobol':
+        return int(sobol_n) * (n_params + 2)
+    if method == 'morris':
+        return int(morris_trajectories) * (n_params + 1)
+    raise ValueError(f"Unknown sensitivity method {method!r}; expected 'sobol' or 'morris'")
+
+
+def _unit_problem(names: Sequence[str]) -> Dict:
+    """SALib problem on the normalized [0, 1] parameter space."""
+    return {'num_vars': len(names), 'names': list(names), 'bounds': [[0.0, 1.0]] * len(names)}
+
+
+def _fill_failed(y: np.ndarray, logger) -> tuple:
+    """Replace failed runs (NaN) by the worst successful response.
+
+    Saltelli / Morris estimators need a response at every design point. A run
+    that crashed is treated as the worst behaviour seen; the count is
+    reported so the user can judge the effect.
+    """
+    y = np.asarray(y, dtype=float).copy()
+    failed = ~np.isfinite(y)
+    n_failed = int(failed.sum())
+    if n_failed == y.size:
+        raise ValueError("Every sensitivity design run failed; no response to analyse")
+    if n_failed:
+        worst = float(np.nanmin(y))
+        y[failed] = worst
+        logger.warning(
+            f"{n_failed}/{y.size} sensitivity design runs failed; they were assigned "
+            f"the worst successful response ({worst:.4g}). Indices are unreliable if "
+            "this fraction is large."
+        )
+    return y, n_failed
+
+
+def sobol_indices(
+    names: Sequence[str],
+    evaluate: Callable[[np.ndarray], np.ndarray],
+    n: int = 256,
+    seed: Optional[int] = None,
+    logger=None,
+) -> pd.DataFrame:
+    """First- and total-order Sobol indices from a Saltelli design.
+
+    Args:
+        names: Parameter names (the design lives on [0, 1] per parameter).
+        evaluate: Maps a design ``(n_runs, d)`` in [0, 1] to responses
+            ``(n_runs,)``; NaN marks a failed run.
+        n: Base sample size N (a power of 2); N * (d + 2) runs.
+        seed: Seed of the scrambled Sobol sequence and the bootstrap.
+
+    Returns:
+        DataFrame indexed by parameter with S1, S1_conf, ST, ST_conf.
+    """
+    salib_sobol, salib_sobol_sample, _, _ = _require_salib()
+    logger = logger or logging.getLogger(__name__)
+    problem = _unit_problem(names)
+    X = salib_sobol_sample.sample(problem, int(n), calc_second_order=False, seed=seed)
+    y, n_failed = _fill_failed(evaluate(X), logger)
+    Si = salib_sobol.analyze(problem, y, calc_second_order=False, seed=seed)
+    df = pd.DataFrame(
+        {'S1': Si['S1'], 'S1_conf': Si['S1_conf'], 'ST': Si['ST'], 'ST_conf': Si['ST_conf']},
+        index=list(names),
+    )
+    df.attrs.update({'n_runs': int(X.shape[0]), 'n_failed': n_failed})
+    return df
+
+
+def morris_indices(
+    names: Sequence[str],
+    evaluate: Callable[[np.ndarray], np.ndarray],
+    trajectories: int = 10,
+    levels: int = 4,
+    seed: Optional[int] = None,
+    logger=None,
+) -> pd.DataFrame:
+    """Morris elementary-effect statistics (mu*, mu, sigma) on [0, 1] inputs."""
+    _, _, salib_morris_analyze, salib_morris_sample = _require_salib()
+    logger = logger or logging.getLogger(__name__)
+    problem = _unit_problem(names)
+    X = salib_morris_sample.sample(problem, int(trajectories), num_levels=int(levels), seed=seed)
+    y, n_failed = _fill_failed(evaluate(X), logger)
+    Si = salib_morris_analyze.analyze(problem, X, y, num_levels=int(levels), seed=seed)
+    df = pd.DataFrame(
+        {'mu_star': Si['mu_star'], 'mu_star_conf': Si['mu_star_conf'],
+         'mu': Si['mu'], 'sigma': Si['sigma']},
+        index=list(names),
+    )
+    df.attrs.update({'n_runs': int(X.shape[0]), 'n_failed': n_failed})
+    return df
 
 
 def _parameter_columns_for_sa(samples) -> list:
@@ -123,11 +239,12 @@ def _constant_parameter_columns(samples) -> list:
 
 class SensitivityAnalyzer(ConfigMixin):
     """
-    Performs parameter sensitivity analysis on calibration results.
+    Global sensitivity analysis of model parameters.
 
-    Supports multiple sensitivity analysis methods including VISCOUS,
-    Sobol indices, RBD-FAST, and Spearman correlation to identify
-    influential parameters and their interactions.
+    :meth:`run_design_analysis` runs Sobol and/or Morris designs through a
+    caller-supplied evaluator (each point a real model run).
+    :meth:`run_trajectory_correlation` writes the Spearman correlation of a
+    calibration trajectory, a diagnostic of the optimiser path only.
 
     Attributes:
         config: Configuration dictionary with domain settings.
@@ -166,6 +283,133 @@ class SensitivityAnalyzer(ConfigMixin):
             self.output_folder = self.output_folder / str(experiment_id)
         self.output_folder.mkdir(parents=True, exist_ok=True)
 
+    # ------------------------------------------------------------------
+    # Settings
+    # ------------------------------------------------------------------
+    @property
+    def methods(self) -> List[str]:
+        """Configured design-based methods (SENSITIVITY_METHODS)."""
+        value = self._get_config_value(
+            lambda: self.config.optimization.sensitivity.methods, dict_key='SENSITIVITY_METHODS')
+        if value is None:
+            return []
+        if isinstance(value, str):
+            value = value.split(',')
+        return [str(m).strip().lower() for m in value if str(m).strip()]
+
+    @property
+    def trajectory_correlation_enabled(self) -> bool:
+        return bool(self._get_config_value(
+            lambda: self.config.optimization.sensitivity.trajectory_correlation,
+            dict_key='SENSITIVITY_TRAJECTORY_CORRELATION'))
+
+    # ------------------------------------------------------------------
+    # Design-based analysis
+    # ------------------------------------------------------------------
+    def planned_runs(self, n_params: int, methods: Optional[Sequence[str]] = None) -> Dict[str, int]:
+        """Model runs each configured design needs for ``n_params`` parameters."""
+        return {
+            m: design_size(
+                m, n_params,
+                sobol_n=int(self._get_config_value(
+                    lambda: self.config.optimization.sensitivity.sobol_n,
+                    dict_key='SENSITIVITY_SOBOL_N')),
+                morris_trajectories=int(self._get_config_value(
+                    lambda: self.config.optimization.sensitivity.morris_trajectories,
+                    dict_key='SENSITIVITY_MORRIS_TRAJECTORIES')),
+            )
+            for m in (self.methods if methods is None else methods)
+        }
+
+    def run_design_analysis(
+        self,
+        names: Sequence[str],
+        evaluate: Callable[[np.ndarray], np.ndarray],
+        methods: Optional[Sequence[str]] = None,
+        seed: Optional[int] = None,
+    ) -> Optional[pd.DataFrame]:
+        """Run the configured Sobol / Morris designs and save the indices.
+
+        Args:
+            names: Calibration parameter names (design space [0, 1]^d, mapped
+                to the parameter bounds by the evaluator).
+            evaluate: Design ``(n_runs, d)`` -> responses ``(n_runs,)``;
+                NaN marks a failed run.
+            methods: Override of SENSITIVITY_METHODS.
+            seed: Design / bootstrap seed (RANDOM_SEED).
+
+        Returns:
+            Comparison DataFrame (one column per index) or None when no method
+            is configured.
+
+        Raises:
+            ValueError: when a design exceeds SENSITIVITY_MAX_EVALUATIONS.
+        """
+        methods = list(self.methods if methods is None else methods)
+        if not methods:
+            self.logger.info("No design-based sensitivity method configured (SENSITIVITY_METHODS)")
+            return None
+        names = list(names)
+        planned = self.planned_runs(len(names), methods)
+        budget = int(self._get_config_value(
+            lambda: self.config.optimization.sensitivity.max_evaluations,
+            dict_key='SENSITIVITY_MAX_EVALUATIONS'))
+        total = sum(planned.values())
+        if total > budget:
+            raise ValueError(
+                f"Sensitivity designs need {total} model runs ({planned}) for {len(names)} "
+                f"parameters, above SENSITIVITY_MAX_EVALUATIONS={budget}. Lower "
+                "SENSITIVITY_SOBOL_N / SENSITIVITY_MORRIS_TRAJECTORIES, use 'morris' only, "
+                "or raise the budget."
+            )
+        self.logger.info(f"Sensitivity designs: {planned} model runs for {len(names)} parameters")
+
+        columns: Dict[str, pd.Series] = {}
+        for method in methods:
+            if method == 'sobol':
+                df = sobol_indices(
+                    names, evaluate,
+                    n=int(self._get_config_value(
+                        lambda: self.config.optimization.sensitivity.sobol_n,
+                        dict_key='SENSITIVITY_SOBOL_N')),
+                    seed=seed, logger=self.logger)
+                columns['Sobol_S1'] = df['S1']
+                columns['Sobol_ST'] = df['ST']
+            elif method == 'morris':
+                df = morris_indices(
+                    names, evaluate,
+                    trajectories=int(self._get_config_value(
+                        lambda: self.config.optimization.sensitivity.morris_trajectories,
+                        dict_key='SENSITIVITY_MORRIS_TRAJECTORIES')),
+                    levels=int(self._get_config_value(
+                        lambda: self.config.optimization.sensitivity.morris_levels,
+                        dict_key='SENSITIVITY_MORRIS_LEVELS')),
+                    seed=seed, logger=self.logger)
+                columns['Morris_mu_star'] = df['mu_star']
+                columns['Morris_sigma'] = df['sigma']
+            else:
+                raise ValueError(f"Unknown sensitivity method {method!r}")
+            out = self.output_folder / f'{method}_sensitivity.csv'
+            df.to_csv(out)
+            self.logger.info(
+                f"Saved {method} indices ({df.attrs.get('n_runs')} runs, "
+                f"{df.attrs.get('n_failed')} failed) to {out}")
+            if self.reporting_manager:
+                key = 'ST' if method == 'sobol' else 'mu_star'
+                self.reporting_manager.visualize_sensitivity_analysis(
+                    df[key], self.output_folder / f'{method}_sensitivity.png', plot_type='single')
+
+        comparison = pd.DataFrame(columns)
+        comparison.to_csv(self.output_folder / 'all_sensitivity_results.csv')
+        if self.reporting_manager and len(comparison.columns) > 1:
+            self.reporting_manager.visualize_sensitivity_analysis(
+                comparison, self.output_folder / 'sensitivity_comparison.png',
+                plot_type='comparison')
+        return comparison
+
+    # ------------------------------------------------------------------
+    # Calibration-trajectory diagnostic
+    # ------------------------------------------------------------------
     def read_calibration_results(self, file_path):
         """
         Read calibration results from CSV file.
@@ -181,23 +425,15 @@ class SensitivityAnalyzer(ConfigMixin):
 
     def preprocess_data(self, samples, metric='RMSE'):
         """
-        Preprocess calibration samples for sensitivity analysis.
+        Preprocess calibration samples for the trajectory diagnostic.
 
         Steps:
           1. Drop rows whose metric value is non-finite (NaN from crashed
              iterations, inf from degenerate metric maths).
           2. Drop rows whose metric value is a known SYMFLUENCE failure
-             sentinel (``<= -900``). These are the "score is invalid"
-             markers several optimisers write when a model run crashed —
-             their raw values aren't meaningful response values and
-             poison copula-based estimators (VISCOUS) with synthetic
-             low-tail mass. Co-author PW reported VISCOUS producing NaN
-             on a calibration where the crash-regime score had leaked
-             into the response vector.
-          3. De-duplicate on parameter columns — DDS produces repeated
-             rows when it restarts from the best-so-far, which biases
-             sensitivity estimators toward whichever parameters happened
-             to be held constant during those restarts.
+             sentinel (``<= -900``) -- crashed-run markers, not responses.
+          3. De-duplicate on parameter columns -- DDS produces repeated
+             rows when it restarts from the best-so-far.
 
         Args:
             samples: DataFrame of calibration samples with parameter values.
@@ -233,231 +469,46 @@ class SensitivityAnalyzer(ConfigMixin):
             )
         return samples_unique
 
-    def perform_sensitivity_analysis(self, samples, metric='Calib_KGEnp', min_samples=60):
+    def trajectory_correlation(self, samples, metric='RMSE'):
         """
-        Perform VISCOUS sensitivity analysis on calibration samples.
+        Absolute Spearman correlation between each parameter and the metric
+        along the calibration trajectory.
 
-        Uses the pyviscous library to compute total-order sensitivity indices
-        for each parameter with respect to the specified metric.
-
-        Args:
-            samples: DataFrame with parameter values and metric columns.
-            metric: Name of the objective metric column (default: 'Calib_KGEnp').
-            min_samples: Minimum samples required for reliable analysis.
-
-        Returns:
-            pd.Series: Sensitivity indices for each parameter, or -999 if failed.
-        """
-        self.logger.info(f"Performing sensitivity analysis using {metric} metric")
-        parameter_columns = _parameter_columns_for_sa(samples)
-
-        if len(samples) < min_samples:
-            self.logger.warning(f"Insufficient data for reliable sensitivity analysis. Have {len(samples)} samples, recommend at least {min_samples}.")
-            return pd.Series([-999] * len(parameter_columns), index=parameter_columns)
-
-        x = samples[parameter_columns].values.astype(float, copy=False)
-        y = samples[metric].values.astype(float, copy=False).reshape(-1, 1)
-
-        sensitivities = []
-
-        if _pyviscous is None:
-            self.logger.warning("pyviscous not installed, skipping.")
-            return pd.Series([-999] * len(parameter_columns), index=parameter_columns)
-
-        for i, param in tqdm(enumerate(parameter_columns), total=len(parameter_columns), desc="Calculating sensitivities"):
-            try:
-                try:
-                    sensitivity_result = _pyviscous(x, y, i, sensType='total')
-                except ValueError:
-                    sensitivity_result = _pyviscous(x, y, i, sensType='single')
-
-                if isinstance(sensitivity_result, tuple):
-                    sensitivity = sensitivity_result[0]
-                else:
-                    sensitivity = sensitivity_result
-
-                # pyviscous returns a numeric scalar on success. If the
-                # GMCM fit didn't converge for any component count the
-                # sensitivity can come back as NaN — previously this
-                # flowed straight through to the CSV and the user saw
-                # an unlabelled NaN cell with no explanation. Convert
-                # NaN to the -999 failure sentinel and log specifically
-                # so a co-author reading the log knows it was VISCOUS
-                # non-convergence, not a missing-data error.
-                try:
-                    s_float = float(sensitivity)
-                except (TypeError, ValueError):
-                    s_float = float('nan')
-                if not np.isfinite(s_float):
-                    self.logger.warning(
-                        f"VISCOUS returned a non-finite index for {param} "
-                        f"(result={sensitivity!r}) — the GMCM copula fit "
-                        "likely did not converge for any component count. "
-                        "This is common when calibration samples are "
-                        "highly clustered (e.g. DDS near the optimum); "
-                        "cross-check with Sobol / RBD-FAST results or run "
-                        "VISCOUS on a dedicated LHS/Sobol sampling pass. "
-                        "Recording -999."
-                    )
-                    sensitivities.append(-999)
-                else:
-                    sensitivities.append(s_float)
-                    self.logger.info(f"Successfully calculated sensitivity for {param}")
-            except Exception as e:  # noqa: BLE001 — must-not-raise contract
-                self.logger.error(f"Error in sensitivity analysis for parameter {param}: {str(e)}")
-                sensitivities.append(-999)
-
-        self.logger.info("Sensitivity analysis completed")
-        return pd.Series(sensitivities, index=parameter_columns)
-
-    def perform_sobol_analysis(self, samples, metric='RMSE'):
-        """
-        Perform Sobol sensitivity analysis using SALib.
-
-        Computes total-order Sobol indices (ST) to quantify parameter
-        influence including interactions with other parameters.
+        This describes where the optimiser went, not how sensitive the model
+        is: the samples are concentrated near the optimum and are not a
+        designed experiment. Use :meth:`run_design_analysis` for indices.
 
         Args:
             samples: DataFrame with parameter values and metric columns.
             metric: Name of the objective metric column.
 
         Returns:
-            pd.Series: Total-order Sobol indices for each parameter.
+            pd.Series: |Spearman rho| for each parameter.
         """
-        _, salib_sobol, salib_sobol_sample = _require_salib()
-        self.logger.info(f"Performing Sobol analysis using {metric} metric")
-        parameter_columns = _parameter_columns_for_sa(samples)
-
-        # SALib's sobol.analyze raises a generic "Bounds are not legal"
-        # ValueError when the bounds aren't numeric (e.g. a YAML pass
-        # serialized `[0.1, 2.0]` as `["0.1", "2.0"]`) or when min==max
-        # for any parameter (constant column, nothing to analyse).
-        # Both failures currently get swallowed upstream as a warning,
-        # so co-authors see "SA complete" with no output and no clue
-        # what went wrong. Validate here and raise a message that names
-        # the offending parameter and value.
-        bounds = []
-        for col in parameter_columns:
-            lo = samples[col].min()
-            hi = samples[col].max()
-            if not (isinstance(lo, (int, float, np.integer, np.floating)) and
-                    isinstance(hi, (int, float, np.integer, np.floating))):
-                raise ValueError(
-                    f"Sobol analysis cannot run: parameter '{col}' has "
-                    f"non-numeric bounds ({lo!r}, {hi!r}; types "
-                    f"{type(lo).__name__}/{type(hi).__name__}). This "
-                    "usually means the optimization results CSV has "
-                    "stringified numbers — check that the calibration "
-                    "writer serializes floats, not YAML-quoted strings."
-                )
-            if float(hi) <= float(lo):
-                raise ValueError(
-                    f"Sobol analysis cannot run: parameter '{col}' has "
-                    f"degenerate bounds (min={lo}, max={hi}). Every "
-                    "sample produced the same value, so there is no "
-                    "variance to attribute. Drop constant parameters "
-                    "from the calibration, or widen the search range."
-                )
-            bounds.append([float(lo), float(hi)])
-
-        problem = {
-            'num_vars': len(parameter_columns),
-            'names': parameter_columns,
-            'bounds': bounds,
-        }
-
-        param_values = salib_sobol_sample.sample(problem, 1024)
-
-        Y = np.zeros(param_values.shape[0])
-        for i in range(param_values.shape[0]):
-            interpolated_values = []
-            for j, col in enumerate(parameter_columns):
-                interpolated_values.append(np.interp(param_values[i, j],
-                                                     samples[col].sort_values().values,
-                                                     samples[metric].values[samples[col].argsort()]))
-            Y[i] = np.mean(interpolated_values)
-
-        Si = salib_sobol.analyze(problem, Y)
-
-        self.logger.info("Sobol analysis completed")
-        return pd.Series(Si['ST'], index=parameter_columns)
-
-    def perform_rbd_fast_analysis(self, samples, metric='RMSE'):
-        """
-        Perform RBD-FAST sensitivity analysis using SALib.
-
-        Random Balance Designs - Fourier Amplitude Sensitivity Test provides
-        first-order sensitivity indices with lower computational cost than Sobol.
-
-        Args:
-            samples: DataFrame with parameter values and metric columns.
-            metric: Name of the objective metric column.
-
-        Returns:
-            pd.Series: First-order sensitivity indices (S1) for each parameter.
-        """
-        salib_rbd_fast, _, _ = _require_salib()
-        self.logger.info(f"Performing RBD-FAST analysis using {metric} metric")
-        parameter_columns = _parameter_columns_for_sa(samples)
-
-        problem = {
-            'num_vars': len(parameter_columns),
-            'names': parameter_columns,
-            'bounds': [[samples[col].min(), samples[col].max()] for col in parameter_columns]
-        }
-
-        X = samples[parameter_columns].values
-        Y = samples[metric].values
-
-        rbd_results = salib_rbd_fast.analyze(problem, X, Y)
-        self.logger.info("RBD-FAST analysis completed")
-        return pd.Series(rbd_results['S1'], index=parameter_columns)
-
-    def perform_correlation_analysis(self, samples, metric='RMSE'):
-        """
-        Perform Spearman correlation analysis between parameters and metric.
-
-        Computes rank correlation coefficients to identify monotonic
-        relationships between each parameter and the objective metric.
-
-        Args:
-            samples: DataFrame with parameter values and metric columns.
-            metric: Name of the objective metric column.
-
-        Returns:
-            pd.Series: Spearman correlation coefficients for each parameter.
-        """
-        self.logger.info(f"Performing correlation analysis using {metric} metric")
+        self.logger.info(f"Computing trajectory correlation with {metric}")
         parameter_columns = _parameter_columns_for_sa(samples)
         correlations = []
         for param in parameter_columns:
             corr, _ = spearmanr(samples[param], samples[metric])
-            correlations.append(abs(corr))  # Use absolute value for sensitivity
-        self.logger.info("Correlation analysis completed")
-        return pd.Series(correlations, index=parameter_columns)
+            correlations.append(abs(corr))
+        return pd.Series(correlations, index=parameter_columns, name='trajectory_correlation')
 
-    def run_sensitivity_analysis(self, results_file):
+    def run_trajectory_correlation(self, results_file):
         """
-        Run complete sensitivity analysis workflow with all methods.
-
-        Executes VISCOUS, Sobol, RBD-FAST, and correlation analyses on the
-        calibration results, saves individual and comparison outputs, and
-        generates visualizations if a reporting manager is configured.
+        Write ``trajectory_correlation.csv`` from a calibration results CSV.
 
         Args:
             results_file: Path to calibration results CSV file.
 
         Returns:
-            None. Results are saved to the output_folder as CSV files and plots.
+            pd.Series of correlations, or None when too few usable rows exist.
         """
-        self.logger.info("Starting sensitivity analysis")
-
         results = self.read_calibration_results(results_file)
         self.logger.info(f"Read {len(results)} calibration results")
 
         if len(results) < 10:
-            self.logger.error("Error: Not enough data points for sensitivity analysis.")
-            return
+            self.logger.warning("Not enough calibration rows for a trajectory correlation.")
+            return None
 
         # Auto-detect metric column: prefer Calib_RMSE (MESH), fall back to score (generic DDS)
         metric_col = 'Calib_RMSE'
@@ -469,90 +520,40 @@ class SensitivityAnalyzer(ConfigMixin):
         self.logger.info(f"Using metric column: {metric_col}")
 
         results_preprocessed = self.preprocess_data(results, metric=metric_col)
-        self.logger.info("Data preprocessing completed")
 
-        # The len(results) >= 10 guard above counts raw rows; preprocessing then
-        # drops non-finite and failure-sentinel (<= -900) scores. When a model
-        # crashed on most/all calibration trials, every row is a penalty score and
-        # nothing usable remains — feeding that empty set to SALib raises a cryptic
-        # "array of sample points is empty". Re-check the cleaned count and skip with
-        # an actionable message instead.
+        # The raw-row guard above counts rows before preprocessing drops
+        # non-finite and failure-sentinel (<= -900) scores; when a model crashed
+        # on most/all trials nothing usable remains.
         if len(results_preprocessed) < 10:
             self.logger.warning(
                 f"Only {len(results_preprocessed)} usable calibration samples remain "
                 f"after dropping non-finite / failure-sentinel '{metric_col}' values "
                 f"(from {len(results)} raw rows). This usually means the model crashed "
-                f"on most or all calibration trials, so there is no response variation "
-                f"to analyse. Skipping sensitivity analysis — fix the model run first."
+                f"on most or all calibration trials. Skipping the trajectory correlation."
             )
             return None
 
-        # Report and skip constant parameters rather than crashing on them.
-        # Constant columns (a pinned model parameter, or an optimiser-internal
-        # like DREAM's n_chains) carry no sensitivity and make SALib's Sobol
-        # sampler raise. Excluding them lets every algorithm's results be
-        # analysed on the parameters that actually varied.
         dropped = _constant_parameter_columns(results_preprocessed)
         if dropped:
             self.logger.warning(
-                f"Excluding {len(dropped)} constant column(s) from sensitivity "
-                f"analysis (no variance to attribute): {', '.join(dropped)}"
+                f"Excluding {len(dropped)} constant column(s) from the trajectory "
+                f"correlation (no variance): {', '.join(dropped)}"
             )
         if not _parameter_columns_for_sa(results_preprocessed):
             self.logger.warning(
                 "No varying calibration parameters remain after excluding "
-                "constant columns; skipping sensitivity analysis. This happens "
-                "when a run pinned every parameter (e.g. a degenerate optimum)."
+                "constant columns; skipping the trajectory correlation."
             )
             return None
 
-        methods = {
-            'pyViscous': self.perform_sensitivity_analysis,
-            'Sobol': self.perform_sobol_analysis,
-            'RBD-FAST': self.perform_rbd_fast_analysis,
-            'Correlation': self.perform_correlation_analysis
-        }
+        corr = self.trajectory_correlation(results_preprocessed, metric=metric_col)
+        corr.to_csv(self.output_folder / 'trajectory_correlation.csv')
+        return corr
 
-        all_results = {}
-        for name, method in methods.items():
-            # One method failing (e.g. VISCOUS non-convergence on clustered
-            # samples) must not abort the others or the whole workflow step.
-            try:
-                sensitivity = method(results_preprocessed, metric=metric_col)
-            except Exception as e:  # noqa: BLE001 — resilience across SA methods
-                self.logger.error(
-                    f"{name} sensitivity method failed ({e}); skipping it."
-                )
-                continue
-            all_results[name] = sensitivity
-            sensitivity.to_csv(self.output_folder / f'{name.lower()}_sensitivity.csv')
+    def run_sensitivity_analysis(self, results_file):
+        """Backward-compatible entry point: the trajectory-correlation diagnostic.
 
-            if self.reporting_manager:
-                self.reporting_manager.visualize_sensitivity_analysis(
-                    sensitivity,
-                    self.output_folder / f'{name.lower()}_sensitivity.png',
-                    plot_type='single'
-                )
-
-            self.logger.info(f"Saved {name} sensitivity results and plot")
-
-        if not all_results:
-            self.logger.warning(
-                "All sensitivity methods failed; no results produced."
-            )
-            return None
-
-        comparison_df = pd.DataFrame(all_results)
-        comparison_df.to_csv(self.output_folder / 'all_sensitivity_results.csv')
-
-        if self.reporting_manager:
-            self.reporting_manager.visualize_sensitivity_analysis(
-                comparison_df,
-                self.output_folder / 'sensitivity_comparison.png',
-                plot_type='comparison'
-            )
-
-        self.logger.info("Saved comparison of all sensitivity results")
-
-        self.logger.info("Sensitivity analysis completed successfully")
-        return comparison_df
+        Kept for model-specific analyzers registered against the old
+        interface. Design-based indices come from :meth:`run_design_analysis`.
+        """
+        return self.run_trajectory_correlation(results_file)

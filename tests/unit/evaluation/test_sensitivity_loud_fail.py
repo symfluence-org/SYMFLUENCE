@@ -60,7 +60,7 @@ def test_stringified_columns_are_filtered_not_crashed_on():
     """If the samples DataFrame has stringified / non-numeric
     columns (YAML round-trip artefact, ADAM's ``current_params``
     list, etc.), ``_parameter_columns_for_sa`` drops them at source.
-    Sobol then runs cleanly on only the genuine numeric parameters.
+    the analysis then runs cleanly on only the genuine numeric parameters.
 
     This used to be a raise-loudly assertion (bounds-are-not-legal
     with an actionable message), but the dtype-based filter
@@ -77,7 +77,7 @@ def test_stringified_columns_are_filtered_not_crashed_on():
     })
     analyzer = _make_analyzer()
     # Must not raise — param_a is filtered out, SA runs on param_b only.
-    result = analyzer.perform_sobol_analysis(samples, metric="RMSE")
+    result = analyzer.trajectory_correlation(samples, metric="RMSE")
     assert list(result.index) == ["param_b"], (
         f"stringified column leaked through filter; "
         f"parameters SA saw: {list(result.index)}"
@@ -88,7 +88,7 @@ def test_constant_parameter_is_dropped_not_raised():
     """A parameter column with zero variance (min == max) carries no
     attributable sensitivity. Rather than failing the whole analysis
     (which discards the perfectly good indices for every other
-    parameter), the constant column is dropped and Sobol runs on the
+    parameter), the constant column is dropped and the trajectory correlation runs on the
     parameters that actually varied. This keeps a run's results usable
     even when the optimiser pinned one parameter at a bound — the
     behaviour the calibration ensemble needs across all 17 algorithms.
@@ -103,7 +103,7 @@ def test_constant_parameter_is_dropped_not_raised():
         "RMSE": [0.1, 0.2, 0.3],
     })
     analyzer = _make_analyzer()
-    result = analyzer.perform_sobol_analysis(samples, metric="RMSE")
+    result = analyzer.trajectory_correlation(samples, metric="RMSE")
     assert list(result.index) == ["other_param"], (
         f"constant column should be dropped, leaving only the varying "
         f"parameter; SA saw: {list(result.index)}"

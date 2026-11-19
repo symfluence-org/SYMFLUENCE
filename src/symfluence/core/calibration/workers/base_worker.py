@@ -21,7 +21,10 @@ from symfluence.core.exceptions import RetryExhaustedError
 from symfluence.core.logging_utils import log_once
 from symfluence.core.metrics.metric_transformer import MetricTransformer
 from symfluence.core.metrics.penalty import is_failure_sentinel, is_penalty, sanitize_score
-from symfluence.core.metrics.streamflow_metrics import StreamflowMetrics
+from symfluence.core.metrics.streamflow_metrics import (
+    StreamflowMetrics,
+    configured_objective_metrics,
+)
 from symfluence.core.mixins.config import SCHEMA_DEFAULT, resolve_config_value
 from symfluence.core.mixins.logging import _class_logger_name
 
@@ -279,12 +282,11 @@ class BaseWorker(ABC):
         self.logger = logger or logging.getLogger(
             _class_logger_name(self.__class__))
 
-        # Shadow the subclass-level shared StreamflowMetrics instance when a
-        # non-default Box-Cox lambda is configured (used by *_BOX_COX metrics)
-        box_cox_lambda = self._cfg('BOX_COX_LAMBDA')
-        if box_cox_lambda is not None:
-            self._streamflow_metrics = StreamflowMetrics(
-                box_cox_lambda=float(box_cox_lambda))
+        # Shadow the subclass-level shared StreamflowMetrics instance with one
+        # carrying the configured BOX_COX_LAMBDA (*_BOX_COX metrics) and the
+        # LIKELIHOOD_* error model (LOGLIK_BC_AR1).
+        if self.config:
+            self._streamflow_metrics = StreamflowMetrics.from_config(self.config)
 
     def _cfg(self, key: str, default: Any = None) -> Any:
         """Get config value from the worker's config dict.
@@ -594,6 +596,10 @@ class BaseWorker(ABC):
             wanted.extend(str(k) for k in composite_config)
         if metric_name.upper() != 'COMPOSITE':
             wanted.append(metric_name)
+        # NSGA-II / MOEA/D objective metrics (e.g. the KGE_LOG secondary),
+        # which the population evaluator looks up by name in the metrics dict.
+        wanted.extend(configured_objective_metrics(
+            self.config if config is None else config))
         wanted.extend(self.BASE_REQUESTED_METRICS)
         out: List[str] = []
         for name in wanted:
@@ -806,6 +812,15 @@ class BaseWorker(ABC):
         Returns:
             ``(source_metric_name, value)`` or ``(metric_name, None)``.
         """
+        if metric_name.strip().upper() == 'LOGLIK_BC_AR1':
+            # An efficiency score is not a likelihood: substituting KGE would
+            # silently turn a formal DREAM run back into an informal one.
+            self.logger.warning(
+                f"{type(self).__name__} did not produce LOGLIK_BC_AR1; refusing a "
+                "fallback metric (the run is scored as failed). Use DREAM_LIKELIHOOD: "
+                "informal for workers that cannot compute the formal likelihood."
+            )
+            return metric_name, None
         wanted = MetricTransformer.get_direction(metric_name)
         for alt in self.FALLBACK_METRICS:
             for k, v in metrics.items():

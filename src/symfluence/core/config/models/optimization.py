@@ -34,7 +34,11 @@ OptimizationMetricType = Literal[
     'COMPOSITE',
     # Transformed-flow variants (transformation applied to obs/sim before scoring)
     'KGE_LOG', 'KGE_INV', 'KGE_SQRT', 'KGE_BOX_COX',
-    'NSE_LOG', 'NSE_SQRT', 'RMSE_LOG'
+    'NSE_LOG', 'NSE_SQRT', 'RMSE_LOG',
+    # Formal likelihood (Box-Cox + AR(1) residuals; maximised)
+    'LOGLIK_BC_AR1',
+    # Hydrological-signature errors (minimised)
+    'FDC_SLOPE_ERROR', 'PEAK_FLOW_BIAS', 'BFI_ERROR',
 ]
 
 # Supported sampling methods
@@ -94,7 +98,9 @@ class NSGA2Config(BaseModel):
     primary_target: str = Field(default='streamflow', alias='NSGA2_PRIMARY_TARGET')
     secondary_target: str = Field(default='gw_depth', alias='NSGA2_SECONDARY_TARGET')
     primary_metric: str = Field(default='KGE', alias='NSGA2_PRIMARY_METRIC')
-    secondary_metric: str = Field(default='KGE', alias='NSGA2_SECONDARY_METRIC')
+    # KGE of log flows: a low-flow-weighted objective that conflicts with
+    # KGE's high-flow emphasis, so the default front is not degenerate.
+    secondary_metric: str = Field(default='KGE_LOG', alias='NSGA2_SECONDARY_METRIC')
     crossover_rate: float = Field(default=0.9, alias='NSGA2_CROSSOVER_RATE', ge=0, le=1.0)
     mutation_rate: float = Field(default=0.1, alias='NSGA2_MUTATION_RATE', ge=0, le=1.0)
     eta_c: int = Field(default=20, alias='NSGA2_ETA_C', ge=1)
@@ -253,6 +259,18 @@ class DREAMConfig(BaseModel):
     epsilon_std: float = Field(default=1e-3, alias='DREAM_EPS', gt=0)
     temperature: float = Field(default=1.0, alias='DREAM_TEMPERATURE', gt=0)
     outlier_threshold: float = Field(default=2.0, alias='DREAM_OUTLIER_THRESHOLD', gt=0)
+    likelihood: Literal['formal', 'informal'] = Field(
+        default='formal', alias='DREAM_LIKELIHOOD',
+        description="'formal': DREAM samples the posterior under the Box-Cox AR(1) "
+                    "likelihood (OPTIMIZATION_METRIC is replaced by LOGLIK_BC_AR1). "
+                    "'informal': exp(OPTIMIZATION_METRIC / DREAM_TEMPERATURE) is used "
+                    "as a pseudo-likelihood -- not a Bayesian posterior."
+    )
+
+    @field_validator('likelihood', mode='before')
+    @classmethod
+    def _lower_likelihood(cls, v):
+        return v.lower() if isinstance(v, str) else v
 
 
 class GAConfig(BaseModel):
@@ -428,6 +446,80 @@ class MultiGaugeConfig(BaseModel):
     )
 
 
+class UncertaintyConfig(BaseModel):
+    """Posterior / behavioural sample persistence and predictive intervals (DREAM, GLUE)."""
+    model_config = FROZEN_CONFIG
+
+    save_samples: bool = Field(
+        default=True, alias='UQ_SAVE_SAMPLES',
+        description='Write DREAM posterior / GLUE behavioural parameter samples '
+                    '(with objective values) to <slug>_uq_samples.nc in the results dir'
+    )
+    predictive_runs: int = Field(
+        default=50, alias='UQ_PREDICTIVE_RUNS', ge=0,
+        description='Maximum number of posterior/behavioural parameter sets re-run '
+                    'over the full period to build predictive intervals (0 disables)'
+    )
+    quantiles: List[float] = Field(
+        default_factory=lambda: [0.05, 0.25, 0.5, 0.75, 0.95], alias='UQ_QUANTILES',
+        description='Predictive quantiles written to <slug>_predictive_quantiles.csv'
+    )
+    residual_draws: int = Field(
+        default=20, alias='UQ_RESIDUAL_DRAWS', ge=0,
+        description='Error-model realisations per parameter set for the total '
+                    'predictive distribution of a formal-likelihood DREAM run (0 = '
+                    'parameter uncertainty only)'
+    )
+
+    @field_validator('quantiles')
+    @classmethod
+    def _check_quantiles(cls, v):
+        if not v or any(not 0.0 <= float(q) <= 1.0 for q in v):
+            raise ValueError('UQ_QUANTILES must be a non-empty list of probabilities in [0, 1]')
+        return sorted(float(q) for q in v)
+
+
+class SensitivityConfig(BaseModel):
+    """Global sensitivity analysis on a dedicated sampling design (SALib)."""
+    model_config = FROZEN_CONFIG
+
+    methods: List[Literal['sobol', 'morris']] = Field(
+        default_factory=lambda: ['morris'], alias='SENSITIVITY_METHODS',
+        description="Design-based methods to run: 'morris' (elementary effects, "
+                    "r*(d+1) runs) and/or 'sobol' (Saltelli design, N*(d+2) runs)"
+    )
+    sobol_n: int = Field(
+        default=256, alias='SENSITIVITY_SOBOL_N', ge=8,
+        description='Base sample size N of the Saltelli design (power of 2)'
+    )
+    morris_trajectories: int = Field(
+        default=10, alias='SENSITIVITY_MORRIS_TRAJECTORIES', ge=2,
+        description='Number of Morris trajectories r'
+    )
+    morris_levels: int = Field(
+        default=4, alias='SENSITIVITY_MORRIS_LEVELS', ge=2,
+        description='Number of grid levels p of the Morris design (even)'
+    )
+    max_evaluations: int = Field(
+        default=5000, alias='SENSITIVITY_MAX_EVALUATIONS', ge=1,
+        description='Budget guard: refuse a design needing more model runs than this'
+    )
+    trajectory_correlation: bool = Field(
+        default=True, alias='SENSITIVITY_TRAJECTORY_CORRELATION',
+        description='Also write the Spearman correlation of the calibration trajectory '
+                    '(a diagnostic of the optimiser path, not a sensitivity index)'
+    )
+
+    @field_validator('methods', mode='before')
+    @classmethod
+    def _split_methods(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            v = [m for m in v.split(',')]
+        return [str(m).strip().lower() for m in v if str(m).strip()]
+
+
 class OptimizationConfig(BaseModel):
     """Calibration and optimization configuration"""
     model_config = FROZEN_CONFIG
@@ -486,6 +578,26 @@ class OptimizationConfig(BaseModel):
         default=0.0,
         alias='MODEL_ERROR_FRACTION',
         description='Model error as a fraction of simulated value'
+    )
+    likelihood_box_cox_lambda: float = Field(
+        default=0.3, alias='LIKELIHOOD_BOX_COX_LAMBDA', ge=0.0, le=1.0,
+        description='Box-Cox lambda of the LOGLIK_BC_AR1 residual error model '
+                    '(0 = log; controls how error grows with flow)'
+    )
+    likelihood_ar1_phi: Optional[float] = Field(
+        default=None, alias='LIKELIHOOD_AR1_PHI', gt=-1.0, lt=1.0,
+        description='Fixed AR(1) residual coefficient for LOGLIK_BC_AR1; unset = '
+                    'conditional least-squares estimate per simulation'
+    )
+    likelihood_sigma: Optional[float] = Field(
+        default=None, alias='LIKELIHOOD_SIGMA', gt=0.0,
+        description='Fixed innovation standard deviation (Box-Cox space) for '
+                    'LOGLIK_BC_AR1; unset = integrated out (Jeffreys prior)'
+    )
+    likelihood_epsilon: Optional[float] = Field(
+        default=None, alias='LIKELIHOOD_EPSILON', gt=0.0,
+        description='Zero-flow offset added before the Box-Cox transform; unset = '
+                    '1% of the mean observed flow'
     )
     transfer_function_type: Optional[str] = Field(
         default='linear',
@@ -635,6 +747,8 @@ class OptimizationConfig(BaseModel):
     lbfgs: Optional[LBFGSConfig] = Field(default_factory=LBFGSConfig)
     emulation: Optional[EmulationConfig] = Field(default_factory=EmulationConfig)
     multi_gauge: Optional[MultiGaugeConfig] = Field(default_factory=MultiGaugeConfig)
+    uncertainty: Optional[UncertaintyConfig] = Field(default_factory=UncertaintyConfig)
+    sensitivity: Optional[SensitivityConfig] = Field(default_factory=SensitivityConfig)
 
     @field_validator('methods', mode='before')
     @classmethod

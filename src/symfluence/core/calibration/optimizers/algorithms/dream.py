@@ -34,6 +34,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 
+from symfluence.core.metrics.penalty import is_penalty
+
 from .base_algorithm import OptimizationAlgorithm
 from .config_schema import DREAMDefaults
 
@@ -73,7 +75,12 @@ class DREAMAlgorithm(OptimizationAlgorithm):
         The algorithm uses Metropolis-Hastings acceptance:
             alpha = min(1, p(x_proposal) / p(x_current))
 
-        For optimization, we use likelihood proportional to exp(fitness / T) where T is temperature.
+        The log-likelihood is ``fitness / T``. With ``DREAM_LIKELIHOOD: formal``
+        (the default) the fitness is the Box-Cox AR(1) log-likelihood
+        (``LOGLIK_BC_AR1``) and ``T = 1`` gives the Bayesian posterior under a
+        uniform prior on the parameter bounds. With ``informal`` the fitness is
+        an efficiency score (e.g. KGE) and the "posterior" is a tempered
+        pseudo-posterior whose spread is set by ``T``.
 
         Args:
             n_params: Number of parameters
@@ -128,6 +135,23 @@ class DREAMAlgorithm(OptimizationAlgorithm):
             dict_key='DREAM_TEMPERATURE'
         )
 
+        likelihood_mode = str(self._get_config_value(
+            lambda: self.config.optimization.dream.likelihood,
+            dict_key='DREAM_LIKELIHOOD'
+        ) or 'formal').lower()
+        if likelihood_mode == 'informal':
+            self.logger.warning(
+                "DREAM_LIKELIHOOD: informal -- the acceptance ratio uses "
+                "exp(objective / DREAM_TEMPERATURE), which is not a likelihood. "
+                "The samples are not a Bayesian posterior and their spread "
+                "depends on DREAM_TEMPERATURE."
+            )
+        elif temperature != 1.0:
+            self.logger.warning(
+                f"DREAM_TEMPERATURE={temperature} tempers the formal likelihood; "
+                "the samples follow the posterior only for T = 1."
+            )
+
         outlier_threshold = self._get_config_value(
             lambda: self.config.optimization.dream.outlier_threshold,
             default=DREAMDefaults.OUTLIER_THRESHOLD,
@@ -140,12 +164,14 @@ class DREAMAlgorithm(OptimizationAlgorithm):
         # Evaluate initial chain positions
         fitness = evaluate_population(chains, 0)
 
-        # Convert fitness to log-likelihood (for MCMC)
-        # Higher fitness = higher likelihood
-        log_likelihood = fitness / temperature
+        # Convert fitness to log-likelihood (for MCMC). Higher fitness = higher
+        # likelihood; a failed run (penalty score) has zero likelihood -- with a
+        # formal likelihood a valid poor fit can score below the penalty value.
+        log_likelihood = self._to_log_likelihood(fitness, temperature)
 
         # Track best solution
-        best_idx = np.argmax(fitness)
+        best_idx = int(np.argmax(log_likelihood)) if np.isfinite(log_likelihood).any() \
+            else int(np.argmax(fitness))
         best_pos = chains[best_idx].copy()
         best_fit = fitness[best_idx]
 
@@ -162,6 +188,8 @@ class DREAMAlgorithm(OptimizationAlgorithm):
         # (Vrugt 2016, Section 3.1 - "Burn-in Period")
         burn_in = int(self.max_iterations * DREAMDefaults.BURN_IN_FRACTION)
         posterior_samples: List[np.ndarray] = []
+        posterior_log_lik: List[float] = []
+        posterior_fitness: List[float] = []
         # Chain positions at every iteration, for the R-hat diagnostic
         chain_history: List[np.ndarray] = [chains.copy()]
         r_hat = float('nan')
@@ -226,7 +254,7 @@ class DREAMAlgorithm(OptimizationAlgorithm):
             # Evaluate all proposals
             try:
                 proposal_fitness = evaluate_population(proposals, iteration)
-                proposal_log_lik = proposal_fitness / temperature
+                proposal_log_lik = self._to_log_likelihood(proposal_fitness, temperature)
 
                 # Handle NaN/Inf fitness values
                 invalid_mask = ~np.isfinite(proposal_fitness)
@@ -248,7 +276,7 @@ class DREAMAlgorithm(OptimizationAlgorithm):
                 log_alpha = proposal_log_lik[i] - log_likelihood[i]
 
                 # Accept or reject
-                if np.log(self._rng.random()) < log_alpha:
+                if np.isfinite(proposal_log_lik[i]) and np.log(self._rng.random()) < log_alpha:
                     chains[i] = proposals[i]
                     fitness[i] = proposal_fitness[i]
                     log_likelihood[i] = proposal_log_lik[i]
@@ -282,6 +310,8 @@ class DREAMAlgorithm(OptimizationAlgorithm):
             if iteration > burn_in:
                 for i in range(n_chains):
                     posterior_samples.append(chains[i].copy())
+                    posterior_log_lik.append(float(log_likelihood[i]))
+                    posterior_fitness.append(float(fitness[i]))
 
             # Record iteration
             params_dict = denormalize_params(best_pos)
@@ -333,10 +363,27 @@ class DREAMAlgorithm(OptimizationAlgorithm):
             'posterior_std': posterior_std,
             'credible_interval_95': (credible_lower, credible_upper),
             'n_posterior_samples': len(posterior_samples),
+            # Post-burn-in draws in normalized [0, 1] space, iteration-major
+            # (n_chains consecutive rows per iteration), with their
+            # log-likelihood (fitness / T) and raw fitness.
+            'posterior_samples': np.array(posterior_samples).reshape(-1, n_params),
+            'posterior_log_likelihood': np.array(posterior_log_lik),
+            'posterior_fitness': np.array(posterior_fitness),
+            'n_chains': n_chains,
+            'burn_in': burn_in,
+            'likelihood': likelihood_mode,
             'final_chains': chains,
             'final_fitness': fitness,
             'r_hat': r_hat,
         }
+
+    @staticmethod
+    def _to_log_likelihood(fitness: np.ndarray, temperature: float) -> np.ndarray:
+        """``fitness / T``, with failed evaluations (penalty / non-finite) at -inf."""
+        fit = np.asarray(fitness, dtype=float)
+        log_lik = fit / temperature
+        log_lik[is_penalty(fit)] = float('-inf')
+        return log_lik
 
     def _correct_outlier_chains(
         self,
@@ -363,13 +410,17 @@ class DREAMAlgorithm(OptimizationAlgorithm):
         if n_chains < 4:
             return
 
-        # Compute IQR of log-likelihood
-        q1, q3 = np.percentile(log_likelihood, [25, 75])
-        iqr = q3 - q1
-
-        # Identify outliers (below Q1 - threshold * IQR)
-        outlier_threshold = q1 - threshold * iqr
-        outliers = log_likelihood < outlier_threshold
+        # Compute IQR of the finite log-likelihoods; chains sitting on a
+        # failed evaluation (-inf) are always outliers.
+        finite = np.isfinite(log_likelihood)
+        if finite.sum() >= 4:
+            q1, q3 = np.percentile(log_likelihood[finite], [25, 75])
+            iqr = q3 - q1
+            # Identify outliers (below Q1 - threshold * IQR)
+            outlier_threshold = q1 - threshold * iqr
+            outliers = ~finite | (log_likelihood < outlier_threshold)
+        else:
+            outliers = ~finite
 
         if outliers.any():
             # Get indices of good chains
