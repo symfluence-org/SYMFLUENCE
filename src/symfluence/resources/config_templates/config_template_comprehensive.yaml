@@ -1983,6 +1983,13 @@ CLEANUP_PARALLEL_DIRS: true
 #   Usage:      Save best_params.json and iteration results every N iterations during optimization
 CHECKPOINT_INTERVAL: 10
 
+# CALIBRATION_RESUME
+#   Type:        bool
+#   Default:     false
+#   Source:      OptimizationConfig (optimization.py)
+#   Usage:      Resume an interrupted calibration from its resume-state checkpoint (also --resume)
+CALIBRATION_RESUME: false
+
 # INITIAL_GUESS
 #   Type:        dict | None
 #   Default:     None

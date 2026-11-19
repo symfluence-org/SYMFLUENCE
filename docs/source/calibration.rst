@@ -223,6 +223,66 @@ Calibration produces:
 Performance on the independent ``EVALUATION_PERIOD`` is reported automatically
 alongside the calibration-period score using ``OPTIMIZATION_METRIC``.
 
+Checkpoint and Resume
+---------------------
+
+Long calibrations (thousands of evaluations of SUMMA, ParFlow, ...) can be
+continued after the process dies, instead of starting over. Every
+``CHECKPOINT_INTERVAL`` iterations (default 10; an iteration is one
+evaluation for DDS and one generation for population algorithms) the
+optimizer writes, next to the iteration-results CSV and best-parameter JSON,
+
+``<EXPERIMENT_ID>_<algorithm>_resume_state.json``
+
+atomically (temporary file + rename, so a crash mid-write leaves the previous
+checkpoint intact). It holds the ordered log of every evaluation request and
+its result, the iteration and evaluation counters, the random seed (or, for an
+unseeded run, the entropy it drew) and the random-generator state, the best
+solution, crash counters, the iteration history, and a fingerprint of the
+calibration setup.
+
+To continue an interrupted run, rerun the same configuration with
+``--resume``:
+
+.. code-block:: bash
+
+   symfluence workflow step calibrate_model --config my_config.yaml --resume
+   # or: symfluence workflow run --config my_config.yaml --resume
+
+or set ``CALIBRATION_RESUME: true`` in the configuration. The resumed run
+replays the algorithm against the logged evaluations, which takes seconds and
+runs no model, to restore its exact internal state (DDS's current solution and
+position in its perturbation schedule, DE/PSO/SCE-UA/NSGA-II populations and
+fitnesses, DREAM chains, GLUE samples, the simulated-annealing temperature,
+CMA-ES covariance, L-BFGS history, and the random-number generator), then
+continues with real model runs. A seeded resumed run ends with the same result
+as an uninterrupted one. The results CSV and best-parameter JSON are
+continued: earlier rows keep their timestamps, and nothing is moved aside.
+Evaluations made after the last checkpoint are run again, so a smaller
+``CHECKPOINT_INTERVAL`` loses less work (``CHECKPOINT_INTERVAL: 1`` checkpoints
+after every iteration).
+
+Resume refuses, with ``CalibrationResumeError``, rather than silently starting
+over when:
+
+- the calibrated parameters, their bounds, the algorithm, the model,
+  ``OPTIMIZATION_METRIC``, ``CALIBRATION_PERIOD``, ``RANDOM_SEED`` or
+  ``POPULATION_SIZE`` changed since the checkpoint (the error names the
+  setting);
+- the replay diverges from the log: the algorithm asks for different
+  parameter sets than were recorded, or its random-number generator is not in
+  the checkpointed state afterwards. This happens when other settings that
+  steer the search changed (``NUMBER_OF_ITERATIONS`` for DDS, algorithm
+  options, ``INITIAL_GUESS``, ``NUM_PROCESSES`` for Async-DDS batch sizes) or
+  after a SYMFLUENCE upgrade that changed the algorithm;
+- the algorithm does not support resume (an externally registered algorithm
+  class can declare ``supports_resume = False``; all built-in algorithms
+  support it).
+
+If there is no checkpoint, ``--resume`` logs a warning and starts a new run.
+Without ``--resume``, a new run moves the previous run's results and resume
+state aside as ``*.prev-<timestamp>`` files, as before.
+
 Best Practices
 --------------
 

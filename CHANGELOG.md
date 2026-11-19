@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Calibration checkpoint/resume**: `symfluence workflow run|step|steps|resume ... --resume` (or
+  `CALIBRATION_RESUME: true`) continues an interrupted calibration from its last checkpoint instead of starting
+  over. Every `CHECKPOINT_INTERVAL` iterations the optimizer now also writes
+  `<experiment>_<algorithm>_resume_state.json` (atomic tmp + rename): the ordered evaluation log, iteration and
+  evaluation counts, RNG seed/entropy and Generator state, best solution, crash counters, history, and a
+  fingerprint of parameters, bounds, objective, calibration period, seed and population size. On resume the
+  algorithm is replayed against the logged evaluations (no model runs) to restore its exact state, verified
+  against the logged parameter sets and RNG state, and then continues; a seeded resumed run ends with the same
+  result as an uninterrupted one (all 18 built-in algorithms). Result files are continued, not rotated aside.
+  Changed parameters/bounds/objective/seed, or a replay that diverges (e.g. changed `NUMBER_OF_ITERATIONS`),
+  raise `CalibrationResumeError`; an algorithm class can opt out with `supports_resume = False`. Unseeded runs
+  now draw their entropy explicitly so they can be resumed too (same distribution as before).
 - **Elevation corrections of remapped forcing (opt-in)**: the `lapse` config section (`pressure`, `humidity`,
   `longwave`, `shortwave`, `precipitation`, `wind`, with `lw_gradient`, `sw_gradient`, `precip_gradient`,
   `wind_gradient`) is now applied by the forcing remapper, from the elevation difference between each HRU and
