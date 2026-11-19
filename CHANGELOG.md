@@ -10,6 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Shared forcing correction across models (opt-in)**: the `FORCING_CORRECTION_*` section gives every model
+  one precipitation multiplier (and optional snowfall multiplier / temperature offset) instead of each model's
+  own correction parameter with its own bounds. `FORCING_CORRECTION_MODE`: `off` (none), `fixed` (config values,
+  or `FORCING_CORRECTION_PRECIP_MULTIPLIER: water_balance` = (Q_obs + ET) / P over the calibration period, ET
+  from config or Budyko on Oudin/Hamon PET) or `calibrated` (common parameters `FC_PRECIP_MULT`,
+  `FC_SNOW_MULT`, `FC_TEMP_OFFSET` with common bounds and an optional log-normal prior penalty,
+  `FORCING_CORRECTION_PRIOR_WEIGHT`). Translated to GR `PCORR`/`TCORR`, SUMMA `precip_mult`/`frozenPrecipMultip`,
+  MESH `PRECIP_MULT`, Wflow `PCORR`, mHM `precipCorrectionFactor` and HYPE `pcurain`/`pcusnow`; other models
+  accept only `off`. Superseded per-model parameters are dropped from calibration with a warning. Values are
+  written to `forcing_correction.json` in the results directory. Unset, calibration is unchanged.
+  See `docs/source/forcing_correction.rst`.
 - **Elevation corrections of remapped forcing (opt-in)**: the `lapse` config section (`pressure`, `humidity`,
   `longwave`, `shortwave`, `precipitation`, `wind`, with `lw_gradient`, `sw_gradient`, `precip_gradient`,
   `wind_gradient`) is now applied by the forcing remapper, from the elevation difference between each HRU and

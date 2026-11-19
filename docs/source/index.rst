@@ -71,6 +71,7 @@
 
    configuration
    calibration
+   forcing_correction
 
 .. toctree::
    :maxdepth: 1

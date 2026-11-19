@@ -78,6 +78,10 @@ Noah-OWP parameters:
      - psisat          # saturated soil potential
      - refkdt          # reference infiltration parameter
 
+Forcing corrections (precipitation multipliers such as GR ``PCORR`` or SUMMA
+``precip_mult``) can be shared by every model of an ensemble, fixed or
+calibrated with common bounds and a prior: see :ref:`forcing_correction`.
+
 Optimization Algorithms
 -----------------------
 
