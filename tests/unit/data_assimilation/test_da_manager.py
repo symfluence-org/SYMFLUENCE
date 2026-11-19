@@ -202,8 +202,10 @@ class TestDriver:
         )
         mgr._create_ensemble_manager = lambda enkf_config, rng=None: (ensemble, SPECS)
         mgr._load_observations = lambda variable: obs
-        mgr.__dict__['project_dir'] = tmp_path
-        mgr.__dict__['experiment_id'] = 'exp'
+        # Property setters: writing to __dict__ is shadowed by the properties,
+        # which made every test share ./domain_domain (flaky under xdist).
+        mgr.project_dir = tmp_path
+        mgr.experiment_id = 'exp'
         return mgr
 
     def test_end_to_end_writes_aligned_output(self, tmp_path):
