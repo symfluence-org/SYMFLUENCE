@@ -10,49 +10,40 @@ and output writing.
 """
 from __future__ import annotations
 
+import json
 import logging
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 import numpy as np
 import pandas as pd
 
 from symfluence.core.base_manager import BaseManager
 
+from . import diagnostics
 from .config import DataAssimilationConfig, EnKFConfig
+from .cycling import CycleResult, CycleSettings, draw_forcing_noise, run_cycle
 from .enkf.enkf_algorithm import EnKFAlgorithm
-from .enkf.ensemble_manager import HBVEnsembleManager
-from .enkf.observation_operator import StreamflowObservationOperator
+from .enkf.ensemble_manager import HBVEnsembleManager, XinanjiangEnsembleManager
+from .enkf.observation_error import StreamflowObservationError
 from .enkf.perturbation import GaussianPerturbation
-from .enkf.state_vector import StateVariableSpec, StateVector
+from .enkf.state_vector import StateVariableSpec
 
 logger = logging.getLogger(__name__)
 
-
-# Lower bound on the "relative" observation error, as a fraction of the mean
-# observed flow times ENKF_OBS_ERROR_STD. Without it a zero or near-zero
-# observation would get R ~ 0 and be trusted absolutely.
-_RELATIVE_ERROR_FLOOR_FRACTION = 0.1
 
 # EnKF options that are accepted by the configuration but not implemented.
 # (field, alias, default)
 _UNIMPLEMENTED_OPTIONS = (
     ('localization_radius', 'ENKF_LOCALIZATION_RADIUS', None),
-    ('forcing_perturbation', 'ENKF_FORCING_PERTURBATION', True),
     ('estimate_parameters', 'ENKF_ESTIMATE_PARAMS', False),
 )
 
+#: Models with an in-process ensemble manager.
+SUPPORTED_MODELS = ('HBV', 'XINANJIANG')
 
-@dataclass
-class FilterResult:
-    """Arrays produced by one pass of the forecast-analysis loop."""
-
-    ensemble_predictions: np.ndarray  # (n_timesteps, n_members), model units
-    ensemble_means: np.ndarray        # (n_timesteps,)
-    ensemble_stds: np.ndarray         # (n_timesteps,)
-    observed_values: np.ndarray       # (n_timesteps,), model units, NaN = none
-    analysis_times: List[int] = field(default_factory=list)
+# Kept for callers of the first EnKF API.
+FilterResult = CycleResult
 
 
 class DataAssimilationManager(BaseManager):
@@ -60,19 +51,17 @@ class DataAssimilationManager(BaseManager):
 
     Workflow:
         1. Load config (model, DA settings, observation paths)
-        2. Initialize ensemble (via EnsembleManager)
+        2. Initialize the ensemble through the model-agnostic state
+           interface (:class:`~.enkf.ensemble_manager.DAModel`)
         3. Load observations and align them to the model time axis by
            timestamp, converted to the model's prediction units
-        4. For each model timestep:
-           a. Forecast: advance all members from t to t+dt
-           b. Extract: read states and predictions from all members
-           c. Analyze: apply the EnKF update -- only after warm-up, on an
-              assimilation step, and when an observation exists for that
-              timestamp
-           d. Inject: write updated states back to members
-           e. Record: store ensemble mean/spread
-        5. Write output NetCDF
-        6. Return output path
+        4. Draw the period's forcing perturbations (AR(1) in time)
+        5. Cycle (:func:`~.cycling.run_cycle`): filter ensemble with EnKF
+           analyses, the open-loop ensemble (same members and perturbations,
+           no updates) and optional lead-time forecasts
+        6. Verify against the open loop and persistence
+           (:mod:`~.diagnostics`), write NetCDF + JSON/CSV
+        7. Return the NetCDF path
     """
 
     def _initialize_services(self) -> None:
@@ -83,7 +72,9 @@ class DataAssimilationManager(BaseManager):
         """Execute the full data assimilation workflow.
 
         Returns:
-            Path to the output NetCDF file.
+            Path to the output NetCDF file. A ``*_verification.json`` with
+            the added-value summary (and ``*_lead_scores.csv`` when forecasts
+            are enabled) is written next to it.
 
         Raises:
             Exception: Any failure propagates. This method used to log the
@@ -135,8 +126,12 @@ class DataAssimilationManager(BaseManager):
         warmup_steps = self._warmup_steps(
             getattr(ensemble_mgr, 'warmup_days', 0), timestep_hours
         )
+        obs_error = StreamflowObservationError.from_config(
+            enkf_config, obs_model_units,
+            cms_to_model=self.cms_to_model_units(timestep_hours, area_m2),
+        )
 
-        # 5. Forecast-analysis loop
+        # 5. Forecast-analysis loop (filter, open loop, forecasts)
         result = self.run_filter(
             enkf=enkf,
             enkf_config=enkf_config,
@@ -144,9 +139,13 @@ class DataAssimilationManager(BaseManager):
             state_specs=state_specs,
             obs_model_units=obs_model_units,
             warmup_steps=warmup_steps,
+            rng=rng,
+            obs_error=obs_error,
         )
 
-        # 6. Write output
+        # 6. Verification and output
+        summary, lead_scores = self.verify(result, warmup_steps, timestep_hours)
+        self._log_summary(summary)
         output_path = self._write_output(
             result,
             time_index=time_index,
@@ -154,8 +153,11 @@ class DataAssimilationManager(BaseManager):
                 'catchment_area_m2': float(area_m2) if area_m2 else 'not used',
                 'timestep_hours': timestep_hours,
                 'warmup_timesteps': warmup_steps,
+                'obs_error_model': obs_error.kind,
+                'forcing_correlation_hours': float(enkf_config.forcing_correlation_hours),
             },
         )
+        self._write_verification(output_path, summary, lead_scores)
 
         self.logger.info(
             "Data assimilation completed: %d timesteps, %d analyses",
@@ -167,99 +169,137 @@ class DataAssimilationManager(BaseManager):
     # Filter loop
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def cycle_settings(enkf_config: EnKFConfig, warmup_steps: int,
+                       timestep_hours: float) -> CycleSettings:
+        """Translate EnKF configuration into :class:`CycleSettings`."""
+        lead_steps = int(round(float(enkf_config.forecast_lead_days) * 24.0
+                               / float(timestep_hours)))
+        return CycleSettings(
+            assimilation_interval=enkf_config.assimilation_interval,
+            warmup_steps=warmup_steps,
+            filter_variant=enkf_config.filter_variant,
+            augment_state=enkf_config.augment_state_with_predictions,
+            enforce_nonnegative=enkf_config.enforce_nonnegative_states,
+            open_loop=enkf_config.open_loop,
+            forecast_steps=lead_steps,
+            forecast_issue_interval=enkf_config.forecast_issue_interval,
+            precip_bias=enkf_config.precip_bias_state,
+            precip_bias_std=enkf_config.precip_bias_std,
+            precip_bias_walk_std=enkf_config.precip_bias_walk_std,
+        )
+
     def run_filter(
         self,
         enkf: EnKFAlgorithm,
         enkf_config: EnKFConfig,
         ensemble_mgr,
-        state_specs: List[StateVariableSpec],
+        state_specs: Optional[List[StateVariableSpec]],
         obs_model_units: np.ndarray,
         warmup_steps: int = 0,
-    ) -> FilterResult:
+        rng: Optional[np.random.Generator] = None,
+        obs_error: Optional[StreamflowObservationError] = None,
+        forcing_noise: Optional[Mapping[str, np.ndarray]] = None,
+    ) -> CycleResult:
         """Run the forecast-analysis cycle over the whole model period.
 
         Args:
             enkf: Analysis algorithm.
             enkf_config: EnKF settings.
-            ensemble_mgr: Ensemble manager; ``forcing['precip']`` gives the
-                number of timesteps.
-            state_specs: State layout.
-            obs_model_units: Observation per model timestep (same length as
-                the model time axis), already in the units of
-                ``ensemble_mgr.extract_predictions``; NaN where there is no
-                observation.
+            ensemble_mgr: An initialised :class:`DAModel`.
+            state_specs: State layout (default: ``ensemble_mgr.state_specs``).
+            obs_model_units: Observations per model timestep, (n_t,) or
+                (n_t, n_gauges), in the units of the model's predictions;
+                NaN where there is no observation.
             warmup_steps: Leading timesteps during which nothing is
                 assimilated (the model spins up; errors there are dominated
                 by the arbitrary initial state).
+            rng: Generator for forcing noise and bias draws.
+            obs_error: Observation-error model (default: built from
+                ``enkf_config`` and the observations, with the default
+                absolute floor).
+            forcing_noise: Pre-drawn forcing perturbations; drawn from the
+                manager's perturbation strategy when omitted.
 
         Returns:
-            FilterResult with per-timestep ensemble statistics.
+            :class:`CycleResult` with filter priors, open loop and forecasts.
         """
-        n_timesteps = len(ensemble_mgr.forcing['precip'])
-        obs_model_units = np.asarray(obs_model_units, dtype=float)
-        if obs_model_units.shape != (n_timesteps,):
+        rng = rng if rng is not None else np.random.default_rng()
+        obs = np.asarray(obs_model_units, dtype=float)
+        n_t = len(np.asarray(ensemble_mgr.forcing['precip']))
+        if obs.shape[0] != n_t:
             raise ValueError(
                 f"Observations must be aligned to the model time axis: expected "
-                f"{n_timesteps} values, got shape {obs_model_units.shape}."
+                f"{n_t} values, got shape {obs.shape}."
             )
-        interval = enkf_config.assimilation_interval
-
-        state_vector = StateVector(state_specs)
-        n_state = state_vector.n_state
-        augment = enkf_config.augment_state_with_predictions
-        obs_operator = StreamflowObservationOperator(n_obs=1)
-        H = obs_operator.get_matrix(n_state + 1 if augment else n_state)
-
-        obs_error_floor = self._relative_error_floor(enkf_config, obs_model_units)
-
-        ensemble_predictions = []
-        ensemble_means = []
-        ensemble_stds = []
-        analysis_times: List[int] = []
-
-        for t in range(n_timesteps):
-            # a. Forecast step
-            ensemble_mgr.forecast_step(t, t + 1)
-
-            # b. Extract
-            X_states = ensemble_mgr.extract_states()
-            predictions = ensemble_mgr.extract_predictions(
-                enkf_config.assimilation_variable
+        if obs_error is None:
+            obs_error = StreamflowObservationError.from_config(enkf_config, obs)
+        if forcing_noise is None:
+            perturbation = getattr(ensemble_mgr, 'perturbation', None)
+            if perturbation is not None and getattr(perturbation, 'rng', None) is None:
+                perturbation.rng = rng
+            forcing_noise = draw_forcing_noise(
+                perturbation, ensemble_mgr, n_t,
+                enkf_config.forcing_correlation_hours,
+                enabled=enkf_config.forcing_perturbation,
             )
-
-            ensemble_predictions.append(predictions.copy())
-            ensemble_means.append(float(predictions.mean()))
-            ensemble_stds.append(float(predictions.std()))
-
-            # c. Analyze only after warm-up, on an assimilation step, and when
-            #    this timestamp actually has an observation.
-            y = obs_model_units[t]
-            if t < warmup_steps or t % interval != 0 or np.isnan(y):
-                continue
-
-            y_obs = np.atleast_1d(y)
-            R = self._obs_error_covariance(enkf_config, float(y), obs_error_floor)
-
-            if augment:
-                X_aug = state_vector.augment_with_predictions(X_states, predictions)
-                X_aug_a = enkf.analyze(X_aug, y_obs, H, R, enkf_config.filter_variant)
-                X_a, _ = state_vector.split_augmented(X_aug_a, 1)
-            else:
-                X_a = enkf.analyze(X_states, y_obs, H, R, enkf_config.filter_variant)
-
-            X_a = state_vector.enforce_bounds(X_a)
-
-            # d. Inject
-            ensemble_mgr.inject_states(X_a)
-            analysis_times.append(t)
-
-        return FilterResult(
-            ensemble_predictions=np.array(ensemble_predictions),
-            ensemble_means=np.array(ensemble_means),
-            ensemble_stds=np.array(ensemble_stds),
-            observed_values=obs_model_units,
-            analysis_times=analysis_times,
+        settings = self.cycle_settings(
+            enkf_config, warmup_steps, float(getattr(ensemble_mgr, 'timestep_hours', 24)))
+        return run_cycle(
+            ensemble_mgr, enkf, obs, obs_error, settings,
+            forcing_noise=forcing_noise, rng=rng, state_specs=state_specs,
         )
+
+    # ------------------------------------------------------------------
+    # Verification
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def verify(result: CycleResult, warmup_steps: int, timestep_hours: float):
+        """Added-value summary of a single-gauge run.
+
+        Returns:
+            (summary dict, lead-time DataFrame or None). The summary scores
+            the filter priors (one-step forecasts), the open loop and
+            persistence after warm-up on a common sample.
+        """
+        obs = np.asarray(result.observed_values, dtype=float)
+        if obs.ndim != 1:
+            raise ValueError("verify() handles one gauge; call diagnostics per gauge.")
+        mask = np.arange(len(obs)) >= warmup_steps
+        summary = diagnostics.verification_summary(
+            result.ensemble_predictions, obs,
+            open_loop_predictions=result.open_loop_predictions,
+            persistence=diagnostics.persistence_forecast(obs, lag=1),
+            mask=mask,
+        )
+        lead_scores = None
+        if result.forecasts is not None and len(result.forecast_issue_steps):
+            lead_scores = diagnostics.lead_time_scores(
+                result.forecasts, result.forecast_issue_steps, obs,
+                open_loop_predictions=result.open_loop_predictions,
+                timestep_hours=timestep_hours,
+            )
+        return summary, lead_scores
+
+    def _log_summary(self, summary: Dict[str, Any]) -> None:
+        enkf = summary['enkf']
+        self.logger.info(
+            "EnKF one-step priors (n=%d): CRPS %.4g, spread/error %.2f, NSE %.3f, KGE %.3f",
+            summary['n'], enkf['crps'], enkf['spread_error_ratio'], enkf['nse'], enkf['kge'])
+        if 'open_loop' in summary:
+            self.logger.info("Open loop: CRPS %.4g; CRPSS of EnKF vs open loop %.3f",
+                             summary['open_loop']['crps'], summary['crpss_vs_open_loop'])
+        if 'persistence' in summary:
+            self.logger.info("Persistence: MAE %.4g; CRPSS of EnKF vs persistence %.3f",
+                             summary['persistence']['crps'], summary['crpss_vs_persistence'])
+
+    @staticmethod
+    def cms_to_model_units(timestep_hours: float, area_m2: Optional[float]) -> Optional[float]:
+        """Factor converting m3/s into mm/timestep (None without an area)."""
+        if area_m2 is None or not np.isfinite(area_m2) or area_m2 <= 0:
+            return None
+        return float(timestep_hours) * 3600.0 / float(area_m2) * 1000.0
 
     # ------------------------------------------------------------------
     # Observations
@@ -373,37 +413,6 @@ class DataAssimilationManager(BaseManager):
             raise ValueError(f"Observation file has no data: {obs_file}")
         return df.iloc[:, 0]
 
-    # ------------------------------------------------------------------
-    # Observation error
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _relative_error_floor(enkf_config: EnKFConfig, obs_model_units: np.ndarray) -> float:
-        """Smallest observation error std used with ``obs_error_type: relative``."""
-        valid = obs_model_units[~np.isnan(obs_model_units)]
-        mean_abs = float(np.mean(np.abs(valid))) if valid.size else 0.0
-        return max(
-            enkf_config.obs_error_std * _RELATIVE_ERROR_FLOOR_FRACTION * mean_abs,
-            1e-9,
-        )
-
-    @staticmethod
-    def _obs_error_covariance(
-        enkf_config: EnKFConfig, y_obs: float, floor: float
-    ) -> np.ndarray:
-        """Observation error covariance R for one observation.
-
-        ``relative``: the std is ``obs_error_std`` times *this* observation
-        (not the mean of the whole series, which made low flows far too
-        uncertain and floods far too certain), bounded below by ``floor``.
-        ``absolute``: ``obs_error_std`` is the std itself, in model units.
-        """
-        if enkf_config.obs_error_type == 'relative':
-            obs_std = max(enkf_config.obs_error_std * abs(y_obs), floor)
-        else:
-            obs_std = enkf_config.obs_error_std
-        return np.array([[obs_std ** 2]])
-
     def _warn_unimplemented_options(self, enkf_config: EnKFConfig) -> None:
         """Tell the user when a non-default EnKF option will have no effect."""
         for attr, alias, default in _UNIMPLEMENTED_OPTIONS:
@@ -439,55 +448,44 @@ class DataAssimilationManager(BaseManager):
 
         if model_name == 'HBV':
             return self._create_hbv_ensemble(enkf_config, rng)
-        else:
-            raise NotImplementedError(
-                f"EnKF ensemble manager not implemented for {model_name}. "
-                "Currently supported: HBV"
-            )
+        if model_name in ('XINANJIANG', 'XAJ'):
+            return self._create_xinanjiang_ensemble(enkf_config, rng)
+        raise NotImplementedError(
+            f"EnKF ensemble manager not implemented for {model_name}. "
+            f"Currently supported: {', '.join(SUPPORTED_MODELS)}. Other models "
+            "can take part by implementing the DAModel state interface "
+            "(symfluence.data_assimilation.enkf.ensemble_manager)."
+        )
 
-    def _create_hbv_ensemble(
-        self, enkf_config: EnKFConfig, rng: Optional[np.random.Generator] = None
-    ):
-        """Create HBV-specific ensemble manager."""
-        from jhbv.model import PARAM_BOUNDS
-
-        # Load forcing
-        from jhbv.runner import HBVRunner
-        runner = HBVRunner(self.config, self.logger)
-        forcing, _ = runner._load_forcing()
-
-        # Get params and bounds
-        base_params = runner._get_default_params()
-        bounds = {k: v for k, v in PARAM_BOUNDS.items() if k in base_params}
-
-        # Perturbation
-        perturbation = GaussianPerturbation(
+    @staticmethod
+    def _perturbation(enkf_config: EnKFConfig,
+                      rng: Optional[np.random.Generator]) -> GaussianPerturbation:
+        return GaussianPerturbation(
             param_std=enkf_config.param_perturbation_std,
             precip_std=enkf_config.precip_perturbation_std,
             temp_std=enkf_config.temp_perturbation_std,
             rng=rng,
         )
 
-        # Routing buffer size
-        from jhbv.model import get_routing_buffer_length
-        routing_len = get_routing_buffer_length(10, runner.timestep_hours)
+    def _create_hbv_ensemble(
+        self, enkf_config: EnKFConfig, rng: Optional[np.random.Generator] = None
+    ):
+        """Create HBV-specific ensemble manager."""
+        from jhbv.model import PARAM_BOUNDS
+        from jhbv.runner import HBVRunner
 
-        # State variable specs
-        state_specs = [
-            StateVariableSpec('snow', 1, lower_bound=0.0),
-            StateVariableSpec('snow_water', 1, lower_bound=0.0),
-            StateVariableSpec('sm', 1, lower_bound=0.0),
-            StateVariableSpec('suz', 1, lower_bound=0.0),
-            StateVariableSpec('slz', 1, lower_bound=0.0),
-            StateVariableSpec('routing_buffer', routing_len, lower_bound=0.0),
-        ]
+        runner = HBVRunner(self.config, self.logger)
+        forcing, _ = runner._load_forcing()
+
+        base_params = runner._get_default_params()
+        bounds = {k: v for k, v in PARAM_BOUNDS.items() if k in base_params}
 
         ensemble = HBVEnsembleManager(
             n_members=enkf_config.ensemble_size,
             base_params=base_params,
             param_bounds=bounds,
             forcing=forcing,
-            perturbation=perturbation,
+            perturbation=self._perturbation(enkf_config, rng),
             use_jax=(runner.backend == 'jax'),
             timestep_hours=runner.timestep_hours,
             warmup_days=runner.warmup_days,
@@ -497,11 +495,38 @@ class DataAssimilationManager(BaseManager):
         # does when the runner writes streamflow.
         ensemble.catchment_area_m2 = float(runner._get_catchment_area())
 
-        return ensemble, state_specs
+        return ensemble, ensemble.state_specs
+
+    def _create_xinanjiang_ensemble(
+        self, enkf_config: EnKFConfig, rng: Optional[np.random.Generator] = None
+    ):
+        """Create the stand-alone Xinanjiang ensemble manager (daily, JAX)."""
+        from jxaj.parameters import DEFAULT_PARAMS, PARAM_BOUNDS
+        from jxaj.runner import XinanjiangRunner
+
+        runner = XinanjiangRunner(self.config, self.logger)
+        if str(getattr(runner, 'snow_module', 'none')).lower() not in ('none', ''):
+            raise NotImplementedError(
+                "EnKF for Xinanjiang supports the stand-alone model only "
+                f"(XINANJIANG_SNOW_MODULE={runner.snow_module!r}).")
+        forcing = runner._load_forcing()
+        base_params = dict(getattr(runner, '_external_params', None) or DEFAULT_PARAMS)
+        bounds = {k: v for k, v in PARAM_BOUNDS.items() if k in base_params}
+
+        ensemble = XinanjiangEnsembleManager(
+            n_members=enkf_config.ensemble_size,
+            base_params=base_params,
+            param_bounds=bounds,
+            forcing=forcing,
+            perturbation=self._perturbation(enkf_config, rng),
+            warmup_days=runner.warmup_days,
+        )
+        ensemble.catchment_area_m2 = float(runner._get_catchment_area())
+        return ensemble, ensemble.state_specs
 
     def _write_output(
         self,
-        result: FilterResult,
+        result: CycleResult,
         time_index: Optional[pd.DatetimeIndex] = None,
         global_attrs: Optional[Dict[str, Any]] = None,
     ) -> Path:
@@ -532,7 +557,35 @@ class DataAssimilationManager(BaseManager):
             analysis_times=result.analysis_times,
             time_index=None if time_index is None else time_index.to_numpy(),
             global_attrs=global_attrs,
+            open_loop_predictions=result.open_loop_predictions,
+            forecasts=result.forecasts,
+            forecast_issue_steps=result.forecast_issue_steps,
+            precip_bias=result.precip_bias,
         )
 
         self.logger.info("DA results written to %s", output_path)
         return output_path
+
+    def _write_verification(self, output_path: Path, summary: Dict[str, Any],
+                            lead_scores: Optional[pd.DataFrame]) -> None:
+        """Write the added-value summary (JSON) and lead-time scores (CSV)."""
+        stem = output_path.with_suffix('')
+        json_path = Path(f"{stem}_verification.json")
+
+        def _clean(obj):
+            if isinstance(obj, dict):
+                return {k: _clean(v) for k, v in obj.items()}
+            if isinstance(obj, (list, tuple)):
+                return [_clean(v) for v in obj]
+            if isinstance(obj, (float, np.floating)):
+                return float(obj) if np.isfinite(obj) else None
+            if isinstance(obj, np.integer):
+                return int(obj)
+            return obj
+
+        json_path.write_text(json.dumps(_clean(summary), indent=2))
+        self.logger.info("DA verification written to %s", json_path)
+        if lead_scores is not None:
+            csv_path = Path(f"{stem}_lead_scores.csv")
+            lead_scores.to_csv(csv_path, index=False)
+            self.logger.info("Lead-time scores written to %s", csv_path)

@@ -28,6 +28,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `calibrated` mode, and record them in `simulations/<exp>/<MODEL>/forcing_correction.json`.
   The resolved plan is part of the calibration-resume fingerprint, so `--resume` refuses a changed forcing
   correction. See `docs/source/forcing_correction.rst`.
+- **Data assimilation you can judge (EnKF)**: every EnKF run now also runs the open loop (the same perturbed
+  ensemble, never updated; `ENKF_OPEN_LOOP`, default on) and a persistence benchmark, and writes
+  `*_verification.json` with CRPS, CRPSS vs open loop and vs persistence, spread-error ratio, rank histogram, and
+  NSE/KGE of the ensemble mean. `ENKF_FORECAST_LEAD_DAYS` (default 0 = off) issues ensemble forecasts from each
+  analysis and scores them by lead time (`*_lead_scores.csv`; ensemble-mean scores use the same function signature
+  as `scores` in the forecast-verification module of PR #512, one local function to swap). Streamflow observation
+  error is heteroscedastic, sigma = a + b*Q_obs (`ENKF_OBS_ERROR_STD` = b, default 10 %; `ENKF_OBS_ERROR_ABS` = a
+  in m3/s, default 1 % of mean observed flow); vector observations (several gauges, diagonal R) are supported by
+  the cycle. Forcing perturbations are AR(1) in time (`ENKF_FORCING_CORRELATION_HOURS`, default 24 h) with the
+  lognormal debiasing kept. Optional multiplicative precipitation-bias state (`ENKF_PRECIP_BIAS_STATE`). A
+  model-agnostic state interface (`DAModel`: `get_state`/`set_state`/`step`/`perturbable_forcing`) replaces the
+  HBV-only manager; Xinanjiang (stand-alone, `jxaj`) is the second model. New docs page "Data assimilation".
+
 - **Model-agnostic multi-variable evaluation**: output-variable adapters (`R.output_adapters`,
   `core.modeling.output_variables`) give glacier storage / area / cumulative specific mass balance, basin SWE,
   snow-covered fraction and ET in standard units for SUMMA, HYPE, GR (lumped glacier balances), PRMS, GSFLOW,
@@ -160,6 +173,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requires it.
 
 ### Changed
+- **EnKF results change** (DA users only): the default observation error is now `heteroscedastic`
+  (was `relative`: max(b*Q, floor)); forcing perturbations are temporally correlated (24 h, was white noise) and are
+  drawn for the whole period up front, so random streams differ from earlier runs; `diagnostics.crps` no longer
+  halves the ensemble-spread term (it overstated CRPS) and `spread_error_ratio` uses the (m+1)/m-corrected spread
+  (a reliable ensemble now scores 1). `ENKF_FORCING_PERTURBATION: false` now switches forcing perturbation off
+  (it was ignored). Set `ENKF_OBS_ERROR_TYPE: relative` and `ENKF_FORCING_CORRELATION_HOURS: 0` for the previous
+  error models.
 - **Multivariate objective defaults are bias-sensitive (changes results)**: the default metric for `SCA` and
   `ET` in `OBJECTIVE_METRICS` is now KGE instead of correlation (bias-blind); `SWE`, `SNOW` and the new
   `BASIN_*` default to KGE and `GLACIER_MB` to `GMB_SCORE`. `OBJECTIVE_METRICS` keys are now case-insensitive
