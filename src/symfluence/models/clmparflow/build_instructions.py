@@ -221,8 +221,17 @@ if [ "$DOWNLOAD_SUCCESS" = "false" ]; then
     BUILD_TMPDIR=$(mktemp -d /tmp/clmparflow_build_XXXXXX)
     echo "Build directory: ${BUILD_TMPDIR}"
 
-    echo "Cloning ParFlow source..."
-    git clone --depth 1 https://github.com/parflow/parflow.git "${BUILD_TMPDIR}/parflow_src"
+    # Build from the checkout the installer made in INSTALL_DIR (pinned to
+    # the commit in binary_pins.json), not from a fresh clone of upstream HEAD.
+    if git -C "${INSTALL_DIR}" rev-parse -q --verify HEAD >/dev/null 2>&1; then
+        _PF_COMMIT=$(git -C "${INSTALL_DIR}" rev-parse HEAD)
+        echo "Copying ParFlow source at ${_PF_COMMIT}..."
+        git clone -q --no-checkout "${INSTALL_DIR}" "${BUILD_TMPDIR}/parflow_src"
+        git -C "${BUILD_TMPDIR}/parflow_src" checkout -q "${_PF_COMMIT}"
+    else
+        echo "Cloning ParFlow source..."
+        git clone --depth 1 https://github.com/parflow/parflow.git "${BUILD_TMPDIR}/parflow_src"
+    fi
 
     mkdir -p "${BUILD_TMPDIR}/parflow_src/build"
 
