@@ -26,7 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through the land model's adapter. Forward runs (`run_models`, forecast pipelines via
   `apply_forward_forcing_correction`) apply the fixed values, or those of the newest calibration in
   `calibrated` mode, and record them in `simulations/<exp>/<MODEL>/forcing_correction.json`.
-  See `docs/source/forcing_correction.rst`.
+  The resolved plan is part of the calibration-resume fingerprint, so `--resume` refuses a changed forcing
+  correction. See `docs/source/forcing_correction.rst`.
 - **Fair, reproducible multi-model comparison** (docs: *Multi-model comparison*):
   - *Seeds*: with `RANDOM_SEED` unset, calibration draws a seed, logs it and records it in
     `<exp>_<algo>_calibration_conditions.json`, `*_best_params.json` and `run_manifest.json`; setting
