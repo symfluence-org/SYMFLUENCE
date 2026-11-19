@@ -186,7 +186,7 @@ def _innovations(e: np.ndarray, phi: float) -> np.ndarray:
 def boxcox_ar1_error_parameters(
     obs: np.ndarray,
     sim: np.ndarray,
-    settings: BoxCoxAR1Settings = BoxCoxAR1Settings(),
+    settings: Optional[BoxCoxAR1Settings] = None,
 ) -> Tuple[float, float, float]:
     """Error-model parameters ``(phi, sigma, epsilon)`` for one simulation.
 
@@ -194,6 +194,7 @@ def boxcox_ar1_error_parameters(
     conditional estimates used by :func:`boxcox_ar1_log_likelihood`
     (``sigma`` is the maximum-likelihood innovation standard deviation).
     """
+    settings = settings or BoxCoxAR1Settings()
     e, _, eps = boxcox_ar1_residuals(obs, sim, settings.lam, settings.epsilon)
     if e.size < 2:
         raise ValueError("At least two valid obs/sim pairs are needed")
