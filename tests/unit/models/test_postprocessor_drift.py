@@ -212,14 +212,14 @@ def test_crhm_basinflow_shifted_to_interval_start():
     assert q.index[0] == pd.Timestamp("2020-01-01 00:00")
 
 
-# 11. PRMS statvar: element counts and units ---------------------------------
+# 11. PRMS statvar: one column per element entry, and units -------------------
 
-def test_prms_statvar_respects_counts_and_units(tmp_path):
+def test_prms_statvar_respects_elements_and_units(tmp_path):
     from symfluence.models.prms.calibration.worker import PRMSWorker
     from symfluence.models.prms.statvar import CFS_TO_CMS, read_statvar_streamflow
 
     sv = tmp_path / "statvar.dat"
-    sv.write_text("3\nseg_outflow 3\nbasin_actet 1\nbasin_cfs 1\n"
+    sv.write_text("5\nseg_outflow 1\nseg_outflow 2\nseg_outflow 3\nbasin_actet 1\nbasin_cfs 1\n"
                   "1 2000 1 1 0 0 0 1 2 3 0.1 100\n"
                   "2 2000 1 2 0 0 0 1 2 3 0.1 200\n")
     q = read_statvar_streamflow(sv)

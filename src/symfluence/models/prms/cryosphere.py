@@ -10,6 +10,8 @@ import pandas as pd
 from symfluence.core.exceptions import ConfigurationError, ModelExecutionError, ValidationError
 from symfluence.core.modeling.utilities.periods import parse_period
 
+from .statvar import parse_statvar
+
 
 def calculate_constraints(statvar, parameters, project_dir, period, snow_scale=.2, mb_scale=1.):
     if not period or snow_scale <= 0 or mb_scale <= 0:
@@ -26,10 +28,8 @@ def calculate_constraints(statvar, parameters, project_dir, period, snow_scale=.
     ice = params['glacier_frac_init']
     if not np.isfinite(area).all() or (area <= 0).any() or not np.isin(ice, [0, 1]).all() or not 0 < np.dot(area, ice) < area.sum():
         raise ConfigurationError('Finite areas and separate pure ice/land HRUs required')
-    lines = Path(statvar).read_text().splitlines()
-    n = int(lines[0]); v = np.loadtxt(statvar, skiprows=n + 1, ndmin=2)
-    dates = pd.to_datetime(dict(year=v[:, 1].astype(int), month=v[:, 2].astype(int), day=v[:, 3].astype(int)))
-    f = pd.DataFrame(v[:, 7:], columns=['_'.join(x.split()) for x in lines[1:n + 1]], index=dates)
+    _, f = parse_statvar(Path(statvar))
+    f.index = f.index.normalize()
     if f.index.has_duplicates:
         raise ValidationError('Duplicate PRMS dates')
     f = f.loc[start:end]
