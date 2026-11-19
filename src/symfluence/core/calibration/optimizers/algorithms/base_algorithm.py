@@ -12,7 +12,7 @@ Abstract base class for optimization algorithms using the Strategy pattern.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Dict, Optional, Tuple, Union
 
 import numpy as np
 
@@ -35,7 +35,20 @@ class OptimizationAlgorithm(ConfigMixin, ABC):
     Algorithms receive evaluation callbacks from the optimizer and return
     optimization results. This allows algorithms to be easily swapped
     while maintaining a consistent interface.
+
+    Checkpoint/resume (``CALIBRATION_RESUME`` / ``--resume``) replays the
+    logged evaluations through ``optimize`` (see
+    :mod:`symfluence.core.calibration.optimizers.resume`). That needs an
+    algorithm whose trajectory depends only on its per-run Generator
+    (``self._rng`` from :meth:`_new_rng`) and the values the evaluation
+    callbacks return. An algorithm that also depends on anything else (wall
+    clock, completion order of asynchronous workers, an unseeded external
+    library) must set ``supports_resume = False`` so a resume is refused
+    instead of silently restarting.
     """
+
+    #: Whether a checkpointed run of this algorithm can be resumed by replay.
+    supports_resume: ClassVar[bool] = True
 
     def __init__(self, config: Union['SymfluenceConfig', Dict[str, Any]], logger):
         """
@@ -105,11 +118,21 @@ class OptimizationAlgorithm(ConfigMixin, ABC):
         ``self.random_seed`` (the optimizer records it), so even an
         unseeded run can be regenerated.
         """
-        from symfluence.core.provenance import resolve_seed
+        seed = self.random_seed
+        if seed in (None, "None", ""):
+            # Unseeded: a resume replays with the original run's seed
+            # (``_resume_entropy``, set from the resume state); otherwise draw
+            # one and log it. Either way it is kept as ``_run_entropy`` (which
+            # the resume state stores) and as ``self.random_seed``.
+            entropy = self.__dict__.get("_resume_entropy")
+            if entropy is None:
+                from symfluence.core.provenance import resolve_seed
 
-        seed, _source = resolve_seed(self.random_seed, self.logger, context=f"{self.name} run")
-        self.random_seed = seed
-        return np.random.default_rng(seed)
+                entropy, _source = resolve_seed(None, self.logger, context=f"{self.name} run")
+            self._run_entropy = int(entropy)
+            self.random_seed = self._run_entropy
+            return np.random.default_rng(self._run_entropy)
+        return np.random.default_rng(int(seed))
 
     def _initial_guess(self, n_params: int, kwargs: Dict[str, Any]) -> Optional[np.ndarray]:
         """Normalized ``INITIAL_GUESS`` passed by the optimizer, or None.

@@ -158,3 +158,63 @@ def test_to_dict_serializable():
     # This will raise if any value isn't serializable
     text = json.dumps(prov.to_dict())
     assert "oops" in text
+
+
+# ---------------------------------------------------------------------------
+# record_executable: upstream source of a binary
+# ---------------------------------------------------------------------------
+
+def _fake_exe(path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\x7fELF not really")
+    return path
+
+
+def test_record_executable_records_source_from_install_record(tmp_path):
+    from symfluence.core.provenance import record_executable
+
+    tool_dir = tmp_path / "installs" / "summa"
+    exe = _fake_exe(tool_dir / "bin" / "summa_sundials.exe")
+    (tool_dir / ".symfluence_source.json").write_text(json.dumps({
+        "tool": "summa", "repository": "https://github.com/CH-Earth/summa.git",
+        "ref": "develop_sundials", "pinned_commit": "a" * 40, "commit": "a" * 40,
+        "pinned_by": "binary_pins.json", "tracked_changes": False, "patched": False,
+        "installed_utc": "2026-11-19T00:00:00Z",
+    }))
+    prov = capture_provenance("exp", "dom")
+    record_executable(prov, "SUMMA", exe)
+
+    info = prov.executables["SUMMA"]
+    assert info["sha256"]  # existing behaviour kept
+    assert info["source"]["repository"] == "https://github.com/CH-Earth/summa.git"
+    assert info["source"]["commit"] == info["source"]["pinned_commit"] == "a" * 40
+    assert info["source"]["ref"] == "develop_sundials"
+    assert "installed_utc" not in info["source"]
+    assert json.loads(json.dumps(prov.to_dict()))["executables"]["SUMMA"]["source"]
+
+
+def test_record_executable_falls_back_to_bundle_toolchain_manifest(tmp_path):
+    """npm/release bundles ship bin/<tool> next to a toolchain.json."""
+    from symfluence.core.provenance import record_executable
+
+    exe = _fake_exe(tmp_path / "dist" / "bin" / "mizuroute")
+    (tmp_path / "dist" / "toolchain.json").write_text(json.dumps({"tools": {
+        "mizuroute": {"commit": "b" * 40, "branch": "HEAD",
+                      "repository": "https://github.com/ESCOMP/mizuRoute.git",
+                      "source": {"pinned_commit": "b" * 40, "ref": "serial"}},
+    }}))
+    prov = capture_provenance("exp", "dom")
+    record_executable(prov, "MIZUROUTE", exe)
+
+    source = prov.executables["MIZUROUTE"]["source"]
+    assert source["commit"] == source["pinned_commit"] == "b" * 40
+    assert source["ref"] == "serial"
+
+
+def test_record_executable_without_source_record_has_no_source(tmp_path):
+    from symfluence.core.provenance import record_executable
+
+    exe = _fake_exe(tmp_path / "somewhere" / "bin" / "model")
+    prov = capture_provenance("exp", "dom")
+    record_executable(prov, "MODEL", exe)
+    assert "source" not in prov.executables["MODEL"]

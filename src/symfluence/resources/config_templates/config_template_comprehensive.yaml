@@ -2018,6 +2018,13 @@ CLEANUP_PARALLEL_DIRS: true
 #   Usage:      Save best_params.json and iteration results every N iterations during optimization
 CHECKPOINT_INTERVAL: 10
 
+# CALIBRATION_RESUME
+#   Type:        bool
+#   Default:     false
+#   Source:      OptimizationConfig (optimization.py)
+#   Usage:      Resume an interrupted calibration from its resume-state checkpoint (also --resume)
+CALIBRATION_RESUME: false
+
 # INITIAL_GUESS
 #   Type:        dict | None
 #   Default:     None
@@ -3150,10 +3157,12 @@ HRU_GAUGE_MAPPING: null
 EVALUATION_VARIABLE: ""
 
 # EVALUATION_SPINUP_YEARS
+# DEPRECATED: use SPINUP_PERIOD. Years from the simulation start, mapped onto
+# the same spin-up window that evaluators exclude from every score.
 #   Type:        int
 #   Default:     0
 #   Source:      EvaluationConfig (evaluation.py)
-#   Description: Number of spinup years to exclude from evaluation
+#   Description: Deprecated spin-up years (use SPINUP_PERIOD)
 EVALUATION_SPINUP_YEARS: 0
 
 # ========================================
@@ -3812,6 +3821,16 @@ BOUNDING_BOX_COORDS: null
 #   Usage:      7
 EVALUATION_PERIOD: "2008-01-01, 2009-12-31"
 
+# TEST_PERIOD
+# Optional third, independent hold-out period. Scored and reported in the
+# final evaluation (Test_* metrics, benchmark skill), never used for
+# optimisation or model selection. Must lie inside the experiment window and
+# must not overlap CALIBRATION_PERIOD or EVALUATION_PERIOD (overlap warns).
+#   Type:        str
+#   Default:     None
+#   Source:      DomainConfig (domain.py)
+TEST_PERIOD: null
+
 # EXPERIMENT_ID
 #   Type:        str
 #   Default:     None
@@ -3838,6 +3857,8 @@ EXPERIMENT_TIME_END: "2009-12-31 23:00"
 EXPERIMENT_TIME_START: "2002-01-01 01:00"
 
 # SPINUP_PERIOD
+# Model warm-up at the start of the run. Output before its end is excluded
+# from every score; it should end before CALIBRATION_PERIOD starts.
 #   Type:        str
 #   Default:     None
 #   Source:      DomainConfig (domain.py)

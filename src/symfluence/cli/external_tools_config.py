@@ -40,6 +40,7 @@ from symfluence.core.build.build_snippets import (
 )
 from symfluence.core.registries import R
 
+from .binary_pins import apply_pins
 from .external_tools_build_commands import (
     ENZYME_BUILD_COMMAND,
     OPENFEWS_BUILD_COMMAND,
@@ -454,8 +455,9 @@ def get_external_tools_definitions() -> Dict[str, Dict[str, Any]]:
     _recover_build_instructions_from_failed_plugins()
     _resolve_registered_build_instructions()
 
-    # Return all aggregated instructions
-    return BuildInstructionsRegistry.get_all_instructions()
+    # Return all aggregated instructions, each recipe pinned to the exact
+    # upstream commit recorded in binary_pins.json.
+    return apply_pins(BuildInstructionsRegistry.get_all_instructions())
 
 
 if __name__ == "__main__":

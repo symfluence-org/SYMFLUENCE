@@ -273,6 +273,8 @@ For more help on a specific command:
         )
         run_parser.add_argument('--force-rerun', action='store_true', dest='force_rerun',
                               help='Force rerun of all steps')
+        run_parser.add_argument('--resume', action='store_true', dest='resume_calibration',
+                              help='Resume an interrupted calibration from its checkpoint (sets CALIBRATION_RESUME)')
         run_parser.add_argument('--continue-on-error', action='store_true', dest='continue_on_error',
                               help='Continue executing steps even if errors occur')
         run_parser.set_defaults(func=WorkflowCommands.run)
@@ -287,6 +289,8 @@ For more help on a specific command:
                                help='Step to execute (use full name or alias; see "workflow list-steps")')
         step_parser.add_argument('--force-rerun', action='store_true', dest='force_rerun',
                                help='Force rerun of this step')
+        step_parser.add_argument('--resume', action='store_true', dest='resume_calibration',
+                              help='Resume an interrupted calibration from its checkpoint (sets CALIBRATION_RESUME)')
         step_parser.set_defaults(func=WorkflowCommands.run_step)
 
         # workflow steps (multiple)
@@ -299,6 +303,8 @@ For more help on a specific command:
                                 help='Steps to execute in order (use full names or aliases; see "workflow list-steps")')
         steps_parser.add_argument('--force-rerun', action='store_true', dest='force_rerun',
                                 help='Force rerun of these steps')
+        steps_parser.add_argument('--resume', action='store_true', dest='resume_calibration',
+                              help='Resume an interrupted calibration from its checkpoint (sets CALIBRATION_RESUME)')
         steps_parser.set_defaults(func=WorkflowCommands.run_steps)
 
         # workflow status
@@ -334,6 +340,8 @@ For more help on a specific command:
                                  help='Step to resume from (use full name or alias; see "workflow list-steps")')
         resume_parser.add_argument('--force-rerun', action='store_true', dest='force_rerun',
                                  help='Force rerun from this step')
+        resume_parser.add_argument('--resume', action='store_true', dest='resume_calibration',
+                              help='Resume an interrupted calibration from its checkpoint (sets CALIBRATION_RESUME)')
         resume_parser.set_defaults(func=WorkflowCommands.resume)
 
         # workflow clean

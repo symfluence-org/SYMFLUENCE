@@ -103,6 +103,10 @@ class FinalResultsSaver:
                 'best_params': self._convert_to_serializable(
                     final_result.get('best_params', {})
                 ),
+                **({'test_metrics': self._convert_to_serializable(final_result['test_metrics'])}
+                   if final_result.get('test_metrics') else {}),
+                **({'period_warning': final_result['period_warning']}
+                   if final_result.get('period_warning') else {}),
                 'timestamp': datetime.now().isoformat()
             }
 
@@ -122,7 +126,7 @@ class FinalResultsSaver:
         period_prefix: str
     ) -> Dict[str, Any]:
         """
-        Extract metrics for a specific period (Calib or Eval).
+        Extract metrics for a specific period (Calib, Eval or Test).
 
         Args:
             all_metrics: All metrics dictionary
@@ -136,7 +140,9 @@ class FinalResultsSaver:
             if key.startswith(f"{period_prefix}_"):
                 # Remove prefix for cleaner reporting
                 period_metrics[key.replace(f"{period_prefix}_", "")] = value
-            elif period_prefix == 'Calib' and not any(key.startswith(p) for p in ['Calib_', 'Eval_']):
+            elif period_prefix == 'Calib' and not any(
+                key.startswith(p) for p in ['Calib_', 'Eval_', 'Test_']
+            ) and key != 'period_warning':
                 # Include unprefixed metrics in calibration (backwards compatibility)
                 period_metrics[key] = value
         return period_metrics
@@ -144,7 +150,9 @@ class FinalResultsSaver:
     def log_results(
         self,
         calib_metrics: Dict[str, Any],
-        eval_metrics: Dict[str, Any]
+        eval_metrics: Dict[str, Any],
+        test_metrics: Optional[Dict[str, Any]] = None,
+        period_warning: Optional[str] = None,
     ) -> None:
         """
         Log detailed final evaluation results.
@@ -152,24 +160,37 @@ class FinalResultsSaver:
         Args:
             calib_metrics: Calibration period metrics
             eval_metrics: Evaluation period metrics
+            test_metrics: Independent test period metrics (optional)
+            period_warning: Split-sample warning from the evaluator (optional)
         """
         lines = ["=" * 60, "FINAL EVALUATION RESULTS", "=" * 60]
+        if period_warning:
+            lines.append(f"WARNING: {period_warning}")
+
+        def _add(metrics: Dict[str, Any]) -> None:
+            for metric, value in sorted(metrics.items()):
+                if isinstance(value, (int, float, np.integer, np.floating)):
+                    if not np.isnan(value):
+                        lines.append(f"   {metric}: {value:.6f}")
+                elif value is not None:
+                    lines.append(f"   {metric}: {value}")
 
         # Calibration period
         if calib_metrics:
             lines.append("CALIBRATION PERIOD PERFORMANCE:")
-            for metric, value in sorted(calib_metrics.items()):
-                if value is not None and not np.isnan(value):
-                    lines.append(f"   {metric}: {value:.6f}")
+            _add(calib_metrics)
 
         # Evaluation period
         if eval_metrics:
             lines.append("EVALUATION PERIOD PERFORMANCE:")
-            for metric, value in sorted(eval_metrics.items()):
-                if value is not None and not np.isnan(value):
-                    lines.append(f"   {metric}: {value:.6f}")
+            _add(eval_metrics)
         else:
             lines.append("EVALUATION PERIOD: No evaluation period configured")
+
+        # Independent test period (never used for optimisation or selection)
+        if test_metrics:
+            lines.append("TEST PERIOD PERFORMANCE (independent hold-out):")
+            _add(test_metrics)
 
         lines.append("=" * 60)
 

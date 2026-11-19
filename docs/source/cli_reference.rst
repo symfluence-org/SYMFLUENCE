@@ -82,12 +82,15 @@ Execute the complete workflow from start to finish.
 
 .. code-block:: bash
 
-   symfluence workflow run [--config CONFIG] [--force-rerun] [--continue-on-error]
+   symfluence workflow run [--config CONFIG] [--force-rerun] [--continue-on-error] [--resume]
 
 **Options:**
 
 - ``--force-rerun``: Force rerun of all steps (skip caching)
 - ``--continue-on-error``: Continue executing steps on errors
+- ``--resume``: Continue an interrupted calibration from its checkpoint
+  (sets ``CALIBRATION_RESUME``; see :ref:`calibration` > Checkpoint and Resume).
+  Also accepted by ``workflow step``, ``workflow steps`` and ``workflow resume``.
 
 **Example:**
 
@@ -102,7 +105,7 @@ Execute a single workflow step.
 
 .. code-block:: bash
 
-   symfluence workflow step STEP_NAME [--config CONFIG] [--force-rerun]
+   symfluence workflow step STEP_NAME [--config CONFIG] [--force-rerun] [--resume]
 
 **Available Steps:**
 
@@ -141,7 +144,7 @@ Execute multiple workflow steps in sequence.
 
 .. code-block:: bash
 
-   symfluence workflow steps STEP1 STEP2 ... [--config CONFIG] [--force-rerun]
+   symfluence workflow steps STEP1 STEP2 ... [--config CONFIG] [--force-rerun] [--resume]
 
 **Example:**
 
@@ -183,13 +186,17 @@ Resume workflow from a specific step.
 
 .. code-block:: bash
 
-   symfluence workflow resume STEP_NAME [--config CONFIG] [--force-rerun]
+   symfluence workflow resume STEP_NAME [--config CONFIG] [--force-rerun] [--resume]
+
+``workflow resume`` restarts the *workflow* at a step; the step itself starts
+from scratch. To continue an interrupted *calibration* from its last
+checkpoint, add ``--resume``.
 
 **Example:**
 
 .. code-block:: bash
 
-   symfluence workflow resume calibrate_model --config config.yaml
+   symfluence workflow resume calibrate_model --config config.yaml --resume
 
 workflow clean
 --------------
@@ -330,6 +337,28 @@ install --help`` prints both lists for the installed model packages. Tools requi
 by a named tool (e.g. ``sundials`` for ``summa``) are added automatically;
 ``--force``, ``--branch`` and ``--git-hash`` apply to the named tools only. An
 unknown tool name, or any tool that fails, gives a non-zero exit code.
+
+**Pinned upstream sources.** Each tool is built from an exact upstream commit,
+not the tip of a branch. The pins live in ``src/symfluence/cli/binary_pins.json``
+(repository, the branch or tag the pin was resolved from, and the 40-hex
+commit); a recipe can also hold its own ``git_hash`` (e.g. a commit a SYMFLUENCE
+patch was written against), which takes precedence. ``--git-hash SHA`` builds
+another commit; ``--branch NAME`` builds the current tip of that branch,
+unpinned. Each install writes ``<install_dir>/.symfluence_source.json``
+(repository, ref, pinned commit, the commit actually built, whether tracked
+files were changed by a patch); ``installs/toolchain.json`` and each run's
+``run_manifest.json`` (``executables.<MODEL>.source``) carry the same record.
+
+To see or bump the pins (maintainers):
+
+.. code-block:: bash
+
+   python scripts/update_binary_pins.py            # pinned vs upstream table
+   python scripts/update_binary_pins.py --check    # drift report (CI; never fails on drift)
+   python scripts/update_binary_pins.py --write summa fuse   # move these pins to upstream
+
+A bump changes what the next release builds, so rebuild and rerun the affected
+model tests in the PR that bumps it.
 
 **Commonly used tools:**
 
