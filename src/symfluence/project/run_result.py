@@ -48,18 +48,17 @@ class StepResult:
 class RunResult:
     """What a run did and where its outputs are.
 
-    Attributes:
-        status: ``'completed'`` (no step failed), ``'partial'`` (some steps
-            failed, others completed) or ``'failed'``.
-        steps: Per-step outcomes in execution order.
-        duration_s: Wall-clock duration of the call.
-        domain_name / experiment_id / project_dir: What was run.
-        outputs: Named output paths that exist after the run: ``results_csv``,
-            ``metrics_json``, ``metrics_csv``, ``summary_figure``,
-            ``run_manifest``, ``log_dir``.
-        metrics: Contents of ``results/<experiment_id>/metrics.json``
-            (see :mod:`symfluence.core.metrics.run_metrics`), or None when no
-            run has scored this experiment yet.
+    * ``status`` -- ``'completed'`` (no step failed), ``'partial'`` (some
+      steps failed, others completed) or ``'failed'``.
+    * ``steps`` -- per-step outcomes (:class:`StepResult`) in execution order.
+    * ``duration_s`` -- wall-clock duration of the call.
+    * ``domain_name`` / ``experiment_id`` / ``project_dir`` -- what was run.
+    * ``outputs`` -- named output paths that exist after the run:
+      ``results_csv``, ``metrics_json``, ``metrics_csv``, ``summary_figure``,
+      ``run_manifest``, ``log_dir``.
+    * ``metrics`` -- contents of ``results/<experiment_id>/metrics.json``
+      (see :mod:`symfluence.core.metrics.run_metrics`), or None when no run
+      has scored this experiment yet.
     """
 
     status: str
