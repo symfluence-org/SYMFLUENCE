@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Run metrics after every run**: `postprocess_results` now writes `results/<EXPERIMENT_ID>/metrics.json`
+  (+ `metrics.csv`) with a documented, versioned schema: per model and per configured period (calibration,
+  evaluation, `TEST_PERIOD` when the schema has it, and the full record after spin-up) KGE with r/alpha/beta,
+  NSE, logNSE, PBIAS, RMSE and n_obs; benchmark KGE and skill when `core.metrics.benchmarks` is available;
+  warnings; provenance (results CSV, run manifest, run id). The calibration final evaluation rewrites it with
+  the calibrated scores (`"stage": "calibration"`). A one-page `summary.png` (hydrograph with periods shaded,
+  FDC, metrics table) is written by default; `SUMMARY_REPORT: false` disables it. `symfluence workflow run`
+  (and `workflow step(s)` running postprocessing/calibration) ends with a compact metrics table.
+- **`RunResult` from the Python API**: `SYMFLUENCE.run_workflow()` and `run_individual_steps()` return a
+  `RunResult` (per-step status/duration/error, output paths, parsed metrics.json) instead of None;
+  `SYMFLUENCE.run()` is an alias of `run_workflow()`; `continue_on_error` is an explicit keyword on both (the
+  `config_overrides={"continue_on_error": ...}` path keeps working). `symfluence.RunResult` is exported.
 - **Split-sample rigour**: optional `TEST_PERIOD`, a third independent hold-out scored and reported in the
   final evaluation (`Test_*` metrics, `test_metrics` in the final-evaluation JSON) and never used for
   optimisation or selection. The final evaluation also scores three benchmarks fitted on the calibration
@@ -102,6 +114,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requires it.
 
 ### Changed
+- Missing, unreadable or non-overlapping streamflow observations after postprocessing are now logged at
+  WARNING level naming the expected observation path (previously a DEBUG message), and recorded in
+  metrics.json.
+- CLI console output no longer forces terminal mode: ANSI colour codes are only written to a TTY (or with
+  `FORCE_COLOR`), never when output is piped or redirected, and `NO_COLOR` is honoured.
 - **One spin-up notion for scoring**: evaluators now exclude output before the end of `SPINUP_PERIOD` from
   every score (previously only `EVALUATION_SPINUP_YEARS` was honoured). This changes results only where a
   scored period overlaps spin-up (now also warned) or in the full-record fallback.

@@ -300,6 +300,8 @@ class EvaluationConfig(BaseModel):
     # Deprecated: use SPINUP_PERIOD. Mapped onto the same spin-up window
     # (N years from the simulation start) that evaluators exclude from scoring.
     spinup_years: int = Field(default=0, alias='EVALUATION_SPINUP_YEARS')
+    # One-page results/<exp>/summary.png after postprocessing (metrics.json is always written)
+    summary_report: bool = Field(default=True, alias='SUMMARY_REPORT')
 
     # Observation data sources
     streamflow: Optional[StreamflowConfig] = Field(default_factory=StreamflowConfig)
