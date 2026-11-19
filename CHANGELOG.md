@@ -138,6 +138,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   layering guard forbids handler-module imports from outside `data/`.
 
 ### Fixed
+- **PRMS/GSFLOW statvar reader reads one column per header line**: the shared reader
+  (`symfluence.models.prms.statvar.parse_statvar`, from #489) took the second header token as an element
+  *count*, but PRMS writes `<name> <element index>` with one line per element. Any file with a per-HRU or
+  per-segment entry (element > 1) - every PRMS glacier/cryosphere run and every GSFLOW glacier/cryosphere
+  run with more than one HRU - failed with "contains no data rows", so streamflow extraction, calibration
+  scoring and the postprocessor CSV failed for those runs; basin-scalar-only files were read correctly.
+  Columns are now always `<name>_<element>` (`basin_cfs_1`, `hru_actet_3`); new helpers `variable_frame`
+  and `basin_variable`. The PRMS water-balance gate and cryosphere constraints now use the same reader
+  instead of their own copies. Rows with the wrong number of values are skipped with a warning.
 - **IGNACIO no longer runs fire spread on made-up weather after a forcing error**: forcing that exists but cannot
   be read, or lacks air temperature, humidity (RH, or specific humidity + pressure), wind speed or precipitation,
   now fails preprocessing instead of filling 20 °C / 50 % RH / 10 km/h / no rain or falling back to synthetic

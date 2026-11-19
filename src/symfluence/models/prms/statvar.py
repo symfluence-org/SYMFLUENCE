@@ -3,21 +3,24 @@
 
 """Shared PRMS / GSFLOW ``statvar`` reader.
 
-One parser for the calibration workers, postprocessors and extractors of
-PRMS and GSFLOW so that calibration and the final ``results`` CSV read the
+One parser for the calibration workers, postprocessors, extractors and the
+water-balance / cryosphere checks of PRMS and GSFLOW, so they all read the
 same column in the same units.
 
-statvar text format::
+statvar text format (PRMS ``statVar_names`` / ``statVar_element``)::
 
-    N                       <- number of output variables
-    basin_cfs 1             <- name and element count, N lines
-    seg_outflow 3
+    N                       <- number of statistic entries
+    basin_cfs 1             <- variable name and ONE element index, N lines
+    hru_actet 1
+    hru_actet 2             <- an HRU array appears once per element listed
     ...
-    1 2000 1 1 0 0 0 v1 v2 v3 v4 ...   <- step y m d h min s, then
-                                          sum(counts) values in header order
+    1 2000 1 1 0 0 0 v1 v2 ...   <- step y m d h min s, then exactly N values,
+                                    one per header line, in header order
 
-A variable's columns therefore start at ``7 + sum(counts of the variables
-before it)``, not at ``7 + its index``.
+The second header token is the element index, not an element count: a
+variable output for N HRUs contributes N header lines and N columns.
+Every column is named ``<name>_<element>`` (``basin_cfs_1``,
+``hru_actet_2``).
 """
 from __future__ import annotations
 
@@ -49,77 +52,123 @@ STREAMFLOW_VARIABLES: Tuple[Tuple[str, bool], ...] = (
 _CFS_UNITS = {'cfs', 'ft3 s-1', 'ft3/s', 'ft^3/s', 'cubic feet per second'}
 
 
+def column_name(name: str, element: int) -> str:
+    """Column label of one statvar entry: ``<name>_<element>``."""
+    return f"{name}_{element}"
+
+
 def parse_statvar(path: Path) -> Tuple[List[Tuple[str, int]], pd.DataFrame]:
     """Parse a statvar file into its header and a dated value table.
 
     Returns:
-        ``(header, df)`` where ``header`` is ``[(name, count), ...]`` and
-        ``df`` has a DatetimeIndex and one column per element, named
-        ``name`` for scalars and ``name_1..name_n`` for arrays.
+        ``(header, df)`` where ``header`` is ``[(name, element), ...]`` in
+        file order (one entry per value column) and ``df`` has a
+        DatetimeIndex and one column per entry named ``<name>_<element>``.
 
     Raises:
-        ModelExecutionError: if the file has no parseable header or data rows.
+        ModelExecutionError: if the header is malformed or repeats an entry,
+            or the file has no complete data rows.
     """
-    lines = Path(path).read_text(encoding='utf-8').strip().split('\n')
+    lines = Path(path).read_text(encoding='utf-8').strip().splitlines()
     if not lines:
         raise ModelExecutionError(f"Empty statvar file: {path}")
     try:
         n_vars = int(lines[0].split()[0])
     except (ValueError, IndexError) as e:
-        raise ModelExecutionError(f"statvar {path} has no variable-count header line") from e
+        raise ModelExecutionError(f"statvar {path} has no entry-count header line") from e
 
     header: List[Tuple[str, int]] = []
     for line in lines[1:n_vars + 1]:
         parts = line.split()
-        if not parts:
+        if len(parts) == 1:
+            header.append((parts[0], 1))
             continue
-        count = 1
-        if len(parts) > 1:
-            try:
-                count = int(parts[1])
-            except ValueError:
-                count = 1
-        header.append((parts[0], max(count, 1)))
+        try:
+            header.append((parts[0], int(parts[1])))
+        except (ValueError, IndexError) as e:
+            raise ModelExecutionError(
+                f"statvar {path}: header line {line!r} is not '<name> <element>'"
+            ) from e
     if len(header) != n_vars:
         raise ModelExecutionError(f"statvar {path}: expected {n_vars} header entries, found {len(header)}")
 
-    columns: List[str] = []
-    for name, count in header:
-        columns.extend([name] if count == 1 else [f"{name}_{i + 1}" for i in range(count)])
-    n_values = len(columns)
+    columns = [column_name(name, element) for name, element in header]
+    if len(set(columns)) != len(columns):
+        repeated = sorted({c for c in columns if columns.count(c) > 1})
+        raise ModelExecutionError(f"statvar {path} lists entries more than once: {repeated}")
 
-    dates, rows = [], []
+    dates, rows, skipped = [], [], 0
     for line in lines[n_vars + 1:]:
         parts = line.split()
-        if len(parts) < 7 + n_values:
+        if len(parts) != 7 + n_vars:
+            skipped += 1
             continue
         try:
-            stamp = pd.Timestamp(
-                year=int(parts[1]), month=int(parts[2]), day=int(parts[3]),
-                hour=int(float(parts[4])), minute=int(float(parts[5])),
-            )
-            values = [float(v) for v in parts[7:7 + n_values]]
+            year, month, day, hour, minute = (int(float(t)) for t in parts[1:6])
+            stamp = pd.Timestamp(year=year, month=month, day=day, hour=hour, minute=minute)
+            values = [float(v) for v in parts[7:]]
         except (ValueError, IndexError):
+            skipped += 1
             continue
         dates.append(stamp)
         rows.append(values)
     if not rows:
-        raise ModelExecutionError(f"statvar {path} contains no data rows")
+        raise ModelExecutionError(
+            f"statvar {path} contains no data rows with {n_vars} values"
+        )
+    if skipped:
+        logger.warning(f"statvar {path}: skipped {skipped} incomplete or malformed rows")
     df = pd.DataFrame(np.asarray(rows, dtype=float), index=pd.DatetimeIndex(dates), columns=columns)
     return header, df
 
 
-def _select_element(df: pd.DataFrame, name: str, count: int,
-                    element: Optional[int]) -> pd.Series:
-    if count == 1:
-        return df[name]
-    if element is None:
-        logger.warning(
-            f"statvar variable {name} has {count} elements and no element was "
-            f"specified; using the last one ({name}_{count})"
+def variable_elements(header: Sequence[Tuple[str, int]], name: str) -> List[int]:
+    """Element indices of ``name`` present in the file, in file order."""
+    return [element for n, element in header if n == name]
+
+
+def variable_frame(header: Sequence[Tuple[str, int]], df: pd.DataFrame, name: str) -> pd.DataFrame:
+    """All columns of ``name`` (one per listed element), in file order.
+
+    Raises:
+        ModelExecutionError: if ``name`` is not in the file.
+    """
+    elements = variable_elements(header, name)
+    if not elements:
+        raise ModelExecutionError(f"statvar has no variable {name!r}")
+    return df[[column_name(name, e) for e in elements]]
+
+
+def basin_variable(header: Sequence[Tuple[str, int]], df: pd.DataFrame, name: str) -> pd.Series:
+    """A basin (scalar) variable such as ``basin_cfs`` as a Series named ``name``.
+
+    Raises:
+        ModelExecutionError: if ``name`` is not in the file or was output
+            for several elements.
+    """
+    frame = variable_frame(header, df, name)
+    if frame.shape[1] != 1:
+        raise ModelExecutionError(
+            f"statvar variable {name} has {frame.shape[1]} elements; it is not a basin scalar"
         )
-        element = count
-    return df[f"{name}_{element}"]
+    return frame.iloc[:, 0].rename(name)
+
+
+def _select_element(header: Sequence[Tuple[str, int]], df: pd.DataFrame, name: str,
+                    element: Optional[int]) -> pd.Series:
+    elements = variable_elements(header, name)
+    if element is None:
+        if len(elements) > 1:
+            logger.warning(
+                f"statvar variable {name} has elements {elements} and no element was "
+                f"specified; using the highest ({max(elements)})"
+            )
+        element = max(elements)
+    elif element not in elements:
+        raise ModelExecutionError(
+            f"statvar variable {name} has no element {element}; file lists {elements}"
+        )
+    return df[column_name(name, element)]
 
 
 def read_statvar_streamflow(
@@ -130,23 +179,23 @@ def read_statvar_streamflow(
     """Basin streamflow (m3/s) from a statvar file.
 
     Picks the first available variable from ``preferred`` then
-    :data:`STREAMFLOW_VARIABLES`, finds its real column from the header
-    element counts and converts cfs to m3/s.
+    :data:`STREAMFLOW_VARIABLES`, takes its column (``element``, else the
+    only / highest listed element) and converts cfs to m3/s.
 
     Raises:
         ModelExecutionError: if no streamflow variable is present.
     """
     header, df = parse_statvar(path)
-    counts = dict(header)
+    names = {n for n, _ in header}
     cfs = dict(STREAMFLOW_VARIABLES)
     for name in [*preferred, *(n for n, _ in STREAMFLOW_VARIABLES)]:
-        if name in counts:
-            series = _select_element(df, name, counts[name], element)
+        if name in names:
+            series = _select_element(header, df, name, element)
             if cfs.get(name, name.endswith('_cfs')):
                 series = series * CFS_TO_CMS
             return series.rename('discharge_cms')
     raise ModelExecutionError(
-        f"No streamflow variable in statvar {path}; header has {[n for n, _ in header]}"
+        f"No streamflow variable in statvar {path}; header has {sorted(names)}"
     )
 
 

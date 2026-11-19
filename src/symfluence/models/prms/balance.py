@@ -7,6 +7,8 @@ import numpy as np
 
 from symfluence.core.exceptions import ConfigurationError, ModelExecutionError
 
+from .statvar import parse_statvar
+
 
 def check_water_balance(statvar: Path, parameters: Path, tolerance_mm: float,
                         glacier: bool = False) -> dict:
@@ -17,12 +19,10 @@ def check_water_balance(statvar: Path, parameters: Path, tolerance_mm: float,
     and include ice evaporation omitted by native basin_actet. Dynamic
     geometry is not certified by this fixed-extent accounting.
     """
-    lines = statvar.read_text().splitlines()
-    n = int(lines[0])
-    values = np.loadtxt(statvar, skiprows=n + 1, ndmin=2)
-    if len(values) < 2 or not np.isfinite(values).all():
+    _, table = parse_statvar(Path(statvar))
+    if len(table) < 2 or not np.isfinite(table.to_numpy()).all():
         raise ModelExecutionError('Nonfinite or insufficient PRMS balance output')
-    columns = {'_'.join(line.split()): values[:, 7 + i] for i, line in enumerate(lines[1:n + 1])}
+    columns = {name: table[name].to_numpy() for name in table.columns}
     storage = columns['basin_storage_1'].copy()
     ice_evap = 0.
     if glacier:
@@ -46,7 +46,7 @@ def check_water_balance(statvar: Path, parameters: Path, tolerance_mm: float,
             - columns['basin_actet_1'] - ice_evap
             - columns['basin_stflow_out_1'] - columns['basin_gwsink_1'])
     residual = (flux[1:] - np.diff(storage)) * 25.4
-    result = {'days': len(values), 'max_abs_daily_residual_mm': float(np.abs(residual).max()),
+    result = {'days': len(table), 'max_abs_daily_residual_mm': float(np.abs(residual).max()),
               'cumulative_residual_mm': float(residual.sum())}
     if result['max_abs_daily_residual_mm'] > tolerance_mm or abs(result['cumulative_residual_mm']) > 10 * tolerance_mm:
         raise ModelExecutionError(f'PRMS water balance failed: {result}')
