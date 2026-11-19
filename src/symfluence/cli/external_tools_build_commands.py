@@ -420,10 +420,15 @@ else
     fi
 fi
 echo "Using branch: $ENZYME_BRANCH"
-git checkout "$ENZYME_BRANCH" 2>/dev/null || \
+if [ "$ENZYME_BRANCH" = "main" ]; then
+    # The installer already checked out the pinned main commit (binary_pins.json).
+    echo "Staying on pinned commit $(git rev-parse --short HEAD 2>/dev/null)"
+else
+    # LLVM < 20 needs the matching vNN release branch, which is not pinned.
     git fetch --depth 1 origin "$ENZYME_BRANCH" 2>/dev/null && \
-    git checkout "$ENZYME_BRANCH" 2>/dev/null || \
-    echo "Staying on current branch"
+        git checkout -q FETCH_HEAD 2>/dev/null || \
+        echo "Staying on current checkout"
+fi
 
 # ── Build Enzyme ─────────────────────────────────────────────────
 echo ""

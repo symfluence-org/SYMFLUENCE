@@ -331,6 +331,28 @@ by a named tool (e.g. ``sundials`` for ``summa``) are added automatically;
 ``--force``, ``--branch`` and ``--git-hash`` apply to the named tools only. An
 unknown tool name, or any tool that fails, gives a non-zero exit code.
 
+**Pinned upstream sources.** Each tool is built from an exact upstream commit,
+not the tip of a branch. The pins live in ``src/symfluence/cli/binary_pins.json``
+(repository, the branch or tag the pin was resolved from, and the 40-hex
+commit); a recipe can also hold its own ``git_hash`` (e.g. a commit a SYMFLUENCE
+patch was written against), which takes precedence. ``--git-hash SHA`` builds
+another commit; ``--branch NAME`` builds the current tip of that branch,
+unpinned. Each install writes ``<install_dir>/.symfluence_source.json``
+(repository, ref, pinned commit, the commit actually built, whether tracked
+files were changed by a patch); ``installs/toolchain.json`` and each run's
+``run_manifest.json`` (``executables.<MODEL>.source``) carry the same record.
+
+To see or bump the pins (maintainers):
+
+.. code-block:: bash
+
+   python scripts/update_binary_pins.py            # pinned vs upstream table
+   python scripts/update_binary_pins.py --check    # drift report (CI; never fails on drift)
+   python scripts/update_binary_pins.py --write summa fuse   # move these pins to upstream
+
+A bump changes what the next release builds, so rebuild and rerun the affected
+model tests in the PR that bumps it.
+
 **Commonly used tools:**
 
 - ``summa`` - SUMMA hydrological model
