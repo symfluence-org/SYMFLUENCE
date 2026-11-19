@@ -47,6 +47,14 @@ from .evaluators import PopulationEvaluator, TaskBuilder
 from .final_evaluation import FinalEvaluationOrchestrator, FinalResultsSaver
 from .lifecycle import adjust_end_time_for_forcing, fallback_simulation_dir
 from .metrics_tracker import EvaluationMetricsTracker
+from .resume import (
+    CalibrationCheckpointer,
+    CalibrationResumeError,
+    load_resume_state,
+    make_fingerprint,
+    resume_state_path,
+    to_jsonable,
+)
 from .run_lock import RunDirectoryLock
 
 if TYPE_CHECKING:
@@ -186,6 +194,9 @@ class BaseModelOptimizer(
         )
         if num_processes >= 1:
             self._setup_parallel_dirs()
+
+        # Active checkpoint/resume driver during run_optimization (resume.py)
+        self._resume_checkpointer: Optional[CalibrationCheckpointer] = None
 
         # Runtime config overrides (for algorithm-specific settings like Adam/LBFGS)
         self._runtime_overrides: Dict[str, Any] = {}
@@ -1176,14 +1187,31 @@ class BaseModelOptimizer(
             return self.param_manager.denormalize_parameters(normalized)
 
         def save_checkpoint(iteration: int):
+            checkpointer = getattr(self, "_resume_checkpointer", None)
+            if checkpointer is not None and checkpointer.replaying:
+                # Resuming: the files already hold this state.
+                return
             try:
                 self.save_results(algorithm_name, standard_filename=True)
                 self.save_best_params(algorithm_name)
                 self.logger.debug(f"Checkpoint saved at iteration {iteration}")
             except Exception as e:  # noqa: BLE001 — must-not-raise contract
                 self.logger.warning(f"Checkpoint save failed at iteration {iteration}: {e}")
+            if checkpointer is not None:
+                # Outside the try: a resume replay that diverged must stop the
+                # run (CalibrationResumeError), not be logged and ignored.
+                try:
+                    checkpointer.on_checkpoint(iteration)
+                except OSError as e:
+                    self.logger.warning(
+                        f"Resume-state save failed at iteration {iteration}: {e}"
+                    )
 
         def record_iteration(iteration, score, params, additional_metrics=None):
+            checkpointer = getattr(self, "_resume_checkpointer", None)
+            if checkpointer is not None and checkpointer.skip_record():
+                # Resuming: this row was restored from the checkpoint.
+                return
             crash_stats = self.get_crash_stats()
             merged = dict(additional_metrics or {}, **{
                 'crash_count': crash_stats['crash_count'],
@@ -1226,6 +1254,84 @@ class BaseModelOptimizer(
         }
 
         return callbacks, kwargs
+
+    # =========================================================================
+    # Checkpoint / resume
+    # =========================================================================
+
+    def _load_resume_state(self, algorithm: Any, state_path: Path) -> Optional[Dict[str, Any]]:
+        """Load the resume state for ``--resume`` / CALIBRATION_RESUME.
+
+        Returns None (start a new run) when there is no checkpoint; raises
+        :class:`CalibrationResumeError` when the algorithm cannot be resumed.
+        """
+        if not getattr(algorithm, 'supports_resume', True):
+            raise CalibrationResumeError(
+                f"{algorithm.name} does not support calibration resume. Start a new run "
+                "without --resume (CALIBRATION_RESUME: false)."
+            )
+        if not state_path.is_file():
+            self.logger.warning(
+                f"CALIBRATION_RESUME is set but there is no resume state at {state_path}; "
+                "starting a new calibration."
+            )
+            return None
+        state = load_resume_state(state_path)
+        self.logger.info(
+            f"Resuming {algorithm.name} calibration from {state_path}: "
+            f"{state.get('n_evaluations')} evaluations, iteration {state.get('iteration')}, "
+            f"written {state.get('written')}"
+            + (" (run had completed)" if state.get('complete') else "")
+        )
+        return state
+
+    def _resume_fingerprint(self, algorithm: Any, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        """What a checkpoint is only valid for: parameter space and objective."""
+        calibration_period = self._get_config_value(
+            lambda: self.config.domain.calibration_period,
+            default=None,
+            dict_key='CALIBRATION_PERIOD',
+        )
+        return make_fingerprint({
+            'algorithm': algorithm.name,
+            'model': self._get_model_name(),
+            'parameters': list(self.param_manager.all_param_names),
+            'bounds': self.param_manager.get_parameter_bounds(),
+            'metric': self.target_metric,
+            'objective_names': kwargs.get('objective_names'),
+            'calibration_period': calibration_period,
+            'random_seed': None if self.random_seed in (None, 'None', '') else int(self.random_seed),
+            'population_size': self.population_size,
+        })
+
+    def _resume_snapshot(self) -> Dict[str, Any]:
+        """Optimizer-side state stored with each resume checkpoint."""
+        return to_jsonable({
+            'best': {
+                'score': self.best_score,
+                'iteration': self.best_iteration,
+                'params': self.best_params,
+            },
+            'crash_counters': {
+                'total_evaluations': self._metrics_tracker._total_evaluations,
+                'crash_count': self._metrics_tracker._crash_count,
+                'last_crash_warning': self._metrics_tracker._last_crash_warning,
+            },
+            'history': self._iteration_history,
+        })
+
+    def _restore_from_resume_state(self, state: Dict[str, Any]) -> None:
+        """Restore the history and crash counters before the replay."""
+        self._iteration_history = list(state.get('history', []))
+        counters = state.get('crash_counters') or {}
+        tracker = self._metrics_tracker
+        tracker._total_evaluations = int(counters.get('total_evaluations', 0))
+        tracker._crash_count = int(counters.get('crash_count', 0))
+        tracker._last_crash_warning = int(counters.get('last_crash_warning', 0))
+        self.logger.info(
+            f"Replaying {len(state.get('evaluations', []))} logged evaluation requests "
+            "(no model runs) to restore the algorithm state"
+        )
 
     def run_optimization(self, algorithm_name: str) -> Path:
         """Run optimization using a specified algorithm from the registry.
@@ -1277,16 +1383,30 @@ class BaseModelOptimizer(
         # best params, Pareto front, final evaluation) -- see algorithm_slug.
         file_slug = algorithm_slug(algorithm_name)
 
-        # A restarted run must not overwrite the previous run's results at
-        # its first checkpoint: move them aside first.
-        self.rotate_previous_results()
+        resume_requested = bool(self._get_config_value(
+            lambda: self.config.optimization.calibration_resume,
+            default=False,
+            dict_key='CALIBRATION_RESUME',
+        ))
+        state_path = resume_state_path(self.results_dir, self.experiment_id, file_slug)
+        self._resume_checkpointer = None
 
         n_params = len(self.param_manager.all_param_names)
-        if n_params == 0:
-            return self._run_default_only(file_slug)
 
         # Get algorithm instance from registry
-        algorithm = get_algorithm(algorithm_name, self.config, self.logger)
+        algorithm = get_algorithm(algorithm_name, self.config, self.logger) if n_params else None
+
+        resumed_state = None
+        if resume_requested and algorithm is not None:
+            resumed_state = self._load_resume_state(algorithm, state_path)
+
+        if resumed_state is None:
+            # A restarted run must not overwrite the previous run's results at
+            # its first checkpoint: move them aside first.
+            self.rotate_previous_results()
+
+        if algorithm is None:
+            return self._run_default_only(file_slug)
 
         # Build callbacks and kwargs for the algorithm
         callbacks, kwargs = self._build_algorithm_callbacks(file_slug)
@@ -1388,12 +1508,34 @@ class BaseModelOptimizer(
             if value is not None:
                 kwargs[kwarg_name] = value
 
-        # Run the algorithm
-        result = algorithm.optimize(
-            n_params=n_params,
-            **callbacks,
-            **kwargs
+        # Checkpoint/resume: log every evaluation so the run can be replayed
+        # (see optimizers/resume.py), and on resume restore the history.
+        checkpointer = CalibrationCheckpointer(
+            state_path,
+            self._resume_fingerprint(algorithm, kwargs),
+            algorithm,
+            self.logger,
+            snapshot_extra=self._resume_snapshot,
+            resumed_state=resumed_state,
         )
+        checkpointer.wrap(callbacks, kwargs)
+        if resumed_state is not None:
+            self._restore_from_resume_state(resumed_state)
+        self._resume_checkpointer = checkpointer
+
+        # Run the algorithm
+        try:
+            result = algorithm.optimize(
+                n_params=n_params,
+                **callbacks,
+                **kwargs
+            )
+        finally:
+            self._resume_checkpointer = None
+        try:
+            checkpointer.on_complete(self.best_iteration)
+        except OSError as e:
+            self.logger.warning(f"Final resume-state save failed: {e}")
 
         # Save results
         results_path = self.save_results(file_slug, standard_filename=True)

@@ -449,6 +449,14 @@ class OptimizationConfig(BaseModel):
     final_evaluation_numerical_method: str = Field(default='ida', alias='FINAL_EVALUATION_NUMERICAL_METHOD')
     cleanup_parallel_dirs: bool = Field(default=True, alias='CLEANUP_PARALLEL_DIRS')
     checkpoint_interval: int = Field(default=10, alias='CHECKPOINT_INTERVAL', ge=1)
+    calibration_resume: bool = Field(
+        default=False,
+        alias='CALIBRATION_RESUME',
+        description='Resume an interrupted calibration from its resume-state checkpoint '
+                    '(written every CHECKPOINT_INTERVAL iterations) instead of starting '
+                    'over. Refused with an error when the parameters, bounds, objective '
+                    'or algorithm changed. Also set by the --resume CLI flag.'
+    )
     initial_guess: Optional[Dict[str, Any]] = Field(
         default=None,
         alias='INITIAL_GUESS',

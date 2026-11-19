@@ -3,8 +3,8 @@ description: >
   Confirm the commit being released is contained in a branch that is permitted
   to produce releases. Guards against a stray tag pushed on a feature branch
   publishing a release, a package, or binaries. Events other than tag pushes
-  (scheduled rebuilds, workflow_dispatch dry runs) are always allowed so
-  routine maintenance keeps working.
+  (workflow_dispatch runs) are always allowed so routine maintenance keeps
+  working.
 
 outputs:
   allowed:

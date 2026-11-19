@@ -18,6 +18,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   warns (never raises) when calibration/evaluation/test periods overlap, spin-up does not precede a scored
   period, or `CALIBRATION_PERIOD` is missing while evaluation/test or optimisation is configured. The silent
   full-record metrics fallback now logs a `SPLIT-SAMPLE WARNING` and adds `period_warning` to the metrics dict.
+- **Calibration checkpoint/resume**: `symfluence workflow run|step|steps|resume ... --resume` (or
+  `CALIBRATION_RESUME: true`) continues an interrupted calibration from its last checkpoint instead of starting
+  over. Every `CHECKPOINT_INTERVAL` iterations the optimizer now also writes
+  `<experiment>_<algorithm>_resume_state.json` (atomic tmp + rename): the ordered evaluation log, iteration and
+  evaluation counts, RNG seed/entropy and Generator state, best solution, crash counters, history, and a
+  fingerprint of parameters, bounds, objective, calibration period, seed and population size. On resume the
+  algorithm is replayed against the logged evaluations (no model runs) to restore its exact state, verified
+  against the logged parameter sets and RNG state, and then continues; a seeded resumed run ends with the same
+  result as an uninterrupted one (all 18 built-in algorithms). Result files are continued, not rotated aside.
+  Changed parameters/bounds/objective/seed, or a replay that diverges (e.g. changed `NUMBER_OF_ITERATIONS`),
+  raise `CalibrationResumeError`; an algorithm class can opt out with `supports_resume = False`. Unseeded runs
+  now draw their entropy explicitly so they can be resumed too (same distribution as before).
+- **Reproducible external-tool builds**: every build recipe that clones an upstream repository is now pinned
+  to an exact commit (`src/symfluence/cli/binary_pins.json`, 31 tools resolved 2026-11-19 from the branch each
+  recipe tracked; `raven` and `summa-glacier` keep the commits held in their recipes). The installer fetches
+  that commit (shallow fetch by SHA, full-clone fallback) instead of the branch tip; `--branch` still builds a
+  branch tip on request. ParFlow and ParFlow-CLM source builds now compile the pinned checkout rather than a
+  second fresh clone of `master`, and Enzyme stays on its pinned `main` commit. Each install writes
+  `.symfluence_source.json` (repository, ref, pinned and built commit, patch state), which `toolchain.json`
+  and run provenance (`run_manifest.json` → `executables.<MODEL>.source`) now record next to the binary's
+  SHA-256. `scripts/update_binary_pins.py` shows, checks (`--check`, reported in CI without failing) and bumps
+  (`--write`) the pins.
 - **Elevation corrections of remapped forcing (opt-in)**: the `lapse` config section (`pressure`, `humidity`,
   `longwave`, `shortwave`, `precipitation`, `wind`, with `lw_gradient`, `sw_gradient`, `precip_gradient`,
   `wind_gradient`) is now applied by the forcing remapper, from the elevation difference between each HRU and
@@ -86,6 +108,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **hydrobm benchmarking uses the configured periods**: `Benchmarker` fits on `CALIBRATION_PERIOD` and scores on
   `EVALUATION_PERIOD` (and `TEST_PERIOD`, as `*_test` columns) instead of splitting at the median year; the
   median-year split remains only as a warned fallback when no calibration period is set.
+- **Release binaries are no longer rebuilt weekly**: the `release-binaries` workflow's Sunday cron re-uploaded
+  the latest release's assets from whatever upstream branches pointed to that week. It is removed; release
+  assets change only on a tag push or a dispatch naming a tag.
 - **SAC-SMA cryosphere replay scores with the engine's KGE/NSE**: `sacsma_cryosphere/replay.py` dropped its own
   KGE/NSE formula for `core.metrics` (identical values to 1e-12 on real series). A constant simulation now scores
   `None` instead of a finite KGE with r = 0. `replay.py` hashes its own source, so specs frozen against the

@@ -41,11 +41,18 @@ def _report_failed_steps(symfluence, what: str) -> int:
 
 
 def _force_rerun_overrides(args: Namespace) -> dict:
-    """``--force-rerun`` -> FORCE_RUN_ALL_STEPS override, so step internals
-    (e.g. the forcing remap's per-file skip cache) honour it too."""
+    """Config overrides from the workflow flags.
+
+    ``--force-rerun`` -> FORCE_RUN_ALL_STEPS, so step internals (e.g. the
+    forcing remap's per-file skip cache) honour it too; ``--resume`` ->
+    CALIBRATION_RESUME, so the calibrate step continues from its checkpoint.
+    """
+    overrides = {}
     if BaseCommand.get_arg(args, 'force_rerun', False):
-        return {'FORCE_RUN_ALL_STEPS': True}
-    return {}
+        overrides['FORCE_RUN_ALL_STEPS'] = True
+    if BaseCommand.get_arg(args, 'resume_calibration', False):
+        overrides['CALIBRATION_RESUME'] = True
+    return overrides
 
 
 class _PreviewManagers:
