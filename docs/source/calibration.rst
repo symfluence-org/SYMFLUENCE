@@ -285,7 +285,7 @@ optimizer writes, next to the iteration-results CSV and best-parameter JSON,
 atomically (temporary file + rename, so a crash mid-write leaves the previous
 checkpoint intact). It holds the ordered log of every evaluation request and
 its result, the iteration and evaluation counters, the random seed (or, for an
-unseeded run, the entropy it drew) and the random-generator state, the best
+unseeded run, the seed it drew, which a resume reuses) and the random-generator state, the best
 solution, crash counters, the iteration history, and a fingerprint of the
 calibration setup.
 
@@ -314,8 +314,9 @@ Resume refuses, with ``CalibrationResumeError``, rather than silently starting
 over when:
 
 - the calibrated parameters, their bounds, the algorithm, the model,
-  ``OPTIMIZATION_METRIC``, ``CALIBRATION_PERIOD``, ``RANDOM_SEED`` or
-  ``POPULATION_SIZE`` changed since the checkpoint (the error names the
+  ``OPTIMIZATION_METRIC``, ``CALIBRATION_PERIOD``, ``RANDOM_SEED``,
+  ``POPULATION_SIZE`` or the calibration budget (``CALIBRATION_BUDGET_MODE``
+  and its settings) changed since the checkpoint (the error names the
   setting);
 - the replay diverges from the log: the algorithm asks for different
   parameter sets than were recorded, or its random-number generator is not in

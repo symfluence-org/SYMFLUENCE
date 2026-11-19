@@ -72,6 +72,7 @@
    configuration
    calibration
    multivariable_evaluation
+   multi_model_comparison
 
 .. toctree::
    :maxdepth: 1

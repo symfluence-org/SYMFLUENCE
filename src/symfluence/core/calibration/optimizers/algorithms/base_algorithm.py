@@ -113,16 +113,24 @@ class OptimizationAlgorithm(ConfigMixin, ABC):
         Two runs of the same config on the same machine were producing KGE
         0.843 vs 0.728 for exactly this reason. A dedicated Generator seeded
         per run isolates the algorithm's randomness and makes it reproducible.
+
+        With RANDOM_SEED unset a seed is drawn, logged and kept in
+        ``self.random_seed`` (the optimizer records it), so even an
+        unseeded run can be regenerated.
         """
         seed = self.random_seed
         if seed in (None, "None", ""):
-            # Unseeded: draw fresh entropy, but remember it so a checkpointed
-            # run can be resumed (replayed) with the same stream. A resume
-            # sets ``_resume_entropy`` to the entropy of the original run.
+            # Unseeded: a resume replays with the original run's seed
+            # (``_resume_entropy``, set from the resume state); otherwise draw
+            # one and log it. Either way it is kept as ``_run_entropy`` (which
+            # the resume state stores) and as ``self.random_seed``.
             entropy = self.__dict__.get("_resume_entropy")
             if entropy is None:
-                entropy = int(np.random.SeedSequence().entropy)
+                from symfluence.core.provenance import resolve_seed
+
+                entropy, _source = resolve_seed(None, self.logger, context=f"{self.name} run")
             self._run_entropy = int(entropy)
+            self.random_seed = self._run_entropy
             return np.random.default_rng(self._run_entropy)
         return np.random.default_rng(int(seed))
 
