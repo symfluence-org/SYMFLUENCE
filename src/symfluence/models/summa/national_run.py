@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import logging
 import os
 import subprocess
@@ -306,13 +307,28 @@ def fix_layer_heights(ds, tol: float = 1e-3):
     return ds
 
 
+def latest_restarts(out: Path, prefix: str) -> list[Path]:
+    """The block restart files of the newest restart time. SUMMA (glacier build) writes a restart at the end of every
+    water year (<prefix>_restart_<YYYYMMDDHH>_G<start>-<end>.nc), not only at the end; joining all of them stacked
+    five years of states and SUMMA, reading by position, started the next chunk from the first year's state."""
+    files = sorted(out.glob(f'{prefix}_restart_*G*.nc'))
+    if not files:
+        raise FileNotFoundError(f'no restart files for {prefix} in {out}')
+    stamp = {f: re.match(rf'{re.escape(prefix)}_restart_(\d+)_G', f.name) for f in files}
+    stamps = sorted({m.group(1) for m in stamp.values() if m})
+    if not stamps:
+        return files
+    last = [f for f in files if stamp[f] and stamp[f].group(1) == stamps[-1]]
+    if len(stamps) > 1:
+        logger.info('restart: using %d block files of %s (of %d restart times)', len(last), stamps[-1], len(stamps))
+    return last
+
+
 def merge_restarts(out: Path, settings: Path, prefix: str) -> str:
     """Join the block restart files (<prefix>_restart_*_G*.nc) along hru/gru into settings/restart_<prefix>.nc,
     in attributes order; returns its name for the next chunk's fileManager."""
     import xarray as xr
-    files = sorted(out.glob(f'{prefix}_restart_*G*.nc'))
-    if not files:
-        raise FileNotFoundError(f'no restart files for {prefix} in {out}')
+    files = latest_restarts(out, prefix)
     parts = [xr.open_dataset(f, mask_and_scale=False) for f in files]
     # glacier restarts size ygrid/xgrid (and possibly layer dims) to each block's largest GRU, filling the rest
     # with the netCDF default fill: pad every non-concatenation dimension to the largest block's (or the cold
@@ -344,6 +360,11 @@ def merge_restarts(out: Path, settings: Path, prefix: str) -> str:
     other = [v for v in parts[0].data_vars if v not in hru_vars + gru_vars]
     merged = xr.merge([xr.concat([p[hru_vars] for p in parts], 'hru'),
                        xr.concat([p[gru_vars] for p in parts], 'gru'), parts[0][other]])
+    attrs = Path(settings) / 'attributes.nc'
+    if attrs.exists():
+        with xr.open_dataset(attrs) as at:
+            if merged.sizes.get('hru') != at.sizes.get('hru'):
+                raise ValueError(f'merged restart {prefix}: {merged.sizes.get("hru")} HRUs, attributes have {at.sizes.get("hru")}')
     if 'iLayerHeight' in merged:
         merged = fix_layer_heights(merged)
     name = f'restart_{prefix}.nc'
