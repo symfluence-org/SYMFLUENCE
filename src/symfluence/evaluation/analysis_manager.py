@@ -27,7 +27,7 @@ from symfluence.data.observation.paths import (
     tws_observation_candidates,
 )
 from symfluence.evaluation.benchmarking import Benchmarker, BenchmarkPreprocessor
-from symfluence.evaluation.sensitivity_analysis import SensitivityAnalyzer
+from symfluence.evaluation.sensitivity_analysis import SensitivityAnalyzer, salib_available
 
 if TYPE_CHECKING:
     from symfluence.core.config.models import SymfluenceConfig
@@ -355,6 +355,18 @@ class AnalysisManager(ConfigurableMixin):
             calib_start = calib[0] if calib is not None else str(calib_period).strip()
             eval_end = split_period(eval_period, allow_extra=True, strict=True)[1]
 
+            # An optional TEST_PERIOD outside the calibration-evaluation span
+            # must be in the benchmark input too, so it can be scored.
+            test_period = self._get_config_value(
+                lambda: self.config.domain.test_period, default=None
+            )
+            test = split_period(test_period, allow_extra=True) if isinstance(test_period, str) else None
+            if test is not None and test[0] and test[1]:
+                if pd.Timestamp(test[1]) > pd.Timestamp(eval_end):
+                    eval_end = test[1]
+                if calib is not None and pd.Timestamp(test[0]) < pd.Timestamp(calib_start):
+                    calib_start = test[0]
+
             preprocessor.preprocess_benchmark_data(calib_start, eval_end)
 
             # Run benchmarking
@@ -495,26 +507,77 @@ class AnalysisManager(ConfigurableMixin):
 
         return sensitivity_results if sensitivity_results else None
 
-    def _run_generic_sensitivity_analysis(self, model: str) -> Optional[Dict]:
+    def _run_generic_sensitivity_analysis(self, model: str) -> Optional[Any]:
         """
-        Run generic sensitivity analysis for a model using the default SensitivityAnalyzer.
+        Run the generic sensitivity analysis for a model.
+
+        Design-based indices (SENSITIVITY_METHODS: sobol / morris) are computed
+        on a dedicated sampling design whose points are real model runs,
+        evaluated through the model's calibration optimizer and workers. The
+        trajectory-correlation diagnostic (SENSITIVITY_TRAJECTORY_CORRELATION)
+        is written from the calibration results when they exist.
 
         Args:
             model: Model name (e.g., 'SUMMA', 'FUSE')
 
         Returns:
-            Sensitivity analysis results or None if failed
+            Comparison DataFrame of the design-based indices, else the
+            trajectory correlation Series, else None.
         """
         self.logger.info(f"Running generic sensitivity analysis for {model}")
 
-        sensitivity_analyzer = SensitivityAnalyzer(self.config, self.logger, self.reporting_manager)
-        results_file = self._find_optimization_results(model)
+        analyzer = SensitivityAnalyzer(self.config, self.logger, self.reporting_manager)
 
-        if not results_file:
-            self.logger.warning(f"Calibration results file not found for {model}")
-            return None
+        design_results = None
+        if analyzer.methods and not salib_available():
+            self.logger.warning(
+                "SENSITIVITY_METHODS requests a design-based analysis but SALib is not "
+                "installed (pip install \"symfluence[sensitivity]\"); only the "
+                "trajectory correlation is written."
+            )
+        elif analyzer.methods:
+            optimizer = self._create_model_optimizer(model)
+            try:
+                names = list(optimizer.param_manager.all_param_names)
+                if not names:
+                    self.logger.warning(f"{model} has no calibration parameters; no design run")
+                else:
+                    seed = self._get_config_value(
+                        lambda: self.config.system.random_seed, dict_key='RANDOM_SEED')
+                    design_results = analyzer.run_design_analysis(
+                        names, optimizer.evaluate_design,
+                        seed=None if seed in (None, 'None') else int(seed),
+                    )
+            finally:
+                optimizer.cleanup()
 
-        return sensitivity_analyzer.run_sensitivity_analysis(results_file)
+        trajectory = None
+        if analyzer.trajectory_correlation_enabled:
+            results_file = self._find_optimization_results(model)
+            if results_file:
+                trajectory = analyzer.run_trajectory_correlation(results_file)
+            elif design_results is None:
+                self.logger.warning(f"Calibration results file not found for {model}")
+
+        if design_results is not None:
+            return design_results
+        return trajectory
+
+    def _create_model_optimizer(self, model: str) -> Any:
+        """The model's registered calibration optimizer (used to run designs)."""
+        from symfluence.optimization import (
+            model_optimizers,  # noqa: F401
+            parameter_managers,  # noqa: F401
+        )
+        optimizer_cls = R.optimizers.get(model)
+        if optimizer_cls is None:
+            raise EvaluationError(
+                f"No calibration optimizer registered for {model}; design-based "
+                "sensitivity analysis needs one. Set SENSITIVITY_METHODS: [] to "
+                "write only the trajectory correlation."
+            )
+        return optimizer_cls(self.config, self.logger, None,
+                             reporting_manager=self.reporting_manager)
 
     def run_koopman_analysis(
         self,

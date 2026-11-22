@@ -55,6 +55,7 @@ class EnKFAlgorithm:
         H: np.ndarray,
         R: np.ndarray,
         variant: str = 'stochastic',
+        nonnegative: Optional[np.ndarray] = None,
     ) -> np.ndarray:
         """Perform the EnKF analysis (update) step.
 
@@ -64,6 +65,10 @@ class EnKFAlgorithm:
             H: Observation operator matrix, shape (n_obs, n_state).
             R: Observation error covariance matrix, shape (n_obs, n_obs).
             variant: 'stochastic' or 'deterministic'.
+            nonnegative: Optional boolean mask (n_state,) of the columns
+                clipped at zero when ``enforce_nonnegative`` is set; default
+                all columns. Columns that may legitimately be negative (a
+                log-space bias state) must be excluded.
 
         Returns:
             X_a: Analysis (updated) ensemble matrix, shape (n_members, n_state).
@@ -107,7 +112,11 @@ class EnKFAlgorithm:
 
         # 8. Enforce physical constraints
         if self.enforce_nonnegative:
-            X_a = np.maximum(X_a, 0.0)
+            if nonnegative is None:
+                X_a = np.maximum(X_a, 0.0)
+            else:
+                cols = np.asarray(nonnegative, dtype=bool)
+                X_a[:, cols] = np.maximum(X_a[:, cols], 0.0)
 
         return X_a
 

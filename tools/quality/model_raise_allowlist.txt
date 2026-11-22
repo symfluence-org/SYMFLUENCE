@@ -71,7 +71,6 @@ src/symfluence/models/gsflow/preprocessor.py:GSFLOWPreProcessor._generate_data_f
 src/symfluence/models/gsflow/preprocessor.py:GSFLOWPreProcessor._generate_data_file:raise FileNotFoundError(
 src/symfluence/models/hype/calibration/hype_regionalization.py:create_hype_regionalization:raise ValueError(f"Unsupported HYPE regionalization method: {method}")
 src/symfluence/models/hype/calibration/targets.py:HYPEStreamflowTarget._extract_hype_streamflow:raise ValueError(f"No subbasin columns found in {sim_file}")
-src/symfluence/models/hype/extractor.py:HYPEResultExtractor._extract_from_text:raise ValueError(f"Failed to parse HYPE output file {output_file}: {e}") from e
 src/symfluence/models/hype/extractor.py:HYPEResultExtractor.extract_variable:raise ValueError(f"Could not extract {variable_type} from {output_file}")
 src/symfluence/models/hype/forcing_processor.py:HYPEForcingProcessor._convert_hourly_to_daily:raise ValueError(f"Unsupported stat: {stat}")
 src/symfluence/models/hype/geodata_manager.py:HYPEGeoDataManager._load_gis_stats:raise FileNotFoundError(
@@ -113,7 +112,6 @@ src/symfluence/models/mhm/config.py:MHMConfigAdapter.validate:raise ValueError(
 src/symfluence/models/mhm/config.py:MHMConfigAdapter.validate:raise ValueError(
 src/symfluence/models/mhm/config.py:MHMConfigAdapter.validate:raise ValueError(
 src/symfluence/models/mhm/extractor.py:MHMResultExtractor.extract_streamflow:raise FileNotFoundError(
-src/symfluence/models/mhm/extractor.py:MHMResultExtractor.extract_streamflow:raise ValueError("Could not find discharge variable in mHM output")
 src/symfluence/models/mhm/extractor.py:MHMResultExtractor.extract_variable:raise ValueError(
 src/symfluence/models/mhm/extractor.py:MHMResultExtractor.extract_variable:raise ValueError(
 src/symfluence/models/mhm/preprocessor.py:MHMPreProcessor._load_forcing_data:raise FileNotFoundError(f"No forcing data found in {self.forcing_basin_path}")
@@ -168,7 +166,6 @@ src/symfluence/models/pihm/runner.py:PIHMRunner._verify_output:raise RuntimeErro
 src/symfluence/models/pihm/runner.py:PIHMRunner._verify_output:raise RuntimeError(
 src/symfluence/models/prms/config.py:PRMSConfigAdapter.validate:raise ValueError(
 src/symfluence/models/prms/extractor.py:PRMSResultExtractor._extract_from_netcdf:raise ValueError(
-src/symfluence/models/prms/extractor.py:PRMSResultExtractor._extract_from_statvar:raise ValueError(f"Could not extract data from {output_file}")
 src/symfluence/models/prms/extractor.py:PRMSResultExtractor.extract_streamflow:raise FileNotFoundError(
 src/symfluence/models/prms/preprocessor.py:PRMSPreProcessor._generate_synthetic_data_file:raise FileNotFoundError(
 src/symfluence/models/rhessys/calibration/optimizer.py:RHESSysModelOptimizer._setup_parallel_dirs:raise FileNotFoundError(
@@ -209,7 +206,6 @@ src/symfluence/models/vic/config.py:VICConfigAdapter.validate:raise ValueError(
 src/symfluence/models/vic/config.py:VICConfigAdapter.validate:raise ValueError(
 src/symfluence/models/vic/extractor.py:VICResultExtractor.aggregate_to_basin:raise ValueError(f"Variable type {variable_type} not found")
 src/symfluence/models/vic/extractor.py:VICResultExtractor.extract_streamflow:raise FileNotFoundError(
-src/symfluence/models/vic/extractor.py:VICResultExtractor.extract_streamflow:raise ValueError("Could not find runoff variable in VIC output")
 src/symfluence/models/vic/extractor.py:VICResultExtractor.extract_variable:raise ValueError(
 src/symfluence/models/vic/extractor.py:VICResultExtractor.extract_variable:raise ValueError(
 src/symfluence/models/vic/preprocessor.py:VICPreProcessor._generate_parameter_file:raise RuntimeError(f"Domain file not found: {domain_path}. Run domain generation first.")

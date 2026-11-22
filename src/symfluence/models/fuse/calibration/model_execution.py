@@ -88,7 +88,7 @@ def resolve_fuse_paths(
     log = log or logger
 
     # Resolve executable
-    fuse_install = resolve_config_value(config, lambda: config.model.fuse.install_path, 'default', 'FUSE_INSTALL_PATH')
+    fuse_install = resolve_config_value(config, lambda: config.model.fuse.install_path, dict_key='FUSE_INSTALL_PATH')
     data_dir = resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR')
     fuse_exe = resolve_install_dir(fuse_install, data_dir, 'installs/fuse/bin') / 'fuse.exe'
 
@@ -443,7 +443,7 @@ def execute_fuse(
         text=True,
         encoding='utf-8',
         errors='replace',
-        timeout=resolve_config_value(config, lambda: config.model.fuse.timeout, 3600, 'FUSE_TIMEOUT'),
+        timeout=resolve_config_value(config, lambda: config.model.fuse.timeout, dict_key='FUSE_TIMEOUT'),
         env=env
     )
 

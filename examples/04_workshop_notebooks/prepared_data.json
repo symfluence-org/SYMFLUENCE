@@ -1,0 +1,20 @@
+{
+  "bundles": {
+    "rohtang_snow": {
+      "notebook": "04d_intelligent_rivers_snow",
+      "file": "workshop_rohtang_snow.zip",
+      "url": "https://github.com/symfluence-org/SYMFLUENCE/releases/download/workshop-data-iit-2026/workshop_rohtang_snow.zip",
+      "sha256": "cbaa59f5cad97c8a8342e209946a3356e02fad4657b219788458298051b0cf39",
+      "size_mb": 6.4,
+      "files": 105
+    },
+    "ayilam_camels_ind": {
+      "notebook": "04e_intelligent_rivers_streamflow",
+      "file": "workshop_ayilam_camels_ind.zip",
+      "url": "https://github.com/symfluence-org/SYMFLUENCE/releases/download/workshop-data-iit-2026/workshop_ayilam_camels_ind.zip",
+      "sha256": "fde1b3350405dd5483a433fab948636b6f1bc2847fde50aca5e1c777b46da997",
+      "size_mb": 37.5,
+      "files": 128
+    }
+  }
+}

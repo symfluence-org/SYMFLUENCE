@@ -161,7 +161,7 @@ class WflowParameterManager(BaseParameterManager):
             target_dir = settings_dir or self.settings_dir
             staticmaps_name = self._get_config_value(
                 lambda: self.config.model.wflow.staticmaps_file,
-                default='wflow_staticmaps.nc', dict_key='WFLOW_STATICMAPS_FILE'
+                dict_key='WFLOW_STATICMAPS_FILE',
             )
             path = target_dir / staticmaps_name
             if not path.exists():
@@ -182,7 +182,8 @@ class WflowParameterManager(BaseParameterManager):
             if forcing_scales:
                 toml_name = self._get_config_value(
                     lambda: self.config.model.wflow.config_file,
-                    default='wflow_sbm.toml', dict_key='WFLOW_CONFIG_FILE')
+                    dict_key='WFLOW_CONFIG_FILE',
+                )
                 self.set_forcing_scales(target_dir / toml_name, forcing_scales)
             # ROUTE_* have no place in the staticmaps; record them beside the
             # staticmaps they belong to so the postprocessor routes the saved

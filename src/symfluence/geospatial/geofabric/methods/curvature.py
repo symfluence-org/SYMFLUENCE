@@ -52,8 +52,14 @@ class CurvatureMethod(ConfigMixin):
             pour_point_path: Path to the pour point shapefile
             mpi_prefix: MPI command prefix
         """
-        max_distance = self._get_config_value(lambda: self.config.domain.delineation.move_outlets_max_distance, default=200, dict_key='MOVE_OUTLETS_MAX_DISTANCE')
-        min_source_threshold = self._get_config_value(lambda: self.config.domain.delineation.min_source_threshold, default=100, dict_key='MIN_SOURCE_THRESHOLD')
+        max_distance = self._get_config_value(
+            lambda: self.config.domain.delineation.move_outlets_max_distance,
+            dict_key='MOVE_OUTLETS_MAX_DISTANCE',
+        )
+        min_source_threshold = self._get_config_value(
+            lambda: self.config.domain.delineation.min_source_threshold,
+            dict_key='MIN_SOURCE_THRESHOLD',
+        )
 
         steps = [
             # D-Infinity slope

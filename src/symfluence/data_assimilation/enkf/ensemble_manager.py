@@ -2,34 +2,83 @@
 # Copyright (C) 2024-2026 SYMFLUENCE Team <dev@symfluence.org>
 
 """
-Ensemble manager.
+Ensemble managers: the model-agnostic state interface used by the EnKF.
 
-Manages the lifecycle and execution of ensemble members for the EnKF.
-Provides the base class and the in-memory HBV implementation.
+The filter driver never touches model internals. A model takes part in data
+assimilation by implementing :class:`DAModel` (or subclassing
+:class:`EnsembleManager`, which declares the same methods abstractly):
+
+``initialize_members()``
+    Create the N members (parameters perturbed, initial states set).
+``get_state() -> X``
+    The complete prognostic state of every member, shape (n_members, n_state),
+    laid out as ``state_specs`` says. Complete means: ``set_state(get_state())``
+    followed by ``step`` reproduces the run exactly. The driver relies on this
+    to run the open loop and lead-time forecasts on the same model object by
+    swapping state matrices in and out.
+``set_state(X)``
+    Overwrite every member's state.
+``step(t, forcing) -> predictions``
+    Advance every member over timestep ``t`` with the given per-member forcing
+    (``{name: array (n_members,)}``) and return the predicted observable(s),
+    shape (n_members,) or (n_members, n_obs), in model units.
+``perturbable_forcing``
+    ``{name: 'multiplicative' | 'additive'}``: forcing variables the driver may
+    perturb, and how. Other entries of ``forcing`` are passed through unchanged.
+
+Forcing perturbation, the precipitation bias state, and the open-loop and
+forecast bookkeeping all live in the driver, so a new model only has to
+expose its state.
 """
 from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional, Protocol, runtime_checkable
 
 import numpy as np
 
 from .perturbation import GaussianPerturbation, PerturbationStrategy
+from .state_vector import StateVariableSpec
 
 logger = logging.getLogger(__name__)
 
 
-class EnsembleManager(ABC):
-    """Abstract base class for ensemble management.
+@runtime_checkable
+class DAModel(Protocol):
+    """What the EnKF driver needs from a model (see the module docstring)."""
 
-    Handles member initialization, forecast execution, and state
-    extraction/injection for the EnKF assimilation loop.
+    n_members: int
+    state_specs: List[StateVariableSpec]
+    forcing: Mapping[str, Any]
+    perturbable_forcing: Mapping[str, str]
+    timestep_hours: float
+
+    def initialize_members(self) -> None: ...
+
+    def get_state(self) -> np.ndarray: ...
+
+    def set_state(self, X: np.ndarray) -> None: ...
+
+    def step(self, t: int, forcing: Mapping[str, np.ndarray]) -> np.ndarray: ...
+
+
+class EnsembleManager(ABC):
+    """Base class for ensemble managers implementing :class:`DAModel`.
 
     Args:
         n_members: Number of ensemble members.
-        perturbation: Perturbation strategy for member generation.
+        perturbation: Perturbation strategy for the parameters.
     """
+
+    #: Forcing variables the driver may perturb and how.
+    perturbable_forcing: Mapping[str, str] = {}
+    #: Model timestep length.
+    timestep_hours: float = 24.0
+    #: Spin-up length during which nothing is assimilated.
+    warmup_days: float = 0.0
+    #: Catchment area for converting discharge to the model's runoff depth.
+    catchment_area_m2: Optional[float] = None
 
     def __init__(
         self,
@@ -38,49 +87,142 @@ class EnsembleManager(ABC):
     ):
         self.n_members = n_members
         self.perturbation = perturbation or GaussianPerturbation()
+        self.state_specs: List[StateVariableSpec] = []
+        self.forcing: Dict[str, Any] = {}
 
     @abstractmethod
     def initialize_members(self, **kwargs) -> None:
         """Create N members with perturbed parameters/states."""
-        ...
 
     @abstractmethod
-    def forecast_step(self, t_start: Any, t_end: Any) -> None:
-        """Advance all members from t_start to t_end."""
-        ...
+    def get_state(self) -> np.ndarray:
+        """State matrix (n_members, n_state) of all members."""
 
     @abstractmethod
+    def set_state(self, X: np.ndarray) -> None:
+        """Write a state matrix (n_members, n_state) into the members."""
+
+    @abstractmethod
+    def step(self, t: int, forcing: Mapping[str, np.ndarray]) -> np.ndarray:
+        """Advance all members over timestep ``t``; return predictions."""
+
+    # Older names, kept for callers written against the first EnKF API.
     def extract_states(self) -> np.ndarray:
-        """Extract state matrix (n_members, n_state) from all members."""
-        ...
+        return self.get_state()
 
-    @abstractmethod
     def inject_states(self, updated_states: np.ndarray) -> None:
-        """Write updated state matrix back into members."""
-        ...
-
-    @abstractmethod
-    def extract_predictions(self, variable: str = 'streamflow') -> np.ndarray:
-        """Extract predicted observations (n_members,) from all members."""
-        ...
+        self.set_state(updated_states)
 
 
-class HBVEnsembleManager(EnsembleManager):
-    """Ensemble manager for in-memory HBV model.
+# ----------------------------------------------------------------------
+# Models whose state and parameters are NamedTuples of arrays (the JAX
+# conceptual models): one batched step over all members.
+# ----------------------------------------------------------------------
 
-    Uses direct function calls (optionally vectorized with JAX vmap)
-    for per-timestep advancement with no subprocess overhead.
+def _stack_namedtuples(items: List[Any], xp) -> Any:
+    """Stack a list of NamedTuples leaf-wise along a new leading axis."""
+    cls = type(items[0])
+    return cls(*[xp.stack([xp.asarray(getattr(it, f)) for it in items])
+                 for f in cls._fields])
+
+
+def _batched_step(fn: Callable, use_jax: bool) -> Callable:
+    """``fn`` maps one member; the result maps arrays with a leading member axis."""
+    if use_jax:
+        import jax
+        return jax.jit(jax.vmap(fn))
+
+    def loop(*args):
+        n = len(np.atleast_1d(args[0]))
+        results = []
+        for i in range(n):
+            member_args = [
+                type(a)(*[np.asarray(leaf)[i] for leaf in a]) if hasattr(a, '_fields')
+                else np.asarray(a)[i]
+                for a in args
+            ]
+            results.append(fn(*member_args))
+        states = _stack_namedtuples([r[0] for r in results], np)
+        return states, np.array([float(np.asarray(r[1])) for r in results])
+
+    return loop
+
+
+class NamedTupleEnsembleManager(EnsembleManager):
+    """Shared machinery for models with NamedTuple state and parameters.
+
+    Subclasses set ``self._params`` (batched parameters), ``self._state``
+    (batched state) and ``self._state_cls``, and call ``self._compile(fn)``
+    with the one-member step ``fn(*forcing, state, params) -> (state, q)``
+    in ``initialize_members``. ``_step_forcing`` names the forcing arguments
+    in order.
+    """
+
+    _step_forcing: tuple = ()
+
+    def __init__(self, n_members: int, perturbation: Optional[PerturbationStrategy],
+                 use_jax: bool):
+        super().__init__(n_members, perturbation)
+        self.use_jax = bool(use_jax)
+        self._state: Any = None
+        self._params: Any = None
+        self._state_cls: Any = None
+        self._step: Optional[Callable] = None
+
+    @property
+    def _xp(self):
+        if self.use_jax:
+            import jax.numpy as jnp
+            return jnp
+        return np
+
+    def _compile(self, fn: Callable) -> None:
+        self._step = _batched_step(fn, self.use_jax)
+
+    def get_state(self) -> np.ndarray:
+        cols = [np.asarray(getattr(self._state, spec.name), dtype=np.float64)
+                .reshape(self.n_members, -1) for spec in self.state_specs]
+        return np.hstack(cols)
+
+    def set_state(self, X: np.ndarray) -> None:
+        X = np.asarray(X, dtype=np.float64)
+        xp = self._xp
+        values, offset = {}, 0
+        for spec in self.state_specs:
+            block = X[:, offset:offset + spec.size]
+            values[spec.name] = xp.asarray(block[:, 0] if spec.size == 1 else block)
+            offset += spec.size
+        self._state = self._state_cls(**values)
+
+    def step(self, t: int, forcing: Mapping[str, np.ndarray]) -> np.ndarray:
+        if self._step is None:
+            raise RuntimeError("initialize_members() must be called before step()")
+        xp = self._xp
+        args = [xp.asarray(np.asarray(forcing[name], dtype=np.float64))
+                for name in self._step_forcing]
+        self._state, q = self._step(*args, self._state, self._params)
+        return np.asarray(q, dtype=np.float64).reshape(self.n_members)
+
+
+class HBVEnsembleManager(NamedTupleEnsembleManager):
+    """Ensemble of HBV-96 members (``jhbv``), advanced together.
+
+    With JAX the members are advanced by one jit-compiled ``vmap`` of
+    ``jhbv.model.step_jax``; without it, member by member.
 
     Args:
         n_members: Number of ensemble members.
         base_params: Base parameter dictionary.
         param_bounds: Parameter bounds {name: (lower, upper)}.
-        forcing: Dict with 'precip', 'temp', 'pet' arrays.
-        perturbation: Perturbation strategy.
-        use_jax: Whether to use JAX backend.
+        forcing: Dict with 'precip', 'temp', 'pet' (and 'time') arrays.
+        perturbation: Perturbation strategy for the parameters.
+        use_jax: Whether to use the JAX backend.
         timestep_hours: Model timestep in hours.
-        warmup_days: Number of warmup days.
+        warmup_days: Number of warm-up days.
     """
+
+    perturbable_forcing = {'precip': 'multiplicative', 'temp': 'additive'}
+    _step_forcing = ('precip', 'temp', 'pet')
 
     def __init__(
         self,
@@ -93,146 +235,119 @@ class HBVEnsembleManager(EnsembleManager):
         timestep_hours: int = 24,
         warmup_days: int = 0,
     ):
-        super().__init__(n_members, perturbation)
+        from jhbv.model import HAS_JAX
+        super().__init__(n_members, perturbation, use_jax and HAS_JAX)
         self.base_params = base_params
         self.param_bounds = param_bounds
         self.forcing = forcing
-        self.use_jax = use_jax
         self.timestep_hours = timestep_hours
         self.warmup_days = warmup_days
-        # Catchment area used to convert observed discharge (m3/s) into this
-        # model's prediction units (mm/timestep); set by the DA manager.
-        self.catchment_area_m2: Optional[float] = None
-
-        # Per-member state
         self.member_params: List[Dict[str, float]] = []
-        self.member_states: List[Any] = []
-        self.member_predictions: List[float] = []
-        self._current_step: int = 0
+        self.state_specs = self.hbv_state_specs(timestep_hours)
+
+    @staticmethod
+    def hbv_state_specs(timestep_hours: float) -> List[StateVariableSpec]:
+        from jhbv.model import get_routing_buffer_length
+        routing_len = get_routing_buffer_length(10, timestep_hours)
+        return [
+            StateVariableSpec('snow', 1, lower_bound=0.0),
+            StateVariableSpec('snow_water', 1, lower_bound=0.0),
+            StateVariableSpec('sm', 1, lower_bound=0.0),
+            StateVariableSpec('suz', 1, lower_bound=0.0),
+            StateVariableSpec('slz', 1, lower_bound=0.0),
+            StateVariableSpec('routing_buffer', routing_len, lower_bound=0.0),
+        ]
 
     def initialize_members(self, initial_state=None, **kwargs) -> None:
-        """Create N members with perturbed parameters.
+        """Perturb the parameters and set every member to the initial state."""
+        import functools
 
-        Args:
-            initial_state: Optional base HBVState to perturb from.
-        """
-        from jhbv.model import create_initial_state
-
-        self.member_params = []
-        self.member_states = []
-
-        for i in range(self.n_members):
-            # Perturb parameters
-            params = self.perturbation.perturb_parameters(
-                self.base_params, self.param_bounds, i
-            )
-            self.member_params.append(params)
-
-            # Initial state (optionally perturbed)
-            if initial_state is not None:
-                self.member_states.append(initial_state)
-            else:
-                state = create_initial_state(
-                    use_jax=self.use_jax,
-                    timestep_hours=self.timestep_hours,
-                )
-                self.member_states.append(state)
-
-        self._current_step = 0
-        logger.info("Initialized %d HBV ensemble members", self.n_members)
-
-    def forecast_step(self, t_start: Any, t_end: Any) -> None:
-        """Advance all members by one timestep.
-
-        t_start and t_end are interpreted as integer timestep indices.
-        """
         from jhbv.model import (
-            HAS_JAX,
+            HBVState,
+            create_initial_state,
             create_params_from_dict,
             scale_params_for_timestep,
             step_jax,
         )
 
-        t = int(t_start)
-        self.member_predictions = []
+        self.member_params = [
+            self.perturbation.perturb_parameters(self.base_params, self.param_bounds, i)
+            for i in range(self.n_members)
+        ]
+        xp = self._xp
+        self._params = _stack_namedtuples([
+            create_params_from_dict(
+                scale_params_for_timestep(p, self.timestep_hours), use_jax=self.use_jax)
+            for p in self.member_params
+        ], xp)
+        base = initial_state if initial_state is not None else create_initial_state(
+            use_jax=self.use_jax, timestep_hours=self.timestep_hours)
+        self._state = _stack_namedtuples([base] * self.n_members, xp)
+        self._state_cls = HBVState
+        self._compile(functools.partial(step_jax, timestep_hours=self.timestep_hours))
+        logger.info("Initialized %d HBV ensemble members", self.n_members)
 
-        for i in range(self.n_members):
-            # Get forcing for this timestep
-            precip = self.forcing['precip'][t]
-            temp = self.forcing['temp'][t]
-            pet = self.forcing['pet'][t]
 
-            # Optionally perturb forcing
-            if hasattr(self.perturbation, 'perturb_forcing'):
-                precip_arr = self.perturbation.perturb_forcing(
-                    np.atleast_1d(precip), i, 'precip'
-                )
-                temp_arr = self.perturbation.perturb_forcing(
-                    np.atleast_1d(temp), i, 'temp'
-                )
-                precip = float(precip_arr[0])
-                temp = float(temp_arr[0])
+class XinanjiangEnsembleManager(NamedTupleEnsembleManager):
+    """Ensemble of stand-alone Xinanjiang members (``jxaj``, daily, JAX).
 
-            # Scale params
-            scaled = scale_params_for_timestep(self.member_params[i], self.timestep_hours)
-            hbv_params = create_params_from_dict(scaled, use_jax=(self.use_jax and HAS_JAX))
+    The second model behind the state interface. Xinanjiang's step is written
+    for JAX only, so JAX is required. Snow-17 coupling is not supported here.
 
-            # Convert to JAX if needed
-            if self.use_jax and HAS_JAX:
-                import jax.numpy as jnp
-                p, t_val, e = jnp.array(precip), jnp.array(temp), jnp.array(pet)
-            else:
-                p, t_val, e = precip, temp, pet
+    Args:
+        n_members: Number of ensemble members.
+        base_params: Base parameter dictionary.
+        param_bounds: Parameter bounds {name: (lower, upper)}.
+        forcing: Dict with 'precip', 'pet' (and 'time') arrays, mm/day.
+        perturbation: Perturbation strategy for the parameters.
+        warmup_days: Number of warm-up days.
+    """
 
-            # Single timestep
-            new_state, runoff = step_jax(p, t_val, e, self.member_states[i], hbv_params, self.timestep_hours)
-            self.member_states[i] = new_state
-            self.member_predictions.append(float(np.asarray(runoff)))
+    perturbable_forcing = {'precip': 'multiplicative'}
+    _step_forcing = ('precip', 'pet')
 
-        self._current_step = t + 1
+    def __init__(
+        self,
+        n_members: int,
+        base_params: Dict[str, float],
+        param_bounds: Dict[str, tuple],
+        forcing: Dict[str, Any],
+        perturbation: Optional[PerturbationStrategy] = None,
+        warmup_days: int = 0,
+    ):
+        from jxaj.model import HAS_JAX
+        if not HAS_JAX:
+            raise ImportError("Xinanjiang data assimilation requires JAX (pip install jax)")
+        super().__init__(n_members, perturbation, use_jax=True)
+        self.base_params = base_params
+        self.param_bounds = param_bounds
+        self.forcing = {k: v for k, v in forcing.items() if k in ('precip', 'pet', 'time')}
+        self.timestep_hours = 24
+        self.warmup_days = warmup_days
+        self.member_params: List[Dict[str, float]] = []
+        self.state_specs = [
+            StateVariableSpec('wu', 1, lower_bound=0.0),
+            StateVariableSpec('wl', 1, lower_bound=0.0),
+            StateVariableSpec('wd', 1, lower_bound=0.0),
+            StateVariableSpec('s', 1, lower_bound=0.0),
+            StateVariableSpec('fr', 1, lower_bound=1e-6, upper_bound=1.0),
+            StateVariableSpec('qi', 1, lower_bound=0.0),
+            StateVariableSpec('qg', 1, lower_bound=0.0),
+        ]
 
-    def extract_states(self) -> np.ndarray:
-        """Extract state as (n_members, n_state) matrix."""
-        states = []
-        for state in self.member_states:
-            sv = np.concatenate([
-                np.atleast_1d(np.asarray(state.snow, dtype=np.float64)),
-                np.atleast_1d(np.asarray(state.snow_water, dtype=np.float64)),
-                np.atleast_1d(np.asarray(state.sm, dtype=np.float64)),
-                np.atleast_1d(np.asarray(state.suz, dtype=np.float64)),
-                np.atleast_1d(np.asarray(state.slz, dtype=np.float64)),
-                np.asarray(state.routing_buffer, dtype=np.float64),
-            ])
-            states.append(sv)
-        return np.array(states)
+    def initialize_members(self, **kwargs) -> None:
+        from jxaj.model import create_initial_state, step_jax
+        from jxaj.parameters import XinanjiangState, params_dict_to_namedtuple
 
-    def inject_states(self, updated_states: np.ndarray) -> None:
-        """Write updated state matrix back into member HBVState objects."""
-        from jhbv.model import HAS_JAX, HBVState
-
-        for i in range(self.n_members):
-            sv = updated_states[i]
-            routing_len = len(self.member_states[i].routing_buffer)
-
-            if self.use_jax and HAS_JAX:
-                import jax.numpy as jnp
-                self.member_states[i] = HBVState(
-                    snow=jnp.array(sv[0]),
-                    snow_water=jnp.array(sv[1]),
-                    sm=jnp.array(sv[2]),
-                    suz=jnp.array(sv[3]),
-                    slz=jnp.array(sv[4]),
-                    routing_buffer=jnp.array(sv[5:5 + routing_len]),
-                )
-            else:
-                self.member_states[i] = HBVState(
-                    snow=np.float64(sv[0]),
-                    snow_water=np.float64(sv[1]),
-                    sm=np.float64(sv[2]),
-                    suz=np.float64(sv[3]),
-                    slz=np.float64(sv[4]),
-                    routing_buffer=sv[5:5 + routing_len].copy(),
-                )
-
-    def extract_predictions(self, variable: str = 'streamflow') -> np.ndarray:
-        return np.array(self.member_predictions)
+        self.member_params = [
+            self.perturbation.perturb_parameters(self.base_params, self.param_bounds, i)
+            for i in range(self.n_members)
+        ]
+        xp = self._xp
+        self._params = _stack_namedtuples(
+            [params_dict_to_namedtuple(p, use_jax=True) for p in self.member_params], xp)
+        self._state = _stack_namedtuples(
+            [create_initial_state(use_jax=True)] * self.n_members, xp)
+        self._state_cls = XinanjiangState
+        self._compile(step_jax)
+        logger.info("Initialized %d Xinanjiang ensemble members", self.n_members)

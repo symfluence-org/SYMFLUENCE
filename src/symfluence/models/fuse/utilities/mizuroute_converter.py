@@ -148,7 +148,11 @@ class FuseToMizurouteConverter:
 
     def _get_routing_var_name(self, config: Dict[str, Any]) -> str:
         """Get the routing variable name from config."""
-        routing_var = resolve_config_value(config, lambda: config.model.mizuroute.routing_var, 'q_routed', 'SETTINGS_MIZU_ROUTING_VAR')
+        routing_var = resolve_config_value(
+            config,
+            lambda: config.model.mizuroute.routing_var,
+            dict_key='SETTINGS_MIZU_ROUTING_VAR',
+        )
         if routing_var in ('default', None, ''):
             routing_var = 'q_routed'
         return routing_var
@@ -164,7 +168,11 @@ class FuseToMizurouteConverter:
             q_fuse = q_fuse.isel(param_set=0)
 
         # Handle spatial dimensions
-        subcatchment_dim = resolve_config_value(config, lambda: config.model.fuse.subcatchment_dim, 'longitude', 'FUSE_SUBCATCHMENT_DIM')
+        subcatchment_dim = resolve_config_value(
+            config,
+            lambda: config.model.fuse.subcatchment_dim,
+            dict_key='FUSE_SUBCATCHMENT_DIM',
+        )
 
         if 'latitude' in q_fuse.dims and 'longitude' in q_fuse.dims:
             # Squeeze singleton dimensions
@@ -198,7 +206,11 @@ class FuseToMizurouteConverter:
         Returns:
             Tuple of (converted values, target units string)
         """
-        target_units = resolve_config_value(config, lambda: config.model.mizuroute.routing_units, 'm/s', 'SETTINGS_MIZU_ROUTING_UNITS')
+        target_units = resolve_config_value(
+            config,
+            lambda: config.model.mizuroute.routing_units,
+            dict_key='SETTINGS_MIZU_ROUTING_UNITS',
+        )
         if target_units in ('default', None, ''):
             target_units = 'm/s'
 

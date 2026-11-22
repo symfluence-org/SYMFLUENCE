@@ -384,13 +384,27 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
         return self._calibrated_defaults_cache
 
     def _forcing_corrections(self) -> Dict[str, float]:
-        """Precipitation multiplier and temperature offset (identity unless calibrated)."""
+        """Precipitation multiplier and temperature offset.
+
+        Calibration passes them in the parameter set. Otherwise the shared
+        FORCING_CORRECTION section (fixed or last calibrated values) applies;
+        without it they are identity.
+        """
         params = self._external_params or {}
+        if 'PCORR' not in params and 'TCORR' not in params:
+            if not hasattr(self, '_shared_forcing_correction'):
+                from symfluence.core.calibration.forcing_correction import forward_correction
+                info = forward_correction(
+                    self.config, 'GR', project_dir=self.project_dir, domain_name=self.domain_name,
+                    experiment_id=self.experiment_id, log=self.logger)
+                self._shared_forcing_correction = info['native'] if info else {}
+            params = {**self._shared_forcing_correction, **params}
         return {'PCORR': float(params.get('PCORR', 1.0)), 'TCORR': float(params.get('TCORR', 0.0))}
 
     def _glacier_enabled(self) -> bool:
         return bool(self._get_config_value(
-            lambda: self.config.model.gr.glacier_enabled, default=False, dict_key='GR_GLACIER_ENABLED'
+            lambda: self.config.model.gr.glacier_enabled,
+            dict_key='GR_GLACIER_ENABLED',
         ))
 
     def _execute_gr_lumped_glacier(self, params: Dict[str, float], n_layers: int,
@@ -596,7 +610,7 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
             ]
             hypsometries = self._distributed_hypsometries(hru_ids, 'hru_id' in ds)
             forcing = self._forcing_corrections()
-            n_layers = int(self._get_config_value(lambda: self.config.model.gr.snow_layers, default=5))
+            n_layers = int(self._get_config_value(lambda: self.config.model.gr.snow_layers, dict_key='GR_SNOW_LAYERS'))
 
             # Get simulation periods
             time_start = pd.to_datetime(self.time_start)
@@ -733,9 +747,7 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
                     )
                 rows = [position[hru_id] for hru_id in hru_ids]
 
-        elev_col = self._get_config_value(
-            lambda: self.config.paths.catchment_elev, default='elev_mean', dict_key='CATCHMENT_SHP_ELEV'
-        )
+        elev_col = self._get_config_value(lambda: self.config.paths.catchment_elev, dict_key='CATCHMENT_SHP_ELEV')
         out: List[Tuple[np.ndarray, Any]] = []
         flat: List[int] = []
         with rasterio.open(dem_path) as src:
@@ -1033,7 +1045,7 @@ class GRRunner(BaseModelRunner, SpatialOrchestrator, OutputConverterMixin, MizuR
             # calibrated values instead of falling back to poor defaults.
             external_params = self._external_params
             forcing = self._forcing_corrections()
-            n_layers = self._get_config_value(lambda: self.config.model.gr.snow_layers, default=5)
+            n_layers = self._get_config_value(lambda: self.config.model.gr.snow_layers, dict_key='GR_SNOW_LAYERS')
             if self._glacier_enabled():
                 if not external_params:
                     raise ModelExecutionError(

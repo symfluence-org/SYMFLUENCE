@@ -70,7 +70,7 @@ class RetryExecutionMixin(ConfigMixin):
         """Maximum number of retry attempts."""
         return self._get_config_value(
             lambda: self.config.optimization.worker_max_retries,
-            default=3
+            dict_key='WORKER_MAX_RETRIES',
         )
 
     @property
@@ -78,24 +78,18 @@ class RetryExecutionMixin(ConfigMixin):
         """Base delay for exponential backoff (seconds)."""
         return self._get_config_value(
             lambda: self.config.optimization.worker_base_delay,
-            default=0.5
+            dict_key='WORKER_BASE_DELAY',
         )
 
     @property
     def max_delay(self) -> float:
         """Maximum delay between retries (seconds)."""
-        return self._get_config_value(
-            lambda: self.config.optimization.worker_max_delay,
-            default=30.0
-        )
+        return self._get_config_value(lambda: self.config.optimization.worker_max_delay, dict_key='WORKER_MAX_DELAY')
 
     @property
     def jitter_factor(self) -> float:
         """Jitter factor for randomizing delays (0-1)."""
-        return self._get_config_value(
-            lambda: self.config.optimization.worker_jitter,
-            default=0.1
-        )
+        return self._get_config_value(lambda: self.config.optimization.worker_jitter, dict_key='WORKER_JITTER')
 
     # =========================================================================
     # Retry logic

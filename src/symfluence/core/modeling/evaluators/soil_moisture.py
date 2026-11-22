@@ -170,8 +170,7 @@ class SoilMoistureEvaluator(ModelEvaluator):
         # Get optimization target from typed config
         self.optimization_target = self._target_override_if_valid(('sm_point', 'sm_smap', 'sm_esa', 'sm_ismn')) or self._get_config_value(
             lambda: self.config.optimization.target,
-            default='streamflow',
-            dict_key='OPTIMIZATION_TARGET'
+            dict_key='OPTIMIZATION_TARGET',
         )
 
         # Check if target is a valid soil moisture target, otherwise look at EVALUATION_VARIABLE
@@ -196,11 +195,7 @@ class SoilMoistureEvaluator(ModelEvaluator):
                 dict_key='SM_DEPTH_TOLERANCE'
             )
         elif self.optimization_target == 'sm_smap':
-            self.smap_layer = self._get_config_value(
-                lambda: self.config.evaluation.smap.layer,
-                default='surface_sm',
-                dict_key='SMAP_LAYER'
-            )
+            self.smap_layer = self._get_config_value(lambda: self.config.evaluation.smap.layer, dict_key='SMAP_LAYER')
             self.temporal_aggregation = self._get_config_value(
                 lambda: None,
                 default='daily_mean',
@@ -209,13 +204,11 @@ class SoilMoistureEvaluator(ModelEvaluator):
         elif self.optimization_target == 'sm_ismn':
             self.target_depth = self._get_config_value(
                 lambda: self.config.evaluation.ismn.target_depth_m,
-                default='auto',
-                dict_key='ISMN_TARGET_DEPTH_M'
+                dict_key='ISMN_TARGET_DEPTH_M',
             )
             self.temporal_aggregation = self._get_config_value(
                 lambda: self.config.evaluation.ismn.temporal_aggregation,
-                default='daily_mean',
-                dict_key='ISMN_TEMPORAL_AGGREGATION'
+                dict_key='ISMN_TEMPORAL_AGGREGATION',
             )
         elif self.optimization_target == 'sm_esa':
             self.esa_surface_depth = float(self._get_config_value(
@@ -361,8 +354,7 @@ class SoilMoistureEvaluator(ModelEvaluator):
         if self.smap_layer == 'surface_sm':
             surface_depth = float(self._get_config_value(
                 lambda: self.config.evaluation.smap.surface_depth_m,
-                default=0.05,
-                dict_key='SMAP_SURFACE_DEPTH_M'
+                dict_key='SMAP_SURFACE_DEPTH_M',
             ))
             if layer_depths is None:
                 sim_xr = sim_xr.isel({layer_dim: 0})
@@ -371,8 +363,7 @@ class SoilMoistureEvaluator(ModelEvaluator):
         elif self.smap_layer == 'rootzone_sm':
             rootzone_depth = float(self._get_config_value(
                 lambda: self.config.evaluation.smap.rootzone_depth_m,
-                default=1.0,
-                dict_key='SMAP_ROOTZONE_DEPTH_M'
+                dict_key='SMAP_ROOTZONE_DEPTH_M',
             ))
             if layer_depths is None:
                 sim_xr = sim_xr.isel({layer_dim: slice(0, 3)}).mean(dim=layer_dim)

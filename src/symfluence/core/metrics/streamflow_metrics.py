@@ -19,6 +19,10 @@ import pandas as pd
 
 from symfluence.core.constants import ModelDefaults, UnitConversion
 from symfluence.core.metrics import kge, kge_prime, mae, nse, rmse
+from symfluence.core.metrics.formal_likelihood import (
+    BoxCoxAR1Settings,
+    boxcox_ar1_log_likelihood,
+)
 from symfluence.core.metrics.metric_transformer import MetricTransformer
 from symfluence.core.metrics.metrics_registry import get_metric_function
 from symfluence.core.metrics.penalty import raw_failure_value
@@ -44,7 +48,8 @@ class StreamflowMetrics:
     def __init__(
         self,
         penalty_score: float = ModelDefaults.PENALTY_SCORE,
-        box_cox_lambda: float = 0.2
+        box_cox_lambda: float = 0.2,
+        likelihood: Optional[BoxCoxAR1Settings] = None,
     ):
         """
         Initialize StreamflowMetrics.
@@ -54,9 +59,39 @@ class StreamflowMetrics:
             box_cox_lambda: Lambda for the Box-Cox flow transformation used by
                 *_box_cox metrics. 0 falls back to the log transform
                 (the Box-Cox lambda=0 limit).
+            likelihood: Error-model settings for the ``loglik_bc_ar1``
+                formal likelihood (defaults: lambda 0.3, phi estimated,
+                sigma integrated out).
         """
         self.penalty_score = penalty_score
         self.box_cox_lambda = box_cox_lambda
+        self.likelihood = likelihood or BoxCoxAR1Settings()
+
+    @classmethod
+    def from_config(cls, config: Any) -> 'StreamflowMetrics':
+        """Instance with BOX_COX_LAMBDA and LIKELIHOOD_* settings from ``config``.
+
+        ``config`` is a typed SymfluenceConfig or a flat dict (as workers get).
+        """
+        def get(accessor, key):
+            return resolve_config_value(config, accessor, dict_key=key)
+
+        box_cox_lambda = get(lambda: config.optimization.box_cox_lambda, 'BOX_COX_LAMBDA')
+        lam = get(lambda: config.optimization.likelihood_box_cox_lambda,
+                  'LIKELIHOOD_BOX_COX_LAMBDA')
+        phi = get(lambda: config.optimization.likelihood_ar1_phi, 'LIKELIHOOD_AR1_PHI')
+        sigma = get(lambda: config.optimization.likelihood_sigma, 'LIKELIHOOD_SIGMA')
+        epsilon = get(lambda: config.optimization.likelihood_epsilon, 'LIKELIHOOD_EPSILON')
+        settings = BoxCoxAR1Settings(
+            lam=float(lam if lam is not None else 0.3),
+            phi=None if phi is None else float(phi),
+            sigma=None if sigma is None else float(sigma),
+            epsilon=None if epsilon is None else float(epsilon),
+        )
+        return cls(
+            box_cox_lambda=float(box_cox_lambda if box_cox_lambda is not None else 0.2),
+            likelihood=settings,
+        )
 
     def load_observations(
         self,
@@ -95,7 +130,11 @@ class StreamflowMetrics:
                         store_series = store_series.resample(resample_freq).mean()
                     return np.asarray(store_series.values), cast(pd.DatetimeIndex, store_series.index)
 
-            obs_file = resolve_config_value(config, lambda: config.paths.observations_path, 'default', 'OBSERVATIONS_PATH')
+            obs_file = resolve_config_value(
+                config,
+                lambda: config.paths.observations_path,
+                dict_key='OBSERVATIONS_PATH',
+            )
             if obs_file == 'default' or not obs_file:
                 obs_file = resolve_data_subdir(project_dir, 'observations') / 'streamflow' / 'preprocessed' / f"{domain_name}_streamflow_processed.csv"
             else:
@@ -371,8 +410,12 @@ class StreamflowMetrics:
             domain_name,
             resolve_config_value(config, lambda: config.domain.definition_method, 'lumped', 'DOMAIN_DEFINITION_METHOD'),
             resolve_config_value(config, lambda: config.domain.experiment_id, 'run_1', 'EXPERIMENT_ID'),
-            explicit_path=resolve_config_value(config, lambda: config.paths.catchment_path, 'default', 'CATCHMENT_PATH'),
-            explicit_name=resolve_config_value(config, lambda: config.paths.catchment_name, 'default', 'CATCHMENT_SHP_NAME'),
+            explicit_path=resolve_config_value(config, lambda: config.paths.catchment_path, dict_key='CATCHMENT_PATH'),
+            explicit_name=resolve_config_value(
+                config,
+                lambda: config.paths.catchment_name,
+                dict_key='CATCHMENT_SHP_NAME',
+            ),
             logger=logger,
         )
 
@@ -510,6 +553,17 @@ class StreamflowMetrics:
         calibration_period: Optional[Tuple[str, str]] = None,
         min_overlap: int = 10
     ) -> Tuple[np.ndarray, np.ndarray]:
+        """:meth:`align_series` as ``(obs, sim)`` numpy arrays."""
+        obs_clean, sim_clean = self.align_series(sim, obs, calibration_period, min_overlap)
+        return np.asarray(obs_clean.values), np.asarray(sim_clean.values)
+
+    def align_series(
+        self,
+        sim: pd.Series,
+        obs: pd.Series,
+        calibration_period: Optional[Tuple[str, str]] = None,
+        min_overlap: int = 10
+    ) -> Tuple[pd.Series, pd.Series]:
         """
         Align simulation and observation time series.
 
@@ -520,7 +574,8 @@ class StreamflowMetrics:
             min_overlap: Minimum number of overlapping points required
 
         Returns:
-            Tuple of (obs_aligned, sim_aligned) as numpy arrays
+            Tuple of (obs_aligned, sim_aligned) as Series on their common,
+            NaN-free index
 
         Raises:
             ValueError: If insufficient overlapping data
@@ -547,8 +602,8 @@ class StreamflowMetrics:
 
         # Remove NaN pairs
         valid_mask = ~(np.isnan(obs_aligned.values) | np.isnan(sim_aligned.values))
-        obs_clean = obs_aligned.values[valid_mask]
-        sim_clean = sim_aligned.values[valid_mask]
+        obs_clean = obs_aligned[valid_mask]
+        sim_clean = sim_aligned[valid_mask]
 
         if len(obs_clean) < min_overlap:
             raise ValueError(f"Insufficient valid data after NaN removal: {len(obs_clean)} points")
@@ -620,11 +675,14 @@ class StreamflowMetrics:
         'RMSE_LOG': ('rmse', 'log'),
     }
 
+    #: Formal Box-Cox AR(1) likelihood (see core.metrics.formal_likelihood).
+    LIKELIHOOD_METRIC = 'loglik_bc_ar1'
+
     @classmethod
     def supports(cls, metric: str) -> bool:
         """True when :meth:`calculate_metrics` can compute ``metric``."""
         return (metric in cls.TRANSFORMED_METRICS
-                or metric in ('kge', 'nse', 'rmse', 'mae', 'kge_prime')
+                or metric in ('kge', 'nse', 'rmse', 'mae', 'kge_prime', cls.LIKELIHOOD_METRIC)
                 or get_metric_function(metric) is not None)
 
     def calculate_metrics(
@@ -669,12 +727,22 @@ class StreamflowMetrics:
 
             result = {}
             for metric in metrics:
-                if zero_variance and not MetricTransformer.is_minimize_metric(metric):
+                is_likelihood = metric.lower() == self.LIKELIHOOD_METRIC
+                # A likelihood stays well defined for a constant simulation
+                # (and -1 would be an excellent log-likelihood).
+                if (zero_variance and not is_likelihood
+                        and not MetricTransformer.is_minimize_metric(metric)):
                     result[metric] = -1.0
                     continue
                 try:
+                    if is_likelihood:
+                        lk = self.likelihood
+                        val = boxcox_ar1_log_likelihood(
+                            obs, sim, lam=lk.lam, phi=lk.phi,
+                            sigma=lk.sigma, epsilon=lk.epsilon,
+                        )
                     # Check if this is a transformed metric (e.g., kge_log, kge_inv)
-                    if metric in self.TRANSFORMED_METRICS:
+                    elif metric in self.TRANSFORMED_METRICS:
                         base_metric, transform = self.TRANSFORMED_METRICS[metric]
                         obs_t, sim_t = self._transform_data(obs, sim, transform)
                         if len(obs_t) == 0:
@@ -798,6 +866,44 @@ class StreamflowMetrics:
         except Exception as e:  # noqa: BLE001 — must-not-raise contract
             logger.error(f"Error in streamflow evaluation: {e}")
             return {'kge': self.penalty_score}
+
+
+def configured_objective_metrics(config: Any) -> List[str]:
+    """Metric names the configured calibration objective(s) need.
+
+    OPTIMIZATION_METRIC (unless COMPOSITE), every COMPOSITE_METRIC component
+    and, when the active algorithm is NSGA-II or MOEA/D, its primary and
+    secondary metrics. Names are upper-case and de-duplicated in order.
+    ``config`` is a typed SymfluenceConfig or a flat dict.
+    """
+    def get(accessor, key):
+        return resolve_config_value(config, accessor, dict_key=key)
+
+    names: List[str] = []
+    metric = get(lambda: config.optimization.metric, 'OPTIMIZATION_METRIC')
+    if metric and str(metric).upper() != 'COMPOSITE':
+        names.append(str(metric))
+    composite = get(lambda: config.optimization.composite_metric, 'COMPOSITE_METRIC')
+    if isinstance(composite, dict):
+        names.extend(str(k) for k in composite)
+    algorithm = str(get(lambda: config.optimization.algorithm,
+                        'ITERATIVE_OPTIMIZATION_ALGORITHM') or '').upper()
+    if algorithm in ('NSGA-II', 'NSGA2', 'NSGA_II'):
+        names.append(str(get(lambda: config.optimization.nsga2.primary_metric,
+                             'NSGA2_PRIMARY_METRIC') or ''))
+        names.append(str(get(lambda: config.optimization.nsga2.secondary_metric,
+                             'NSGA2_SECONDARY_METRIC') or ''))
+    elif algorithm in ('MOEAD', 'MOEA-D', 'MOEA_D'):
+        names.append(str(get(lambda: config.optimization.moead.primary_metric,
+                             'MOEAD_PRIMARY_METRIC') or ''))
+        names.append(str(get(lambda: config.optimization.moead.secondary_metric,
+                             'MOEAD_SECONDARY_METRIC') or ''))
+    out: List[str] = []
+    for name in names:
+        key = name.strip().upper()
+        if key and key not in out:
+            out.append(key)
+    return out
 
 
 # Module-level instance for convenience

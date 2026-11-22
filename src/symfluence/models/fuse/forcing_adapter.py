@@ -80,7 +80,10 @@ class FUSEForcingAdapter(ForcingAdapter):
             Dict of conversion functions
         """
         # Determine timestep for precipitation conversion
-        timestep_seconds = self._get_config_value(lambda: self.config.forcing.time_step_size, default=86400, dict_key='FORCING_TIME_STEP_SIZE')
+        timestep_seconds = self._get_config_value(
+            lambda: self.config.forcing.time_step_size,
+            dict_key='FORCING_TIME_STEP_SIZE',
+        )
 
         return {
             'air_temperature': lambda x: x - 273.15,  # K to °C

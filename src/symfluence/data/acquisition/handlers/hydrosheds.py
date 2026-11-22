@@ -42,6 +42,7 @@ from typing import List
 import requests
 
 from symfluence.core.registries import R
+from symfluence.data.acquisition.utils import atomic_write
 
 from ..base import BaseAcquisitionHandler
 from ..mixins import RetryMixin
@@ -192,7 +193,7 @@ class HydroSHEDSAcquirer(BaseAcquisitionHandler, RetryMixin):
             try:
                 with session.get(url, stream=True, timeout=600) as resp:
                     resp.raise_for_status()
-                    with open(zip_path, 'wb') as f:
+                    with atomic_write(zip_path) as _part, open(_part, 'wb') as f:
                         for chunk in resp.iter_content(chunk_size=65536):
                             if chunk:
                                 f.write(chunk)

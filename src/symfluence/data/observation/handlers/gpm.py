@@ -51,10 +51,7 @@ class GPMIMERGHandler(BaseObservationHandler):
         Returns:
             Path to directory containing GPM IMERG NetCDF files
         """
-        data_access = self._get_config_value(
-            lambda: self.config.domain.data_access,
-            default='local'
-        )
+        data_access = self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS')
         if isinstance(data_access, str):
             data_access = data_access.lower()
 
@@ -71,10 +68,7 @@ class GPMIMERGHandler(BaseObservationHandler):
         gpm_dir.mkdir(parents=True, exist_ok=True)
 
         # Check for existing files
-        force_download = self._get_config_value(
-            lambda: self.config.data.force_download,
-            default=False
-        )
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
 
         existing_files = list(gpm_dir.glob("*.nc")) + list(gpm_dir.glob("*.nc4"))
         if existing_files and not force_download:

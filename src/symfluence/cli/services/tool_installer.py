@@ -816,6 +816,17 @@ class ToolInstaller(BaseService):
                         ]
                     if tool_name not in installation_results["failed"]:
                         installation_results["failed"].append(tool_name)
+                elif repository_url:
+                    if tool_git_hash:
+                        pinned_by: Optional[str] = "cli"
+                    elif revision:
+                        pinned_by = (tool_info.get("source_pin") or {}).get("pinned_by")
+                    else:
+                        pinned_by = None
+                    self._write_source_record(
+                        tool_name, tool_install_dir, repository_url, branch, revision,
+                        pinned_by=pinned_by,
+                    )
 
             except subprocess.CalledProcessError as e:
                 if repository_url:
@@ -880,6 +891,110 @@ class ToolInstaller(BaseService):
         assert last_exc is not None  # loop runs at least once
         raise last_exc
 
+    @staticmethod
+    def _git(
+        args: List[str], cwd: Path, env: Dict[str, str], **kw: Any,
+    ) -> subprocess.CompletedProcess:
+        """Run ``git <args>`` in *cwd*, raising on failure."""
+        return subprocess.run(
+            ["git", *args], capture_output=True, text=True, timeout=600,
+            cwd=str(cwd), env=env, check=True, **kw,
+        )
+
+    def _fetch_commit(
+        self,
+        repository_url: str,
+        git_hash: str,
+        branch: Optional[str],
+        target_dir: Path,
+        build_env: Dict[str, str],
+        attempts: int = 2,
+    ) -> None:
+        """Fetch *git_hash* into a new repository at *target_dir*, unchecked-out.
+
+        Tries a shallow fetch of the single commit first (GitHub, GitLab and
+        SourceForge all serve this); when the host refuses to fetch a commit
+        by SHA, falls back to a full clone and selects the commit from it.
+        Either way HEAD ends detached at *git_hash* with an ``origin`` remote,
+        so build steps that ``git fetch origin ...`` keep working.
+        """
+        last_exc: Optional[Exception] = None
+        # Hosts serve a commit by its full SHA only; an abbreviated
+        # --git-hash goes straight to the full clone.
+        if len(git_hash) != 40:
+            attempts = 0
+        for attempt in range(1, attempts + 1):
+            try:
+                target_dir.mkdir(parents=True, exist_ok=True)
+                self._git(["init", "-q"], target_dir, build_env)
+                self._git(["remote", "add", "origin", repository_url], target_dir, build_env)
+                self._git(["fetch", "-q", "--depth", "1", "origin", git_hash],
+                          target_dir, build_env)
+                self._git(["update-ref", "--no-deref", "HEAD", git_hash], target_dir, build_env)
+                return
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+                last_exc = e
+                shutil.rmtree(target_dir, ignore_errors=True)
+                if attempt < attempts:
+                    time.sleep(attempt * 5)
+        if last_exc is not None:
+            self._console.indent(
+                f"Shallow fetch of {git_hash[:12]} failed ({last_exc}); "
+                "falling back to a full clone"
+            )
+        self._clone_with_retry(
+            ["git", "clone", "--no-checkout", *(["-b", branch] if branch else []),
+             repository_url, str(target_dir)],
+            build_env, target_dir,
+        )
+        # rev-parse also expands an abbreviated --git-hash given on the CLI.
+        commit = self._git(["rev-parse", "--verify", f"{git_hash}^{{commit}}"],
+                           target_dir, build_env).stdout.strip()
+        self._git(["update-ref", "--no-deref", "HEAD", commit], target_dir, build_env)
+
+    def _checkout_excluding(
+        self, target_dir: Path, sparse_exclude: List[str], build_env: Dict[str, str],
+    ) -> None:
+        """Materialise HEAD's tree into *target_dir* minus *sparse_exclude* paths.
+
+        Builds the index directly from HEAD's tree, dropping the excluded /
+        NTFS-illegal paths (t-route's ':' test fixtures) BEFORE they ever enter
+        the index. We cannot use read-tree/checkout: on Windows git they
+        validate path legality and abort. `git ls-tree` only reads git objects
+        (no filesystem validation), so it lists the illegal paths fine; we
+        filter them out, feed the survivors to `update-index --index-info`
+        (same line format) and materialise with checkout-index — git never
+        sees an illegal path.
+        """
+        lst = self._git(["ls-tree", "-r", "-z", "HEAD"], target_dir, build_env)
+        exclude_dirs = ["/" + raw.strip().strip("/") + "/" for raw in sparse_exclude]
+        _ntfs_illegal = set(':*?"<>|')
+        entries = [e for e in lst.stdout.split("\0") if e]
+        kept, dropped = [], 0
+        for e in entries:
+            # "<mode> <type> <sha>\t<path>"
+            path = e.split("\t", 1)[1] if "\t" in e else ""
+            if path and (any(d in ("/" + path + "/") for d in exclude_dirs)
+                         or (_ntfs_illegal & set(path))):
+                dropped += 1
+                continue
+            kept.append(e)
+        # NUL-separated index-info MUST be bytes; text-mode stdin can
+        # recode the separators / the ':' names on Windows.
+        ui = subprocess.run(
+            ["git", "update-index", "-z", "--index-info"],
+            input=("\0".join(kept) + "\0").encode("utf-8"),
+            capture_output=True, timeout=600,
+            cwd=str(target_dir), env=build_env,
+        )
+        if ui.returncode != 0:
+            raise subprocess.CalledProcessError(ui.returncode, ui.args, stderr=ui.stderr)
+        self._git(["checkout-index", "-a", "-f"], target_dir, build_env)
+        self._console.indent(
+            f"Excluded {dropped} path(s) with host-incompatible filenames "
+            "before checkout"
+        )
+
     def _clone_repository(
         self,
         repository_url: Optional[str],
@@ -895,7 +1010,9 @@ class ToolInstaller(BaseService):
             repository_url: URL of the repository to clone.
             branch: Branch to checkout. If None, uses default branch.
             target_dir: Target directory for the clone.
-            git_hash: If set, checkout this specific commit after cloning.
+            git_hash: If set, fetch and check out exactly this commit (a
+                tool's source pin, or ``--git-hash``); the branch is then
+                metadata only, used for a full-clone fallback.
             sparse_exclude: Repo-relative paths to exclude from checkout. Used to
                 skip files whose names are illegal on the host filesystem (e.g.
                 t-route's reservoir test fixtures use ``:`` timestamps that NTFS
@@ -908,95 +1025,38 @@ class ToolInstaller(BaseService):
         """
         if repository_url:
             self._console.indent(f"Cloning from: {repository_url}")
-            # Use shallow clone unless a specific commit hash is needed
-            shallow = git_hash is None
-            # Defer checkout when excluding paths so we can configure
-            # sparse-checkout before any working-tree files are written.
-            defer_checkout = bool(sparse_exclude)
-            clone_cmd = [
-                "git",
-                "clone",
-                *(["--depth", "1"] if shallow else []),
-                *(["--no-checkout"] if defer_checkout else []),
-                *(["-b", branch] if branch else []),
-                repository_url,
-                str(target_dir),
-            ]
-            if branch:
-                self._console.indent(f"Checking out branch: {branch}")
-
             build_env = self._get_clean_build_env()
 
-            def _git(args_, **kw):
-                return subprocess.run(
-                    ["git", *args_], capture_output=True, text=True, timeout=600,
-                    cwd=str(target_dir), env=build_env, check=True, **kw,
-                )
-
-            if defer_checkout:
-                # Clone WITHOUT the working tree (clone_cmd already carries
-                # --no-checkout when deferring), then drop the excluded /
-                # NTFS-illegal paths (t-route's ':' test fixtures) from the index
-                # and materialise the trimmed index — never letting git try to
-                # create the illegal names. update-index/checkout-index touch the
-                # index only, so the ':' names are harmless to them, but git
-                # READ-TREE and CHECKOUT both validate path legality on Windows
-                # and abort, so we avoid them on the excluded entries.
-                # Clone fetches the objects and sets HEAD but leaves the working
-                # tree (and, on every platform we've seen, the index) empty.
-                self._clone_with_retry(clone_cmd, build_env, target_dir)
-                # Build the index directly from HEAD's tree, dropping the excluded
-                # / NTFS-illegal paths BEFORE they ever enter the index. We cannot
-                # use read-tree/checkout: on Windows git they validate path
-                # legality and abort on t-route's ':' fixtures. `git ls-tree`
-                # only reads git objects (no filesystem validation), so it lists
-                # the illegal paths fine; we filter them out, then feed the
-                # survivors to `update-index --index-info` (same line format) and
-                # materialise with checkout-index — git never sees an illegal path.
-                lst = _git(["ls-tree", "-r", "-z", "HEAD"])
-                exclude_dirs = ["/" + raw.strip().strip("/") + "/" for raw in sparse_exclude]
-                _ntfs_illegal = set(':*?"<>|')
-                entries = [e for e in lst.stdout.split("\0") if e]
-                kept, dropped = [], 0
-                for e in entries:
-                    # "<mode> <type> <sha>\t<path>"
-                    path = e.split("\t", 1)[1] if "\t" in e else ""
-                    if path and (any(d in ("/" + path + "/") for d in exclude_dirs)
-                                 or (_ntfs_illegal & set(path))):
-                        dropped += 1
-                        continue
-                    kept.append(e)
-                # NUL-separated index-info MUST be bytes; text-mode stdin can
-                # recode the separators / the ':' names on Windows.
-                ui = subprocess.run(
-                    ["git", "update-index", "-z", "--index-info"],
-                    input=("\0".join(kept) + "\0").encode("utf-8"),
-                    capture_output=True, timeout=600,
-                    cwd=str(target_dir), env=build_env,
-                )
-                if ui.returncode != 0:
-                    raise subprocess.CalledProcessError(
-                        ui.returncode, ui.args, stderr=ui.stderr)
-                _git(["checkout-index", "-a", "-f"])
-                self._console.indent(
-                    f"Excluded {dropped} path(s) with host-incompatible filenames "
-                    "before checkout"
-                )
-            else:
-                self._clone_with_retry(clone_cmd, build_env, target_dir)
-            self._console.success("Clone successful")
-
-            # Checkout specific commit hash if requested
             if git_hash:
+                # Pinned build: fetch exactly that commit. HEAD is left
+                # detached at it with nothing checked out yet.
+                if branch:
+                    self._console.indent(f"Branch (metadata): {branch}")
                 self._console.indent(f"Checking out commit: {git_hash}")
-                subprocess.run(
-                    ["git", "checkout", git_hash],
-                    capture_output=True,
-                    text=True,
-                    check=True,
-                    cwd=str(target_dir),
-                    env=self._get_clean_build_env(),
-                )
+                self._fetch_commit(repository_url, git_hash, branch, target_dir, build_env)
+            else:
+                # Unpinned (an explicit --branch, or a recipe with no pin):
+                # shallow clone of the branch tip. Defer checkout when
+                # excluding paths so sparse filtering happens first.
+                clone_cmd = [
+                    "git",
+                    "clone",
+                    "--depth", "1",
+                    *(["--no-checkout"] if sparse_exclude else []),
+                    *(["-b", branch] if branch else []),
+                    repository_url,
+                    str(target_dir),
+                ]
+                if branch:
+                    self._console.indent(f"Checking out branch: {branch}")
+                self._clone_with_retry(clone_cmd, build_env, target_dir)
+
+            if sparse_exclude:
+                self._checkout_excluding(target_dir, sparse_exclude, build_env)
+            elif git_hash:
+                self._git(["reset", "-q", "--hard", "HEAD"], target_dir, build_env)
+            self._console.success("Clone successful")
+            if git_hash:
                 self._console.success(f"Checked out {git_hash}")
         else:
             self._console.indent("Creating installation directory")
@@ -1295,6 +1355,60 @@ class ToolInstaller(BaseService):
             for error in results["errors"]:
                 self._console.indent(f"- {error}")
 
+    SOURCE_RECORD = ".symfluence_source.json"
+
+    def _write_source_record(
+        self,
+        tool_name: str,
+        tool_dir: Path,
+        repository_url: str,
+        branch: Optional[str],
+        pinned_commit: Optional[str],
+        pinned_by: Optional[str] = None,
+    ) -> None:
+        """Write ``.symfluence_source.json`` describing what *tool_dir* was built from.
+
+        Read back by the install manifest (``toolchain.json``) and by run
+        provenance, which finds it by walking up from an executable's path.
+        ``commit`` is the checkout HEAD *after* the build, so a ``--patched``
+        build that moves to its patch base reports that base, and
+        ``tracked_changes`` says whether tracked files differ from it (patches
+        applied, or a build that edits sources in place).
+        """
+        import json
+        from datetime import datetime, timezone
+
+        record: Dict[str, Any] = {
+            "tool": tool_name,
+            "repository": repository_url,
+            "ref": branch,
+            "pinned_commit": pinned_commit,
+            "pinned_by": pinned_by,
+            "commit": None,
+            "tracked_changes": None,
+            "patched": bool(getattr(self, "_patched", False)),
+            "installed_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+        if (tool_dir / ".git").exists():
+            env = self._get_clean_build_env()
+            try:
+                record["commit"] = self._git(
+                    ["rev-parse", "HEAD"], tool_dir, env).stdout.strip() or None
+                diff = subprocess.run(
+                    ["git", "diff", "--quiet", "HEAD", "--"], cwd=str(tool_dir),
+                    env=env, capture_output=True, timeout=60,
+                )
+                record["tracked_changes"] = diff.returncode == 1
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+                pass
+        if record["commit"] is None:
+            record["commit"] = pinned_commit
+        try:
+            (tool_dir / self.SOURCE_RECORD).write_text(
+                json.dumps(record, indent=2) + "\n", encoding="utf-8")
+        except OSError as e:
+            self._console.warning(f"Could not write source record for {tool_name}: {e}")
+
     def _generate_toolchain_metadata(self, install_base_dir: Path) -> None:
         """
         Generate toolchain.json with compiler, library, and tool metadata.
@@ -1383,6 +1497,17 @@ class ToolInstaller(BaseService):
             if not tool_dir.exists():
                 continue
             entry: Dict[str, Any] = {"installed": True}
+            pin = info.get("source_pin") or {}
+            if info.get("repository"):
+                entry["repository"] = info["repository"]
+                entry["ref"] = pin.get("ref", info.get("branch"))
+                entry["pinned_commit"] = info.get("git_hash")
+            record_path = tool_dir / self.SOURCE_RECORD
+            if record_path.is_file():
+                try:
+                    entry["source"] = json.loads(record_path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    pass
             git_dir = tool_dir / ".git"
             if git_dir.exists():
                 try:

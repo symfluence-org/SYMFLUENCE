@@ -75,7 +75,7 @@ class GLEAMETAcquirer(BaseAcquisitionHandler):
         self.logger.info("Starting GLEAM ET acquisition")
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        force_download = self._get_config_value(lambda: self.config.data.force_download, default=False)
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
         version = self._get_config_value(lambda: None, default=DEFAULT_VERSION, dict_key='GLEAM_VERSION')
         variable = self._get_config_value(lambda: None, default='E', dict_key='GLEAM_VARIABLE')
         temporal = self._get_config_value(lambda: None, default='monthly', dict_key='GLEAM_TEMPORAL')

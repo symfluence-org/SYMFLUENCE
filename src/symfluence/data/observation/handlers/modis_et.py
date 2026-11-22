@@ -74,7 +74,10 @@ class MODISETHandler(BaseObservationHandler):
 
         # Check for existing processed file
         processed_file = et_dir / "preprocessed" / f"{self.domain_name}_modis_et_processed.csv"
-        if processed_file.exists() and not self._get_config_value(lambda: self.config.system.force_run_all_steps, default=False):
+        if processed_file.exists() and not self._get_config_value(
+            lambda: self.config.system.force_run_all_steps,
+            dict_key='FORCE_RUN_ALL_STEPS',
+        ):
             self.logger.info(f"Using existing processed MOD16 ET: {processed_file}")
             return processed_file.parent
 
@@ -82,7 +85,10 @@ class MODISETHandler(BaseObservationHandler):
         raw_nc = et_dir / f"{self.domain_name}_MOD16_ET.nc"
         raw_csv = et_dir / f"{self.domain_name}_MOD16_ET_timeseries.csv"
 
-        if (raw_nc.exists() or raw_csv.exists()) and not self._get_config_value(lambda: self.config.system.force_run_all_steps, default=False):
+        if (raw_nc.exists() or raw_csv.exists()) and not self._get_config_value(
+            lambda: self.config.system.force_run_all_steps,
+            dict_key='FORCE_RUN_ALL_STEPS',
+        ):
             self.logger.info(f"Using existing raw MOD16 data in: {et_dir}")
             return et_dir
 
@@ -127,7 +133,10 @@ class MODISETHandler(BaseObservationHandler):
         output_file = output_dir / f"{self.domain_name}_modis_et_processed.csv"
 
         # Check for existing processed file
-        if output_file.exists() and not self._get_config_value(lambda: self.config.system.force_run_all_steps, default=False):
+        if output_file.exists() and not self._get_config_value(
+            lambda: self.config.system.force_run_all_steps,
+            dict_key='FORCE_RUN_ALL_STEPS',
+        ):
             self.logger.info(f"Using existing processed file: {output_file}")
             return output_file
 

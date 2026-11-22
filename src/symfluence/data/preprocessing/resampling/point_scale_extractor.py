@@ -149,7 +149,7 @@ class PointScaleForcingExtractor(ConfigMixin):
         case_name = f"{self._get_config_value(lambda: self.config.domain.name, dict_key='DOMAIN_NAME')}_{self._get_config_value(lambda: self.config.forcing.dataset, dict_key='FORCING_DATASET')}"
         intersect_csv = intersect_path / f"{case_name}_intersected_shapefile.csv"
 
-        force = self._get_config_value(lambda: self.config.system.force_run_all_steps, default=False, dict_key='FORCE_RUN_ALL_STEPS')
+        force = self._get_config_value(lambda: self.config.system.force_run_all_steps, dict_key='FORCE_RUN_ALL_STEPS')
 
         if forcing_files and self._use_area_weighting(forcing_files[0]):
             self.logger.info(
@@ -304,7 +304,8 @@ class PointScaleForcingExtractor(ConfigMixin):
         cell-mean DEM elevation — the layout the regular remapper writes.
         """
         hru_id_field = self._get_config_value(
-            lambda: self.config.paths.catchment_hruid, default='HRU_ID', dict_key='CATCHMENT_SHP_HRUID'
+            lambda: self.config.paths.catchment_hruid,
+            dict_key='CATCHMENT_SHP_HRUID',
         ) or 'HRU_ID'
         target = gpd.read_file(catchment_file_path)
         if target.crs is None:

@@ -158,3 +158,5 @@ def test_rejects_bad_input():
         verify_forecasts(fc, obs, stamps={'m': 'middle'})
     with pytest.raises(EvaluationError):
         verify_forecasts(fc, obs.resample('D').mean())                   # observed coarser than the model
+    with pytest.raises(EvaluationError, match='typo'):
+        verify_forecasts(fc, obs, multi_model_means={'mean': ('m', 'typo')})   # member not in the table

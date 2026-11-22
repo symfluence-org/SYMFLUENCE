@@ -308,7 +308,8 @@ class StreamflowEvaluator(ModelEvaluator):
             default='', dict_key='HYDROLOGICAL_MODEL')
         spatial_mode = self._get_config_value(
             lambda: self.config.model.wflow.spatial_mode,
-            default='', dict_key='WFLOW_SPATIAL_MODE')
+            dict_key='WFLOW_SPATIAL_MODE',
+        )
         return str(model).upper() == 'WFLOW' and spatial_mode == 'distributed'
 
     def extract_simulated_data(self, sim_files: List[Path], **kwargs) -> pd.Series:
@@ -676,7 +677,7 @@ class StreamflowEvaluator(ModelEvaluator):
             )
             topology_name = self._get_config_value(
                 lambda: self.config.model.mizuroute.topology,
-                default='topology.nc', dict_key='SETTINGS_MIZU_TOPOLOGY',
+                dict_key='SETTINGS_MIZU_TOPOLOGY',
             )
             for var_name in streamflow_vars:
                 if var_name in ds.variables:
@@ -1037,8 +1038,7 @@ class StreamflowEvaluator(ModelEvaluator):
             basin_path = self.project_dir / "shapefiles" / "river_basins"
             area_col = self._get_config_value(
                 lambda: self.config.paths.river_basin_area,
-                default='GRU_area',
-                dict_key='RIVER_BASIN_SHP_AREA'
+                dict_key='RIVER_BASIN_SHP_AREA',
             )
             for basin_file in self._ordered_area_shapefiles(basin_path):
                 gdf = gpd.read_file(basin_file)
@@ -1091,8 +1091,7 @@ class StreamflowEvaluator(ModelEvaluator):
                 gdf = gpd.read_file(catchment_shp)
                 area_col = self._get_config_value(
                     lambda: self.config.paths.catchment_area,
-                    default='HRU_area',
-                    dict_key='CATCHMENT_SHP_AREA'
+                    dict_key='CATCHMENT_SHP_AREA',
                 )
                 if area_col in gdf.columns:
                     total_area = gdf[area_col].sum()
@@ -1225,8 +1224,7 @@ class StreamflowEvaluator(ModelEvaluator):
         )
         routing_delineation = self._get_config_value(
             lambda: self.config.domain.delineation.routing,
-            default='lumped',
-            dict_key='ROUTING_DELINEATION'
+            dict_key='ROUTING_DELINEATION',
         )
 
         if domain_method not in ['point', 'lumped']:

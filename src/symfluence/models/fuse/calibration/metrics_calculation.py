@@ -255,8 +255,16 @@ def read_fuse_streamflow(
         return None
 
     with ds:
-        spatial_mode = resolve_config_value(config, lambda: config.model.fuse.spatial_mode, 'lumped', 'FUSE_SPATIAL_MODE')
-        subcatchment_dim = resolve_config_value(config, lambda: config.model.fuse.subcatchment_dim, 'latitude', 'FUSE_SUBCATCHMENT_DIM')
+        spatial_mode = resolve_config_value(
+            config,
+            lambda: config.model.fuse.spatial_mode,
+            dict_key='FUSE_SPATIAL_MODE',
+        )
+        subcatchment_dim = resolve_config_value(
+            config,
+            lambda: config.model.fuse.subcatchment_dim,
+            dict_key='FUSE_SUBCATCHMENT_DIM',
+        )
 
         # Select runoff variable
         if 'q_routed' in ds.variables:

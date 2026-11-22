@@ -28,6 +28,7 @@ import xarray as xr
 # Local imports
 from symfluence.core import ConfigurableMixin
 from symfluence.core.exceptions import ModelExecutionError
+from symfluence.core.modeling.utilities.base_topology_generator import GRID_DEFINITION_METHODS
 
 if TYPE_CHECKING:
     from symfluence.core.config.models import SymfluenceConfig
@@ -614,7 +615,8 @@ class SummaAttributesManager(ConfigurableMixin):
 
         intersect_path = self._get_default_path('INTERSECT_SOIL_PATH', 'shapefiles/catchment_intersection/with_soilgrids')
         intersect_name = self._get_config_value(
-            lambda: self.config.paths.intersect_soil_name, default='default'
+            lambda: self.config.paths.intersect_soil_name,
+            dict_key='INTERSECT_SOIL_NAME',
         )
         if intersect_name == 'default':
             intersect_name = 'catchment_with_soilclass.shp'
@@ -755,7 +757,8 @@ class SummaAttributesManager(ConfigurableMixin):
 
         intersect_path = self._get_default_path('INTERSECT_LAND_PATH', 'shapefiles/catchment_intersection/with_landclass')
         intersect_name = self._get_config_value(
-            lambda: self.config.paths.intersect_land_name, default='default'
+            lambda: self.config.paths.intersect_land_name,
+            dict_key='INTERSECT_LAND_NAME',
         )
         if intersect_name == 'default':
             intersect_name = 'catchment_with_landclass.shp'
@@ -838,7 +841,8 @@ class SummaAttributesManager(ConfigurableMixin):
 
         intersect_path = self._get_default_path('INTERSECT_DEM_PATH', 'shapefiles/catchment_intersection/with_dem')
         intersect_name = self._get_config_value(
-            lambda: self.config.paths.intersect_dem_name, default='default'
+            lambda: self.config.paths.intersect_dem_name,
+            dict_key='INTERSECT_DEM_NAME',
         )
         if intersect_name == 'default':
             intersect_name = 'catchment_with_dem.shp'
@@ -847,9 +851,15 @@ class SummaAttributesManager(ConfigurableMixin):
         elev_column = 'elev_mean'
 
         connect_hrus = self._get_config_value(
-            lambda: self.config.model.summa.connect_hrus, default='no'
+            lambda: self.config.model.summa.connect_hrus,
+            dict_key='SETTINGS_SUMMA_CONNECT_HRUS',
         )
-        do_downHRUindex = connect_hrus == 'yes'
+        # The schema field is a bool; `== 'yes'` was never true, so
+        # downHRUindex was silently never written. Accept legacy 'yes' too.
+        do_downHRUindex = (
+            connect_hrus is True
+            or str(connect_hrus).strip().lower() in ('yes', 'true')
+        )
 
         # Prefer the model-ready attributes store (terrain/elev_mean keyed by
         # hru_id); fall back to the DEM intersection shapefile when the store is
@@ -876,7 +886,8 @@ class SummaAttributesManager(ConfigurableMixin):
                 if elevation is not None and np.isfinite(elevation):
                     att['elevation'][idx] = elevation
                     if do_downHRUindex:
-                        gru_data.setdefault(gru_id, []).append((hru_id, elevation))
+                        # netCDF4 returns masked scalars, which are unhashable
+                        gru_data.setdefault(int(gru_id), []).append((int(hru_id), elevation))
                 else:
                     missing_elevation.append(int(hru_id))
 
@@ -994,7 +1005,7 @@ class SummaAttributesManager(ConfigurableMixin):
         definition_method = self._get_config_value(
             lambda: self.config.domain.definition_method, default='subset'
         )
-        is_grid_distribute = definition_method == 'distribute'
+        is_grid_distribute = definition_method in GRID_DEFINITION_METHODS
 
         if is_grid_distribute:
             self._set_downHRUindex_from_d8(att)

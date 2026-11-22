@@ -32,8 +32,7 @@ class GLDASHandler(BaseObservationHandler):
         """Locate GLDAS data or download if needed."""
         gldas_dir = Path(self._get_config_value(lambda: None, default=self.project_observations_dir / "tws" / "gldas", dict_key='GLDAS_DATA_DIR'))
 
-        force_download = self._get_config_value(
-            lambda: self.config.data.force_download, default=False)
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
 
         has_files = gldas_dir.exists() and any(gldas_dir.iterdir())
 

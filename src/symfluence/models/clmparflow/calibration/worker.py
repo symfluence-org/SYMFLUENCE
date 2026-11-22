@@ -58,6 +58,10 @@ class CLMParFlowWorker(BaseWorker):
             pfidb_path = pfidb_files[0]
             entries = _read_pfidb(pfidb_path)
 
+            # Shared FORCING_CORRECTION: FC_* values correct the forcing, not the .pfidb keys
+            from ..forcing_correction import BC_RECORD, split_params
+            params, forcing_values = split_params(params)
+
             # Separate routing, Snow-17, and subsurface params
             routing_params = {k: v for k, v in params.items() if k in ROUTING_PARAM_NAMES}
             snow_params = {k: v for k, v in params.items() if k in SNOW17_PARAM_NAMES}
@@ -84,7 +88,22 @@ class CLMParFlowWorker(BaseWorker):
                     entries[key] = f'{value:g}'
 
             # If Snow-17 params changed, regenerate forcing
-            if snow_params:
+            if forcing_values or (settings_dir / BC_RECORD).exists():
+                from ..forcing_correction import correct_overland_bc, write_snow_params
+                from .parameter_manager import CLMParFlowParameterManager
+                pm = CLMParFlowParameterManager(
+                    kwargs.get('config', self.config or {}),
+                    self.logger,
+                    settings_dir,
+                )
+                cache = pm.forcing_input_dir / 'hourly_forcing_cache.npz'
+                if not cache.exists():
+                    cache = settings_dir / 'hourly_forcing_cache.npz'
+                correct_overland_bc(entries, settings_dir, cache, forcing_values, snow_params)
+                if snow_params:
+                    write_snow_params(settings_dir, snow_params)
+            elif snow_params:
+                from ..forcing_correction import write_snow_params
                 from .parameter_manager import CLMParFlowParameterManager
                 pm = CLMParFlowParameterManager(
                     kwargs.get('config', self.config or {}),
@@ -92,6 +111,7 @@ class CLMParFlowWorker(BaseWorker):
                     settings_dir,
                 )
                 pm._update_snow17_forcing(entries, snow_params)
+                write_snow_params(settings_dir, snow_params)
 
             _write_pfidb(pfidb_path, entries)
             return True
@@ -120,6 +140,11 @@ class CLMParFlowWorker(BaseWorker):
 
             from symfluence.models.clmparflow.runner import CLMParFlowRunner
             runner = CLMParFlowRunner(config, self.logger)
+            if params:
+                from ..forcing_correction import split_params
+                _, forcing_values = split_params(params)
+                if forcing_values:
+                    runner.forcing_correction_values = forcing_values
 
             # Override settings and output directories for worker isolation
             runner.settings_dir = settings_dir

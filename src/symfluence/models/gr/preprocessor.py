@@ -310,7 +310,8 @@ class GRPreProcessor(BaseModelPreProcessor, PETCalculatorMixin, GeospatialUtilsM
         else:
             # Check if fallback to dummy observations is allowed
             allow_dummy = self._get_config_value(
-                lambda: self.config.model.gr.allow_dummy_observations, False
+                lambda: self.config.model.gr.allow_dummy_observations,
+                dict_key='GR_ALLOW_DUMMY_OBSERVATIONS',
             )
             if allow_dummy:
                 self.logger.warning(
@@ -341,7 +342,8 @@ class GRPreProcessor(BaseModelPreProcessor, PETCalculatorMixin, GeospatialUtilsM
         else:
             # Check if fallback to default area is allowed
             allow_default = self._get_config_value(
-                lambda: self.config.model.gr.allow_default_area, False
+                lambda: self.config.model.gr.allow_default_area,
+                dict_key='GR_ALLOW_DEFAULT_AREA',
             )
             if allow_default:
                 self.logger.warning(

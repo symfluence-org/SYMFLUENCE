@@ -10,6 +10,8 @@ This package contains base evaluators for different hydrological variables inclu
 - Groundwater (depth, GRACE TWS)
 - Evapotranspiration (ET, latent heat)
 - Soil moisture (point, SMAP, ESA)
+- Model-agnostic glacier mass balance, basin SWE / SCA / ET (via the
+  output-variable adapters in ``core.modeling.output_variables``)
 
 Model-specific streamflow evaluators (GR, HYPE, RHESSys) have been moved to
 symfluence.optimization.calibration_targets for consistency with the calibration
@@ -20,6 +22,12 @@ from __future__ import annotations
 from .base import ModelEvaluator
 from .et import ETEvaluator
 from .groundwater import GroundwaterEvaluator
+from .multivariable import (
+    BasinETEvaluator,
+    BasinSCAEvaluator,
+    BasinSWEEvaluator,
+    GlacierMassBalanceEvaluator,
+)
 from .snow import SnowEvaluator
 from .soil_moisture import SoilMoistureEvaluator
 from .streamflow import StreamflowEvaluator
@@ -33,6 +41,10 @@ __all__ = [
     "SnowEvaluator",
     "GroundwaterEvaluator",
     "TWSEvaluator",
+    "GlacierMassBalanceEvaluator",
+    "BasinSWEEvaluator",
+    "BasinSCAEvaluator",
+    "BasinETEvaluator",
 ]
 
 # ---------------------------------------------------------------------------

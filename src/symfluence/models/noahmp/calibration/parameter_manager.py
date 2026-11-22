@@ -34,7 +34,6 @@ class NoahMPParameterManager(BaseParameterManager):
 
         params_str = self._get_config_value(
             lambda: self.config.model.noahmp.params_to_calibrate,
-            default='refkdt,dksat,bexp,smcmax,slope,noah_czil',
             dict_key='NOAHMP_PARAMS_TO_CALIBRATE',
         )
         self.noahmp_params = [

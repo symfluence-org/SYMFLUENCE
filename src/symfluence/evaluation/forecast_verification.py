@@ -231,7 +231,8 @@ def verify_forecasts(
         high_flow_quantile: Quantile of observed daily means used as the
             high-flow threshold (ignored if ``high_flow_threshold`` is given).
         multi_model_means: Name -> member models, averaged on daily means over
-            the (issue, day) pairs all members have.
+            the (issue, day) pairs all members have.  A member absent from
+            ``forecasts`` raises :class:`EvaluationError`.
         min_coverage: Share of observed values needed for an interval mean.
         offset_lag: Age of the forecast whose error at issue is added.
         event_gap_days: Days above threshold at most this far apart are one event.
@@ -323,8 +324,9 @@ def verify_forecasts(
 
     # Multi-model means on daily means over common (init, day)
     for name, members in (multi_model_means or {}).items():
-        if not all(m in daily_fc for m in members):
-            continue
+        absent = [m for m in members if m not in daily_fc]
+        if absent:
+            raise EvaluationError(f'multi-model mean {name!r}: no forecasts for member(s) {absent}')
         parts = [daily_fc[m].set_index(['init', 'day']) for m in members]
         common = parts[0].index
         for p in parts[1:]:

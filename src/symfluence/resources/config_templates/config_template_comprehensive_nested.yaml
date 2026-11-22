@@ -970,7 +970,7 @@ optimization:
 
     # Secondary objective
     secondary_target: "gw_depth"
-    secondary_metric: "KGE"
+    secondary_metric: "KGE_LOG"
 
     # Crossover settings
     crossover_rate: 0.9

@@ -41,8 +41,9 @@ class GLDASAcquirer(BaseAcquisitionHandler):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         force_download = self._parse_bool(self._get_config_value(
-            lambda: self.config.data.force_download, default=False,
-            dict_key='FORCE_DOWNLOAD'))
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ))
 
         output_file = output_dir / "gldas_noah_tws_raw.csv"
         if output_file.exists() and not force_download:
@@ -129,16 +130,18 @@ class GLDASAcquirer(BaseAcquisitionHandler):
         return output_dir
 
     def _get_bounding_box(self):
-        """Get bounding box as (lon_min, lat_min, lon_max, lat_max)."""
-        try:
-            bbox = self.config.domain.bounding_box
-            return (bbox['lon_min'], bbox['lat_min'], bbox['lon_max'], bbox['lat_max'])
-        except (AttributeError, KeyError):
-            lat_min = float(self._get_config_value(lambda: None, default=-90, dict_key='LATITUDE_MIN'))
-            lat_max = float(self._get_config_value(lambda: None, default=90, dict_key='LATITUDE_MAX'))
-            lon_min = float(self._get_config_value(lambda: None, default=-180, dict_key='LONGITUDE_MIN'))
-            lon_max = float(self._get_config_value(lambda: None, default=180, dict_key='LONGITUDE_MAX'))
-            return (lon_min, lat_min, lon_max, lat_max)
+        """Get bounding box as (lon_min, lat_min, lon_max, lat_max).
+
+        Uses the domain bbox parsed by the base handler. There is deliberately
+        no global fallback: a missing bbox must not turn into a whole-globe mean
+        that is then written out as a basin observation.
+        """
+        bbox = self.bbox
+        if not bbox:
+            raise ValueError(
+                f"{type(self).__name__} needs BOUNDING_BOX_COORDS (or POUR_POINT_COORDS)"
+            )
+        return (bbox['lon_min'], bbox['lat_min'], bbox['lon_max'], bbox['lat_max'])
 
     @staticmethod
     def _parse_bool(val):

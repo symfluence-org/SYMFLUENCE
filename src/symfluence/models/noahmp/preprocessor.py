@@ -196,7 +196,6 @@ class NoahMPPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             # Copy parameter lookup tables from install directory
             install_path = self._get_config_value(
                 lambda: self.config.model.noahmp.install_path,
-                default='default',
                 dict_key='NOAHMP_INSTALL_PATH',
             )
             data_dir = self._get_config_value(
@@ -249,7 +248,6 @@ class NoahMPPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # Dynamic vegetation option from config (default 1)
         dynamic_veg = int(self._get_config_value(
             lambda: self.config.model.noahmp.dynamic_veg_option,
-            default=1,
             dict_key='NOAHMP_DYNAMIC_VEG_OPTION',
         ))
 

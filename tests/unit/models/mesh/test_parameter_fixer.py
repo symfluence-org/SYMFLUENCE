@@ -522,6 +522,7 @@ class TestRemoveSmallGRUs:
         })
         ds.to_netcdf(fixer.ddb_path)
         fixer.class_file_path.write_text(class_ini_content)
+        fixer._config_dict_override = {"MESH_GRU_MIN_TOTAL": 0.05}
 
         fixer._remove_small_grus()
 

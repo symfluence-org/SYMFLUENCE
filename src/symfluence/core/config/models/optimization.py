@@ -34,7 +34,11 @@ OptimizationMetricType = Literal[
     'COMPOSITE',
     # Transformed-flow variants (transformation applied to obs/sim before scoring)
     'KGE_LOG', 'KGE_INV', 'KGE_SQRT', 'KGE_BOX_COX',
-    'NSE_LOG', 'NSE_SQRT', 'RMSE_LOG'
+    'NSE_LOG', 'NSE_SQRT', 'RMSE_LOG',
+    # Formal likelihood (Box-Cox + AR(1) residuals; maximised)
+    'LOGLIK_BC_AR1',
+    # Hydrological-signature errors (minimised)
+    'FDC_SLOPE_ERROR', 'PEAK_FLOW_BIAS', 'BFI_ERROR',
 ]
 
 # Supported sampling methods
@@ -94,7 +98,9 @@ class NSGA2Config(BaseModel):
     primary_target: str = Field(default='streamflow', alias='NSGA2_PRIMARY_TARGET')
     secondary_target: str = Field(default='gw_depth', alias='NSGA2_SECONDARY_TARGET')
     primary_metric: str = Field(default='KGE', alias='NSGA2_PRIMARY_METRIC')
-    secondary_metric: str = Field(default='KGE', alias='NSGA2_SECONDARY_METRIC')
+    # KGE of log flows: a low-flow-weighted objective that conflicts with
+    # KGE's high-flow emphasis, so the default front is not degenerate.
+    secondary_metric: str = Field(default='KGE_LOG', alias='NSGA2_SECONDARY_METRIC')
     crossover_rate: float = Field(default=0.9, alias='NSGA2_CROSSOVER_RATE', ge=0, le=1.0)
     mutation_rate: float = Field(default=0.1, alias='NSGA2_MUTATION_RATE', ge=0, le=1.0)
     eta_c: int = Field(default=20, alias='NSGA2_ETA_C', ge=1)
@@ -253,6 +259,18 @@ class DREAMConfig(BaseModel):
     epsilon_std: float = Field(default=1e-3, alias='DREAM_EPS', gt=0)
     temperature: float = Field(default=1.0, alias='DREAM_TEMPERATURE', gt=0)
     outlier_threshold: float = Field(default=2.0, alias='DREAM_OUTLIER_THRESHOLD', gt=0)
+    likelihood: Literal['formal', 'informal'] = Field(
+        default='formal', alias='DREAM_LIKELIHOOD',
+        description="'formal': DREAM samples the posterior under the Box-Cox AR(1) "
+                    "likelihood (OPTIMIZATION_METRIC is replaced by LOGLIK_BC_AR1). "
+                    "'informal': exp(OPTIMIZATION_METRIC / DREAM_TEMPERATURE) is used "
+                    "as a pseudo-likelihood -- not a Bayesian posterior."
+    )
+
+    @field_validator('likelihood', mode='before')
+    @classmethod
+    def _lower_likelihood(cls, v):
+        return v.lower() if isinstance(v, str) else v
 
 
 class GAConfig(BaseModel):
@@ -371,8 +389,9 @@ class MultiGaugeConfig(BaseModel):
     """Multi-gauge calibration settings.
 
     All fields default to None so the flat view stays unchanged when unset
-    and the calibration workers' own fallback defaults keep applying
-    (e.g. aggregation 'mean', min_gauges 5).
+    and the calibration workers' own fallback defaults keep applying.
+    min_gauges in particular stays None: FUSE/SUMMA fall back to 5 and HYPE
+    to 3, and a schema default would override HYPE's.
     """
     model_config = FROZEN_CONFIG
 
@@ -393,7 +412,7 @@ class MultiGaugeConfig(BaseModel):
         description='Gauge IDs to exclude from multi-gauge calibration'
     )
     aggregation: Optional[str] = Field(
-        default=None, alias='MULTI_GAUGE_AGGREGATION',
+        default='mean', alias='MULTI_GAUGE_AGGREGATION',
         description="Aggregation of per-gauge scores: 'mean', 'median' or 'weighted'"
     )
     min_gauges: Optional[int] = Field(
@@ -413,7 +432,7 @@ class MultiGaugeConfig(BaseModel):
         description='Minimum specific discharge for a gauge to be used'
     )
     min_overlap_days: Optional[int] = Field(
-        default=None, alias='MULTI_GAUGE_MIN_OVERLAP_DAYS',
+        default=10, alias='MULTI_GAUGE_MIN_OVERLAP_DAYS',
         description='Minimum days of obs/sim overlap for a gauge to be used'
     )
     kge_floor: Optional[float] = Field(
@@ -425,6 +444,146 @@ class MultiGaugeConfig(BaseModel):
         description='Gauge-ID to river-segment mapping: a CSV path (auto-generated if absent) '
                     'or an explicit {gauge_id: segment_id} dict'
     )
+
+
+class UncertaintyConfig(BaseModel):
+    """Posterior / behavioural sample persistence and predictive intervals (DREAM, GLUE)."""
+    model_config = FROZEN_CONFIG
+
+    save_samples: bool = Field(
+        default=True, alias='UQ_SAVE_SAMPLES',
+        description='Write DREAM posterior / GLUE behavioural parameter samples '
+                    '(with objective values) to <slug>_uq_samples.nc in the results dir'
+    )
+    predictive_runs: int = Field(
+        default=50, alias='UQ_PREDICTIVE_RUNS', ge=0,
+        description='Maximum number of posterior/behavioural parameter sets re-run '
+                    'over the full period to build predictive intervals (0 disables)'
+    )
+    quantiles: List[float] = Field(
+        default_factory=lambda: [0.05, 0.25, 0.5, 0.75, 0.95], alias='UQ_QUANTILES',
+        description='Predictive quantiles written to <slug>_predictive_quantiles.csv'
+    )
+    residual_draws: int = Field(
+        default=20, alias='UQ_RESIDUAL_DRAWS', ge=0,
+        description='Error-model realisations per parameter set for the total '
+                    'predictive distribution of a formal-likelihood DREAM run (0 = '
+                    'parameter uncertainty only)'
+    )
+
+    @field_validator('quantiles')
+    @classmethod
+    def _check_quantiles(cls, v):
+        if not v or any(not 0.0 <= float(q) <= 1.0 for q in v):
+            raise ValueError('UQ_QUANTILES must be a non-empty list of probabilities in [0, 1]')
+        return sorted(float(q) for q in v)
+
+
+class SensitivityConfig(BaseModel):
+    """Global sensitivity analysis on a dedicated sampling design (SALib)."""
+    model_config = FROZEN_CONFIG
+
+    methods: List[Literal['sobol', 'morris']] = Field(
+        default_factory=lambda: ['morris'], alias='SENSITIVITY_METHODS',
+        description="Design-based methods to run: 'morris' (elementary effects, "
+                    "r*(d+1) runs) and/or 'sobol' (Saltelli design, N*(d+2) runs)"
+    )
+    sobol_n: int = Field(
+        default=256, alias='SENSITIVITY_SOBOL_N', ge=8,
+        description='Base sample size N of the Saltelli design (power of 2)'
+    )
+    morris_trajectories: int = Field(
+        default=10, alias='SENSITIVITY_MORRIS_TRAJECTORIES', ge=2,
+        description='Number of Morris trajectories r'
+    )
+    morris_levels: int = Field(
+        default=4, alias='SENSITIVITY_MORRIS_LEVELS', ge=2,
+        description='Number of grid levels p of the Morris design (even)'
+    )
+    max_evaluations: int = Field(
+        default=5000, alias='SENSITIVITY_MAX_EVALUATIONS', ge=1,
+        description='Budget guard: refuse a design needing more model runs than this'
+    )
+    trajectory_correlation: bool = Field(
+        default=True, alias='SENSITIVITY_TRAJECTORY_CORRELATION',
+        description='Also write the Spearman correlation of the calibration trajectory '
+                    '(a diagnostic of the optimiser path, not a sensitivity index)'
+    )
+
+    @field_validator('methods', mode='before')
+    @classmethod
+    def _split_methods(cls, v):
+        if v is None:
+            return []
+        if isinstance(v, str):
+            v = [m for m in v.split(',')]
+        return [str(m).strip().lower() for m in v if str(m).strip()]
+class ForcingCorrectionConfig(BaseModel):
+    """Shared forcing correction for every model (the FORCING_CORRECTION_* section).
+
+    ``mode`` unset (the default) keeps every model's own precipitation /
+    temperature correction parameters exactly as before. When set, it replaces
+    them with one definition shared by every model; see
+    ``docs/source/forcing_correction.rst``.
+    """
+    model_config = FROZEN_CONFIG
+
+    mode: Optional[Literal['off', 'fixed', 'calibrated']] = Field(
+        default=None, alias='FORCING_CORRECTION_MODE',
+        description="'off' (no correction), 'fixed' (given or water-balance values) or "
+                    "'calibrated' (common parameters); unset = per-model behaviour")
+    precip_multiplier: Optional[Union[float, Literal['water_balance']]] = Field(
+        default=None, alias='FORCING_CORRECTION_PRECIP_MULTIPLIER',
+        description="Fixed total-precipitation multiplier, or 'water_balance' to estimate it "
+                    "once from (Q_obs + ET) / P over the calibration period")
+    snow_multiplier: Optional[float] = Field(
+        default=None, alias='FORCING_CORRECTION_SNOW_MULTIPLIER', gt=0,
+        description='Fixed extra snowfall multiplier (on top of the precipitation multiplier)')
+    temp_offset: Optional[float] = Field(
+        default=None, alias='FORCING_CORRECTION_TEMP_OFFSET',
+        description='Fixed additive air-temperature offset (K)')
+    quantities: List[Literal['precip', 'snow', 'temp']] = Field(
+        default_factory=lambda: ['precip'], alias='FORCING_CORRECTION_QUANTITIES',
+        description="Quantities calibrated in 'calibrated' mode")
+    precip_bounds: List[float] = Field(
+        default_factory=lambda: [0.7, 1.6], alias='FORCING_CORRECTION_PRECIP_BOUNDS')
+    snow_bounds: List[float] = Field(
+        default_factory=lambda: [0.7, 1.6], alias='FORCING_CORRECTION_SNOW_BOUNDS')
+    temp_bounds: List[float] = Field(
+        default_factory=lambda: [-3.0, 3.0], alias='FORCING_CORRECTION_TEMP_BOUNDS')
+    prior_weight: float = Field(
+        default=0.0, alias='FORCING_CORRECTION_PRIOR_WEIGHT', ge=0,
+        description='Weight of the prior penalty subtracted from the objective (0 = no prior)')
+    prior_precip_median: float = Field(
+        default=1.0, alias='FORCING_CORRECTION_PRIOR_PRECIP_MEDIAN', gt=0)
+    prior_precip_sigma: float = Field(
+        default=0.2, alias='FORCING_CORRECTION_PRIOR_PRECIP_SIGMA', gt=0,
+        description='Standard deviation of ln(precipitation multiplier) in the log-normal prior')
+    prior_snow_sigma: float = Field(
+        default=0.2, alias='FORCING_CORRECTION_PRIOR_SNOW_SIGMA', gt=0)
+    prior_temp_sigma: float = Field(
+        default=1.0, alias='FORCING_CORRECTION_PRIOR_TEMP_SIGMA', gt=0,
+        description='Standard deviation (K) of the normal prior on the temperature offset')
+    et_mm_per_year: Optional[float] = Field(
+        default=None, alias='FORCING_CORRECTION_ET_MM_PER_YEAR', ge=0,
+        description='Actual ET for the water-balance estimate; unset = Budyko from PET')
+    pet_method: Literal['oudin', 'hamon'] = Field(
+        default='oudin', alias='FORCING_CORRECTION_PET_METHOD',
+        description='PET formula for the water-balance estimate when no ET is given')
+
+    @field_validator('quantities', mode='before')
+    @classmethod
+    def _split_quantities(cls, v):
+        if isinstance(v, str):
+            return [item.strip().lower() for item in v.split(',') if item.strip()]
+        return v
+
+    @field_validator('precip_bounds', 'snow_bounds', 'temp_bounds')
+    @classmethod
+    def _check_bounds(cls, v):
+        if len(v) != 2 or not v[0] < v[1]:
+            raise ValueError(f'bounds must be [min, max] with min < max, got {v}')
+        return [float(x) for x in v]
 
 
 class OptimizationConfig(BaseModel):
@@ -445,9 +604,33 @@ class OptimizationConfig(BaseModel):
     )
     iterations: int = Field(default=1000, alias='NUMBER_OF_ITERATIONS', ge=1)
     population_size: int = Field(default=50, alias='POPULATION_SIZE', ge=2, le=10000)
+    # Evaluation budget for fair multi-model comparison. 'fixed' (default)
+    # uses NUMBER_OF_ITERATIONS as-is; 'per_parameter' gives each model a
+    # budget proportional to its number of calibrated parameters.
+    budget_mode: Literal['fixed', 'per_parameter'] = Field(
+        default='fixed', alias='CALIBRATION_BUDGET_MODE',
+        description="'fixed' uses NUMBER_OF_ITERATIONS; 'per_parameter' sets the evaluation "
+                    "budget to EVALUATIONS_PER_PARAMETER x n calibrated parameters (capped)")
+    evaluations_per_parameter: int = Field(
+        default=100, alias='EVALUATIONS_PER_PARAMETER', ge=1,
+        description="Model evaluations per calibrated parameter in 'per_parameter' budget mode")
+    budget_min_evaluations: int = Field(
+        default=100, alias='CALIBRATION_BUDGET_MIN_EVALUATIONS', ge=1,
+        description="Lower cap on the 'per_parameter' evaluation budget")
+    budget_max_evaluations: Optional[int] = Field(
+        default=None, alias='CALIBRATION_BUDGET_MAX_EVALUATIONS', ge=1,
+        description="Upper cap on the 'per_parameter' evaluation budget (unset = no cap)")
     final_evaluation_numerical_method: str = Field(default='ida', alias='FINAL_EVALUATION_NUMERICAL_METHOD')
     cleanup_parallel_dirs: bool = Field(default=True, alias='CLEANUP_PARALLEL_DIRS')
     checkpoint_interval: int = Field(default=10, alias='CHECKPOINT_INTERVAL', ge=1)
+    calibration_resume: bool = Field(
+        default=False,
+        alias='CALIBRATION_RESUME',
+        description='Resume an interrupted calibration from its resume-state checkpoint '
+                    '(written every CHECKPOINT_INTERVAL iterations) instead of starting '
+                    'over. Refused with an error when the parameters, bounds, objective '
+                    'or algorithm changed. Also set by the --resume CLI flag.'
+    )
     initial_guess: Optional[Dict[str, Any]] = Field(
         default=None,
         alias='INITIAL_GUESS',
@@ -455,7 +638,7 @@ class OptimizationConfig(BaseModel):
                     "warm-start files and model defaults."
     )
     skip_warm_start: Optional[bool] = Field(
-        default=None,
+        default=True,
         alias='SKIP_WARM_START',
         description='Skip warm-starting from previous best parameters. Unset defaults to '
                     'true (no warm start), so calibrations are reproducible regardless of '
@@ -477,17 +660,37 @@ class OptimizationConfig(BaseModel):
         description="Likelihood for uncertainty-aware metrics (e.g. 'gaussian')"
     )
     model_error_base: Optional[float] = Field(
-        default=None,
+        default=0.0,
         alias='MODEL_ERROR_BASE',
         description='Additive model error term for likelihood evaluation'
     )
     model_error_fraction: Optional[float] = Field(
-        default=None,
+        default=0.0,
         alias='MODEL_ERROR_FRACTION',
         description='Model error as a fraction of simulated value'
     )
+    likelihood_box_cox_lambda: float = Field(
+        default=0.3, alias='LIKELIHOOD_BOX_COX_LAMBDA', ge=0.0, le=1.0,
+        description='Box-Cox lambda of the LOGLIK_BC_AR1 residual error model '
+                    '(0 = log; controls how error grows with flow)'
+    )
+    likelihood_ar1_phi: Optional[float] = Field(
+        default=None, alias='LIKELIHOOD_AR1_PHI', gt=-1.0, lt=1.0,
+        description='Fixed AR(1) residual coefficient for LOGLIK_BC_AR1; unset = '
+                    'conditional least-squares estimate per simulation'
+    )
+    likelihood_sigma: Optional[float] = Field(
+        default=None, alias='LIKELIHOOD_SIGMA', gt=0.0,
+        description='Fixed innovation standard deviation (Box-Cox space) for '
+                    'LOGLIK_BC_AR1; unset = integrated out (Jeffreys prior)'
+    )
+    likelihood_epsilon: Optional[float] = Field(
+        default=None, alias='LIKELIHOOD_EPSILON', gt=0.0,
+        description='Zero-flow offset added before the Box-Cox transform; unset = '
+                    '1% of the mean observed flow'
+    )
     transfer_function_type: Optional[str] = Field(
-        default=None,
+        default='linear',
         alias='TRANSFER_FUNCTION_TYPE',
         description="Regionalization transfer function form (e.g. 'linear')"
     )
@@ -559,8 +762,9 @@ class OptimizationConfig(BaseModel):
     objective_metrics: Optional[Dict[str, str]] = Field(
         default=None,
         alias='OBJECTIVE_METRICS',
-        description="Primary metric per variable for multivariate objective. "
-                    "Example: {'STREAMFLOW': 'kge', 'SWE': 'nse'}"
+        description="Primary metric per variable for multivariate objective, overriding the "
+                    "bias-sensitive defaults (KGE; NSE for TWS; GMB_SCORE for GLACIER_MB). "
+                    "Example: {'STREAMFLOW': 'kge', 'GLACIER_MB': 'GMB_SCORE'}"
     )
 
     # Worker retry settings
@@ -634,6 +838,9 @@ class OptimizationConfig(BaseModel):
     lbfgs: Optional[LBFGSConfig] = Field(default_factory=LBFGSConfig)
     emulation: Optional[EmulationConfig] = Field(default_factory=EmulationConfig)
     multi_gauge: Optional[MultiGaugeConfig] = Field(default_factory=MultiGaugeConfig)
+    uncertainty: Optional[UncertaintyConfig] = Field(default_factory=UncertaintyConfig)
+    sensitivity: Optional[SensitivityConfig] = Field(default_factory=SensitivityConfig)
+    forcing_correction: Optional[ForcingCorrectionConfig] = Field(default_factory=ForcingCorrectionConfig)
 
     @field_validator('methods', mode='before')
     @classmethod

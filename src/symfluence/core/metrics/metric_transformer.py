@@ -33,7 +33,7 @@ from typing import Optional
 
 import numpy as np
 
-from .metrics import get_metric_info
+from .metrics import canonicalize_metric_name, get_metric_info
 
 
 class MetricTransformer:
@@ -74,6 +74,7 @@ class MetricTransformer:
 
     # Metrics where sign indicates direction but magnitude should be minimized
     # Both +10% and -10% PBIAS are equally bad, so we use -abs(value)
+    # Matched on the canonical name, so any capitalisation (PBias, Bias) counts.
     SIGNED_MINIMIZE_METRICS = {'PBIAS', 'pbias', 'bias', 'Bias', 'BIAS'}
 
     # Suffixes that indicate a flow transformation was applied
@@ -187,7 +188,7 @@ class MetricTransformer:
 
         # Signed minimize metrics: use negative absolute value
         # This ensures +10% PBIAS and -10% PBIAS are treated equally
-        if metric_name in cls.SIGNED_MINIMIZE_METRICS:
+        if canonicalize_metric_name(metric_name) in {'PBIAS', 'bias'}:
             return -abs(value)
 
         # Regular minimize metrics: simple negation

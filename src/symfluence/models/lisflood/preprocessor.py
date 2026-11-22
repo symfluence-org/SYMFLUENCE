@@ -114,8 +114,7 @@ class LisfloodPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         forest_frac = float(
             self._get_config_value(
                 lambda: self.config.model.lisflood.forest_fraction,
-                default=0.3,
-                dict_key="LISFLOOD_FOREST_FRACTION",
+                dict_key='LISFLOOD_FOREST_FRACTION',
             )
         )
 
@@ -358,8 +357,7 @@ class LisfloodPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         model_dt = int(
             self._get_config_value(
                 lambda: self.config.model.lisflood.forcing_timestep,
-                default=86400,
-                dict_key="LISFLOOD_FORCING_TIMESTEP",
+                dict_key='LISFLOOD_FORCING_TIMESTEP',
             )
         )
 
@@ -453,7 +451,8 @@ class LisfloodPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         from symfluence.core.modeling.mixins.pet_calculator import PETCalculatorMixin
 
         pet_method = self._get_config_value(
-            lambda: self.config.model.lisflood.pet_method, default="oudin", dict_key="LISFLOOD_PET_METHOD"
+            lambda: self.config.model.lisflood.pet_method,
+            dict_key='LISFLOOD_PET_METHOD',
         )
 
         doy = np.array([t.timetuple().tm_yday for t in times])
@@ -506,8 +505,7 @@ class LisfloodPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         model_dt = int(
             self._get_config_value(
                 lambda: self.config.model.lisflood.forcing_timestep,
-                default=86400,
-                dict_key="LISFLOOD_FORCING_TIMESTEP",
+                dict_key='LISFLOOD_FORCING_TIMESTEP',
             )
         )
         timestep_secs = str(model_dt)
@@ -738,7 +736,7 @@ class LisfloodPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # ---- write ----
         settings_file = self._get_config_value(
             lambda: self.config.model.lisflood.settings_file,
-            default="settings.xml",
+            dict_key='LISFLOOD_SETTINGS_FILE',
         )
         tree = ET.ElementTree(root)
         ET.indent(tree, space="  ")

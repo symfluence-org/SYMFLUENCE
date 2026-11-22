@@ -90,15 +90,11 @@ class CDSRegionalReanalysisHandler(BaseAcquisitionHandler, ABC):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Determine year-month combinations to process
-        dates = pd.date_range(self.start_date, self.end_date, freq='MS')
-        if dates.empty:
-            # Handle case where range is within a single month
-            ym_range = [(self.start_date.year, self.start_date.month)]
-        else:
-            ym_range = [(d.year, d.month) for d in dates]
-            # Ensure the end date's month is included if not already
-            if (self.end_date.year, self.end_date.month) not in ym_range:
-                ym_range.append((self.end_date.year, self.end_date.month))
+        # period_range includes the start month even when the start is mid-month
+        ym_range = [
+            (p.year, p.month)
+            for p in pd.period_range(self.start_date, self.end_date, freq='M')
+        ]
 
         chunk_files = []
 
@@ -1039,7 +1035,7 @@ class CARRAAcquirer(CDSRegionalReanalysisHandler):
     """
 
     def download(self, output_dir: Path) -> Path:
-        if self._get_config_value(lambda: self.config.forcing.carra_source, default='cds', dict_key='CARRA_SOURCE') == 'belgingur':
+        if self._get_config_value(lambda: self.config.forcing.carra_source, dict_key='CARRA_SOURCE') == 'belgingur':
             from .belgingur_carra import BelgingurCARRAAcquirer
             return BelgingurCARRAAcquirer(self.config, self.logger, self.reporting_manager).download(output_dir)
         return super().download(output_dir)

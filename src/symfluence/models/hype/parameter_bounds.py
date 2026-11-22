@@ -51,7 +51,7 @@ PARAMS: Dict[str, ParameterInfo] = {
     'tredb': ParameterInfo(0.1, 0.8, '-', 'Soil temp response coefficient B', 'et'),
     'rrcs1': ParameterInfo(0.001, 1.0, '1/day', 'Recession coefficient upper layer', 'soil'),
     'rrcs2': ParameterInfo(0.0001, 0.5, '1/day', 'Recession coefficient lower layer', 'soil'),
-    'rrcs3': ParameterInfo(0.0, 0.3, '1/°', 'Recession slope dependence', 'soil'),
+    'rrcs3': ParameterInfo(0.0, 0.005, '1/(day·%)', 'Recession slope dependence (slope_mean in %)', 'soil'),
     'wcwp': ParameterInfo(0.01, 0.3, '-', 'Wilting point water content', 'soil'),
     'wcfc': ParameterInfo(0.1, 0.6, '-', 'Field capacity', 'soil'),
     'wcep': ParameterInfo(0.2, 0.7, '-', 'Effective porosity', 'soil'),
