@@ -16,15 +16,23 @@ and applies them to a forcing dataset:
   reports out-of-sample skill (first half -> second half and the reverse) to
   choose the level;
 * stored as twelve monthly values per variable, with the source name and
-  training period.  :meth:`ForcingCorrection.apply` refuses a dataset from
+  training period.  :meth:`ForcingSourceCorrection.apply` refuses a dataset from
   another source: a new source (or a new model generation of the same source)
   needs its own fit.
 
 Pairs are best built after both products pass through the same mapping onto
 the model's units (HRUs or cells), so the fit sees what the model sees.
-Building them is source specific and left to the caller: :func:`fit_correction`
+Building them is source specific and left to the caller: :func:`fit_source_correction`
 takes a table with a ``time`` column, the source variables and their
 reference counterparts.
+
+This is not the shared hydrological ``FORCING_CORRECTION_*`` section
+(:mod:`symfluence.core.calibration.forcing_correction`).  The two compose in
+order: this source correction first maps the forecast forcing onto the
+reference product the model was calibrated on, then the model applies its
+calibrated ``FORCING_CORRECTION_*`` values (precipitation multiplier, snow
+multiplier, temperature offset) exactly as it did in calibration.  Any future
+config keys for this module use the ``FORCING_SOURCE_CORRECTION_*`` prefix.
 """
 from __future__ import annotations
 
@@ -75,7 +83,7 @@ class CorrectionSpec:
 
 
 @dataclass
-class ForcingCorrection:
+class ForcingSourceCorrection:
     """Fitted monthly factors for one forcing source."""
 
     source: str
@@ -103,7 +111,7 @@ class ForcingCorrection:
         return path
 
     @classmethod
-    def load(cls, path: Union[str, Path]) -> 'ForcingCorrection':
+    def load(cls, path: Union[str, Path]) -> 'ForcingSourceCorrection':
         d = json.loads(Path(path).read_text(encoding='utf-8'))
         return cls(source=d['source'], factors=d['factors'], kinds=d['kinds'],
                    clips=d.get('clips', {}), meta=d.get('meta', {}))
@@ -142,7 +150,7 @@ class ForcingCorrection:
                 corrected = corrected.clip(min=lo, max=hi)
             out[name] = corrected.assign_attrs(ds[name].attrs)
         stamp = self.meta.get('created', '')
-        return out.assign_attrs(ds.attrs, forcing_correction=f'{self.source}:{stamp}')
+        return out.assign_attrs(ds.attrs, forcing_source_correction=f'{self.source}:{stamp}')
 
     def _clip(self, name: str, values: np.ndarray) -> np.ndarray:
         lo, hi = (self.clips.get(name) or [None, None])
@@ -180,8 +188,8 @@ def _factors(pairs: pd.DataFrame, spec: CorrectionSpec) -> Dict[str, float]:
     return out
 
 
-def fit_correction(pairs: pd.DataFrame, specs: Sequence[CorrectionSpec], source: str,
-                   meta: Optional[Mapping[str, Any]] = None) -> ForcingCorrection:
+def fit_source_correction(pairs: pd.DataFrame, specs: Sequence[CorrectionSpec], source: str,
+                          meta: Optional[Mapping[str, Any]] = None) -> ForcingSourceCorrection:
     """Fit monthly factors from paired source/reference values.
 
     Args:
@@ -201,7 +209,7 @@ def fit_correction(pairs: pd.DataFrame, specs: Sequence[CorrectionSpec], source:
     info = {'created': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H%M'),
             'training_period': [str(times.min()), str(times.max())], 'n_pairs': int(len(clean)),
             'levels': {s.variable: s.level for s in specs}, **dict(meta or {})}
-    return ForcingCorrection(
+    return ForcingSourceCorrection(
         source=source,
         factors={s.variable: _factors(clean, s) for s in specs},
         kinds={s.variable: s.kind for s in specs},
@@ -234,7 +242,7 @@ def split_sample_test(pairs: pd.DataFrame, specs: Sequence[CorrectionSpec]) -> p
         raise ValidationError('split-sample test needs pairs in both halves of the period')
     rows = []
     for test, train, held in (('forward', a, b), ('reverse', b, a)):
-        corr = fit_correction(train, specs, source='split-test')
+        corr = fit_source_correction(train, specs, source='split-test')
         raw, fixed = _scores(held, specs), _scores(corr.apply_frame(held), specs)
         for s in specs:
             rows.append({'variable': s.variable, 'level': s.level, 'test': test, 'n_test': len(held),

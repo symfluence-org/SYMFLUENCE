@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Source-to-reference forcing correction** (`data/preprocessing/forcing_source_correction.py`): fit additive or
+  multiplicative factors (annual, seasonal or monthly pooling, stored as twelve monthly values) from paired values
+  of a forcing source (e.g. NWP forecasts) and the reference product a model was calibrated on, choose the pooling
+  with a split-sample test, and apply them to a forcing dataset (refuses another source). Library only, no config
+  keys yet; it runs before, and composes with, the shared `FORCING_CORRECTION_*` section (docs: forcing correction).
 - **Formal streamflow likelihood `LOGLIK_BC_AR1`**: Box-Cox (`LIKELIHOOD_BOX_COX_LAMBDA`, default 0.3) + AR(1)
   residual error model (Bates & Campbell, 2001; simplified Schoups & Vrugt, 2010). The innovation variance is
   integrated out under the Jeffreys prior unless `LIKELIHOOD_SIGMA` is set; φ is the conditional least-squares
