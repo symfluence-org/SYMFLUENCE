@@ -161,8 +161,8 @@ Calibration Parameters
      - null
      - Comma-separated list of parameters
    * - HYPE_SPINUP_DAYS
-     - 365
-     - Spinup period (days)
+     - null
+     - Spinup period (days); null derives it from SPINUP_PERIOD (365 if unset)
 
 Input File Specifications
 =========================
@@ -220,7 +220,7 @@ Contains model parameters (general + class-specific):
    gratk            0.100    ! Recession coefficient for runoff (1/day)
    rrcs1            0.200    ! Runoff coefficient for soil layer 1
    rrcs2            0.100    ! Runoff coefficient for soil layer 2
-   rrcs3            0.050    ! Runoff coefficient for soil layer 3
+   rrcs3            0.0002   ! Slope dependence of upper-layer recession (per % slope)
    ttmp             0.000    ! Threshold temperature for snowmelt (°C)
    cmlt             3.500    ! Degree-day factor for snowmelt (mm/°C/day)
 
@@ -248,7 +248,8 @@ Attributes for each subcatchment:
 - ``SUBID``: Subcatchment ID
 - ``AREA_km2``: Subcatchment area [km²]
 - ``ELEV_mean``: Mean elevation [m]
-- ``SLOPE``: Mean slope [-]
+- ``SLOPE`` (``slope_mean``): Mean land slope of the subcatchment [%], from the DEM slope raster
+  (``attributes/elevation/slope``); river slope × 100 is used when no raster exists
 - ``LAKE_frac``: Fraction covered by lakes
 - ``SLC#``: Soil-land class IDs
 - ``SLC#_frac``: Fraction of subcatchment in each class
@@ -264,6 +265,14 @@ Defines what each SLC represents:
    102      2           2          1       2          ! Clay soil + Agriculture + Crop type 1
    103      1           3          0       3          ! Sandy soil + Urban
    104      3           4          0       4          ! Organic soil + Wetland
+
+**Lakes.** Water land cover (``HYPE_LAKE_LANDUSE``, default IGBP 17) is modelled as HYPE's
+internal-lake class (special class code 2): precipitation falls on the lake, it evaporates
+at potential rate and drains through the lake rating curve (``gratk``/``gratp``). Related
+settings: ``HYPE_WATER_AS_ILAKE`` (default ``true``; ``false`` keeps water as a land class),
+``HYPE_ILAKE_DEPTH`` (``gldepi``, default 5 m) and ``HYPE_ILAKE_ICATCH`` (``gicatch``, share of
+local runoff routed through the lake, default 0). Outlet lakes are set per subcatchment with
+``HYPE_OUTLET_LAKES``.
 
 **5. ForcKey.txt** (Forcing Data Mapping)
 
@@ -514,7 +523,7 @@ Recommended Parameters
 - ``gratk``: Recession coefficient for runoff [1/day] (0.01-0.5)
 - ``rrcs1``: Runoff coefficient soil layer 1 [-] (0.05-0.5)
 - ``rrcs2``: Runoff coefficient soil layer 2 [-] (0.01-0.3)
-- ``rrcs3``: Runoff coefficient soil layer 3 [-] (0.001-0.1)
+- ``rrcs3``: Slope dependence of the upper-layer recession, added as ``rrcs3 * slope_mean`` [1/day per %] (0-0.005)
 - ``wcfc``: Soil water content at field capacity [-] (0.1-0.45)
 - ``wcwp``: Soil water content at wilting point [-] (0.05-0.25)
 
@@ -550,7 +559,7 @@ Typical ranges:
    gratk:     [0.01, 0.5]      # Recession coefficient [1/day]
    rrcs1:     [0.05, 0.5]      # Runoff coeff layer 1
    rrcs2:     [0.01, 0.3]      # Runoff coeff layer 2
-   rrcs3:     [0.001, 0.1]     # Runoff coeff layer 3
+   rrcs3:     [0.0, 0.005]     # Slope dependence, per % of slope_mean
 
    # Soil properties
    wcfc:      [0.1, 0.45]      # Field capacity [-]

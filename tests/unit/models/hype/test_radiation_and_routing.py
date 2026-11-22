@@ -23,8 +23,17 @@ def test_shortwave_energy_conversion_and_missing_day_rejection(tmp_path):
     out=pd.read_csv(proc.write_shortwave_obs([p]),sep='\t',index_col=0)
     assert list(out.columns)==['4','9']
     np.testing.assert_allclose(out.to_numpy(),8.64)
+    # A partial leading day is dropped, matching Pobs/Tobs, so all obs files align.
     ds.isel(time=slice(1,None)).to_netcdf(p)
-    with pytest.raises(ValidationError,match='Incomplete'):
+    out=pd.read_csv(proc.write_shortwave_obs([p]),sep='\t',index_col=0)
+    assert list(out.index)==['2010-01-02']
+    # A missing step inside the period is still rejected (irregular timestep).
+    dates3=pd.date_range('2010-01-01',periods=24,freq='3h')
+    ds3=xr.Dataset({'surface_downwelling_shortwave_flux': (('time','hru'), np.full((24,2),100.)),
+                    'hruId': ('hru',[4,9])}, coords={'time':dates3,'hru':[0,1]})
+    ds3.surface_downwelling_shortwave_flux.attrs['units']='W m-2'
+    ds3.isel(time=[i for i in range(24) if i!=10]).to_netcdf(p)
+    with pytest.raises(ValidationError,match='regular timestep'):
         proc.write_shortwave_obs([p])
 
 

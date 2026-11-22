@@ -193,7 +193,8 @@ class FileProcessor(ConfigMixin):
         # `--force-rerun` workflow flag) reprocesses every file unconditionally.
         force = bool(self._get_config_value(
             lambda: self.config.system.force_run_all_steps,
-            default=False, dict_key='FORCE_RUN_ALL_STEPS'))
+            dict_key='FORCE_RUN_ALL_STEPS',
+        ))
 
         for file in forcing_files:
             output_file = self.determine_output_filename(file)

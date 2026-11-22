@@ -18,6 +18,9 @@ def get_raven_build_instructions():
         default_exe="Raven",
         repository="https://github.com/CSHS-CWRA/RavenHydroFramework.git",
         branch="main",
+        # The build checks this commit out (the finite-glacier patch was
+        # written against it); pin the clone to it too.
+        git_hash="e7e28688c72a71726853e6a0a24ccda0d266b55f",
         install_dir="raven",
         build_commands=[
             f'''set -e

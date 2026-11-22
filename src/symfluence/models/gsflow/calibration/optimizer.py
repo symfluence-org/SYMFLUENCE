@@ -46,8 +46,7 @@ class GSFLOWModelOptimizer(BaseModelOptimizer):
     def _get_final_file_manager_path(self) -> Path:
         control_file = self._get_config_value(
             lambda: self.config.model.gsflow.control_file,
-            default='gsflow.control',
-            dict_key='GSFLOW_CONTROL_FILE'
+            dict_key='GSFLOW_CONTROL_FILE',
         )
         return self.gsflow_setup_dir / control_file
 

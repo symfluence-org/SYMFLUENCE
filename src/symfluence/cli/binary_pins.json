@@ -1,0 +1,191 @@
+{
+  "_comment": "Exact upstream commit each external tool is built from. 'ref' is the branch/tag the pin was resolved from (metadata for humans). Bump with: python scripts/update_binary_pins.py --write [tool ...]. A git_hash written in a recipe overrides its entry here.",
+  "tools": {
+    "clm": {
+      "repository": "https://github.com/ESCOMP/CTSM.git",
+      "ref": "ctsm5.3.012",
+      "commit": "ab466d6f9789ca3df2c72bda46cf7afed2d04102",
+      "resolved": "2026-11-19"
+    },
+    "clmparflow": {
+      "repository": "https://github.com/parflow/parflow.git",
+      "ref": "master",
+      "commit": "a8ffce573edfa46f3b41886dc28781b0faa5fa32",
+      "resolved": "2026-11-19"
+    },
+    "crhm": {
+      "repository": "https://github.com/CentreForHydrology/CRHM.git",
+      "ref": "master",
+      "commit": "71f7d4d11fb98174f2ca68762bc75207bfbd054f",
+      "resolved": "2026-11-19"
+    },
+    "cwatm": {
+      "repository": "https://github.com/iiasa/CWatM.git",
+      "ref": "main",
+      "commit": "fc35ef67f306b31b8bac2178f5ce8c60384bbf7a",
+      "resolved": "2026-11-19"
+    },
+    "datatool": {
+      "repository": "https://github.com/kasra-keshavarz/datatool.git",
+      "ref": null,
+      "commit": "3f90f2c4e208e6a21e0a8fdf3b1451e2e2bdfd23",
+      "resolved": "2026-11-19"
+    },
+    "droute": {
+      "repository": "https://github.com/DarriEy/dRoute.git",
+      "ref": "main",
+      "commit": "760d266e18540ae856538f53616b99a40a6933db",
+      "resolved": "2026-11-19"
+    },
+    "enzyme": {
+      "repository": "https://github.com/EnzymeAD/Enzyme.git",
+      "ref": "main",
+      "commit": "0fa6f8401af6b8211a783213643692be20508842",
+      "resolved": "2026-11-19"
+    },
+    "fuse": {
+      "repository": "https://github.com/martynpclark/fuse.git",
+      "ref": "bugfix/runpre",
+      "commit": "bb6803eda239cff8cc0bd52a8f0494dbefdac768",
+      "resolved": "2026-11-19"
+    },
+    "gistool": {
+      "repository": "https://github.com/kasra-keshavarz/gistool.git",
+      "ref": null,
+      "commit": "a3c63f0169f2e26101b55585074c2a9077de92bc",
+      "resolved": "2026-11-19"
+    },
+    "gsflow": {
+      "repository": "https://github.com/rniswon/gsflow_v2.git",
+      "ref": "master",
+      "commit": "1d72fa240eeb7c5ef25f76b21a4d92c6c8a9524e",
+      "resolved": "2026-11-19"
+    },
+    "hype": {
+      "repository": "https://git.code.sf.net/p/hype/code",
+      "ref": null,
+      "commit": "fa9def0d359685c9cde0763f7040e253c345bb65",
+      "resolved": "2026-11-19"
+    },
+    "ignacio": {
+      "repository": "https://github.com/KatherineHopeReece/Fire-Engine-Framework.git",
+      "ref": null,
+      "commit": "b0defb24bffb9ad5e4339d13d703fd298e171b3d",
+      "resolved": "2026-11-19"
+    },
+    "mesh": {
+      "repository": "https://github.com/MESH-Model/MESH-Dev.git",
+      "ref": null,
+      "commit": "f64550e9a688c084f0cb40b90bf6654f7a544c83",
+      "resolved": "2026-11-19"
+    },
+    "mhm": {
+      "repository": "https://git.ufz.de/mhm/mhm.git",
+      "ref": "main",
+      "commit": "394efdc0fec1ad93738adb665818a4de2067bfbf",
+      "resolved": "2026-11-19"
+    },
+    "mizuroute": {
+      "repository": "https://github.com/ESCOMP/mizuRoute.git",
+      "ref": "serial",
+      "commit": "20cfcb13ecde584452ac4d8d71dade5c7718842b",
+      "resolved": "2026-11-19"
+    },
+    "modflow": {
+      "repository": "https://github.com/MODFLOW-ORG/modflow6.git",
+      "ref": "master",
+      "commit": "cea8ddbc4028b38ab572318602bb1dc4ce36408b",
+      "resolved": "2026-11-19"
+    },
+    "ngen": {
+      "repository": "https://github.com/CIROH-UA/ngen",
+      "ref": "ngiab",
+      "commit": "a8044482fd0acef94da6c78c6eb3aa02910f2ae0",
+      "resolved": "2026-11-19"
+    },
+    "noahmp": {
+      "repository": "https://github.com/NOAA-OWP/noah-owp-modular.git",
+      "ref": "main",
+      "commit": "0242a96c2a90b2c1501ff56a1e457a932a49c8ac",
+      "resolved": "2026-11-19"
+    },
+    "parflow": {
+      "repository": "https://github.com/parflow/parflow.git",
+      "ref": "master",
+      "commit": "a8ffce573edfa46f3b41886dc28781b0faa5fa32",
+      "resolved": "2026-11-19"
+    },
+    "pcrglobwb": {
+      "repository": "https://github.com/UU-Hydro/PCR-GLOBWB_model.git",
+      "ref": "master",
+      "commit": "41e08fa344b5774c4079034e0014dce6a2170e8b",
+      "resolved": "2026-11-19"
+    },
+    "pihm": {
+      "repository": "https://github.com/PSUmodeling/MM-PIHM.git",
+      "ref": "main",
+      "commit": "149c990e4ba378008bb8582e642c62e960eba78f",
+      "resolved": "2026-11-19"
+    },
+    "prms": {
+      "repository": "https://github.com/nhm-usgs/prms.git",
+      "ref": "master",
+      "commit": "9ba5d31b64f633431a123ae5958033002ef97d1b",
+      "resolved": "2026-11-19"
+    },
+    "rhessys": {
+      "repository": "https://github.com/RHESSys/RHESSys.git",
+      "ref": null,
+      "commit": "f9d1bbf8d161aa55b6a51061dc320188ead44962",
+      "resolved": "2026-11-19"
+    },
+    "summa": {
+      "repository": "https://github.com/CH-Earth/summa.git",
+      "ref": "develop_sundials",
+      "commit": "22d479b9d44f769db4d2c2489bcbf19083bd6283",
+      "resolved": "2026-11-19"
+    },
+    "swat": {
+      "repository": "https://github.com/WatershedModels/SWAT.git",
+      "ref": "master",
+      "commit": "29c504b6099506950b4d7e3a7a4217bfc6e22e69",
+      "resolved": "2026-11-19"
+    },
+    "taudem": {
+      "repository": "https://github.com/dtarb/TauDEM.git",
+      "ref": "v5.4.0",
+      "commit": "a41c9cdeaa7d54fdd89ea39dd70d94c98c69e3d0",
+      "resolved": "2026-11-19"
+    },
+    "troute": {
+      "repository": "https://github.com/NOAA-OWP/t-route.git",
+      "ref": null,
+      "commit": "12a8eae0cdfed437143c590659fa7077605a5e70",
+      "resolved": "2026-11-19"
+    },
+    "vic": {
+      "repository": "https://github.com/UW-Hydro/VIC.git",
+      "ref": "develop",
+      "commit": "8f6cc0661bdc67c4f6caabdd4dcd0b8782517435",
+      "resolved": "2026-11-19"
+    },
+    "watflood": {
+      "repository": "https://github.com/kasra-keshavarz/watflood.git",
+      "ref": "main",
+      "commit": "e91e7239c5a89ed567f195f6250da503aa07842e",
+      "resolved": "2026-11-19"
+    },
+    "wmfire": {
+      "repository": "https://github.com/RHESSys/RHESSys.git",
+      "ref": null,
+      "commit": "f9d1bbf8d161aa55b6a51061dc320188ead44962",
+      "resolved": "2026-11-19"
+    },
+    "wrfhydro": {
+      "repository": "https://github.com/NCAR/wrf_hydro_nwm_public.git",
+      "ref": "main",
+      "commit": "bedfd974f61d9956ad96706f2276f664742fcdbf",
+      "resolved": "2026-11-19"
+    }
+  }
+}

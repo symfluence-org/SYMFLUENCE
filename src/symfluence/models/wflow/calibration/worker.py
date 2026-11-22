@@ -15,11 +15,10 @@ import xarray as xr
 
 from symfluence.core.calibration.workers.base_worker import (
     MACOS_MALLOC_QUIET_ENV,
-    BaseWorker,
     run_worker_task,
 )
+from symfluence.core.calibration.workers.streamflow_worker import StreamflowWorker
 from symfluence.core.exceptions import ModelExecutionError
-from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
 from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.path_resolver import resolve_install_dir
@@ -29,14 +28,13 @@ from symfluence.models.wflow.lumped_discharge import is_runoff_flux_output, lump
 
 
 @R.workers.add('WFLOW')
-class WflowWorker(BaseWorker):
+class WflowWorker(StreamflowWorker):
     """Worker for Wflow model calibration."""
 
     def __init__(self, config=None, logger=None):
         super().__init__(config, logger)
         self._routing_params = None  # Populated per iteration by apply_parameters
 
-    _streamflow_metrics = StreamflowMetrics()
 
     def apply_parameters(self, params, settings_dir, **kwargs):
         try:
@@ -50,7 +48,11 @@ class WflowWorker(BaseWorker):
             data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
             original_settings = data_dir / f'domain_{domain_name}' / 'settings' / 'WFLOW'
             settings_dir = Path(settings_dir)
-            staticmaps_name = resolve_config_value(config, lambda: config.model.wflow.staticmaps_file, 'wflow_staticmaps.nc', 'WFLOW_STATICMAPS_FILE')
+            staticmaps_name = resolve_config_value(
+                config,
+                lambda: config.model.wflow.staticmaps_file,
+                dict_key='WFLOW_STATICMAPS_FILE',
+            )
 
             # Copy staticmaps from original settings to process directory
             original_file = original_settings / staticmaps_name
@@ -59,7 +61,11 @@ class WflowWorker(BaseWorker):
                 shutil.copy2(original_file, target_file)
 
             # Copy and patch the TOML config for process-specific paths
-            config_file = resolve_config_value(config, lambda: config.model.wflow.config_file, 'wflow_sbm.toml', 'WFLOW_CONFIG_FILE')
+            config_file = resolve_config_value(
+                config,
+                lambda: config.model.wflow.config_file,
+                dict_key='WFLOW_CONFIG_FILE',
+            )
             original_toml = original_settings / config_file
             target_toml = settings_dir / config_file
             out_dir = kwargs.get('output_dir') or kwargs.get('proc_output_dir')
@@ -112,11 +118,19 @@ class WflowWorker(BaseWorker):
 
     def run_model(self, config, settings_dir, output_dir, **kwargs):
         try:
-            install_path = resolve_config_value(config, lambda: config.model.wflow.install_path, 'default', 'WFLOW_INSTALL_PATH')
+            install_path = resolve_config_value(
+                config,
+                lambda: config.model.wflow.install_path,
+                dict_key='WFLOW_INSTALL_PATH',
+            )
             data_dir = resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR')
             exe_path = resolve_install_dir(install_path, data_dir, 'installs/wflow/bin') / 'wflow_cli'
-            config_file = resolve_config_value(config, lambda: config.model.wflow.config_file, 'wflow_sbm.toml', 'WFLOW_CONFIG_FILE')
-            timeout = int(resolve_config_value(config, lambda: config.model.wflow.timeout, 7200, 'WFLOW_TIMEOUT'))
+            config_file = resolve_config_value(
+                config,
+                lambda: config.model.wflow.config_file,
+                dict_key='WFLOW_CONFIG_FILE',
+            )
+            timeout = int(resolve_config_value(config, lambda: config.model.wflow.timeout, dict_key='WFLOW_TIMEOUT'))
             if not exe_path.exists():
                 self.logger.error(f"wflow_cli not found at {exe_path}")
                 return False
@@ -127,7 +141,11 @@ class WflowWorker(BaseWorker):
             output_dir = Path(output_dir).resolve()
             toml_path = settings_dir / config_file
             self._patch_toml(toml_path, toml_path, settings_dir, output_dir)
-            if resolve_config_value(config, lambda: config.model.wflow.calibration_only_period, False, 'WFLOW_CALIBRATION_ONLY_PERIOD'):
+            if resolve_config_value(
+                config,
+                lambda: config.model.wflow.calibration_only_period,
+                dict_key='WFLOW_CALIBRATION_ONLY_PERIOD',
+            ):
                 end = (config['EXPERIMENT_TIME_END'] if kwargs.get('final_evaluation', False)
                        else split_period(config['CALIBRATION_PERIOD'], allow_extra=True, strict=True)[1])
                 native_end = pd.Timestamp(end).normalize() + pd.Timedelta(days=1)
@@ -158,65 +176,46 @@ class WflowWorker(BaseWorker):
             self.logger.error(f"Wflow execution failed: {e}")
             return False
 
-    def calculate_metrics(self, output_dir, config, **kwargs):
-        # Note: base_worker calls calculate_metrics(task.output_dir, task.config)
-        try:
-            sim = self._load_simulated_streamflow(
-                Path(output_dir), config, self._routing_params or None
-            )
-            if sim is None:
-                self.logger.warning(f"No sim data found in {output_dir}")
-                return {'KGE': -999.0, 'NSE': -999.0}
-            obs = self._load_observations(config)
-            if obs is None:
-                self.logger.warning("No observation data found")
-                return {'KGE': -999.0, 'NSE': -999.0}
-            # Ensure datetime index and resample sub-daily to daily
-            if not isinstance(sim.index, pd.DatetimeIndex):
-                sim.index = pd.to_datetime(sim.index)
-            if not isinstance(obs.index, pd.DatetimeIndex):
-                obs.index = pd.to_datetime(obs.index)
-            if len(sim) > 1:
-                median_dt = pd.Series(sim.index).diff().median()
-                if median_dt < pd.Timedelta(days=1):
-                    sim = sim.resample('D').mean()
-            # Filter to calibration period (excludes cold-start spinup)
-            cal_period = (resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
-                          if isinstance(config, dict) else '')
-            parts = split_period(cal_period)
-            if parts is not None:
-                sim = sim.loc[parts[0]:parts[1]]  # type: ignore[misc]
-                obs = obs.loc[parts[0]:parts[1]]  # type: ignore[misc]
-            sim, obs = sim.align(obs, join='inner')
-            common_idx = sim.dropna().index.intersection(obs.dropna().index)
-            sim, obs = sim.loc[common_idx], obs.loc[common_idx]
-            if len(sim) < 30:
-                self.logger.warning(f"Insufficient data: n={len(sim)} < 30")
-                return {'KGE': -999.0, 'NSE': -999.0}
-            self.logger.info(
-                f"Metrics: n={len(sim)}, sim_mean={sim.mean():.2f}, obs_mean={obs.mean():.2f}, "
-                f"output_dir={output_dir}, cal_period={cal_period}"
-            )
-            metrics = self._streamflow_metrics.calculate_metrics(obs.values, sim.values)
-            if any(str(k).upper() == 'SEASONAL_BIAS_SCORE'
-                   for k in (resolve_config_value(config, lambda: config.optimization.composite_metric, None, 'COMPOSITE_METRIC') or {})):
-                from .seasonal import seasonal_bias_score
-                metrics['seasonal_bias_score'] = seasonal_bias_score(sim, obs)
-            if resolve_config_value(config, lambda: config.model.wflow.cryosphere_constraints, False, 'WFLOW_CRYOSPHERE_CONSTRAINTS'):
-                from ..cryosphere import calculate_constraints
-                project = Path(config['SYMFLUENCE_DATA_DIR']) / ('domain_' + config['DOMAIN_NAME'])
-                # Spatial geometry is immutable during calibration; parameter updates
-                # cannot change the areas used to weight snow/ice observations.
-                metrics.update(calculate_constraints(
-                    output_dir, project / 'settings/WFLOW', project, cal_period,
-                    resolve_config_value(config, lambda: config.model.wflow.snow_cover_error_scale, .2, 'WFLOW_SNOW_COVER_ERROR_SCALE'),
-                    resolve_config_value(config, lambda: config.model.wflow.glacier_mb_error_scale, 1., 'WFLOW_GLACIER_MB_ERROR_SCALE'),
-                    resolve_config_value(config, lambda: config.model.wflow.snow_cover_threshold_mm, 5., 'WFLOW_SNOW_COVER_THRESHOLD_MM')))
-            self.logger.info(f"Computed metrics: {metrics}")
-            return metrics
-        except Exception as e:  # noqa: BLE001
-            self.logger.error(f"Metric calculation failed: {e}")
-            return {'KGE': -999.0, 'NSE': -999.0}
+    def read_simulated_streamflow(self, output_dir, config, **kwargs):
+        """This trial's outlet discharge (m3/s), daily means when Wflow ran sub-daily."""
+        sim = self._load_simulated_streamflow(Path(output_dir), config, self._routing_params or None)
+        return None if sim is None else self.daily_mean_if_subdaily(sim)
+
+    def additional_metrics(self, output_dir, config, *, project_dir, sim, obs, **kwargs):
+        """Seasonal bias (when a COMPOSITE_METRIC component) and cryosphere constraints."""
+        metrics: Dict[str, Any] = {}
+        if any(str(k).upper() == 'SEASONAL_BIAS_SCORE'
+               for k in (resolve_config_value(config, lambda: config.optimization.composite_metric, None, 'COMPOSITE_METRIC') or {})):
+            from .seasonal import seasonal_bias_score
+            metrics['seasonal_bias_score'] = seasonal_bias_score(sim, obs)
+        if resolve_config_value(
+            config,
+            lambda: config.model.wflow.cryosphere_constraints,
+            dict_key='WFLOW_CRYOSPHERE_CONSTRAINTS',
+        ):
+            from ..cryosphere import calculate_constraints
+
+            # Spatial geometry is immutable during calibration; parameter updates
+            # cannot change the areas used to weight snow/ice observations.
+            metrics.update(calculate_constraints(
+                output_dir, project_dir / 'settings/WFLOW', project_dir,
+                resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD'),
+                resolve_config_value(
+                    config,
+                    lambda: config.model.wflow.snow_cover_error_scale,
+                    dict_key='WFLOW_SNOW_COVER_ERROR_SCALE',
+                ),
+                resolve_config_value(
+                    config,
+                    lambda: config.model.wflow.glacier_mb_error_scale,
+                    dict_key='WFLOW_GLACIER_MB_ERROR_SCALE',
+                ),
+                resolve_config_value(
+                    config,
+                    lambda: config.model.wflow.snow_cover_threshold_mm,
+                    dict_key='WFLOW_SNOW_COVER_THRESHOLD_MM',
+                )))
+        return metrics
 
     def _load_simulated_streamflow(self, output_dir: Path, config: dict = None, routing_params: dict = None):
         """Load Q from Wflow CSV or netCDF output.
@@ -270,7 +269,7 @@ class WflowWorker(BaseWorker):
 
     def _find_run_toml(self, output_dir: Path, config: dict = None):
         """The run's TOML: beside the outputs, else the domain settings."""
-        toml_name = resolve_config_value(config, lambda: config.model.wflow.config_file, 'wflow_sbm.toml', 'WFLOW_CONFIG_FILE') if config else 'wflow_sbm.toml'
+        toml_name = resolve_config_value(config, lambda: config.model.wflow.config_file, dict_key='WFLOW_CONFIG_FILE') if config else 'wflow_sbm.toml'
         # Search multiple possible locations for the TOML
         search_dirs = [output_dir, output_dir.parent / 'settings', output_dir.parent]
         # Also check the original domain settings (works during DDS calibration)
@@ -293,22 +292,12 @@ class WflowWorker(BaseWorker):
     def _staticmaps_path(config) -> Path:
         domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
         data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
-        staticmaps_name = resolve_config_value(config, lambda: config.model.wflow.staticmaps_file, 'wflow_staticmaps.nc', 'WFLOW_STATICMAPS_FILE')
+        staticmaps_name = resolve_config_value(
+            config,
+            lambda: config.model.wflow.staticmaps_file,
+            dict_key='WFLOW_STATICMAPS_FILE',
+        )
         return data_dir / f'domain_{domain_name}' / 'settings' / 'WFLOW' / staticmaps_name
-
-    def _load_observations(self, config):
-        try:
-            domain_name = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
-            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
-            project_dir = data_dir / f'domain_{domain_name}'
-            values, index = self._streamflow_metrics.load_observations(
-                config, project_dir, domain_name, resample_freq=None,
-            )
-            if values is None or index is None:
-                return None
-            return pd.Series(values, index=index, name='discharge_cms')
-        except Exception:  # noqa: BLE001
-            return None
 
     @staticmethod
     def evaluate_worker_function(task_data):

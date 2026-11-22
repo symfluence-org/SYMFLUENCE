@@ -87,7 +87,10 @@ class SUMMAParameterManager(BaseParameterManager):
         self._profiler_ctx = ProfilerContext("summa_parameter_manager")
 
         # Parse parameter lists from config
-        local_params_raw = self._get_config_value(lambda: self.config.model.summa.params_to_calibrate, default='', dict_key='PARAMS_TO_CALIBRATE') or ''
+        local_params_raw = self._get_config_value(
+            lambda: self.config.model.summa.params_to_calibrate,
+            dict_key='PARAMS_TO_CALIBRATE',
+        ) or ''
         basin_params_raw = self._get_config_value(lambda: None, default='', dict_key='BASIN_PARAMS_TO_CALIBRATE') or ''
         self.local_params = [p.strip() for p in str(local_params_raw).split(',') if p.strip()]
         self.basin_params = [p.strip() for p in str(basin_params_raw).split(',') if p.strip()]
@@ -124,7 +127,7 @@ class SUMMAParameterManager(BaseParameterManager):
         # Regionalization setup
         self._regionalization_method = self._get_config_value(
             lambda: self.config.model.summa.parameter_regionalization,
-            default='lumped', dict_key='PARAMETER_REGIONALIZATION'
+            dict_key='PARAMETER_REGIONALIZATION',
         )
         self._regionalization = None  # Lazy-initialized in _init_regionalization()
         self._regionalization_initialized = False
@@ -588,8 +591,9 @@ class SUMMAParameterManager(BaseParameterManager):
             success = success and self._generate_trial_params_file(params)
             if PRECIP_MULT_PARAM in forcing_values:
                 file_manager = self._get_config_value(
-                    lambda: self.config.model.summa.filemanager, default='fileManager.txt',
-                    dict_key='SETTINGS_SUMMA_FILEMANAGER')
+                    lambda: self.config.model.summa.filemanager,
+                    dict_key='SETTINGS_SUMMA_FILEMANAGER',
+                )
                 success = success and apply_precip_multiplier(
                     self.settings_dir, forcing_values[PRECIP_MULT_PARAM], self.logger, file_manager)
             if self.depth_params:

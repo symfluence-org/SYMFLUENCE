@@ -14,10 +14,8 @@ from typing import Dict, Optional
 import numpy as np
 import pandas as pd
 
-from symfluence.core.calibration.workers.base_worker import BaseWorker
-from symfluence.core.metrics import StreamflowMetrics
+from symfluence.core.calibration.workers.streamflow_worker import StreamflowWorker
 from symfluence.core.mixins.config import resolve_config_value
-from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.path_resolver import resolve_install_dir
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
@@ -27,10 +25,9 @@ from .parameter_manager import PCRGLOBWBParameterManager
 
 
 @R.workers.add('PCRGLOBWB')
-class PCRGLOBWBWorker(BaseWorker):
+class PCRGLOBWBWorker(StreamflowWorker):
     """Calibration worker for PCR-GLOBWB."""
 
-    _streamflow_metrics = StreamflowMetrics()
 
     def apply_parameters(self, params: Dict[str, float], settings_dir: Path, **kwargs) -> bool:
         routing_params = {k: v for k, v in params.items() if k.startswith('ROUTE_')}
@@ -114,7 +111,11 @@ class PCRGLOBWBWorker(BaseWorker):
         env = dict(os.environ)
 
         # PCR-GLOBWB install path
-        install_path = resolve_config_value(config, lambda: config.model.pcrglobwb.install_path, 'default', 'PCRGLOBWB_INSTALL_PATH')
+        install_path = resolve_config_value(
+            config,
+            lambda: config.model.pcrglobwb.install_path,
+            dict_key='PCRGLOBWB_INSTALL_PATH',
+        )
         data_dir = resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR')
         pcrglobwb_dir = resolve_install_dir(install_path, data_dir, 'installs/pcrglobwb')
 
@@ -128,11 +129,15 @@ class PCRGLOBWBWorker(BaseWorker):
             env['CONDA_PREFIX'] = pcraster_prefix
             env['PATH'] = f"{pcraster_prefix}/bin:{env.get('PATH', '')}"
 
-        exe_name = resolve_config_value(config, lambda: config.model.pcrglobwb.exe, 'deterministic_runner.py', 'PCRGLOBWB_EXE')
+        exe_name = resolve_config_value(config, lambda: config.model.pcrglobwb.exe, dict_key='PCRGLOBWB_EXE')
         runner_script = pcrglobwb_dir / exe_name
         cmd = [sys.executable, str(runner_script), str(ini_path)]
 
-        timeout = int(resolve_config_value(config, lambda: config.model.pcrglobwb.timeout, 14400, 'PCRGLOBWB_TIMEOUT'))
+        timeout = int(resolve_config_value(
+            config,
+            lambda: config.model.pcrglobwb.timeout,
+            dict_key='PCRGLOBWB_TIMEOUT',
+        ))
         try:
             result = run_subprocess(
                 cmd, cwd=str(settings_dir), env=env,
@@ -147,39 +152,10 @@ class PCRGLOBWBWorker(BaseWorker):
             self.logger.warning(f"PCR-GLOBWB timed out after {timeout}s")
             return False
 
-    def calculate_metrics(self, output_dir: Path, config: Dict, **kwargs) -> Dict[str, float]:
-        try:
-            sim = self._load_simulated_streamflow(output_dir, config)
-            obs = self._load_observations(config)
-
-            if sim is None or obs is None or len(sim) == 0 or len(obs) == 0:
-                return {'KGE': -999.0, 'NSE': -999.0}
-
-            # Resample sub-daily to daily if needed
-            if hasattr(sim.index, 'freq') and sim.index.freq and sim.index.freq.n < 86400:
-                sim = sim.resample('D').mean()
-
-            # Filter to calibration period
-            cal_period = resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
-            cal_window = split_period(cal_period)
-            if cal_window is not None:
-                sim = sim[cal_window[0]:cal_window[1]]
-                obs = obs[cal_window[0]:cal_window[1]]
-
-            # Align
-            combined = pd.concat([sim.rename('sim'), obs.rename('obs')], axis=1).dropna()
-            if len(combined) < 30:
-                self.logger.warning(f"Only {len(combined)} aligned data points")
-                return {'KGE': -999.0, 'NSE': -999.0}
-
-            metrics = self._streamflow_metrics.calculate_metrics(
-                combined['obs'].values, combined['sim'].values,
-                metrics=self._requested_metrics(config),
-            )
-            return metrics
-        except Exception as e:  # noqa: BLE001
-            self.logger.error(f"Metric calculation failed: {e}")
-            return {'KGE': -999.0, 'NSE': -999.0}
+    def read_simulated_streamflow(self, output_dir: Path, config: Dict, **kwargs) -> Optional[pd.Series]:
+        """This trial's outlet discharge (m3/s), daily means when the output is sub-daily."""
+        sim = self._load_simulated_streamflow(Path(output_dir), config)
+        return None if sim is None else self.daily_mean_if_subdaily(sim)
 
     def _load_simulated_streamflow(self, output_dir: Path, config: Dict) -> Optional[pd.Series]:
         """Load discharge from PCR-GLOBWB NetCDF output."""
@@ -218,19 +194,6 @@ class PCRGLOBWBWorker(BaseWorker):
 
         self.logger.error(f"No discharge output found in {output_dir}")
         return None
-
-    def _load_observations(self, config: Dict) -> Optional[pd.Series]:
-        """Load observed streamflow (model-ready store first, CSV fallback)."""
-        data_dir = config.get('SYMFLUENCE_DATA_DIR', '.')
-        domain = resolve_config_value(config, lambda: config.domain.name, '', 'DOMAIN_NAME')
-        project_dir = Path(data_dir) / f'domain_{domain}'
-        values, index = self._streamflow_metrics.load_observations(
-            config, project_dir, domain, resample_freq=None,
-        )
-        if values is None or index is None:
-            self.logger.error("Observations not found (store or preprocessed CSV)")
-            return None
-        return pd.Series(values, index=index, name='discharge_cms').dropna()
 
     @staticmethod
     def _apply_routing(q: pd.Series, params: Dict[str, float]) -> pd.Series:

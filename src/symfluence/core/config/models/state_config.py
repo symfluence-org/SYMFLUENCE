@@ -49,12 +49,34 @@ class EnKFConfig(BaseModel):
         default=1.0, alias='ENKF_TEMP_PERTURBATION_STD',
         description='Additive std for temperature (K)'
     )
+    forcing_correlation_hours: float = Field(
+        default=24.0, alias='ENKF_FORCING_CORRELATION_HOURS', ge=0.0,
+        description=(
+            'e-folding time (hours) of the AR(1) forcing perturbations; '
+            '0 = white noise (independent at every timestep)'
+        )
+    )
     obs_error_std: float = Field(
         default=0.1, alias='ENKF_OBS_ERROR_STD',
-        description='Relative observation error std'
+        description=(
+            "Relative observation error std (b in sigma = a + b*Q_obs for "
+            "'heteroscedastic'); the std itself in model units for 'absolute'"
+        )
     )
-    obs_error_type: Literal['relative', 'absolute'] = Field(
-        default='relative', alias='ENKF_OBS_ERROR_TYPE'
+    obs_error_abs: Optional[float] = Field(
+        default=None, alias='ENKF_OBS_ERROR_ABS', ge=0.0,
+        description=(
+            "Absolute observation error floor a (m3/s) in sigma = a + b*Q_obs "
+            "('heteroscedastic'); None = 1% of the mean observed discharge"
+        )
+    )
+    obs_error_type: Literal['heteroscedastic', 'relative', 'absolute'] = Field(
+        default='heteroscedastic', alias='ENKF_OBS_ERROR_TYPE',
+        description=(
+            "Streamflow observation error model: 'heteroscedastic' "
+            "sigma = a + b*Q_obs, 'relative' sigma = max(b*Q_obs, floor), "
+            "'absolute' sigma = ENKF_OBS_ERROR_STD"
+        )
     )
     filter_variant: Literal['stochastic', 'deterministic'] = Field(
         default='stochastic', alias='ENKF_FILTER_VARIANT'
@@ -82,6 +104,42 @@ class EnKFConfig(BaseModel):
     estimate_parameters: bool = Field(
         default=False, alias='ENKF_ESTIMATE_PARAMS',
         description='Joint state-parameter estimation'
+    )
+    precip_bias_state: bool = Field(
+        default=False, alias='ENKF_PRECIP_BIAS_STATE',
+        description=(
+            'Augment the state with a multiplicative precipitation bias '
+            '(estimated in log space) that the filter updates'
+        )
+    )
+    precip_bias_std: float = Field(
+        default=0.2, alias='ENKF_PRECIP_BIAS_STD', ge=0.0,
+        description='Initial log-space std of the precipitation bias state'
+    )
+    precip_bias_walk_std: float = Field(
+        default=0.01, alias='ENKF_PRECIP_BIAS_WALK_STD', ge=0.0,
+        description=(
+            'Per-timestep random-walk std of the log precipitation bias '
+            '(keeps the bias ensemble from collapsing)'
+        )
+    )
+    open_loop: bool = Field(
+        default=True, alias='ENKF_OPEN_LOOP',
+        description=(
+            'Also run the same perturbed ensemble without updates (open-loop '
+            'baseline) and report skill relative to it'
+        )
+    )
+    forecast_lead_days: float = Field(
+        default=0.0, alias='ENKF_FORECAST_LEAD_DAYS', ge=0.0,
+        description=(
+            'Issue ensemble forecasts of this many days from the analysis '
+            'and score them by lead time (0 = off)'
+        )
+    )
+    forecast_issue_interval: int = Field(
+        default=1, alias='ENKF_FORECAST_ISSUE_INTERVAL', ge=1,
+        description='Issue a forecast every N timesteps after warm-up'
     )
 
 

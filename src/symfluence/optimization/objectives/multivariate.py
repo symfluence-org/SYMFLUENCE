@@ -14,9 +14,29 @@ from __future__ import annotations
 
 from typing import Dict
 
+from symfluence.core.metrics.metric_transformer import MetricTransformer
 from symfluence.core.registries import R
 
 from .base import BaseObjective
+
+#: Default primary metric per variable. All are bias-sensitive: KGE contains
+#: the mean ratio (beta) and the variability ratio (alpha), so a run that gets
+#: the timing right but the magnitude wrong is penalised. (Correlation, the
+#: old default for SCA and ET, is blind to bias and cannot constrain the water
+#: balance.) GLACIER_MB uses the period-mean rate score from the GLACIER_MB
+#: evaluator.
+DEFAULT_METRICS = {
+    'STREAMFLOW': 'kge',
+    'TWS': 'nse',
+    'SWE': 'kge',
+    'SCA': 'kge',
+    'SNOW': 'kge',
+    'ET': 'kge',
+    'BASIN_SWE': 'kge',
+    'BASIN_SCA': 'kge',
+    'BASIN_ET': 'kge',
+    'GLACIER_MB': 'GMB_SCORE',
+}
 
 
 @R.objectives.add('MULTIVARIATE')
@@ -36,10 +56,12 @@ class MultivariateObjective(BaseObjective):
             {'STREAMFLOW': 0.7, 'SWE': 0.2, 'ET': 0.1}
             Weights are automatically normalized to sum to 1.0.
 
-        OBJECTIVE_METRICS (dict, optional): Primary metric per variable.
-            Defaults: {'STREAMFLOW': 'kge', 'TWS': 'nse', 'SCA': 'corr', 'ET': 'corr'}
-            Valid metrics depend on evaluator but commonly: 'kge', 'nse', 'kgeprime',
-            'rmse', 'pbias', 'correlation', 'r'.
+        OBJECTIVE_METRICS (dict, optional): Primary metric per variable
+            (keys case-insensitive), overriding :data:`DEFAULT_METRICS`
+            (KGE for streamflow, SWE, SCA and ET; NSE for TWS; GMB_SCORE for
+            GLACIER_MB). Valid metrics depend on the evaluator: 'kge', 'nse',
+            'rmse', 'pbias', 'correlation', 'GMB_SCORE', 'GMB_ABS_BIAS', ...
+            Correlation is accepted but is bias-blind.
 
     Algorithm:
         1. Retrieve weights from config (default: STREAMFLOW=1.0)
@@ -48,7 +70,8 @@ class MultivariateObjective(BaseObjective):
            - Look up primary metric value (with case-insensitive fallback)
            - If metric not found, assign penalty value (-10.0)
            - If variable not in results, assign penalty (2.0)
-        4. Sum weighted transformed scores: sum(w_i * (1 - metric_i))
+        4. Sum weighted losses: w_i * (1 - metric_i) for maximised metrics,
+           w_i * |metric_i| for minimised ones (RMSE, PBIAS, GMB_ABS_BIAS)
         5. Return composite score (to be minimized)
 
     Metric Value Resolution (robust lookup):
@@ -92,11 +115,11 @@ class MultivariateObjective(BaseObjective):
 
         Note:
             - Variables in evaluation_results but not in weights are ignored
-            - Variables in weights but missing from evaluation_results incur 2.0 penalty
+            - Variables in weights but missing (or None) in evaluation_results incur 2.0 penalty
             - Missing metrics for a variable incur -10.0 penalty (high cost to encourage
               fixing evaluation issues)
-            - Metric values are transformed with (1 - value) assuming they are maximized
-              scores (KGE, NSE, correlation range ~0-1)
+            - Maximised metrics contribute (1 - value), minimised ones |value|
+              (direction from the metrics registry)
         """
         # Get weights from config (default: streamflow only if not specified)
         weights = self._get_config_value(
@@ -111,24 +134,20 @@ class MultivariateObjective(BaseObjective):
         total_weight = sum(weights.values())
         norm_weights = {k.upper(): v/total_weight for k, v in weights.items()}
 
-        # Primary metric per variable from config. These define which metric
-        # is most important for each variable (e.g., KGE for streamflow, NSE for snow)
-        default_metrics = {
-            'STREAMFLOW': 'kge',
-            'TWS': 'nse',
-            'SCA': 'corr',
-            'ET': 'corr'
-        }
-        metrics = self._get_config_value(
+        # Primary metric per variable from config. User entries (any key case)
+        # override DEFAULT_METRICS per variable.
+        configured = self._get_config_value(
             lambda: self.config.optimization.objective_metrics,
-            default=default_metrics,
+            default=None,
             dict_key='OBJECTIVE_METRICS'
-        )
+        ) or {}
+        metrics = dict(DEFAULT_METRICS)
+        metrics.update({str(k).upper(): str(v) for k, v in configured.items()})
 
         composite_score = 0.0
 
         for var, weight in norm_weights.items():
-            if var in evaluation_results:
+            if var in evaluation_results and evaluation_results[var]:
                 metric_name = metrics.get(var, 'kge')
 
                 # Robust lookup for metric value. Different evaluators may use
@@ -161,11 +180,13 @@ class MultivariateObjective(BaseObjective):
                 else:
                     score = val
 
-                # Transform metrics for minimization: 1 - metric_value
-                # This assumes metrics are in range [0, 1] where 1 is perfect.
-                # For metrics like KGE, NSE, correlation: higher is better,
-                # so (1 - metric) makes lower scores better for minimization.
-                composite_score += weight * (1.0 - score)
+                # Transform to a loss: 1 - metric for maximised scores whose
+                # optimum is 1 (KGE, NSE, GMB_SCORE, correlation), |metric| for
+                # minimised errors (RMSE, PBIAS, GMB_ABS_BIAS), whose optimum is 0.
+                if val is not None and MetricTransformer.get_direction(metric_name) == 'minimize':
+                    composite_score += weight * abs(score)
+                else:
+                    composite_score += weight * (1.0 - score)
             else:
                 # Variable not in evaluation results (missing observations for this stream).
                 # Assign moderate penalty to reduce contribution without completely

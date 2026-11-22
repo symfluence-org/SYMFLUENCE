@@ -39,8 +39,12 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Type
 
 from .base import (
+    BasinETTarget,
+    BasinSCATarget,
+    BasinSWETarget,
     CalibrationTarget,
     ETTarget,
+    GlacierMBTarget,
     GroundwaterTarget,
     MultivariateTarget,
     SnowTarget,
@@ -98,6 +102,10 @@ _DEFAULT_TARGETS: Dict[str, Type[CalibrationTarget]] = {
     'stor_grace': TWSTarget,
     'stor_mb': TWSTarget,
     'multivariate': MultivariateTarget,
+    'glacier_mb': GlacierMBTarget,
+    'basin_swe': BasinSWETarget,
+    'basin_sca': BasinSCATarget,
+    'basin_et': BasinETTarget,
 }
 
 # Model-specific target fallbacks as exported names, imported only if the
@@ -232,6 +240,10 @@ __all__ = [
     'GroundwaterTarget',
     'TWSTarget',
     'MultivariateTarget',
+    'GlacierMBTarget',
+    'BasinSWETarget',
+    'BasinSCATarget',
+    'BasinETTarget',
     # SUMMA targets
     'SUMMAStreamflowTarget',
     'SUMMASnowTarget',

@@ -144,7 +144,7 @@ class GAAlgorithm(OptimizationAlgorithm):
             # Sort population by fitness (descending)
             sorted_indices = np.argsort(-fitness)
             sorted_population = population[sorted_indices]
-            _sorted_fitness = fitness[sorted_indices]  # kept for debugging
+            sorted_fitness = fitness[sorted_indices]
 
             # Elitism: keep top individuals
             new_population = list(sorted_population[:elitism_count])
@@ -177,9 +177,16 @@ class GAAlgorithm(OptimizationAlgorithm):
                 if len(new_population) < pop_size:
                     new_population.append(child2)
 
-            # Convert to array and evaluate
+            # Evaluate only the offspring: elites keep their known fitness, so
+            # they cost no model runs and a flaky re-run cannot demote them.
             population = np.array(new_population)
-            fitness = evaluate_population(population, iteration)
+            if elitism_count < pop_size:
+                offspring_fitness = evaluate_population(population[elitism_count:], iteration)
+                fitness = np.concatenate(
+                    [sorted_fitness[:elitism_count], np.asarray(offspring_fitness, dtype=float)]
+                )
+            else:
+                fitness = sorted_fitness[:pop_size].copy()
 
             # Track improvements - count individuals that beat previous generation's best
             current_best_idx = np.argmax(fitness)
@@ -270,6 +277,10 @@ class GAAlgorithm(OptimizationAlgorithm):
                     c1 = 0.5 * ((y1 + y2) - betaq * (y2 - y1))
                     c2 = 0.5 * ((y1 + y2) + betaq * (y2 - y1))
 
+                    # Deb's SBX swaps the children per gene with p=0.5; without
+                    # it child1 always takes the lower value of every gene.
+                    if self._rng.random() < 0.5:
+                        c1, c2 = c2, c1
                     child1[i] = np.clip(c1, 0, 1)
                     child2[i] = np.clip(c2, 0, 1)
                 else:

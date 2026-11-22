@@ -19,6 +19,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 import xarray as xr
 
+from symfluence.data.acquisition.utils import atomic_write
+
 from .base import BaseAcquisitionHandler
 
 
@@ -174,7 +176,10 @@ class BaseAppEEARSAcquirer(BaseAcquisitionHandler):
                 out_path = output_dir / f"{prefix}_{file_name}"
 
                 # Skip if already exists
-                if out_path.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False, dict_key='FORCE_DOWNLOAD'):
+                if out_path.exists() and not self._get_config_value(
+                    lambda: self.config.data.force_download,
+                    dict_key='FORCE_DOWNLOAD',
+                ):
                     downloaded_files.append(out_path)
                     continue
 
@@ -188,7 +193,7 @@ class BaseAppEEARSAcquirer(BaseAcquisitionHandler):
                 )
                 dl_response.raise_for_status()
 
-                with open(out_path, 'wb') as f:
+                with atomic_write(out_path) as _part, open(_part, 'wb') as f:
                     for chunk in dl_response.iter_content(chunk_size=1024 * 1024):
                         f.write(chunk)
 

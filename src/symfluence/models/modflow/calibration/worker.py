@@ -91,7 +91,7 @@ class CoupledGWWorker(BaseWorker):
 
     def _use_dcoupler(self, config: Dict[str, Any]) -> bool:
         """Determine if dCoupler should be used for coupling."""
-        mode = resolve_config_value(config, lambda: config.model.coupling_mode, 'auto', 'COUPLING_MODE')
+        mode = resolve_config_value(config, lambda: config.model.coupling_mode, dict_key='COUPLING_MODE')
         if mode == 'dcoupler':
             return True
         if mode == 'sequential':
@@ -114,7 +114,11 @@ class CoupledGWWorker(BaseWorker):
 
         config = kwargs.get('config', self.config or {})
         modflow_param_names = set(MODFLOW_DEFAULT_BOUNDS.keys())
-        modflow_params_str = resolve_config_value(config, lambda: config.model.modflow.params_to_calibrate, '', 'MODFLOW_PARAMS_TO_CALIBRATE')
+        modflow_params_str = resolve_config_value(
+            config,
+            lambda: config.model.modflow.params_to_calibrate,
+            dict_key='MODFLOW_PARAMS_TO_CALIBRATE',
+        )
         if modflow_params_str:
             modflow_param_names.update(
                 p.strip() for p in str(modflow_params_str).split(',') if p.strip()
@@ -189,7 +193,7 @@ class CoupledGWWorker(BaseWorker):
 
         if 'SY' in params:
             sy = float(params['SY'])
-            ss = float(resolve_config_value(config, lambda: config.model.modflow.ss, 1e-5, 'MODFLOW_SS'))
+            ss = float(resolve_config_value(config, lambda: config.model.modflow.ss, dict_key='MODFLOW_SS'))
             (modflow_dir / "gwf.sto").write_text(
                 "BEGIN OPTIONS\n  SAVE_FLOWS\nEND OPTIONS\n\n"
                 "BEGIN GRIDDATA\n  ICONVERT\n    CONSTANT 1\n"
@@ -200,8 +204,8 @@ class CoupledGWWorker(BaseWorker):
         if 'DRAIN_CONDUCTANCE' in params:
             drain_elev = resolve_config_value(config, lambda: config.model.modflow.drain_elevation, None, 'MODFLOW_DRAIN_ELEVATION')
             if drain_elev is None:
-                top = float(resolve_config_value(config, lambda: config.model.modflow.top, 1500.0, 'MODFLOW_TOP'))
-                bot = float(resolve_config_value(config, lambda: config.model.modflow.bot, 1400.0, 'MODFLOW_BOT'))
+                top = float(resolve_config_value(config, lambda: config.model.modflow.top, dict_key='MODFLOW_TOP'))
+                bot = float(resolve_config_value(config, lambda: config.model.modflow.bot, dict_key='MODFLOW_BOT'))
                 drain_elev = (top + bot) / 2.0
             else:
                 drain_elev = float(drain_elev)

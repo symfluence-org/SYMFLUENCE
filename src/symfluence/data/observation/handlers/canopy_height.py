@@ -81,7 +81,7 @@ class CanopyHeightHandler(BaseObservationHandler):
             source = {
                 'NASA_GEDI': 'gedi', 'META_WRI': 'meta', 'UMD_GLAD': 'glad',
             }.get(self.source_name, 'meta') if self.source_name != 'MULTI_SOURCE' else 'all'
-        force_download = self._get_config_value(lambda: self.config.data.force_download, default=False)
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
 
         acquired_sources = []
 

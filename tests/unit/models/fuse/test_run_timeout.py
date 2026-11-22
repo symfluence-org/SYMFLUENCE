@@ -16,6 +16,7 @@ import subprocess
 
 import pytest
 
+from symfluence.core.mixins.config import SCHEMA_DEFAULT, fallback_default
 from symfluence.models.fuse import runner as fuse_runner
 from symfluence.models.fuse import subcatchment_processor as fuse_subcat
 
@@ -102,8 +103,8 @@ def test_timeout_is_reported_as_failure_not_raised(monkeypatch, tmp_path):
             self.fuse_exe = tmp_path / "fuse.exe"
             self.domain_name = "d"
 
-        def _get_config_value(self, _getter, default=None, dict_key=None):
-            return default
+        def _get_config_value(self, _getter, default=SCHEMA_DEFAULT, dict_key=None):
+            return fallback_default(default, dict_key)
 
     def _timeout(cmd, **kwargs):
         raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout", 3600))

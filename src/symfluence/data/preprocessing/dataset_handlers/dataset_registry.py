@@ -57,7 +57,11 @@ class DatasetRegistry(BaseRegistry):
             config = args[0]
 
         if config:
-            kwargs.setdefault("forcing_timestep_seconds", resolve_config_value(config, lambda: config.forcing.time_step_size, 3600, 'FORCING_TIME_STEP_SIZE'))
+            kwargs.setdefault("forcing_timestep_seconds", resolve_config_value(
+                config,
+                lambda: config.forcing.time_step_size,
+                dict_key='FORCING_TIME_STEP_SIZE',
+            ))
 
         return handler_class(*args, **kwargs)
 

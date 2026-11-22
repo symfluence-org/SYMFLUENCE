@@ -37,6 +37,7 @@ import xarray as xr
 from symfluence.core.registries import R
 from symfluence.data.acquisition.earthaccess_base import BaseEarthaccessAcquirer
 from symfluence.data.acquisition.earthdata_auth import missing_credentials_message
+from symfluence.data.acquisition.utils import atomic_write
 
 APPEEARS_BASE = "https://appeears.earthdatacloud.nasa.gov/api"
 
@@ -82,7 +83,7 @@ class VIIRSSnowAcquirer(BaseEarthaccessAcquirer):
 
         # Check for existing processed file
         output_file = output_dir / f"{self.domain_name}_VIIRS_snow.nc"
-        force_download = self._get_config_value(lambda: self.config.data.force_download, default=False)
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
 
         if output_file.exists() and not force_download:
             self.logger.info(f"Using existing VIIRS snow file: {output_file}")
@@ -407,7 +408,7 @@ class VIIRSSnowAcquirer(BaseEarthaccessAcquirer):
                     stream=True,
                     timeout=300
                 )
-                with open(output_path, 'wb') as f:
+                with atomic_write(output_path) as _part, open(_part, 'wb') as f:
                     for chunk in dl_response.iter_content(chunk_size=8192):
                         f.write(chunk)
                 self.logger.debug(f"Downloaded: {file_name}")

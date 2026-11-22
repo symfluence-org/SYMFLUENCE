@@ -57,8 +57,7 @@ class WRFHydroModelOptimizer(BaseModelOptimizer):
         """Get path to WRF-Hydro hydro namelist file."""
         hydro_namelist = self._get_config_value(
             lambda: self.config.model.wrfhydro.hydro_namelist,
-            default='hydro.namelist',
-            dict_key='WRFHYDRO_HYDRO_NAMELIST'
+            dict_key='WRFHYDRO_HYDRO_NAMELIST',
         )
         return self.wrfhydro_setup_dir / hydro_namelist
 

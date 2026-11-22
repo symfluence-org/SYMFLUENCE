@@ -31,6 +31,7 @@ References:
 """
 from __future__ import annotations
 
+import shutil
 import zipfile
 from pathlib import Path
 
@@ -137,10 +138,15 @@ class WorldClimAcquirer(BaseAcquisitionHandler, RetryMixin):
 
             extract_dir = cache_dir / var
             if not extract_dir.exists():
+                # Extract into a sibling temp dir and rename, so an interrupted
+                # extraction is redone next time instead of looking complete.
                 self.logger.info(f"  Extracting {zip_name}")
+                tmp_dir = extract_dir.with_name(extract_dir.name + ".partial")
+                shutil.rmtree(tmp_dir, ignore_errors=True)
                 with zipfile.ZipFile(zip_path, 'r') as zf:
                     from symfluence.core.archive_extraction import safe_zip_extract
-                    safe_zip_extract(zf, extract_dir)
+                    safe_zip_extract(zf, tmp_dir)
+                tmp_dir.replace(extract_dir)
 
             for month in range(1, 13):
                 out_name = f"wc2.1_30s_{var}_{month:02d}.tif"

@@ -77,10 +77,7 @@ class PIHMRunner(BaseModelRunner):
         )
 
     def _get_timeout(self) -> int:
-        return self._get_config_value(
-            lambda: self.config.model.pihm.timeout,
-            default=3600,
-        )
+        return self._get_config_value(lambda: self.config.model.pihm.timeout, dict_key='PIHM_TIMEOUT')
 
     def run_pihm(self, sim_dir: Optional[Path] = None, **kwargs) -> Optional[Path]:
         """

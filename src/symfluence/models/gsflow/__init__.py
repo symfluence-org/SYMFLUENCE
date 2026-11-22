@@ -76,6 +76,7 @@ def register() -> None:
     R.runners.add_lazy("GSFLOW", f"{base}.runner.GSFLOWRunner")
     R.postprocessors.add_lazy("GSFLOW", f"{base}.postprocessor.GSFLOWPostProcessor")
     R.result_extractors.add_lazy("GSFLOW", f"{base}.extractor.GSFLOWResultExtractor")
+    R.output_adapters.add_lazy("GSFLOW", "symfluence.models.prms.output_adapter.GSFLOWOutputAdapter")
     R.optimizers.add_lazy("GSFLOW", f"{base}.calibration.optimizer.GSFLOWModelOptimizer")
     R.workers.add_lazy("GSFLOW", f"{base}.calibration.worker.GSFLOWWorker")
     R.parameter_managers.add_lazy("GSFLOW", f"{base}.calibration.parameter_manager.GSFLOWParameterManager")

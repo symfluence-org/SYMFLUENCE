@@ -74,7 +74,10 @@ class GLWDAcquirer(BaseAcquisitionHandler, RetryMixin):
         out_extent = glwd_dir / f"domain_{self.domain_name}_glwd_wetland_extent.tif"
 
         # Check if both outputs exist
-        if out_type.exists() and out_extent.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False):
+        if out_type.exists() and out_extent.exists() and not self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             self.logger.info(f"GLWD data already exists: {glwd_dir}")
             return glwd_dir
 

@@ -11,6 +11,7 @@ import pandas as pd
 import pytest
 import xarray as xr
 
+from symfluence.core.mixins.config import SCHEMA_DEFAULT, fallback_default
 from symfluence.evaluation.evaluators.soil_moisture import SoilMoistureEvaluator
 
 
@@ -24,14 +25,14 @@ def _make_config_value_getter(config_dict):
         config_dict.get('OPTIMIZATION_TARGET', 'sm_point'),
     ]
 
-    def mock_get_config_value(typed_accessor, default=None, dict_key=None):
+    def mock_get_config_value(typed_accessor, default=SCHEMA_DEFAULT, dict_key=None):
         if call_count[0] < len(init_values):
             result = init_values[call_count[0]]
             call_count[0] += 1
             return result
         if dict_key and dict_key in config_dict:
             return config_dict[dict_key]
-        return default
+        return fallback_default(default, dict_key)
 
     return mock_get_config_value
 

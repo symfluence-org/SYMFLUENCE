@@ -65,8 +65,10 @@ class CoupledModelOptimizer(BaseModelOptimizer):
         def _cfg_get(_config: Any, key: str, default: Any) -> Any:
             return self._get_config_value(lambda: None, default=default, dict_key=key)
 
-        fm_name = self._get_config_value(lambda: self.config.model.summa.filemanager,
-                                         default='fileManager.txt', dict_key='SETTINGS_SUMMA_FILEMANAGER')
+        fm_name = self._get_config_value(
+            lambda: self.config.model.summa.filemanager,
+            dict_key='SETTINGS_SUMMA_FILEMANAGER',
+        )
         if not fm_name or fm_name == 'default':
             fm_name = 'fileManager.txt'
 
@@ -104,8 +106,10 @@ class CoupledModelOptimizer(BaseModelOptimizer):
     def _get_final_file_manager_path(self) -> Path:
         # Final evaluation drives the land model; for SUMMA that's fileManager.txt.
         if self.land_model_name == 'SUMMA':
-            fm = self._get_config_value(lambda: self.config.model.summa.filemanager,
-                                        default='fileManager.txt', dict_key='SETTINGS_SUMMA_FILEMANAGER')
+            fm = self._get_config_value(
+                lambda: self.config.model.summa.filemanager,
+                dict_key='SETTINGS_SUMMA_FILEMANAGER',
+            )
             if not fm or fm == 'default':
                 fm = 'fileManager.txt'
             return self.project_dir / 'settings' / 'SUMMA' / fm

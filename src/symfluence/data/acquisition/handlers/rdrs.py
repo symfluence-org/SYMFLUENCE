@@ -32,6 +32,7 @@ import requests
 import xarray as xr
 
 from symfluence.core.registries import R
+from symfluence.data.acquisition.utils import atomic_write
 
 from ..base import BaseAcquisitionHandler
 from ..utils import create_robust_session
@@ -110,7 +111,10 @@ class RDRSAcquirer(BaseAcquisitionHandler):
         output_dir.mkdir(parents=True, exist_ok=True)
         final_file = output_dir / f"domain_{self.domain_name}_RDRS_{self.start_date.year}_{self.end_date.year}.nc"
 
-        if final_file.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False, dict_key='FORCE_DOWNLOAD'):
+        if final_file.exists() and not self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             return final_file
 
         # Acquisition pathway. The default ("auto") tries OPeNDAP and falls back
@@ -691,7 +695,7 @@ class RDRSAcquirer(BaseAcquisitionHandler):
         try:
             response = session.get(url, timeout=timeout, stream=True)
             if response.status_code == 200:
-                with open(dest_path, 'wb') as f:
+                with atomic_write(dest_path) as _part, open(_part, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=65536):
                         f.write(chunk)
                 return dest_path

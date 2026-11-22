@@ -45,7 +45,6 @@ class GSFLOWRunner(BaseModelRunner):
         """Build GSFLOW execution command."""
         control_file = self._get_config_value(
             lambda: self.config.model.gsflow.control_file,
-            default='control.dat',
             dict_key='GSFLOW_CONTROL_FILE',
         )
         control_path = self.setup_dir / control_file
@@ -61,8 +60,4 @@ class GSFLOWRunner(BaseModelRunner):
 
     def _get_run_timeout(self) -> int:
         """GSFLOW timeout from config."""
-        return self._get_config_value(
-            lambda: self.config.model.gsflow.timeout,
-            default=7200,
-            dict_key='GSFLOW_TIMEOUT',
-        )
+        return self._get_config_value(lambda: self.config.model.gsflow.timeout, dict_key='GSFLOW_TIMEOUT')

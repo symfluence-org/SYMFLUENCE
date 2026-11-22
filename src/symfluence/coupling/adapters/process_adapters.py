@@ -265,9 +265,12 @@ class ParFlowProcessComponent(ProcessComponent):
 
 
 class MODFLOWProcessComponent(ProcessComponent):
-    """Wraps MODFLOW 6 as ProcessComponent.
+    """Wraps MODFLOW 6 (lumped grid) as ProcessComponent.
 
-    Reuses SUMMAToMODFLOWCoupler TAS6 format.
+    The graph's daily recharge (m/d) is written as the model's gwf.rch, one
+    block per TDIS stress period (SUMMAToMODFLOWCoupler.write_modflow_recharge_rch),
+    and MODFLOW then runs with that file instead of re-deriving recharge from
+    the land model's output.
     Unit conversion: kg/m2/s -> m/d (factor 86.4)
     """
 
@@ -277,6 +280,7 @@ class MODFLOWProcessComponent(ProcessComponent):
         super().__init__(name, **kwargs)
         self._model_config = config or {}
         self._runner = None
+        self._recharge_written = False
 
     @property
     def input_fluxes(self) -> List[FluxSpec]:
@@ -302,20 +306,28 @@ class MODFLOWProcessComponent(ProcessComponent):
         self._state = self.get_initial_state()
 
     def write_inputs(self, inputs: Dict[str, torch.Tensor], work_dir: Path) -> None:
-        if "recharge" in inputs:
-            recharge = inputs["recharge"].detach().numpy()
-            output_path = work_dir / "recharge_tas6.txt"
-            with open(output_path, "w") as f:
-                f.write("BEGIN TIMEARRAYDATA\n")
-                for i, val in enumerate(recharge):
-                    f.write(f"  {float(i):.1f}  {float(val):.8e}\n")
-                f.write("END TIMEARRAYDATA\n")
+        self._recharge_written = False
+        if "recharge" not in inputs:
+            return
+        if self._runner is None:
+            raise RuntimeError("MODFLOWRunner not initialized. Call bmi_initialize first.")
+        if str(self._model_config.get('MODFLOW_GRID_MODE', 'lumped')).lower() == 'basin':
+            raise NotImplementedError(
+                "Graph-coupled recharge is only supported for the lumped MODFLOW grid; "
+                "basin mode takes zone recharge from the land-model adapter")
+        recharge = np.asarray(inputs["recharge"].detach().cpu().numpy(), dtype=float)
+        if recharge.ndim > 1:
+            # Lumped RCH is one CONSTANT per period: average over cells.
+            recharge = recharge.reshape(recharge.shape[0], -1).mean(axis=1)
+        self._runner.write_lumped_recharge(recharge.ravel())
+        self._recharge_written = True
 
     def execute(self, work_dir: Path) -> int:
         if self._runner is None:
             raise RuntimeError("MODFLOWRunner not initialized")
         try:
-            success = self._runner.run_modflow()
+            # Keep the graph's recharge (gwf.rch) rather than rebuilding it from land output.
+            success = self._runner.run_modflow(prepare_recharge=not self._recharge_written)
             return 0 if success else 1
         except Exception as e:  # noqa: BLE001 — must-not-raise contract
             logger.error(f"MODFLOW execution failed: {e}")
@@ -332,12 +344,14 @@ class MODFLOWProcessComponent(ProcessComponent):
             kwargs = {
                 'start_date': self._model_config.get('SIMULATION_START', '2000-01-01'),
                 'stress_period_length': float(
-                    self._model_config.get('MODFLOW_STRESS_PERIOD_DAYS', 1.0)
+                    self._model_config.get('MODFLOW_STRESS_PERIOD_LENGTH',
+                                           self._model_config.get('MODFLOW_STRESS_PERIOD_DAYS', 1.0))
                 ),
             }
 
+            # daily=True: one value per day (FluxSpec dt is 86400 s), not per stress period.
             drain = extractor.extract_variable(
-                output_dir, 'drain_discharge', **kwargs
+                output_dir, 'drain_discharge', daily=True, **kwargs
             )
             # drain is in m3/d (matching FluxSpec units)
             return {"drain_discharge": torch.tensor(

@@ -22,26 +22,22 @@ import pandas as pd
 
 from symfluence.core.calibration.workers.base_worker import (
     MACOS_MALLOC_QUIET_ENV,
-    BaseWorker,
     run_worker_task,
 )
+from symfluence.core.calibration.workers.streamflow_worker import StreamflowWorker
 from symfluence.core.exceptions import ModelExecutionError
-from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
-from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.path_resolver import resolve_install_executable
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
 
 @R.workers.add('GSFLOW')
-class GSFLOWWorker(BaseWorker):
+class GSFLOWWorker(StreamflowWorker):
     """Worker for GSFLOW model calibration."""
 
     def __init__(self, config: Optional[Dict[str, Any]] = None, logger: Optional[logging.Logger] = None):
         super().__init__(config, logger)
-
-    _streamflow_metrics = StreamflowMetrics()
 
     def apply_parameters(self, params: Dict[str, float], settings_dir: Path, **kwargs) -> bool:
         """Apply parameters to GSFLOW PRMS params.dat and MODFLOW UPW package."""
@@ -73,7 +69,11 @@ class GSFLOWWorker(BaseWorker):
             params = self._enforce_constraints(params)
             self._trial_params = dict(params)
             from ..parameter_files import apply_gsflow_parameters
-            apply_gsflow_parameters(settings_dir, params, resolve_config_value(config, lambda: config.model.gsflow.parameter_file, 'params.dat', 'GSFLOW_PARAMETER_FILE'))
+            apply_gsflow_parameters(settings_dir, params, resolve_config_value(
+                config,
+                lambda: config.model.gsflow.parameter_file,
+                dict_key='GSFLOW_PARAMETER_FILE',
+            ))
             return True
         except Exception as e:  # noqa: BLE001 — calibration resilience
             self.logger.error(f"Error applying GSFLOW parameters: {e}", exc_info=True)
@@ -128,12 +128,20 @@ class GSFLOWWorker(BaseWorker):
             # Localize control/NAM file paths for this trial:
             # data_file → local data.dat (copied in apply_parameters)
             # output paths → absolute paths into sim_dir
-            control_file = resolve_config_value(config, lambda: config.model.gsflow.control_file, 'gsflow.control', 'GSFLOW_CONTROL_FILE')
+            control_file = resolve_config_value(
+                config,
+                lambda: config.model.gsflow.control_file,
+                dict_key='GSFLOW_CONTROL_FILE',
+            )
             self._localize_control_paths(settings_dir, sim_dir, control_file)
             self._localize_nam_paths(settings_dir, sim_dir)
 
-            install_path = resolve_config_value(config, lambda: config.model.gsflow.install_path, 'default', 'GSFLOW_INSTALL_PATH')
-            exe_name = resolve_config_value(config, lambda: config.model.gsflow.exe, 'gsflow', 'GSFLOW_EXE')
+            install_path = resolve_config_value(
+                config,
+                lambda: config.model.gsflow.install_path,
+                dict_key='GSFLOW_INSTALL_PATH',
+            )
+            exe_name = resolve_config_value(config, lambda: config.model.gsflow.exe, dict_key='GSFLOW_EXE')
             gsflow_exe = resolve_install_executable(install_path, data_dir, 'installs/gsflow/bin', exe_name)
 
             # Windows builds land as <name>.exe even though the declared name
@@ -155,7 +163,7 @@ class GSFLOWWorker(BaseWorker):
             cmd = [str(gsflow_exe), str(control_path)]
             env = os.environ.copy()
             env['MallocStackLogging'] = '0'
-            timeout = resolve_config_value(config, lambda: config.model.gsflow.timeout, 7200, 'GSFLOW_TIMEOUT')
+            timeout = resolve_config_value(config, lambda: config.model.gsflow.timeout, dict_key='GSFLOW_TIMEOUT')
 
             try:
                 with open(sim_dir / 'gsflow_stdout.log', 'w') as out, \
@@ -269,75 +277,70 @@ class GSFLOWWorker(BaseWorker):
 
         return content[:dtype_end] + new_value + content[value_end:]
 
-    def calculate_metrics(self, output_dir: Path, config: Dict[str, Any], **kwargs) -> Dict[str, Any]:
-        """Calculate metrics from GSFLOW output.
+    def read_simulated_streamflow(
+        self,
+        output_dir: Path,
+        config: Dict[str, Any],
+        **kwargs
+    ) -> Optional[pd.Series]:
+        """Routed outlet streamflow (m3/s) for this trial.
 
-        Args:
-            output_dir: Directory containing model outputs.
-            config: Configuration dictionary.
-            **kwargs: Optional overrides.
-                period: Comma-separated "start, end" date string to override
-                    the default CALIBRATION_PERIOD (used for evaluation-period
-                    metrics in split-sample validation).
-                sim_dir: Alternative simulation output directory.
-                settings_dir: Fallback directory for statvar files.
+        In COUPLED GSFLOW the basin outlet flow is routed through MODFLOW
+        SFR and reported as StreamOut_Q in gsflow.csv (m3/day); the PRMS
+        statvar 'basin_cfs' is NOT the routed streamflow (near-zero in
+        coupled mode), so the CSV is the authoritative source. Shared
+        with the postprocessor (models.gsflow.extractor).
         """
-        try:
-            sim_dir = Path(kwargs.get('sim_dir', output_dir))
-            settings_dir = kwargs.get('settings_dir', None)
+        from symfluence.models.gsflow.extractor import extract_gsflow_streamflow
+        sim_dir = Path(kwargs.get('sim_dir', output_dir))
+        return extract_gsflow_streamflow(sim_dir, kwargs.get('settings_dir'))
 
-            # In COUPLED GSFLOW the basin outlet flow is routed through MODFLOW
-            # SFR and reported as StreamOut_Q in gsflow.csv (m3/day); the PRMS
-            # statvar 'basin_cfs' is NOT the routed streamflow (near-zero in
-            # coupled mode), so the CSV is the authoritative source. Shared
-            # with the postprocessor (models.gsflow.extractor).
-            from symfluence.models.gsflow.extractor import extract_gsflow_streamflow
-            try:
-                sim_series = extract_gsflow_streamflow(sim_dir, settings_dir)
-            except ModelExecutionError:
-                return {'kge': self.penalty_score, 'error': 'Invalid coupled streamflow/budget CSV'}
+    def additional_metrics(
+        self,
+        output_dir: Path,
+        config: Dict[str, Any],
+        *,
+        project_dir: Path,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Snow-cover and glacier mass-balance scores when GSFLOW_CRYOSPHERE_CONSTRAINTS is on.
 
-            if sim_series is None or len(sim_series) == 0:
-                return {'kge': self.penalty_score, 'error': 'No streamflow data'}
-
-            domain_name = resolve_config_value(config, lambda: config.domain.name, None, 'DOMAIN_NAME')
-            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR'))
-            project_dir = data_dir / f'domain_{domain_name}'
-
-            obs_values, obs_index = self._streamflow_metrics.load_observations(
-                config, project_dir, domain_name, resample_freq='D'
-            )
-            if obs_values is None:
-                return {'kge': self.penalty_score, 'error': 'No observations'}
-
-            obs_series = pd.Series(obs_values, index=obs_index)
-
-            # Allow explicit period override (for evaluation-period metrics)
-            period_str = kwargs.get('period', '') or resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD')
-            period_tuple = split_period(period_str, allow_extra=True)
-
-            obs_aligned, sim_aligned = self._streamflow_metrics.align_timeseries(
-                sim_series, obs_series, calibration_period=period_tuple
-            )
-            results = self._streamflow_metrics.calculate_metrics(
-                obs_aligned, sim_aligned, metrics=self._requested_metrics(config)
-            )
-            if resolve_config_value(config, lambda: config.model.gsflow.cryosphere_constraints, False, 'GSFLOW_CRYOSPHERE_CONSTRAINTS'):
-                # Same snow-cover / glacier mass-balance scores as PRMS (GSFLOW
-                # embeds PRMS); always scored over the calibration period.
-                from symfluence.models.prms.cryosphere import calculate_constraints
-                statvar = next(iter(sorted(sim_dir.glob('statvar*'))), None)
-                param_dir = Path(settings_dir) if settings_dir else project_dir / 'settings' / 'GSFLOW'
-                if statvar is None:
-                    return {'kge': self.penalty_score, 'error': 'No statvar for cryosphere constraints'}
-                results.update(calculate_constraints(
-                    statvar, param_dir / resolve_config_value(config, lambda: config.model.gsflow.parameter_file, 'params.dat', 'GSFLOW_PARAMETER_FILE'), project_dir,
-                    resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD'), resolve_config_value(config, lambda: config.model.gsflow.snow_cover_error_scale, 0.2, 'GSFLOW_SNOW_COVER_ERROR_SCALE'),
-                    resolve_config_value(config, lambda: config.model.gsflow.glacier_mb_error_scale, 1.0, 'GSFLOW_GLACIER_MB_ERROR_SCALE')))
-            return results
-        except Exception as e:  # noqa: BLE001 — calibration resilience
-            self.logger.error(f"Error calculating GSFLOW metrics: {e}", exc_info=True)
-            return {'kge': self.penalty_score, 'error': str(e)}
+        Same scores as PRMS (GSFLOW embeds PRMS); always scored over the
+        calibration period, also when ``period`` overrides the streamflow
+        window.
+        """
+        if not resolve_config_value(
+            config,
+            lambda: config.model.gsflow.cryosphere_constraints,
+            dict_key='GSFLOW_CRYOSPHERE_CONSTRAINTS',
+        ):
+            return {}
+        from symfluence.models.prms.cryosphere import calculate_constraints
+        sim_dir = Path(kwargs.get('sim_dir', output_dir))
+        settings_dir = kwargs.get('settings_dir')
+        statvar = next(iter(sorted(sim_dir.glob('statvar*'))), None)
+        if statvar is None:
+            raise ModelExecutionError('No statvar for cryosphere constraints')
+        param_dir = Path(settings_dir) if settings_dir else project_dir / 'settings' / 'GSFLOW'
+        return calculate_constraints(
+            statvar,
+            param_dir / resolve_config_value(
+                config,
+                lambda: config.model.gsflow.parameter_file,
+                dict_key='GSFLOW_PARAMETER_FILE',
+            ),
+            project_dir,
+            resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD'),
+            resolve_config_value(
+                config,
+                lambda: config.model.gsflow.snow_cover_error_scale,
+                dict_key='GSFLOW_SNOW_COVER_ERROR_SCALE',
+            ),
+            resolve_config_value(
+                config,
+                lambda: config.model.gsflow.glacier_mb_error_scale,
+                dict_key='GSFLOW_GLACIER_MB_ERROR_SCALE',
+            ))
 
     def _extract_streamflow_from_csv(self, csv_file: Path) -> Optional[pd.Series]:
         """Basin outlet streamflow (m3/s) from the GSFLOW budget CSV."""

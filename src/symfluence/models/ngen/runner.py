@@ -128,7 +128,7 @@ class NgenRunner(BaseModelRunner):  # type: ignore[misc]
                     )
                     self._move_ngen_outputs(self.ngen_exe.parent, output_dir)
 
-                    if self._get_config_value(lambda: self.config.model.ngen.run_troute, default=True):
+                    if self._get_config_value(lambda: self.config.model.ngen.run_troute, dict_key='NGEN_RUN_TROUTE'):
                         self.logger.debug("Starting t-route routing...")
                         troute_success = self._run_troute_routing(output_dir)
                         if not troute_success:
@@ -196,7 +196,7 @@ class NgenRunner(BaseModelRunner):  # type: ignore[misc]
 
         install_path = self._get_config_value(
             lambda: self.config.model.ngen.install_path,
-            default='default'
+            dict_key='NGEN_INSTALL_PATH',
         )
 
         ngen_base = resolve_install_dir(install_path, self.data_dir, 'installs/ngen')
@@ -331,7 +331,7 @@ class NgenRunner(BaseModelRunner):  # type: ignore[misc]
             # Determine absolute ngen base directory
             install_path = self._get_config_value(
                 lambda: self.config.model.ngen.install_path,
-                default='default'
+                dict_key='NGEN_INSTALL_PATH',
             )
 
             ngen_base = resolve_install_dir(install_path, self.data_dir, 'installs/ngen')

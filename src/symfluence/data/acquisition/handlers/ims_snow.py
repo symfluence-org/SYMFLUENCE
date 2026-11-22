@@ -105,7 +105,7 @@ class IMSSnowAcquirer(BaseAcquisitionHandler):
 
         # Get configuration
         resolution = self._get_config_value(lambda: None, default='4km', dict_key='IMS_SNOW_RESOLUTION')
-        force_download = self._get_config_value(lambda: self.config.data.force_download, default=False)
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
 
         # Output file
         output_file = output_dir / f"{self.domain_name}_IMS_snow_{resolution}.nc"
