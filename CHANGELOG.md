@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **WISKI interchange** (`symfluence.wiski`): `zrxp.write_zrxp` writes a time series (e.g. a discharge
+  forecast with its issue time in a `forecast` column) as a ZRXP block for WISKI import, atomically and
+  with `RINVAL` for missing values; `read_zrxp` reads it back. `kiwis.fetch` / `parse_payload` read a
+  KiWebPortal share channel (ISO 8601 stamps with odd seconds or milliseconds, quality codes, retries
+  with back-off; the channel URL is never logged); `interval_mean` averages sub-hourly values into start-
+  or end-stamped intervals with a coverage rule. New streamflow provider `KIWIS` (`kiwis_streamflow`):
+  channel URL and series id from `KIWIS_CHANNEL_URL` / `KIWIS_TS_ID` in config or the environment, an
+  incrementally updated raw archive (`KIWIS_REVISE_DAYS`), no interpolation across gaps.
 - **Forecast verification by lead time** (`evaluation/forecast_verification.py`): `verify_forecasts` takes a
   tidy (model, init, time, q) table and an observed series and returns lead-day scores (bias, MAE, RMSE,
   NSE, skill vs persistence and day-of-year climatology), the "offset" benchmark (forecast plus the error at
