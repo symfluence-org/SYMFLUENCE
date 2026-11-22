@@ -305,6 +305,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   layering guard forbids handler-module imports from outside `data/`.
 
 ### Fixed
+- **ParFlow-CLM random segfaults**: CLM inside ParFlow segfaults now and then (a few percent of runs, at the
+  first step) on inputs that rerun cleanly and bit-identically. The lumped runner and basin-mode segments now
+  rerun a run that ended with signal 11 / exit 139 up to `CLMPARFLOW_SEGV_RETRIES` times (default 2), keeping
+  each failed attempt's output as `<run>.segv<n>.log` and removing partial `<run>.out.*` files first. Basin
+  mode also starts mpirun with stdin closed (it read the parent's stdin). Other failures are not rerun.
 - **PRMS/GSFLOW statvar reader reads one column per header line**: the shared reader
   (`symfluence.models.prms.statvar.parse_statvar`, from #489) took the second header token as an element
   *count*, but PRMS writes `<name> <element index>` with one line per element. Any file with a per-HRU or
