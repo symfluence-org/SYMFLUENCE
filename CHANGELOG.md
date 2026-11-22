@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Source-to-reference forcing correction** (`data/preprocessing/forcing_source_correction.py`): fit additive or
+  multiplicative factors (annual, seasonal or monthly pooling, stored as twelve monthly values) from paired values
+  of a forcing source (e.g. NWP forecasts) and the reference product a model was calibrated on, choose the pooling
+  with a split-sample test, and apply them to a forcing dataset (refuses another source). Multiplicative factors
+  stay at 1 where the source mean is below `min_source_mean` and are clamped to `factor_bounds` (default 0.25–4);
+  an optional `HumidityVariables` recomputes specific humidity after a temperature correction so relative
+  humidity is unchanged. A library for forecast pipelines, with no config keys; it runs before, and composes with,
+  the shared `FORCING_CORRECTION_*` section (docs: forcing correction).
 - **WISKI interchange** (`symfluence.wiski`): `zrxp.write_zrxp` writes a time series (e.g. a discharge
   forecast with its issue time in a `forecast` column) as a ZRXP block for WISKI import, atomically and
   with `RINVAL` for missing values; `read_zrxp` reads it back. `kiwis.fetch` / `parse_payload` read a

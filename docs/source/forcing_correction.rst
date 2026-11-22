@@ -326,3 +326,69 @@ forecasts towards the reanalysis a model was calibrated on) is a separate,
 earlier step applied to the forcing files. The two compose: first map the
 forcing onto the reference product, then this hydrological (undercatch /
 water-balance) correction applies on top, identically for every model.
+
+
+.. _forcing_source_correction:
+
+Source-to-reference correction (forecast forcing)
+-------------------------------------------------
+
+The ``FORCING_CORRECTION_*`` section above corrects the forcing a model is
+calibrated on. A separate, earlier step is needed when a calibrated model is
+then driven by a *different* forcing product, typically NWP forecasts after
+calibration on a reanalysis: the forecast product's biases relative to the
+reanalysis would otherwise reach the model as weather.
+
+:mod:`symfluence.data.preprocessing.forcing_source_correction` fits that
+source-to-reference correction from paired values of the two products
+(ideally both already mapped onto the model's HRUs or cells):
+
+- ``CorrectionSpec(variable, kind='add'|'mult', level='none'|'annual'|'season'|'month', ...)``
+  per variable, with optional clipping (e.g. 0 for precipitation);
+- ``fit_source_correction(pairs, specs, source)`` returns a
+  ``ForcingSourceCorrection`` holding twelve monthly factors per variable, the
+  source name and the training period (``save``/``load`` as JSON);
+- ``split_sample_test(pairs, specs)`` reports out-of-sample bias and RMSE
+  (first half of the period to the second and back), to choose the pooling
+  level; with short overlaps monthly factors often fit one year's weather;
+- ``ForcingSourceCorrection.apply(ds, source)`` corrects a forcing dataset and
+  refuses a dataset from another source, so a new source, or a new model
+  generation of the same source, needs its own fit. The dataset is tagged with
+  a ``forcing_source_correction`` attribute.
+
+The two corrections compose in this order:
+
+1. **Source correction** (this module) on the forcing files: forecast product
+   to reference product. It changes the data the model reads.
+2. **Hydrological correction** (``FORCING_CORRECTION_*``): the model applies
+   the same fixed or calibrated precipitation multiplier, snowfall multiplier
+   and temperature offset it used in calibration, on top of the
+   reference-like forcing.
+
+Applying only step 2 to raw forecasts leaves the forecast product's bias in
+place; applying step 1 with factors fitted against already-multiplied
+reference forcing would count the hydrological correction twice. Fit step 1
+against the reference forcing as the model reads it *before* its
+``FORCING_CORRECTION_*`` values are applied.
+
+Multiplicative factors are guarded against dry months, where the ratio of
+two small means is noise. A pooling group whose source mean is at or below
+``CorrectionSpec.min_source_mean`` stays at 1, and fitted factors are clamped
+to ``factor_bounds`` (default ``(0.25, 4.0)``; ``None`` disables the clamp).
+Every group that was left at 1 or clamped is listed in the correction's
+``meta['limited']``.
+
+Correcting air temperature alone makes the air drier at the same specific
+humidity. Pass ``humidity=HumidityVariables(temperature='airtemp',
+specific_humidity='spechum', pressure='airpres')`` to ``apply`` to recompute
+specific humidity so that relative humidity is unchanged (skipped when
+specific humidity is itself corrected). Without it, specific humidity is left
+as it was.
+
+The module is a library, called by forecast pipelines that build the
+forecast forcing themselves; the standard workflow only ever reads the
+product the model is calibrated on, so it has no step to apply it. Config
+keys, if it is wired in later, will use the ``FORCING_SOURCE_CORRECTION_*``
+prefix (e.g. ``FORCING_SOURCE_CORRECTION_FILE``,
+``FORCING_SOURCE_CORRECTION_SOURCE``) so they stay apart from the section
+above.
