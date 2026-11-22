@@ -5319,6 +5319,13 @@ SETTINGS_SUMMA_SOILPROFILE: "FA"
 #   Description: Initial matric head for SUMMA cold state initialization
 SUMMA_INIT_MATRIC_HEAD: -1.0
 
+# SUMMA_REPAIR_INITIAL_STATE
+#   Type:        bool
+#   Default:     False
+#   Source:      SUMMAConfig (model_configs.py)
+#   Description: Before each run, thicken initial-state snow layers above SUMMA's 0.80 water fraction limit (mass kept)
+SUMMA_REPAIR_INITIAL_STATE: false
+
 
 # 8. FUSE Model Configuration
 # ================================================================================
@@ -6558,6 +6565,12 @@ CLMPARFLOW_PARAMS_TO_CALIBRATE: "K_SAT,POROSITY,VG_ALPHA,VG_N,S_RES,MANNINGS_N,S
 #   Default:     7200
 #   Source:      CLMParFlowConfig (model_configs.py)
 CLMPARFLOW_TIMEOUT: 7200
+
+# CLMPARFLOW_SEGV_RETRIES — Reruns of a ParFlow-CLM run that ended in a segmentation fault (0 = no retry)
+#   Type:        int
+#   Default:     2
+#   Source:      CLMParFlowConfig (model_configs.py)
+CLMPARFLOW_SEGV_RETRIES: 2
 
 
 # 9.8. PIHM Model Configuration

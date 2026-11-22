@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or end-stamped intervals with a coverage rule. New streamflow provider `KIWIS` (`kiwis_streamflow`):
   channel URL and series id from `KIWIS_CHANNEL_URL` / `KIWIS_TS_ID` in config or the environment, an
   incrementally updated raw archive (`KIWIS_REVISE_DAYS`), no interpolation across gaps.
+- **Forecast verification by lead time** (`evaluation/forecast_verification.py`): `verify_forecasts` takes a
+  tidy (model, init, time, q) table and an observed series and returns lead-day scores (bias, MAE, RMSE,
+  NSE, skill vs persistence and day-of-year climatology), the "offset" benchmark (forecast plus the error at
+  issue of the previous forecast), daily-mean scores with multi-model means on common issue days, monthly
+  volume ratios, high-flow contingency (POD/FAR/CSI) at a quantile threshold, clustered high-flow events with
+  warned lead days, and summer daily-cycle timing. Start- or end-stamped model intervals of any sub-daily or
+  daily step; no file layout assumed. `ForecastVerification.write` saves CSVs and a Markdown report.
 - **Formal streamflow likelihood `LOGLIK_BC_AR1`**: Box-Cox (`LIKELIHOOD_BOX_COX_LAMBDA`, default 0.3) + AR(1)
   residual error model (Bates & Campbell, 2001; simplified Schoups & Vrugt, 2010). The innovation variance is
   integrated out under the Jeffreys prior unless `LIKELIHOOD_SIGMA` is set; φ is the conditional least-squares
@@ -60,8 +67,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ensemble, never updated; `ENKF_OPEN_LOOP`, default on) and a persistence benchmark, and writes
   `*_verification.json` with CRPS, CRPSS vs open loop and vs persistence, spread-error ratio, rank histogram, and
   NSE/KGE of the ensemble mean. `ENKF_FORECAST_LEAD_DAYS` (default 0 = off) issues ensemble forecasts from each
-  analysis and scores them by lead time (`*_lead_scores.csv`; ensemble-mean scores use the same function signature
-  as `scores` in the forecast-verification module of PR #512, one local function to swap). Streamflow observation
+  analysis and scores them by lead time (`*_lead_scores.csv`; ensemble-mean scores come from `scores` in
+  `evaluation/forecast_verification.py`, shared with deterministic forecast verification). Streamflow observation
   error is heteroscedastic, sigma = a + b*Q_obs (`ENKF_OBS_ERROR_STD` = b, default 10 %; `ENKF_OBS_ERROR_ABS` = a
   in m3/s, default 1 % of mean observed flow); vector observations (several gauges, diagonal R) are supported by
   the cycle. Forcing perturbations are AR(1) in time (`ENKF_FORCING_CORRELATION_HOURS`, default 24 h) with the
@@ -313,6 +320,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   layering guard forbids handler-module imports from outside `data/`.
 
 ### Fixed
+- **SUMMA restarts SUMMA refuses**: SUMMA can write a restart whose thin top snow layer has a total water
+  fraction (`liq + ice * 917/1000`) or ice fraction above 0.80, and then stops in `check_icond` when the
+  file is read back. `models/summa/restart_repair.py` thickens such layers to 0.79 keeping water, ice and
+  enthalpy, and rebuilds the interface/mid-point heights and snow depth. States loaded through
+  `SummaRunner.load_state` are always repaired; `SUMMA_REPAIR_INITIAL_STATE: true` also repairs the
+  file manager's `initConditionFile` before each run (off by default). Valid files are never rewritten.
+- **ParFlow-CLM random segfaults**: CLM inside ParFlow segfaults now and then (a few percent of runs, at the
+  first step) on inputs that rerun cleanly and bit-identically. The lumped runner and basin-mode segments now
+  rerun a run that ended with signal 11 / exit 139 up to `CLMPARFLOW_SEGV_RETRIES` times (default 2), keeping
+  each failed attempt's output as `<run>.segv<n>.log` and removing partial `<run>.out.*` files first. Basin
+  mode also starts mpirun with stdin closed (it read the parent's stdin). Other failures are not rerun.
 - **PRMS/GSFLOW statvar reader reads one column per header line**: the shared reader
   (`symfluence.models.prms.statvar.parse_statvar`, from #489) took the second header token as an element
   *count*, but PRMS writes `<name> <element index>` with one line per element. Any file with a per-HRU or
