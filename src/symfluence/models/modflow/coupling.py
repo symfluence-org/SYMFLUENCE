@@ -21,7 +21,85 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from symfluence.core.exceptions import ConfigurationError
+
 logger = logging.getLogger(__name__)
+
+
+def read_tdis(settings_dir: Path) -> tuple:
+    """``(nper, perlen of the first period)`` from ``gwf.tdis``; ``(0, None)`` if absent."""
+    tdis = Path(settings_dir) / "gwf.tdis"
+    if not tdis.exists():
+        return 0, None
+    nper, perlen, in_pd = 0, None, False
+    for line in tdis.read_text().splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        key = parts[0].upper()
+        if key == "NPER" and len(parts) > 1:
+            nper = int(parts[1])
+        elif key == "BEGIN" and len(parts) > 1 and parts[1].upper() == "PERIODDATA":
+            in_pd = True
+        elif key == "END":
+            in_pd = False
+        elif in_pd and perlen is None:
+            perlen = float(parts[0])
+    return nper, perlen
+
+
+def periods_to_daily(
+    per_period: pd.Series,
+    period_length_days: float | None = None,
+) -> pd.Series:
+    """Spread one-value-per-stress-period rates over the days each period covers.
+
+    ``per_period`` is indexed by period start (as ``MODFLOWResultExtractor``
+    dates it). Period ``k`` covers ``[start_k, start_{k+1})`` and the last one
+    ``[start_last, start_last + period_length_days)``; a period's mean rate is
+    constant over that window (step, not interpolation across periods). Day
+    ``d`` (covering ``[d, d + 1)``) gets the time-weighted mean of the periods
+    overlapping it, so fractional period lengths split days between periods;
+    days only partly covered at either end average their covered part.
+
+    ``period_length_days`` (MODFLOW_STRESS_PERIOD_LENGTH) sizes the last
+    period; ``None`` infers it from the median spacing of the starts (1 day
+    for a single period). Days are counted from the first period start (its
+    time of day, e.g. a 01:00 EXPERIMENT_TIME_START, marks the day boundary)
+    and labelled by date, as the daily land-model series is. With 1-day
+    periods the values are returned unchanged, one per date.
+    """
+    s = per_period.dropna().sort_index()
+    s = s[~s.index.duplicated(keep='last')]
+    if s.empty:
+        return s.astype(float)
+    starts = pd.DatetimeIndex(s.index)
+    origin = starts[0]
+    t = np.asarray((starts - origin) / pd.Timedelta(days=1), dtype=float)
+    if period_length_days is None:
+        period_length_days = float(np.median(np.diff(t))) if t.size > 1 else 1.0
+    if period_length_days <= 0:
+        raise ConfigurationError(f"stress period length must be > 0, got {period_length_days}")
+    edges = np.append(t, t[-1] + float(period_length_days))
+    vals = s.to_numpy(dtype=float)
+    spans = np.diff(edges)
+
+    whole = np.allclose(edges, np.round(edges), atol=1e-9)
+    if whole:
+        # Periods on day boundaries: each day lies in exactly one period.
+        reps = np.round(spans).astype(int)
+        daily = np.repeat(vals, reps)
+        first = int(round(edges[0]))
+    else:
+        first = int(np.floor(edges[0] + 1e-9))
+        last = int(np.ceil(edges[-1] - 1e-9))
+        day_edges = np.clip(np.arange(first, last + 1, dtype=float), edges[0], edges[-1])
+        cum = np.concatenate([[0.0], np.cumsum(vals * spans)])   # integral at period edges
+        integral = np.diff(np.interp(day_edges, edges, cum))
+        covered = np.diff(day_edges)
+        daily = np.divide(integral, covered, out=np.full(covered.size, np.nan), where=covered > 1e-12)
+    index = (origin + pd.to_timedelta(np.arange(first, first + daily.size), unit='D')).normalize()
+    return pd.Series(daily, index=index, name=s.name).dropna()
 
 
 class SUMMAToMODFLOWCoupler:
@@ -149,22 +227,62 @@ class SUMMAToMODFLOWCoupler:
 
         return series
 
+    @staticmethod
+    def aggregate_to_stress_periods(
+        daily: np.ndarray,
+        stress_period_length: float = 1.0,
+        n_stress_periods: int = 0,
+    ) -> np.ndarray:
+        """Mean of a daily series over each stress period.
+
+        Day ``i`` covers model time ``[i, i + 1)``; period ``k`` covers
+        ``[k * L, (k + 1) * L)`` and gets the time-weighted mean of the days it
+        overlaps (fractional lengths split days). A period only partly covered
+        by the series averages the covered part; periods wholly past its end
+        repeat the last period's value (as MODFLOW does for omitted blocks).
+        With ``L == 1`` the daily values are returned unchanged.
+        """
+        vals = np.nan_to_num(np.asarray(daily, dtype=float).ravel(), nan=0.0)
+        sp = float(stress_period_length)
+        if sp <= 0:
+            raise ConfigurationError(f"stress_period_length must be > 0, got {sp}")
+        if vals.size == 0:
+            return vals
+        n = int(n_stress_periods) if n_stress_periods and n_stress_periods > 0 \
+            else int(np.ceil(vals.size / sp - 1e-9))
+        if sp == 1.0:
+            out = vals[:n].copy()
+        else:
+            days = float(vals.size)
+            cum = np.concatenate([[0.0], np.cumsum(vals)])     # integral at whole days
+            edges = np.minimum(np.arange(n + 1) * sp, days)
+            integral = np.diff(np.interp(edges, np.arange(cum.size, dtype=float), cum))
+            covered = np.diff(edges)
+            out = np.divide(integral, covered, out=np.full(n, np.nan), where=covered > 1e-12)
+            out = out[~np.isnan(out)]
+        if out.size < n:
+            out = np.concatenate([out, np.full(n - out.size, out[-1])])
+        return out
+
     def write_modflow_recharge_rch(
         self,
         recharge_series: pd.Series,
         rch_path: Path,
         n_stress_periods: int = 0,
+        stress_period_length: float = 1.0,
     ) -> Path:
         """Write MODFLOW 6 RCH package with per-period recharge.
 
         Uses READASARRAYS CONSTANT format — one PERIOD block per stress
-        period.  Periods beyond the recharge series reuse the last value
-        (MODFLOW default behaviour when a period block is omitted).
+        period. The daily recharge is averaged over each stress period of
+        ``stress_period_length`` days (see :meth:`aggregate_to_stress_periods`).
 
         Args:
-            recharge_series: Recharge in m/d with datetime index
+            recharge_series: Daily recharge in m/d, starting on the first model day
             rch_path: Path to write the gwf.rch file
-            n_stress_periods: Total stress periods in TDIS (0 = use series length)
+            n_stress_periods: Total stress periods in TDIS (0 = as many as the
+                series covers). Periods beyond the series reuse its last day.
+            stress_period_length: Stress-period length in days (TDIS PERLEN)
 
         Returns:
             Path to written file
@@ -178,10 +296,9 @@ class SUMMAToMODFLOWCoupler:
             "",
         ]
 
-        values = recharge_series.values
+        values = self.aggregate_to_stress_periods(
+            np.asarray(recharge_series, dtype=float), stress_period_length, n_stress_periods)
         for i, val in enumerate(values):
-            if np.isnan(val):
-                val = 0.0
             lines.append(f"BEGIN PERIOD {i + 1}")
             lines.append("  RECHARGE")
             lines.append(f"    CONSTANT {val:.8e}")
@@ -191,7 +308,8 @@ class SUMMAToMODFLOWCoupler:
         rch_path.write_text("\n".join(lines))
 
         self.logger.debug(
-            f"Wrote MODFLOW per-period recharge: {len(recharge_series)} periods to {rch_path}"
+            f"Wrote MODFLOW per-period recharge: {len(values)} periods of "
+            f"{stress_period_length} d from {len(recharge_series)} days to {rch_path}"
         )
 
         return rch_path
@@ -293,27 +411,35 @@ class SUMMAToMODFLOWCoupler:
         surface_runoff_kg_m2_s: pd.Series,
         drain_discharge_m3_d: pd.Series,
         catchment_area_m2: float,
+        stress_period_length: float | None = None,
     ) -> pd.Series:
         """Combine surface runoff and MODFLOW baseflow into total streamflow.
 
+        The drain discharge has one value per stress period, dated at the
+        period start; it is spread over every day of its period (see
+        :func:`periods_to_daily`) before being added to the daily surface
+        runoff, so each land-model day inside the MODFLOW run gets a value.
+
         Args:
             surface_runoff_kg_m2_s: SUMMA surface runoff (kg/m2/s)
-            drain_discharge_m3_d: MODFLOW drain discharge (m3/d)
+            drain_discharge_m3_d: MODFLOW drain discharge (m3/d), one value per stress period
             catchment_area_m2: Catchment area in m2
+            stress_period_length: Stress-period length in days
+                (MODFLOW_STRESS_PERIOD_LENGTH); ``None`` infers it from the
+                spacing of the drain series.
 
         Returns:
-            Combined streamflow in m3/s
+            Combined daily streamflow in m3/s
         """
         # Convert surface runoff: m/s → m3/s
         # (m/s) × area_m2 = m3/s
         surface_m3s = surface_runoff_kg_m2_s * catchment_area_m2
 
-        # Convert drain discharge: m3/d → m3/s
-        baseflow_m3s = drain_discharge_m3_d / 86400.0
+        # Convert drain discharge: m3/d → m3/s, one value per day of each stress period
+        baseflow_m3s = periods_to_daily(drain_discharge_m3_d / 86400.0, stress_period_length)
 
-        # Normalize both indices to date-only for alignment
+        # Normalize the surface index to date-only for alignment
         surface_m3s.index = surface_m3s.index.normalize()
-        baseflow_m3s.index = baseflow_m3s.index.normalize()
 
         # Align indices
         common_idx = surface_m3s.index.intersection(baseflow_m3s.index)

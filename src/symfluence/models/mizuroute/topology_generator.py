@@ -87,15 +87,20 @@ class MizuRouteTopologyGenerator:
             self._create_point_topology_file()
             return
 
-        river_network_path = self.pp._get_config_value(lambda: self.pp.config.paths.river_network_path, default='default')
-        river_network_name = self.pp._get_config_value(lambda: self.pp.config.paths.river_network_name, default='default')
+        river_network_path = self.pp._get_config_value(
+            lambda: self.pp.config.paths.river_network_path,
+            dict_key='RIVER_NETWORK_SHP_PATH',
+        )
+        river_network_name = self.pp._get_config_value(
+            lambda: self.pp.config.paths.river_network_name,
+            dict_key='RIVER_NETWORK_SHP_NAME',
+        )
         method_suffix = self.pp._get_method_suffix()
 
         # Check if this is lumped domain with distributed routing
         # If so, use the delineated river network (from distributed delineation)
         routing_delineation = self.pp._get_config_value(
             lambda: self.pp.config.domain.delineation.routing,
-            default='lumped',
             dict_key='ROUTING_DELINEATION',
         )
         is_lumped_to_distributed = (
@@ -114,8 +119,14 @@ class MizuRouteTopologyGenerator:
         else:
             river_network_path = Path(river_network_path)
 
-        river_basin_path = self.pp._get_config_value(lambda: self.pp.config.paths.river_basins_path, default='default')
-        river_basin_name = self.pp._get_config_value(lambda: self.pp.config.paths.river_basins_name, default='default')
+        river_basin_path = self.pp._get_config_value(
+            lambda: self.pp.config.paths.river_basins_path,
+            dict_key='RIVER_BASINS_PATH',
+        )
+        river_basin_name = self.pp._get_config_value(
+            lambda: self.pp.config.paths.river_basins_name,
+            dict_key='RIVER_BASINS_NAME',
+        )
 
         if river_basin_name == 'default':
             river_basin_name = f"{self.pp.domain_name}_riverBasins_{routing_suffix}.shp"
@@ -430,7 +441,10 @@ class MizuRouteTopologyGenerator:
             self.pp.logger.warning(f"Fixed {invalid_count} invalid downstream segment references in grid topology")
 
         # Get cell size for segment length
-        grid_cell_size = self.pp._get_config_value(lambda: self.pp.config.domain.grid_cell_size, default=1000.0, dict_key='GRID_CELL_SIZE')
+        grid_cell_size = self.pp._get_config_value(
+            lambda: self.pp.config.domain.grid_cell_size,
+            dict_key='GRID_CELL_SIZE',
+        )
         lengths = np.full(num_cells, float(grid_cell_size))
 
         # HRU variables (each cell is also an HRU)

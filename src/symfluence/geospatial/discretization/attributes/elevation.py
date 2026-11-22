@@ -28,7 +28,7 @@ def discretize(discretizer: "DomainDiscretizer") -> Optional[object]:
     default_name = f"{discretizer.domain_name}_riverBasins_{discretizer.delineation_suffix}.shp"
     delineate_coastal = discretizer._get_config_value(
         lambda: discretizer.config.domain.delineation.delineate_coastal_watersheds,
-        default=False
+        dict_key='DELINEATE_COASTAL_WATERSHEDS',
     )
     if delineate_coastal:
         default_name = f"{discretizer.domain_name}_riverBasins_with_coastal.shp"
@@ -59,7 +59,7 @@ def discretize(discretizer: "DomainDiscretizer") -> Optional[object]:
 
     elevation_band_size = float(discretizer._get_config_value(
         lambda: discretizer.config.domain.elevation_band_size,
-        default=200.0
+        dict_key='ELEVATION_BAND_SIZE',
     ))
     gru_gdf, elevation_thresholds = discretizer._read_and_prepare_data(
         gru_shapefile, dem_raster, elevation_band_size

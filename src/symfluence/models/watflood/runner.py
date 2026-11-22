@@ -54,11 +54,7 @@ class WATFLOODRunner(BaseModelRunner):
             env = os.environ.copy()
             env['MallocStackLogging'] = '0'
 
-            timeout = self._get_config_value(
-                lambda: self.config.model.watflood.timeout,
-                default=3600,
-                dict_key='WATFLOOD_TIMEOUT'
-            )
+            timeout = self._get_config_value(lambda: self.config.model.watflood.timeout, dict_key='WATFLOOD_TIMEOUT')
 
             stdout_file = output_dir / 'watflood_stdout.log'
             stderr_file = output_dir / 'watflood_stderr.log'
@@ -111,14 +107,9 @@ class WATFLOODRunner(BaseModelRunner):
         """Get WATFLOOD executable path."""
         install_path = self._get_config_value(
             lambda: self.config.model.watflood.install_path,
-            default='default',
-            dict_key='WATFLOOD_INSTALL_PATH'
+            dict_key='WATFLOOD_INSTALL_PATH',
         )
-        exe_name = self._get_config_value(
-            lambda: self.config.model.watflood.exe,
-            default='watflood',
-            dict_key='WATFLOOD_EXE'
-        )
+        exe_name = self._get_config_value(lambda: self.config.model.watflood.exe, dict_key='WATFLOOD_EXE')
 
         return resolve_install_executable(install_path, self.data_dir, 'installs/watflood/bin', exe_name)
 

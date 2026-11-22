@@ -43,6 +43,7 @@ import requests
 from symfluence.core.registries import R
 
 from ..base import BaseAcquisitionHandler
+from ..utils import atomic_write
 from .fluxnet_constants import (
     FLUXNET_VARIABLE_MAPPING,
     convert_le_to_et,
@@ -96,7 +97,10 @@ class FLUXNETAcquirer(BaseAcquisitionHandler):
         # Output file path
         processed_file = output_dir / f"{self.domain_name}_FLUXNET_{station_id}.csv"
 
-        if processed_file.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False, dict_key='FORCE_DOWNLOAD'):
+        if processed_file.exists() and not self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             self.logger.info(f"Using existing FLUXNET file: {processed_file}")
             return processed_file
 
@@ -398,7 +402,7 @@ class FLUXNETAcquirer(BaseAcquisitionHandler):
             response = requests.get(download_url, timeout=300)
             if response.status_code == 200:
                 raw_file = output_dir / f"AMF_{station_id}_raw.zip"
-                with open(raw_file, 'wb') as f:
+                with atomic_write(raw_file) as _part, open(_part, 'wb') as f:
                     f.write(response.content)
 
                 # Extract and read

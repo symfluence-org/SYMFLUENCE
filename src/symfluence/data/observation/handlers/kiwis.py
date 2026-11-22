@@ -43,9 +43,9 @@ class KiWISStreamflowHandler(BaseObservationHandler):
     }
 
     # ------------------------------------------------------------------ config
-    def _setting(self, attr: str, key: str, default=None):
-        return self._get_config_value(
-            lambda: getattr(self.config.evaluation.kiwis, attr), default=default, dict_key=key)
+    def _setting(self, attr: str, key: str):
+        # No inline default: the KiWISConfig schema is the single source of defaults
+        return self._get_config_value(lambda: getattr(self.config.evaluation.kiwis, attr), dict_key=key)
 
     def _channel(self) -> Tuple[str, str]:
         channel = self._setting('channel_url', 'KIWIS_CHANNEL_URL') or os.environ.get('KIWIS_CHANNEL_URL')
@@ -72,22 +72,32 @@ class KiWISStreamflowHandler(BaseObservationHandler):
         start = pd.Timestamp(self.start_date)
         end = (pd.Timestamp(self.end_date) + pd.Timedelta(days=1)).normalize() + pd.Timedelta(hours=1)
 
-        force = self._get_config_value(lambda: self.config.data.force_download, default=False,
-                                       dict_key='FORCE_DOWNLOAD')
+        force = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
         old = None
+        windows = [(start, end)]
         if raw_file.exists() and not force:
             old = read_raw(raw_file)
             if len(old):
-                revise = pd.Timedelta(days=float(self._setting('revise_days', 'KIWIS_REVISE_DAYS', 3.0)))
-                start = max(start, old.index.max() - revise)
-            if start >= end:
+                # Refetch the recent values (they may still be edited in WISKI) and, if the
+                # experiment now starts before the archive, the missing head of the record
+                revise = pd.Timedelta(days=float(self._setting('revise_days', 'KIWIS_REVISE_DAYS')))
+                windows = []
+                if start < old.index.min() - pd.Timedelta(days=1):
+                    windows.append((start, old.index.min()))
+                windows.append((max(start, old.index.max() - revise), end))
+            windows = [(a, b) for a, b in windows if a < b]
+            if not windows:
                 self.logger.info(f"Using existing KiWIS data: {raw_file}")
                 return raw_file
 
-        self.logger.info(f"Fetching KiWIS streamflow {start} .. {end}")
-        new = update_archive(old, channel, ts_id, start, end,
-                             timeout=float(self._setting('timeout', 'KIWIS_TIMEOUT', 180.0)),
-                             retries=int(self._setting('retries', 'KIWIS_RETRIES', 2)))
+        fetch_kwargs = dict(timeout=float(self._setting('timeout', 'KIWIS_TIMEOUT')),
+                            retries=int(self._setting('retries', 'KIWIS_RETRIES')))
+        new = old
+        for a, b in windows:
+            self.logger.info(f"Fetching KiWIS streamflow {a} .. {b}")
+            new = update_archive(new, channel, ts_id, a, b, **fetch_kwargs)
+        if new is None:  # unreachable: windows is never empty here
+            raise DataAcquisitionError('KiWIS fetched nothing')
         raw_file.parent.mkdir(parents=True, exist_ok=True)
         tmp = raw_file.with_name(raw_file.name + '.tmp')
         new.rename_axis('time').to_csv(tmp)
@@ -104,8 +114,8 @@ class KiWISStreamflowHandler(BaseObservationHandler):
             raise DataAcquisitionError(f"No KiWIS values in {input_path}")
         freq = self._get_resample_freq()
         span = pd.Timedelta(days=1) if freq == 'D' else pd.Timedelta(freq if freq[0].isdigit() else f'1{freq}')
-        label = str(self._setting('interval_label', 'KIWIS_INTERVAL_LABEL', 'start'))
-        coverage = float(self._setting('min_coverage', 'KIWIS_MIN_COVERAGE', kiwis.DEFAULT_MIN_COVERAGE))
+        label = str(self._setting('interval_label', 'KIWIS_INTERVAL_LABEL'))
+        coverage = float(self._setting('min_coverage', 'KIWIS_MIN_COVERAGE'))
         q = kiwis.interval_mean(raw['value'], span, label=label, min_coverage=coverage)
         if self.start_date is not None and not pd.isna(self.start_date):
             q = q[q.index >= pd.Timestamp(self.start_date)]

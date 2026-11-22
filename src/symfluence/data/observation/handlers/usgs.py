@@ -70,7 +70,8 @@ class USGSStreamflowHandler(BaseObservationHandler):
             return self.project_observations_dir / "streamflow" / "raw_data"
 
         download_enabled = self._get_config_value(
-            lambda: self.config.data.download_usgs_data, default=False
+            lambda: self.config.data.download_usgs_data,
+            dict_key='DOWNLOAD_USGS_DATA',
         )
 
         # Same opt-out semantics as the WSC handler: if this handler is
@@ -287,7 +288,8 @@ class USGSGroundwaterHandler(BaseObservationHandler):
     def acquire(self) -> Path:
         """Download USGS groundwater data."""
         download_enabled = self._get_config_value(
-            lambda: self.config.evaluation.usgs_gw.download, default=False, dict_key='DOWNLOAD_USGS_GW'
+            lambda: self.config.evaluation.usgs_gw.download,
+            dict_key='DOWNLOAD_USGS_GW',
         )
 
         if not download_enabled:

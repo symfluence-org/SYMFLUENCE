@@ -3,7 +3,9 @@
 # Generate toolchain.json metadata for SYMFLUENCE binary artifacts
 #
 # This script captures:
-# - Tool versions (commit hashes, branches)
+# - Tool versions (commit hashes, branches, upstream repository, and the
+#   source pin recorded by `symfluence binary install` in each tool's
+#   .symfluence_source.json)
 # - Compiler versions (Fortran, C, C++)
 # - Library versions (NetCDF, HDF5, MPI)
 # - Build metadata (date, platform)
@@ -113,10 +115,18 @@ get_tool_git_info() {
 
     local commit="unknown"
     local branch="unknown"
+    local repository="unknown"
+    local source_json="null"
 
     if [ -d ".git" ]; then
         commit="$(git rev-parse HEAD 2>/dev/null || echo "unknown")"
         branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")"
+        repository="$(git config --get remote.origin.url 2>/dev/null || echo "unknown")"
+    fi
+    # Source record written by `symfluence binary install`: repository, the
+    # pinned commit (binary_pins.json) and the commit actually built.
+    if [ -f ".symfluence_source.json" ]; then
+        source_json="$(cat .symfluence_source.json)"
     fi
 
     # Get relative executable path based on tool
@@ -167,6 +177,8 @@ get_tool_git_info() {
     "$tool_name": {
       "commit": "$commit",
       "branch": "$branch",
+      "repository": "$repository",
+      "source": $source_json,
       "executable": "$exe_path",
       "installed": true
     }
@@ -271,6 +283,24 @@ for tool in summa mizuroute fuse ngen hype taudem sundials; do
     else
         print_info "Skipping $tool (not installed)"
     fi
+done
+
+# Every other tool built with a source record (the optional release models:
+# vic, swat, prms, mhm, parflow, ...), named by the record's "tool" field.
+for tool_dir in "$INSTALLS_DIR"/*/; do
+    [ -f "${tool_dir}.symfluence_source.json" ] || continue
+    tool="$(sed -n 's/^ *"tool": *"\([^"]*\)".*/\1/p' "${tool_dir}.symfluence_source.json" | head -1)"
+    [ -n "$tool" ] || continue
+    case " summa mizuroute fuse ngen hype taudem sundials " in
+        *" $tool "*) continue ;;
+    esac
+    print_success "Found $tool (source record)"
+    tool_json="$(get_tool_git_info "${tool_dir%/}" "$tool")"
+    if [ $TOOL_COUNT -gt 0 ]; then
+        TOOLS_JSON="${TOOLS_JSON},"
+    fi
+    TOOLS_JSON="${TOOLS_JSON}${tool_json}"
+    TOOL_COUNT=$((TOOL_COUNT + 1))
 done
 
 # Generate JSON output

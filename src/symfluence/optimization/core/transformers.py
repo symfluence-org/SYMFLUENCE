@@ -103,7 +103,10 @@ class SoilDepthTransformer(ParameterTransformer):
             return True
 
         try:
-            coldstate_path = Path(settings_dir) / self._get_config_value(lambda: self.config.model.summa.coldstate, default='coldState.nc', dict_key='SETTINGS_SUMMA_COLDSTATE')
+            coldstate_path = Path(settings_dir) / self._get_config_value(
+                lambda: self.config.model.summa.coldstate,
+                dict_key='SETTINGS_SUMMA_COLDSTATE',
+            )
             if not coldstate_path.exists():
                 self.logger.error(f"{coldstate_path.name} not found at {coldstate_path}")
                 return False

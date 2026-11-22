@@ -291,6 +291,68 @@ class TestJupyterLaunch:
         # Should attempt jupyterlab
         calls = [str(call) for call in mock_subprocess.call_args_list]
         assert any('jupyterlab' in str(call) or 'jupyter' in str(call) for call in calls)
+        assert result == 0
+
+    @staticmethod
+    def _fake_run(installed, launch_rc=0):
+        """subprocess.run stand-in: find_spec probes succeed only for ``installed``."""
+        launched = []
+
+        def run(cmd, *args, **kwargs):
+            if cmd[1] == '-c' and 'find_spec' in cmd[2]:
+                found = any(repr(mod) in cmd[2] for mod in installed)
+                return MagicMock(returncode=0 if found else 1)
+            if cmd[1] == '-m' and cmd[2] in ('jupyterlab', 'notebook'):
+                launched.append(cmd[2])
+                return MagicMock(returncode=launch_rc)
+            return MagicMock(returncode=0)
+
+        return run, launched
+
+    @patch('subprocess.run')
+    @patch.object(Path, 'is_dir', return_value=True)
+    @patch.object(Path, 'exists', return_value=True)
+    @patch('pathlib.Path.rglob')
+    def test_missing_jupyter_fails_with_hint(self, mock_rglob, mock_exists, mock_isdir, mock_subprocess):
+        """No front end installed: non-zero exit instead of a silent success."""
+        repo_root = Path('/tmp/test_repo')
+        mock_rglob.return_value = [repo_root / 'examples' / '04e_test.ipynb']
+        mock_subprocess.side_effect, launched = self._fake_run(installed=())
+
+        result = NotebookService().launch_example_notebook('04e', repo_root=repo_root)
+
+        assert result == 3
+        assert launched == []
+
+    @patch('subprocess.run')
+    @patch.object(Path, 'is_dir', return_value=True)
+    @patch.object(Path, 'exists', return_value=True)
+    @patch('pathlib.Path.rglob')
+    def test_falls_back_to_classic_notebook(self, mock_rglob, mock_exists, mock_isdir, mock_subprocess):
+        """JupyterLab missing but classic Notebook present: launch Notebook."""
+        repo_root = Path('/tmp/test_repo')
+        mock_rglob.return_value = [repo_root / 'examples' / '04e_test.ipynb']
+        mock_subprocess.side_effect, launched = self._fake_run(installed=('notebook',))
+
+        result = NotebookService().launch_example_notebook('04e', repo_root=repo_root, prefer_lab=True)
+
+        assert result == 0
+        assert launched == ['notebook']
+
+    @patch('subprocess.run')
+    @patch.object(Path, 'is_dir', return_value=True)
+    @patch.object(Path, 'exists', return_value=True)
+    @patch('pathlib.Path.rglob')
+    def test_jupyter_nonzero_exit_is_failure(self, mock_rglob, mock_exists, mock_isdir, mock_subprocess):
+        """A Jupyter process that exits non-zero is reported as a failure."""
+        repo_root = Path('/tmp/test_repo')
+        mock_rglob.return_value = [repo_root / 'examples' / '04e_test.ipynb']
+        mock_subprocess.side_effect, launched = self._fake_run(installed=('jupyterlab',), launch_rc=1)
+
+        result = NotebookService().launch_example_notebook('04e', repo_root=repo_root)
+
+        assert result == 3
+        assert launched == ['jupyterlab']
 
 
 class TestErrorCases:

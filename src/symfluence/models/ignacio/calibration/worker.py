@@ -39,6 +39,9 @@ class IGNACIOWorker(BaseWorker):
         - initial_radius: Initial fire radius (1-100 m)
     """
 
+    # Scores fire perimeters (IoU / Dice), not a flow series.
+    SUPPORTS_FORMAL_LIKELIHOOD = False
+
     def __init__(
         self,
         config: Optional[Dict[str, Any]] = None,

@@ -105,8 +105,7 @@ class GroundwaterEvaluator(ModelEvaluator):
 
         self.optimization_target = self._target_override_if_valid(('gw_depth', 'gw_grace')) or self._get_config_value(
             lambda: self.config.optimization.target,
-            default='streamflow',
-            dict_key='OPTIMIZATION_TARGET'
+            dict_key='OPTIMIZATION_TARGET',
         )
         if self.optimization_target not in ['gw_depth', 'gw_grace']:
             eval_var = self._get_config_value(
@@ -205,8 +204,7 @@ class GroundwaterEvaluator(ModelEvaluator):
             # 3. Apply auto-alignment AFTER both datasets loaded
             auto_align = self._get_config_value(
                 lambda: self.config.evaluation.usgs_gw.auto_align,
-                default=True,
-                dict_key='GW_AUTO_ALIGN'
+                dict_key='GW_AUTO_ALIGN',
             )
             if auto_align and self.optimization_target == 'gw_depth':
                 # Find common time indices for alignment
@@ -284,8 +282,7 @@ class GroundwaterEvaluator(ModelEvaluator):
 
             base_depth = float(self._get_config_value(
                 lambda: self.config.evaluation.usgs_gw.base_depth,
-                default=50.0,
-                dict_key='GW_BASE_DEPTH'
+                dict_key='GW_BASE_DEPTH',
             ))
             gw_depth_sim = (base_depth - sim_data_m).abs()
 
@@ -295,8 +292,7 @@ class GroundwaterEvaluator(ModelEvaluator):
             sim_data = self._collapse_spatial_dims(ds['scalarAquiferStorage'], aggregate='mean')
             base_depth = float(self._get_config_value(
                 lambda: self.config.evaluation.usgs_gw.base_depth,
-                default=50.0,
-                dict_key='GW_BASE_DEPTH'
+                dict_key='GW_BASE_DEPTH',
             ))
             gw_depth_sim = (base_depth - sim_data).abs()
 

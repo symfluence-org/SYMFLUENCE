@@ -21,6 +21,7 @@ from symfluence.core.exceptions import DataAcquisitionError
 from symfluence.core.registries import R
 
 from ...utils import VariableStandardizer
+from ..resampling.grid_geometry import curvilinear_cell_polygons
 from .base_dataset import BaseDatasetHandler
 
 
@@ -557,22 +558,11 @@ class HRRRHandler(BaseDatasetHandler):
 
             cell_count = 0
             total_cells = (i_max - i_min + 1) * (j_max - j_min + 1)
+            # Footprints centred on each cell, using real neighbours outside the window.
+            cells = curvilinear_cell_polygons(lon, lat, rows=(i_min, i_max + 1), cols=(j_min, j_max + 1), nominal_step=0.027)
             for i in range(i_min, i_max + 1):
                 for j in range(j_min, j_max + 1):
-                    lat_corners = [
-                        lat[i, j],
-                        lat[i, j + 1] if j + 1 < nx else lat[i, j],
-                        lat[i + 1, j + 1] if i + 1 < ny and j + 1 < nx else lat[i, j],
-                        lat[i + 1, j] if i + 1 < ny else lat[i, j],
-                    ]
-                    lon_corners = [
-                        lon[i, j],
-                        lon[i, j + 1] if j + 1 < nx else lon[i, j],
-                        lon[i + 1, j + 1] if i + 1 < ny and j + 1 < nx else lon[i, j],
-                        lon[i + 1, j] if i + 1 < ny else lon[i, j],
-                    ]
-
-                    geometries.append(Polygon(zip(lon_corners, lat_corners)))
+                    geometries.append(cells[i - i_min, j - j_min])
                     ids.append(i * nx + j)
                     lats.append(float(lat[i, j]))
                     lons.append(float(lon[i, j]))
@@ -585,8 +575,8 @@ class HRRRHandler(BaseDatasetHandler):
             {
                 "geometry": geometries,
                 "ID": ids,
-                self._get_config_value(lambda: self.config.forcing.shape_lat_name, default='lat'): lats,
-                self._get_config_value(lambda: self.config.forcing.shape_lon_name, default='lon'): lons,
+                self._get_config_value(lambda: self.config.forcing.shape_lat_name, dict_key='FORCING_SHAPE_LAT_NAME'): lats,
+                self._get_config_value(lambda: self.config.forcing.shape_lon_name, dict_key='FORCING_SHAPE_LON_NAME'): lons,
             },
             crs="EPSG:4326",
         )

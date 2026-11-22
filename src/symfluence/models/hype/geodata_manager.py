@@ -50,6 +50,7 @@ GROUNDWATER_OUT_OF_DOMAIN_SUBID = 999999999
 
 
 OLAKE_CLASS_MODEL = 1   # HYPE modvar.f90 olake_model
+ILAKE_CLASS_MODEL = 2   # HYPE modvar.f90 ilake_model
 
 
 def groundwater_export_enabled(config) -> bool:
@@ -105,7 +106,7 @@ class HYPEGeoDataManager:
         - maindown: ID of downstream sub-basin (0 for outlets)
         - area: Sub-basin area (m²)
         - rivlen: River length through sub-basin (m)
-        - slope_mean: Mean river slope (m/m)
+        - slope_mean: Mean land slope of the sub-basin (%), from the DEM slope raster
         - latitude/longitude: Centroid coordinates
         - elev_mean: Mean elevation (m)
         - SLC_1, SLC_2, ...: Fractions of each Soil-Landcover Class
@@ -223,13 +224,17 @@ class HYPEGeoDataManager:
         else:
             base_df['rivlen'] = 0
 
+        # HYPE slope_mean is the sub-basin's mean land slope in percent (file
+        # reference: "slope_mean  %"; rrcs3 is per %). Filled from the DEM slope
+        # raster below; river slope (m/m) x 100 is only a fallback.
         if 'Slope' in riv.columns:
-            base_df['slope_mean'] = riv['Slope']
+            base_df['slope_mean'] = riv['Slope'].astype(float).clip(lower=0) * 100.0
         else:
-            base_df['slope_mean'] = 0.001
+            base_df['slope_mean'] = 0.1
 
         # 3. Catchment properties
         cat = gpd.read_file(subbasins_shapefile)
+        self._apply_land_slope(base_df, cat, basin_id_col)
         area_info = self.geofabric_mapping['area']
 
         # Calculate centroids in projected CRS
@@ -382,7 +387,11 @@ class HYPEGeoDataManager:
             )
             base_df = base_df[~missing_mask].copy()
             # Remove any maindown references to dropped sub-basins
-            base_df.loc[base_df['maindown'].isin(dropped_ids), 'maindown'] = 0
+            base_df.loc[base_df['maindown'].isin(dropped_ids), 'maindown'] = self._OUTLET
+
+        # Remember each row's original id through banding and the id shift, so
+        # ids from the user's config (SIM_REACH_ID) can be translated later.
+        base_df['_orig_id'] = base_df['subid'].astype(int)
 
         # 7b. Expand into elevation-band sub-basins (semi-distributed HYPE).
         # Done after geometry/SLC/glacier are resolved per original sub-basin so
@@ -402,11 +411,14 @@ class HYPEGeoDataManager:
                     base_df['elev_mean'].min(), base_df['elev_mean'].max(),
                 )
 
-        # 7c. Outlet lakes, keyed by the final (band) sub-basin ids before any shift
+        # 7c. Water land cover -> internal lake class; outlet lakes, keyed by the
+        # final (band) sub-basin ids before any shift
+        base_df, slc_df = self._apply_internal_lakes(base_df, slc_df)
         base_df, slc_df = self._apply_outlet_lakes(base_df, slc_df, glacier_slc_cols)
 
         # 8. Handle ID shifting (HYPE requires IDs > 0)
         base_df = self._shift_ids_if_needed(base_df)
+        self._write_subid_map(base_df.pop('_orig_id'), base_df)
 
         # 9. Sort and save
         sorted_df = self.sort_geodata(base_df)
@@ -717,11 +729,12 @@ class HYPEGeoDataManager:
             else:
                 soil_value = [1]
 
+            # HYPE requires soil types >= 1. Remap before building the set, or
+            # (lc, 0) and (lc, 1) become two SLC rows that both match the basin.
+            soil_value = [1 if int(s) == 0 else s for s in soil_value]
             combinations_set.update(product(lc_values, soil_value))
 
         slc_df = pd.DataFrame(list(combinations_set), columns=['landcover', 'soil'])
-        # HYPE requires soil types >= 1, so remap 0 to 1
-        slc_df['soil'] = slc_df['soil'].replace(0, 1)
         slc_df['SLC'] = range(1, len(slc_df) + 1)
 
         # Calculate SLC fractions for each basin
@@ -875,8 +888,8 @@ class HYPEGeoDataManager:
                 parent_outlet[pid] = band_subid(pid, 1, low)
 
         def downstream_subid(parent_maindown: int) -> int:
-            if parent_maindown <= 0:
-                return 0
+            # Membership first: with 0-based ids, 0 can be a real parent. Band
+            # ids are parent*100+k (k >= 1), so 0 is unambiguous as the outlet.
             if parent_maindown in parent_outlet:
                 return parent_outlet[parent_maindown]
             return parent_maindown if parent_maindown in parent_ids else 0
@@ -929,7 +942,11 @@ class HYPEGeoDataManager:
                 row['elev_mean'] = band['elev_mean']
                 row['glacier_fraction'] = (
                     band_glac[k] / band_areas[k] if band_areas[k] > 0 else 0.0)
-                if resolve_config_value(self.config, lambda: self.config.model.hype.preserve_icecap_volume, False, 'HYPE_PRESERVE_ICECAP_VOLUME'):
+                if resolve_config_value(
+                    self.config,
+                    lambda: self.config.model.hype.preserve_icecap_volume,
+                    dict_key='HYPE_PRESERVE_ICECAP_VOLUME',
+                ):
                     if resolve_config_value(self.config, lambda: self.config.model.hype.glacier_type, None, 'HYPE_GLACIER_TYPE') != 1:
                         raise ValidationError('HYPE_PRESERVE_ICECAP_VOLUME requires glacier type 1')
                     # HYPE defaults: V = exp(logvolcor) * 1.701 * A**1.25.
@@ -976,34 +993,65 @@ class HYPEGeoDataManager:
                 row[col] = parent_outlet[int(row[col])]
         return row
 
+    # Internal "drains out of the model" marker used before ids are final. It
+    # cannot collide with a real sub-basin id, unlike 0 when ids are 0-based.
+    _OUTLET = -1
+
     def _shift_ids_if_needed(self, base_df: pd.DataFrame) -> pd.DataFrame:
         """
-        Shift IDs if they start from 0 (HYPE requires > 0).
+        Shift IDs if they start from 0 (HYPE requires > 0) and write outlets as 0.
+
+        Links are resolved against the pre-shift ids: a maindown/grwdown that
+        names an existing *other* sub-basin is a real link (shifted with it);
+        anything else (the -1 outlet marker, a self-reference, an unknown id)
+        is an outlet and becomes 0. grwdown keeps its out-of-domain code.
 
         Note: HYPEForcingProcessor also shifts forcing IDs, so this must be consistent.
         """
-        if base_df['subid'].min() == 0:
+        shift = 1 if base_df['subid'].min() == 0 else 0
+        if shift:
             self.logger.debug("Shifting subids +1 for HYPE compatibility (0-based to 1-based)")
 
-            # Get original IDs for checking connectivity
-            original_ids = set(base_df['subid'])
+        original_ids = set(base_df['subid'])
+        own = base_df['subid']
 
-            # Shift subids
-            base_df['subid'] = base_df['subid'] + 1
+        def relink(col: str, keep_special: bool) -> None:
+            vals = base_df[col]
+            linked = vals.isin(original_ids) & (vals != own)
+            out = vals.where(~linked, vals + shift)
+            outlet = ~linked
+            if keep_special:
+                # e.g. GROUNDWATER_OUT_OF_DOMAIN_SUBID must survive as-is
+                outlet &= (vals <= 0) | (vals == own)
+            base_df[col] = out.where(~outlet, 0)
 
-            # Update maindown: map valid connections to shifted ID, set others (outlets) to 0
-            def update_downstream(val):
-                if val in original_ids:
-                    return val + 1
-                return 0  # Outlet
-
-            base_df['maindown'] = base_df['maindown'].apply(update_downstream)
-            # The regional groundwater target is an id too; left unshifted it
-            # points each sub-basin at itself (or at a non-existent id).
-            if 'grwdown' in base_df.columns:
-                base_df['grwdown'] = base_df['grwdown'].apply(update_downstream)
-
+        relink('maindown', keep_special=False)
+        # The regional groundwater target is an id too; left unshifted it
+        # points each sub-basin at itself (or at a non-existent id).
+        if 'grwdown' in base_df.columns:
+            relink('grwdown', keep_special=True)
+        base_df['subid'] = base_df['subid'] + shift
         return base_df
+
+    SUBID_MAP_FILE = 'subid_map.csv'
+
+    def _write_subid_map(self, orig_ids: pd.Series, base_df: pd.DataFrame) -> None:
+        """Write original sub-basin id -> HYPE outlet subid.
+
+        HYPE subids differ from the input ids after the 0-based shift (+1) and
+        elevation banding (a parent becomes several band subids). Each original
+        id maps to the subid where its water leaves: the row whose maindown is
+        outside its own group.
+        """
+        rows = []
+        frame = pd.DataFrame({'orig': orig_ids.astype(int), 'subid': base_df['subid'].astype(int),
+                              'maindown': base_df['maindown'].astype(int)})
+        for orig, group in frame.groupby('orig'):
+            members = set(group['subid'])
+            outlet = group.loc[~group['maindown'].isin(members), 'subid']
+            rows.append((orig, int(outlet.iloc[0] if len(outlet) else group['subid'].iloc[0])))
+        pd.DataFrame(rows, columns=['original_id', 'hype_subid']).to_csv(
+            self.output_path / self.SUBID_MAP_FILE, index=False)
 
     def _write_forckey(self, sorted_df: pd.DataFrame) -> None:
         """
@@ -1122,6 +1170,94 @@ class HYPEGeoDataManager:
             result.loc[mask, 'rivlen'] = float(length)
         return result
 
+    def _apply_internal_lakes(self, base_df: pd.DataFrame,
+                              slc_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """Model water land cover as HYPE's internal lake class (class model 2).
+
+        As a land class, water (HYPE_LAKE_LANDUSE, default IGBP 17) has soil
+        layers and land-use snow/ET parameters; as an ilake, precipitation falls
+        on the lake, it evaporates at potential rate and drains through the
+        ilake rating curve. HYPE allows one ilake class per model, so every water
+        SLC's fraction is moved into the first water SLC, which becomes the
+        ilake; the other water SLCs stay in GeoClass with zero area (keeping the
+        SLC numbering). par.txt gets gldepi/gicatch/gratk/gratp from
+        HYPEConfigManager when GeoClass has an ilake. Off with
+        HYPE_WATER_AS_ILAKE: false.
+        """
+        if not resolve_config_value(self.config, lambda: self.config.model.hype.water_as_ilake, True, 'HYPE_WATER_AS_ILAKE'):
+            return base_df, slc_df
+        water_lu = int(resolve_config_value(self.config, lambda: self.config.model.hype.lake_landuse, 17, 'HYPE_LAKE_LANDUSE'))
+        rows = slc_df[slc_df['landcover'] == water_lu]
+        cols = [f'SLC_{int(slc)}' for slc in rows['SLC'] if f'SLC_{int(slc)}' in base_df.columns]
+        if not cols or not (base_df[cols].sum(axis=1) > 0).any():
+            return base_df, slc_df
+        base_df, slc_df = base_df.copy(), slc_df.copy()
+        base_df[cols[0]] = base_df[cols].sum(axis=1)
+        base_df[cols[1:]] = 0.0
+        if 'special' not in slc_df:
+            slc_df['special'] = np.nan
+        slc_df.loc[slc_df['SLC'] == int(cols[0].split('_')[1]), 'special'] = ILAKE_CLASS_MODEL
+        n = int((base_df[cols[0]] > 0).sum())
+        self.logger.info(f"HYPE internal lakes: water land cover in {n} sub-basin(s) modelled as ilake class {cols[0]}")
+        return base_df, slc_df
+
+    def _find_slope_raster(self) -> Optional[Path]:
+        """DEM slope raster (degrees) written by the elevation attribute processor."""
+        data_dir = resolve_config_value(self.config, lambda: self.config.system.data_dir, None, 'SYMFLUENCE_DATA_DIR')
+        domain = resolve_config_value(self.config, lambda: self.config.domain.name, None, 'DOMAIN_NAME')
+        candidates = []
+        if data_dir and domain:
+            candidates.append(Path(data_dir) / f'domain_{domain}' / 'attributes' / 'elevation' / 'slope')
+        # output_path is <project>/settings/HYPE
+        candidates.append(self.output_path.parent.parent / 'attributes' / 'elevation' / 'slope')
+        for folder in candidates:
+            files = sorted(folder.glob('*_slope.tif')) if folder.is_dir() else []
+            if files:
+                return files[0]
+        return None
+
+    def _apply_land_slope(self, base_df: pd.DataFrame, cat: gpd.GeoDataFrame, basin_id_col: str) -> None:
+        """Set slope_mean to each sub-basin's mean land slope (%) from the DEM slope raster.
+
+        Per-pixel 100*tan(slope) is averaged inside each catchment polygon. Basins
+        without raster coverage (or no raster at all) keep the river-slope fallback.
+        """
+        raster = self._find_slope_raster()
+        if raster is None or basin_id_col not in cat.columns:
+            self.logger.warning(
+                "HYPE slope_mean: no DEM slope raster (attributes/elevation/slope/*_slope.tif); "
+                "using river slope x 100 as the sub-basin slope (%)")
+            return
+        try:
+            import rasterio
+            from rasterio.mask import mask as rio_mask
+        except ImportError:
+            self.logger.warning("HYPE slope_mean: rasterio unavailable; using river slope x 100")
+            return
+        slopes: dict = {}
+        with rasterio.open(raster) as src:
+            shapes = cat.to_crs(src.crs) if cat.crs is not None and src.crs is not None else cat
+            for basin_id, geom in zip(shapes[basin_id_col], shapes.geometry):
+                if geom is None or geom.is_empty:
+                    continue
+                try:
+                    data, _ = rio_mask(src, [geom], crop=True, filled=False, all_touched=True)
+                except ValueError:  # polygon outside the raster
+                    continue
+                deg = np.ma.masked_invalid(data[0].astype(float))
+                deg = np.ma.masked_outside(deg, 0.0, 89.9)
+                if deg.count():
+                    slopes[basin_id] = float(np.ma.mean(100.0 * np.tan(np.radians(deg))))
+        if not slopes:
+            self.logger.warning(f"HYPE slope_mean: {raster.name} does not cover the sub-basins; using river slope x 100")
+            return
+        mapped = base_df['subid'].map(slopes)
+        if mapped.isna().all() and len(cat) == len(base_df):
+            # Same fallback as the catchment-property join: ids differ, rows align
+            mapped = pd.Series([slopes.get(b) for b in cat[basin_id_col]], index=base_df.index, dtype=float)
+        base_df['slope_mean'] = mapped.fillna(base_df['slope_mean'])
+        self.logger.info(f"HYPE slope_mean from {raster.name}: {int(mapped.notna().sum())}/{len(base_df)} sub-basins")
+
     def _apply_outlet_lakes(self, base_df: pd.DataFrame, slc_df: pd.DataFrame,
                             glacier_slc_cols: list[str]) -> tuple[pd.DataFrame, pd.DataFrame]:
         """Outlet lakes (HYPE class model 1) in the sub-basins listed in HYPE_OUTLET_LAKES.
@@ -1136,7 +1272,11 @@ class HYPEGeoDataManager:
         if not lakes:
             return base_df, slc_df
         slc = int(slc_df['SLC'].max()) + 1
-        lake_row = {'landcover': int(resolve_config_value(self.config, lambda: self.config.model.hype.lake_landuse, 17, 'HYPE_LAKE_LANDUSE')), 'soil': 1, 'SLC': slc,
+        lake_row = {'landcover': int(resolve_config_value(
+            self.config,
+            lambda: self.config.model.hype.lake_landuse,
+            dict_key='HYPE_LAKE_LANDUSE',
+        )), 'soil': 1, 'SLC': slc,
                     'special': OLAKE_CLASS_MODEL}
         slc_df = pd.concat([slc_df, pd.DataFrame([lake_row])], ignore_index=True)
         land_cols = [c for c in base_df.columns if c.startswith('SLC_')]
@@ -1171,7 +1311,9 @@ class HYPEGeoDataManager:
         combination['Main crop cropid'] = 0
         combination['Second crop cropid'] = 0
         combination['Crop rotation group'] = 0
-        combination['Vegetation type'] = 1
+        # HYPE vegetation types: 1 open, 2 forest, 3 water (lake classes should be water)
+        water_lu = int(resolve_config_value(self.config, lambda: self.config.model.hype.lake_landuse, 17, 'HYPE_LAKE_LANDUSE'))
+        combination['Vegetation type'] = np.where(combination['LULC'] == water_lu, 3, 1)
         # HYPE class models: 1 outlet lake, 2 internal lake, 3 glacier (modvar.f90)
         combination['Special class code'] = special.astype(int).to_numpy()
         soil_depths = resolve_config_value(self.config, lambda: self.config.model.hype.soil_layer_depths, None, 'HYPE_SOIL_LAYER_DEPTHS')

@@ -165,19 +165,15 @@ class PRMSResultExtractor(ModelResultExtractor):
 
     def _extract_from_statvar(self, output_file: Path, var_names: List[str]) -> pd.Series:
         """Extract a variable from a statvar text file (mean over its elements)."""
-        from .statvar import parse_statvar
+        from .statvar import parse_statvar, variable_frame
 
         header, df = parse_statvar(output_file)
-        counts = dict(header)
+        names = {n for n, _ in header}
         for name in var_names:
-            if name not in counts:
-                continue
-            if counts[name] == 1:
-                return df[name].rename(name)
-            cols = [f"{name}_{i + 1}" for i in range(counts[name])]
-            return df[cols].mean(axis=1).rename(name)
+            if name in names:
+                return variable_frame(header, df, name).mean(axis=1).rename(name)
         raise ModelExecutionError(
-            f"None of {var_names} in {output_file}; header has {list(counts)}"
+            f"None of {var_names} in {output_file}; header has {sorted(names)}"
         )
 
     def extract_streamflow(

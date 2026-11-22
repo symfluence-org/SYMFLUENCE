@@ -59,7 +59,7 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
         # otherwise the symfluence root's effective level). Never ERROR-gated:
         # that used to hide worker failures.
         config = task_data.get('config', {})
-        level_name = str(resolve_config_value(config, lambda: config.system.log_level, '', 'LOG_LEVEL') or '').upper()
+        level_name = str(resolve_config_value(config, lambda: config.system.log_level, dict_key='LOG_LEVEL') or '').upper()
         level = getattr(logging, level_name, None) if level_name else None
         if not isinstance(level, int):
             level = None
@@ -92,7 +92,11 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
 
         if has_streamflow_target:
             domain_method = resolve_config_value(config, lambda: config.domain.definition_method, 'lumped', 'DOMAIN_DEFINITION_METHOD')
-            routing_delineation = resolve_config_value(config, lambda: config.domain.delineation.routing, 'lumped', 'ROUTING_DELINEATION')
+            routing_delineation = resolve_config_value(
+                config,
+                lambda: config.domain.delineation.routing,
+                dict_key='ROUTING_DELINEATION',
+            )
 
             if domain_method not in ['point', 'lumped'] or (domain_method == 'lumped' and routing_delineation == 'river_network'):
                 needs_routing = True
@@ -133,7 +137,7 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
                     'individual_id': individual_id,
                     'params': params,
                     'score': None,
-                    'objectives': None if is_multiobjective else None,
+                    'objectives': None,
                     'error': error_msg,
                     'debug_info': debug_info,
                     'runtime': eval_runtime
@@ -150,7 +154,7 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
                 'individual_id': individual_id,
                 'params': params,
                 'score': None,
-                'objectives': None if is_multiobjective else None,
+                'objectives': None,
                 'error': error_msg,
                 'debug_info': debug_info,
                 'runtime': eval_runtime
@@ -158,7 +162,7 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
 
         # Run SUMMA
         debug_info['stage'] = 'summa_execution'
-        summa_timeout = int(resolve_config_value(config, lambda: config.model.summa.timeout, 7200, 'SUMMA_TIMEOUT'))
+        summa_timeout = int(resolve_config_value(config, lambda: config.model.summa.timeout, dict_key='SUMMA_TIMEOUT'))
         logger.debug("Running SUMMA")
         summa_start = time.time()
         if not _run_summa_worker(summa_exe, file_manager, summa_dir, logger, debug_info, summa_settings_dir, timeout=summa_timeout, config=config):
@@ -183,7 +187,7 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
                 'individual_id': individual_id,
                 'params': params,
                 'score': None,
-                'objectives': None if is_multiobjective else None,
+                'objectives': None,
                 'error': error_msg,
                 'debug_info': debug_info,
                 'runtime': eval_runtime
@@ -198,7 +202,11 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
             debug_info['stage'] = 'lumped_to_distributed_conversion'
             config = task_data['config']
             domain_method = resolve_config_value(config, lambda: config.domain.definition_method, 'lumped', 'DOMAIN_DEFINITION_METHOD')
-            routing_delineation = resolve_config_value(config, lambda: config.domain.delineation.routing, 'river_network', 'ROUTING_DELINEATION')
+            routing_delineation = resolve_config_value(
+                config,
+                lambda: config.domain.delineation.routing,
+                dict_key='ROUTING_DELINEATION',
+            )
 
             # ONLY convert if domain is lumped but routing expects a network
             if domain_method in ['lumped', 'point'] and routing_delineation == 'river_network':
@@ -211,7 +219,7 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
                         'individual_id': individual_id,
                         'params': params,
                         'score': None,
-                        'objectives': None if is_multiobjective else None,
+                        'objectives': None,
                         'error': error_msg,
                         'debug_info': debug_info,
                         'runtime': eval_runtime
@@ -242,7 +250,7 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
                     'individual_id': individual_id,
                     'params': params,
                     'score': None,
-                    'objectives': None if is_multiobjective else None,
+                    'objectives': None,
                     'error': error_msg,
                     'debug_info': debug_info,
                     'runtime': eval_runtime
@@ -310,7 +318,10 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
                     objectives = []
                     for obj_name in objective_names:
                         # Look for both 'Calib_OBJ' and 'OBJ' to be safe
-                        value = metrics.get(obj_name) or metrics.get(f'Calib_{obj_name}')
+                        # `or` would treat a perfect 0.0 (e.g. PBIAS) as missing
+                        value = metrics.get(obj_name)
+                        if value is None:
+                            value = metrics.get(f'Calib_{obj_name}')
 
                         logger.debug(f"Extracted {obj_name}: {value}")
 
@@ -480,7 +491,7 @@ def _evaluate_parameters_worker(task_data: Dict) -> Dict:
             'individual_id': task_data.get('individual_id', -1),
             'params': task_data.get('params', {}),
             'score': None,
-            'objectives': None if is_multiobjective else None,
+            'objectives': None,
             'error': error_msg,
             'debug_info': debug_info,
             'full_traceback': error_trace,
@@ -494,7 +505,11 @@ def _glacier_constraint(summa_dir, config: Dict) -> Dict[str, float]:
 
     result = glacier_metrics(summa_dir, config['SUMMA_GLACIER_MB_OBSERVATIONS'],
                              resolve_config_value(config, lambda: config.domain.calibration_period, '', 'CALIBRATION_PERIOD'),
-                             resolve_config_value(config, lambda: config.model.summa.glacier_mb_error_scale, 1.0, 'SUMMA_GLACIER_MB_ERROR_SCALE'))
+                             resolve_config_value(
+                                 config,
+                                 lambda: config.model.summa.glacier_mb_error_scale,
+                                 dict_key='SUMMA_GLACIER_MB_ERROR_SCALE',
+                             ))
     result['GLACIER_SCORE'] = result['glacier_score']
     return result
 

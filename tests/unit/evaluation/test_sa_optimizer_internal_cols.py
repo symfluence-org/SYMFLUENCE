@@ -79,8 +79,8 @@ def test_parameter_selector_drops_non_numeric_columns():
     assert set(cols) == {'p1', 'p2'}
 
 
-def test_adam_shaped_results_dont_break_sobol_validation(caplog):
-    """End-to-end: give perform_sobol_analysis an ADAM-shaped frame
+def test_adam_shaped_results_dont_break_parameter_selection(caplog):
+    """End-to-end: give trajectory_correlation an ADAM-shaped frame
     and confirm the previous 'Bounds are not legal' path no longer
     fires because SA only sees the real numeric parameter columns."""
     analyzer = SensitivityAnalyzer.__new__(SensitivityAnalyzer)
@@ -103,14 +103,14 @@ def test_adam_shaped_results_dont_break_sobol_validation(caplog):
         'current_params': [f"[{a:.2f}, {b:.2f}]" for a, b
                            in zip(rng.uniform(0.1, 0.9, n), rng.uniform(1, 9, n))],
     })
-    # perform_sobol_analysis should not raise; it'll run SALib on
+    # trajectory_correlation should not raise; it'll run SALib on
     # just p1/p2. We don't care about the numeric indices here —
     # only that we no longer crash on non-numeric columns.
     caplog.set_level(logging.WARNING)
-    result = analyzer.perform_sobol_analysis(df, metric='RMSE')
+    result = analyzer.trajectory_correlation(df, metric='RMSE')
     # Must return a Series indexed by the two real parameters only.
     assert list(result.index) == ['p1', 'p2'], \
-        f"sobol ran on unexpected columns: {list(result.index)}"
+        f"analysis ran on unexpected columns: {list(result.index)}"
 
 
 def test_non_param_cols_includes_sampler_diagnostics():
@@ -138,7 +138,7 @@ def test_parameter_selector_drops_constant_columns():
 
 def test_dream_shaped_results_drop_internals_and_run(caplog):
     """End-to-end on a DREAM-shaped frame (constant n_chains + varying
-    acceptance_rate + real params): Sobol runs on the real parameters only,
+    acceptance_rate + real params): the trajectory correlation runs on the real parameters only,
     with no crash on the constant internal column."""
     rng = np.random.default_rng(1)
     n = 40
@@ -156,6 +156,6 @@ def test_dream_shaped_results_drop_internals_and_run(caplog):
     analyzer.logger = logging.getLogger("test_sa_dream")
     analyzer.reporting_manager = MagicMock()
 
-    result = analyzer.perform_sobol_analysis(df, metric='RMSE')
+    result = analyzer.trajectory_correlation(df, metric='RMSE')
     assert list(result.index) == ['p1', 'p2'], \
-        f"sobol ran on unexpected columns: {list(result.index)}"
+        f"analysis ran on unexpected columns: {list(result.index)}"

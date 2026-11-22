@@ -38,7 +38,7 @@ Key Components:
     HYPEGeoDataManager: Geographic data files (GeoData.txt, GeoClass.txt, ForcKey.txt)
 
 Configuration Parameters:
-    HYPE_SPINUP_DAYS: Model spinup period in days (default: 365)
+    HYPE_SPINUP_DAYS: Model spinup period in days (default: from SPINUP_PERIOD, else 365)
     SETTINGS_HYPE_INFO: Info file name (default: 'info.txt')
     HYPE_PARAMS_TO_CALIBRATE: Calibration parameters
         (default: 'ttmp,cmlt,cevp,lp,epotdist,rrcs1,rrcs2,rcgrw,rivvel,damp')
@@ -132,6 +132,7 @@ def register() -> None:
     R.postprocessors.add_lazy("HYPE", f"{base}.postprocessor.HYPEPostProcessor")
     R.visualizers.add_lazy("HYPE", f"{base}.visualizer.visualize_hype")
     R.result_extractors.add_lazy("HYPE", f"{base}.extractor.HYPEResultExtractor")
+    R.output_adapters.add_lazy("HYPE", f"{base}.output_adapter.HYPEOutputAdapter")
     R.plotters.add_lazy("HYPE", f"{base}.plotter.HYPEPlotter")
 
     from symfluence.core.modeling.spatial_modes import (

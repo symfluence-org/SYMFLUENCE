@@ -138,16 +138,15 @@ class GSFLOWResultExtractor(ModelResultExtractor):
         self, statvar_file: Path, variable_type: str
     ) -> Optional[pd.Series]:
         """Parse PRMS/GSFLOW statvar.dat format (shared PRMS parser)."""
-        from symfluence.models.prms.statvar import parse_statvar, read_statvar_streamflow
+        from symfluence.models.prms.statvar import parse_statvar, read_statvar_streamflow, variable_frame
         try:
             if variable_type == 'streamflow':
                 return read_statvar_streamflow(statvar_file).rename(f'GSFLOW_{variable_type}')
             header, df = parse_statvar(statvar_file)
-            counts = dict(header)
+            names = {n for n, _ in header}
             for name in self.get_variable_names(variable_type):
-                if name in counts:
-                    cols = [name] if counts[name] == 1 else [f"{name}_{i + 1}" for i in range(counts[name])]
-                    return df[cols].mean(axis=1).rename(f'GSFLOW_{variable_type}')
+                if name in names:
+                    return variable_frame(header, df, name).mean(axis=1).rename(f'GSFLOW_{variable_type}')
         except (OSError, ModelExecutionError) as e:
             logger.error(f"Error parsing statvar: {e}", exc_info=True)
         return None

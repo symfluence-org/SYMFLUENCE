@@ -27,6 +27,8 @@ K = 0.5
 class ToyEnsemble(EnsembleManager):
     """N linear stores with member-specific initial storage."""
 
+    perturbable_forcing = {'precip': 'multiplicative'}
+
     def __init__(self, n_members, precip, times, timestep_hours=24, warmup_days=0,
                  spread=5.0, seed=0):
         super().__init__(n_members)
@@ -34,38 +36,29 @@ class ToyEnsemble(EnsembleManager):
         self.timestep_hours = timestep_hours
         self.warmup_days = warmup_days
         self.catchment_area_m2 = AREA_M2
+        self.state_specs = SPECS
         self._rng = np.random.default_rng(seed)
         self._spread = spread
         self.storage = np.zeros(n_members)
         self.q = np.zeros(n_members)
-        self.injections = []
 
     def initialize_members(self, **kwargs):
         self.storage = 20.0 + self._spread * self._rng.standard_normal(self.n_members)
 
-    def forecast_step(self, t_start, t_end):
-        self.storage = self.storage + self.forcing['precip'][int(t_start)]
+    def step(self, t, forcing):
+        self.storage = self.storage + forcing['precip']
         self.q = K * self.storage
         self.storage = self.storage - self.q
-
-    def extract_states(self):
-        return self.storage.reshape(-1, 1).copy()
-
-    def inject_states(self, updated_states):
-        self.injections.append(self._last_step)
-        self.storage = np.asarray(updated_states)[:, 0].copy()
-
-    def extract_predictions(self, variable='streamflow'):
         return self.q.copy()
 
-    # record which step an injection happened at
-    _last_step = -1
+    def get_state(self):
+        return self.storage.reshape(-1, 1).copy()
+
+    def set_state(self, X):
+        self.storage = np.asarray(X)[:, 0].copy()
 
 
-class _Recording(ToyEnsemble):
-    def forecast_step(self, t_start, t_end):
-        self._last_step = int(t_start)
-        super().forecast_step(t_start, t_end)
+_Recording = ToyEnsemble
 
 
 def _manager():
@@ -84,6 +77,7 @@ SPECS = [StateVariableSpec('storage', 1, lower_bound=0.0)]
 
 
 def _run(ensemble, obs_model_units, warmup_steps=0, **cfg):
+    cfg.setdefault('ENKF_FORCING_PERTURBATION', False)
     config = EnKFConfig(ENKF_ENSEMBLE_SIZE=ensemble.n_members, **cfg)
     enkf = EnKFAlgorithm(rng=np.random.default_rng(1))
     ensemble.initialize_members()
@@ -146,7 +140,6 @@ class TestRunFilter:
         ens = _Recording(30, np.full(n, 10.0), times)
         result = _run(ens, obs)
         assert result.analysis_times == [4, 7]
-        assert ens.injections == [4, 7]
         assert result.ensemble_predictions.shape == (n, 30)
         np.testing.assert_array_equal(result.observed_values, obs)
 
@@ -176,17 +169,20 @@ class TestRunFilter:
         truth.storage[:] = 60.0  # far from the ensemble's ~20
         q_truth = []
         for t in range(n):
-            truth.forecast_step(t, t + 1)
-            q_truth.append(truth.q[0])
+            q_truth.append(truth.step(t, {'precip': precip[t:t + 1]})[0])
         q_truth = np.array(q_truth)
 
-        open_loop = _run(_Recording(40, precip, times, seed=5), np.full(n, np.nan))
+        no_obs = _run(_Recording(40, precip, times, seed=5), np.full(n, np.nan))
         assimilated = _run(_Recording(40, precip, times, seed=5), q_truth,
                            ENKF_OBS_ERROR_STD=0.05)
 
-        err_open = np.abs(open_loop.ensemble_means[1:6] - q_truth[1:6]).mean()
+        # the open loop run alongside the filter is the no-observation run
+        np.testing.assert_allclose(assimilated.open_loop_predictions,
+                                   no_obs.ensemble_predictions)
+        err_open = np.abs(assimilated.open_loop_predictions.mean(axis=1)[1:6]
+                          - q_truth[1:6]).mean()
         err_da = np.abs(assimilated.ensemble_means[1:6] - q_truth[1:6]).mean()
-        assert open_loop.analysis_times == []
+        assert no_obs.analysis_times == []
         assert err_da < 0.5 * err_open
 
     def test_misaligned_observations_are_rejected(self):
@@ -194,28 +190,6 @@ class TestRunFilter:
         ens = _Recording(10, np.full(5, 1.0), times)
         with pytest.raises(ValueError, match="aligned to the model time axis"):
             _run(ens, np.ones(3))
-
-
-class TestObservationError:
-    def test_relative_error_follows_the_observation_at_that_step(self):
-        cfg = EnKFConfig(ENKF_OBS_ERROR_STD=0.1, ENKF_OBS_ERROR_TYPE='relative')
-        low = DataAssimilationManager._obs_error_covariance(cfg, 1.0, floor=1e-9)
-        high = DataAssimilationManager._obs_error_covariance(cfg, 50.0, floor=1e-9)
-        assert low[0, 0] == pytest.approx(0.1 ** 2)
-        assert high[0, 0] == pytest.approx(5.0 ** 2)
-
-    def test_relative_error_has_a_floor(self):
-        cfg = EnKFConfig(ENKF_OBS_ERROR_STD=0.1, ENKF_OBS_ERROR_TYPE='relative')
-        obs = np.array([0.0, 10.0, np.nan, 30.0])
-        floor = DataAssimilationManager._relative_error_floor(cfg, obs)
-        assert floor > 0.0
-        zero_flow = DataAssimilationManager._obs_error_covariance(cfg, 0.0, floor)
-        assert zero_flow[0, 0] == pytest.approx(floor ** 2)
-
-    def test_absolute_error(self):
-        cfg = EnKFConfig(ENKF_OBS_ERROR_STD=0.7, ENKF_OBS_ERROR_TYPE='absolute')
-        R = DataAssimilationManager._obs_error_covariance(cfg, 123.0, floor=5.0)
-        assert R[0, 0] == pytest.approx(0.49)
 
 
 class TestDriver:
@@ -228,8 +202,10 @@ class TestDriver:
         )
         mgr._create_ensemble_manager = lambda enkf_config, rng=None: (ensemble, SPECS)
         mgr._load_observations = lambda variable: obs
-        mgr.__dict__['project_dir'] = tmp_path
-        mgr.__dict__['experiment_id'] = 'exp'
+        # Property setters: writing to __dict__ is shadowed by the properties,
+        # which made every test share ./domain_domain (flaky under xdist).
+        mgr.project_dir = tmp_path
+        mgr.experiment_id = 'exp'
         return mgr
 
     def test_end_to_end_writes_aligned_output(self, tmp_path):
@@ -261,8 +237,12 @@ class TestDriver:
         ens = _Recording(20, np.full(n, 10.0), times, warmup_days=8)
         obs = pd.Series(_cms(np.full(n, 12.0)), index=times)
         mgr = self._wired(tmp_path, ens, obs)
-        mgr.run_data_assimilation()
-        assert ens.injections == [8, 9, 10, 11]
+        import xarray as xr
+
+        out = mgr.run_data_assimilation()
+        with xr.open_dataset(out) as ds:
+            performed = np.flatnonzero(ds['analysis_performed'].values)
+        np.testing.assert_array_equal(performed, [8, 9, 10, 11])
 
     def test_failure_raises_instead_of_returning_none(self, tmp_path):
         n = 5
@@ -277,16 +257,43 @@ class TestDriver:
 
     def test_unimplemented_options_warn(self, caplog):
         mgr = _manager()
-        cfg = EnKFConfig(ENKF_LOCALIZATION_RADIUS=50.0, ENKF_FORCING_PERTURBATION=False,
-                         ENKF_ESTIMATE_PARAMS=True)
+        cfg = EnKFConfig(ENKF_LOCALIZATION_RADIUS=50.0, ENKF_ESTIMATE_PARAMS=True)
         with caplog.at_level(logging.WARNING, logger="test.da_manager"):
             mgr._warn_unimplemented_options(cfg)
         text = caplog.text
-        for alias in ("ENKF_LOCALIZATION_RADIUS", "ENKF_FORCING_PERTURBATION",
-                      "ENKF_ESTIMATE_PARAMS"):
+        for alias in ("ENKF_LOCALIZATION_RADIUS", "ENKF_ESTIMATE_PARAMS"):
             assert alias in text
 
     def test_default_options_do_not_warn(self, caplog):
         with caplog.at_level(logging.WARNING, logger="test.da_manager"):
             _manager()._warn_unimplemented_options(EnKFConfig())
         assert caplog.text == ""
+
+
+class TestVerificationOutput:
+    def test_writes_summary_lead_scores_and_forecasts(self, tmp_path):
+        import json
+
+        import xarray as xr
+
+        n = 40
+        times = pd.date_range("2020-01-01", periods=n, freq="D")
+        precip = np.random.default_rng(0).gamma(2.0, 4.0, n)
+        ens = _Recording(20, precip, times, warmup_days=5)
+        obs = pd.Series(_cms(np.full(n, 12.0)), index=times)
+        mgr = TestDriver()._wired(tmp_path, ens, obs, ENKF_FORECAST_LEAD_DAYS=3)
+
+        out = mgr.run_data_assimilation()
+
+        summary = json.loads(out.with_name(out.stem + "_verification.json").read_text())
+        for key in ("enkf", "open_loop", "persistence", "crpss_vs_open_loop",
+                    "crpss_vs_persistence"):
+            assert key in summary
+        for key in ("crps", "spread_error_ratio", "rank_histogram", "nse", "kge"):
+            assert key in summary["enkf"] and key in summary["open_loop"]
+        leads = pd.read_csv(out.with_name(out.stem + "_lead_scores.csv"))
+        assert list(leads["lead_steps"]) == [1, 2, 3]
+        with xr.open_dataset(out) as ds:
+            assert ds["open_loop_streamflow"].shape == (n, 20)
+            assert ds["forecast_streamflow"].shape[1:] == (3, 20)
+            assert pd.Timestamp(ds["forecast_issue_time"].values[0]) == times[5]

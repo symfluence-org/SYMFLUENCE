@@ -94,13 +94,11 @@ class FUSEParameterManager(BaseParameterManager):
         # Regionalization setup (lazy-initialized)
         self._regionalization_method = self._get_config_value(
             lambda: self.config.model.fuse.parameter_regionalization,
-            default='lumped',
-            dict_key='PARAMETER_REGIONALIZATION'
+            dict_key='PARAMETER_REGIONALIZATION',
         )
         use_tf = self._get_config_value(
             lambda: self.config.model.fuse.use_transfer_functions,
-            default=False,
-            dict_key='USE_TRANSFER_FUNCTIONS'
+            dict_key='USE_TRANSFER_FUNCTIONS',
         )
         if use_tf and self._regionalization_method == 'lumped':
             self._regionalization_method = 'transfer_function'

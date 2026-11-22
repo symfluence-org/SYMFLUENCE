@@ -49,7 +49,7 @@ class VIIRSSnowHandler(BaseObservationHandler):
         """Acquire VIIRS snow data via cloud acquisition."""
         viirs_dir = Path(self._get_config_value(lambda: None, default=self.project_observations_dir / "snow" / "viirs", dict_key='VIIRS_SNOW_DIR'))
 
-        force_download = self._get_config_value(lambda: self.config.data.force_download, default=False)
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
         has_files = viirs_dir.exists() and (
             any(viirs_dir.glob("*VNP10*.nc")) or any(viirs_dir.glob("*Snow*.nc"))
         )

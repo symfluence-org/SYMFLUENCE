@@ -206,13 +206,13 @@ class CARRAHandler(BaseDatasetHandler):
 
             # Get HRU bounding box for spatial filtering
             # Read the HRU shapefile to get its extent
-            # shapefile_path is .../shapefiles/forcing, so parent is .../shapefiles
-            hru_shapefile_dir = shapefile_path.parent / 'catchment'
-            domain_name = self._get_config_value(lambda: self.config.domain.name, default='domain')
-            hru_shapefile = hru_shapefile_dir / f"{domain_name}_HRUs_GRUs.shp"
+            # Resolved from project_dir: shapefile_path may be nested
+            # (shapefiles/forcing/<signature>) and the catchment lives under
+            # shapefiles/catchment/<method>/<experiment_id>/.
+            hru_shapefile = self._find_catchment_shapefile()
 
             bbox_filter = None
-            if hru_shapefile.exists():
+            if hru_shapefile is not None and hru_shapefile.exists():
                 try:
                     hru_gdf = gpd.read_file(hru_shapefile)
                     # Reproject to WGS84 if needed before extracting bounds
@@ -404,8 +404,8 @@ class CARRAHandler(BaseDatasetHandler):
             gdf = gpd.GeoDataFrame({
                 'geometry': geometries,
                 'ID': ids,
-                self._get_config_value(lambda: self.config.forcing.shape_lat_name, default='lat'): center_lats,
-                self._get_config_value(lambda: self.config.forcing.shape_lon_name, default='lon'): center_lons,
+                self._get_config_value(lambda: self.config.forcing.shape_lat_name, dict_key='FORCING_SHAPE_LAT_NAME'): center_lats,
+                self._get_config_value(lambda: self.config.forcing.shape_lon_name, dict_key='FORCING_SHAPE_LON_NAME'): center_lons,
             }, crs='EPSG:4326')
 
             # Calculate elevation using the safe method

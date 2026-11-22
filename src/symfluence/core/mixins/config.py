@@ -14,11 +14,14 @@ if TYPE_CHECKING:
     from symfluence.core.config.models import SymfluenceConfig
 
 
+#: ``default`` sentinel of :func:`resolve_config_value`: use the schema's default.
+SCHEMA_DEFAULT: Any = object()
+
 
 def resolve_config_value(
     config: Any,
     typed_accessor: Optional[Callable[[], Any]] = None,
-    default: Any = None,
+    default: Any = SCHEMA_DEFAULT,
     dict_key: Optional[str] = None,
 ) -> Any:
     """The single implementation of typed-first config lookup.
@@ -27,7 +30,13 @@ def resolve_config_value(
     dict (e.g. inside calibration worker processes). This tries
     ``typed_accessor()`` first; if it raises ``AttributeError``/``KeyError``/
     ``TypeError`` (a dict config, or an unset optional section) or returns
-    ``None``, it falls back to ``config.get(dict_key)``, then ``default``.
+    ``None``, it falls back to ``config.get(dict_key)``, then the default.
+
+    Leave ``default`` out: the fallback is then the default the config
+    schema declares for ``dict_key`` (``None`` when it declares none), so a
+    hand-built dict that omits the key behaves like a validated config.
+    Pass ``default`` only for a key no schema declares, or where this caller
+    needs a different value from an unset key than the schema's.
 
     ``tests/unit/core/test_config_paths_resolve.py`` statically checks the
     typed paths passed through ``_get_config_value``, since a mistyped path
@@ -44,7 +53,23 @@ def resolve_config_value(
         value = config.get(dict_key)
         if value is not None:
             return value
-    return default
+    return fallback_default(default, dict_key)
+
+
+def fallback_default(default: Any = SCHEMA_DEFAULT, dict_key: Optional[str] = None) -> Any:
+    """What a read falls back to when the config holds no value for the key.
+
+    ``default`` when one was passed; otherwise the default the schema
+    declares for ``dict_key``, or ``None`` when it declares none. Exposed so
+    stand-ins for ``_get_config_value`` (test doubles) follow the same rule.
+    """
+    if default is not SCHEMA_DEFAULT:
+        return default
+    if dict_key is None:
+        return None
+    from symfluence.core.config.schema_defaults import NO_SCHEMA_DEFAULT, schema_default
+    declared = schema_default(dict_key)
+    return None if declared is NO_SCHEMA_DEFAULT else declared
 
 class ConfigMixin:
     """
@@ -114,7 +139,7 @@ class ConfigMixin:
     def _get_config_value(
         self,
         typed_accessor: Callable[[], Any],
-        default: Any = None,
+        default: Any = SCHEMA_DEFAULT,
         dict_key: Optional[str] = None
     ) -> Any:
         """
@@ -123,7 +148,8 @@ class ConfigMixin:
         Args:
             typed_accessor: Callable that accesses the typed config value,
                            e.g., lambda: self.config.domain.name
-            default: Default value if accessor fails or returns None
+            default: Value if accessor fails or returns None. Left out, the
+                    schema's default for ``dict_key`` (see resolve_config_value)
             dict_key: Optional legacy dict key for backward compatibility
                      with dict-based configs (e.g., 'DOMAIN_NAME')
 
@@ -322,7 +348,7 @@ class ConfigMixin:
         """Forcing time step size in seconds from config.forcing.time_step_size."""
         return int(self._get_config_value(
             lambda: self.config.forcing.time_step_size,
-            default=3600
+            dict_key='FORCING_TIME_STEP_SIZE',
         ))
 
     @property
@@ -348,7 +374,4 @@ class ConfigMixin:
     @property
     def optimization_metric(self) -> str:
         """Optimization metric from config.optimization.metric."""
-        return self._get_config_value(
-            lambda: self.config.optimization.metric,
-            default='KGE'
-        )
+        return self._get_config_value(lambda: self.config.optimization.metric, dict_key='OPTIMIZATION_METRIC')

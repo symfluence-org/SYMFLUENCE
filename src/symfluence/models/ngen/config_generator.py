@@ -296,7 +296,10 @@ class NgenConfigGenerator(ConfigMixin):
         if end_time == 'default': end_time = '2000-12-31 23:00:00'
 
         # Get forcing timestep from config (default 3600s = 1 hour)
-        forcing_timestep = self._get_config_value(lambda: self.config.forcing.time_step_size, default=3600, dict_key='FORCING_TIME_STEP_SIZE')
+        forcing_timestep = self._get_config_value(
+            lambda: self.config.forcing.time_step_size,
+            dict_key='FORCING_TIME_STEP_SIZE',
+        )
         try:
             forcing_timestep = int(forcing_timestep)
         except (ValueError, TypeError):
@@ -392,7 +395,10 @@ surface_water_partitioning_scheme=Schaake
 
         # Default parameters with intelligent defaults
         # Use forcing timestep for PET instead of hardcoded hourly
-        forcing_timestep = self._get_config_value(lambda: self.config.forcing.time_step_size, default=3600, dict_key='FORCING_TIME_STEP_SIZE')
+        forcing_timestep = self._get_config_value(
+            lambda: self.config.forcing.time_step_size,
+            dict_key='FORCING_TIME_STEP_SIZE',
+        )
         try:
             forcing_timestep = int(forcing_timestep)
         except (ValueError, TypeError):
@@ -749,7 +755,9 @@ num_topodex_values={n_classes}
         start_dt = pd.to_datetime(sim_start)
         end_dt = pd.to_datetime(sim_end)
         timestep = int(self._get_config_value(
-            lambda: self.config.forcing.time_step_size, default=3600, dict_key='FORCING_TIME_STEP_SIZE'))
+            lambda: self.config.forcing.time_step_size,
+            dict_key='FORCING_TIME_STEP_SIZE',
+        ))
 
         config_file = sacsma_dir / f"{cat_id}_sacsma_config.txt"
         namelist_text = (
@@ -844,7 +852,9 @@ num_topodex_values={n_classes}
         start_dt = pd.to_datetime(sim_start)
         end_dt = pd.to_datetime(sim_end)
         timestep = int(self._get_config_value(
-            lambda: self.config.forcing.time_step_size, default=3600, dict_key='FORCING_TIME_STEP_SIZE'))
+            lambda: self.config.forcing.time_step_size,
+            dict_key='FORCING_TIME_STEP_SIZE',
+        ))
 
         config_file = snow17_dir / f"{cat_id}_snow17_config.txt"
         namelist_text = (
@@ -920,7 +930,10 @@ num_topodex_values={n_classes}
         sim_end = pd.to_datetime(sim_end).strftime('%Y-%m-%d %H:%M:%S')
 
         # Get forcing timestep from config (default to 3600 if not specified)
-        forcing_timestep = self._get_config_value(lambda: self.config.forcing.time_step_size, default=3600, dict_key='FORCING_TIME_STEP_SIZE')
+        forcing_timestep = self._get_config_value(
+            lambda: self.config.forcing.time_step_size,
+            dict_key='FORCING_TIME_STEP_SIZE',
+        )
         try:
             forcing_timestep = int(forcing_timestep)
             self.logger.info(f"Using forcing timestep: {forcing_timestep} seconds ({forcing_timestep/3600:.1f} hours)")

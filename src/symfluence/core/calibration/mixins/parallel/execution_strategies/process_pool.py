@@ -77,9 +77,14 @@ class ProcessPoolExecutionStrategy(ExecutionStrategy):
                             results.append(result)
                             watchdog.beat()  # each completed task is progress
                 except BrokenExecutor as e:
-                    self.logger.warning(f"Process pool was broken: {str(e)}. Falling back to sequential execution.")
-                    # Fallback to sequential execution
-                    results = [worker_func(task) for task in tasks]
+                    # executor.map yields in order, so results[:n] belong to
+                    # tasks[:n]; keep them and only rerun what did not finish.
+                    done = len(results)
+                    self.logger.warning(
+                        f"Process pool was broken: {str(e)}. Running the remaining "
+                        f"{len(tasks) - done} of {len(tasks)} tasks sequentially."
+                    )
+                    results.extend(worker_func(task) for task in tasks[done:])
         except (ValueError, RuntimeError, concurrent.futures.TimeoutError) as e:
             self.logger.error(f"Error in process pool execution: {str(e)}. Falling back to sequential execution.")
             # Fallback to sequential execution for any other errors

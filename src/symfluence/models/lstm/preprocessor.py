@@ -99,10 +99,7 @@ class LSTMPreProcessor(BaseModelPreProcessor):
         # LSTM_LOOKBACK (schema default 700). When the model is selected under
         # its legacy FLASH name there is no typed lstm section; keep FLASH's
         # historical default of 30 there, but honour LSTM_LOOKBACK if set.
-        self.lookback = self._get_config_value(
-            lambda: self.config.model.lstm.lookback,
-            default=30, dict_key='LSTM_LOOKBACK',
-        )
+        self.lookback = self._get_config_value(lambda: self.config.model.lstm.lookback, dict_key='LSTM_LOOKBACK')
 
         # Use inherited domain_definition_method from mixin
         self.spatial_mode = 'distributed' if self.domain_definition_method == 'delineate' else 'lumped'

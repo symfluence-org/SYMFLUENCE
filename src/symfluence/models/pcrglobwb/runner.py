@@ -32,7 +32,7 @@ class PCRGLOBWBRunner(BaseModelRunner):
 
         install_path = self._get_config_value(
             lambda: self.config.model.pcrglobwb.install_path,
-            default='default',
+            dict_key='PCRGLOBWB_INSTALL_PATH',
         )
         data_dir = self._get_config_value(
             lambda: self.config.system.data_dir,
@@ -40,16 +40,13 @@ class PCRGLOBWBRunner(BaseModelRunner):
         )
         self.pcrglobwb_dir = resolve_install_dir(install_path, data_dir, 'installs/pcrglobwb')
 
-        exe_name = self._get_config_value(
-            lambda: self.config.model.pcrglobwb.exe,
-            default='deterministic_runner.py',
-        )
+        exe_name = self._get_config_value(lambda: self.config.model.pcrglobwb.exe, dict_key='PCRGLOBWB_EXE')
         self.runner_script = self.pcrglobwb_dir / exe_name
 
     def run(self, **kwargs) -> Optional[Path]:
         config_file = self._get_config_value(
             lambda: self.config.model.pcrglobwb.config_file,
-            default='setup.ini',
+            dict_key='PCRGLOBWB_CONFIG_FILE',
         )
         ini_path = self.settings_dir / config_file
         if not ini_path.exists():
@@ -74,10 +71,7 @@ class PCRGLOBWBRunner(BaseModelRunner):
 
         cmd = [sys.executable, str(self.runner_script), str(ini_path)]
 
-        timeout = self._get_config_value(
-            lambda: self.config.model.pcrglobwb.timeout,
-            default=14400,
-        )
+        timeout = self._get_config_value(lambda: self.config.model.pcrglobwb.timeout, dict_key='PCRGLOBWB_TIMEOUT')
 
         log_dir = self.get_simulation_dir('PCRGLOBWB', self._get_experiment_id()) / 'logs'
         log_dir.mkdir(parents=True, exist_ok=True)

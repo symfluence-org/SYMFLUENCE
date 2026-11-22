@@ -48,6 +48,7 @@ from rasterio.transform import from_bounds as rio_from_bounds
 from rasterio.windows import Window, from_bounds
 
 from symfluence.core.registries import R
+from symfluence.data.acquisition.utils import atomic_write
 
 from ..base import BaseAcquisitionHandler
 from ..mixins import RetryMixin
@@ -136,7 +137,7 @@ class _TileDownloadMixin:
                     if r.status_code == 200:
                         expected_size = int(r.headers.get('Content-Length', 0))
                         bytes_written = 0
-                        with open(local_tile, "wb") as f:
+                        with atomic_write(local_tile) as _part, open(_part, 'wb') as f:
                             for chunk in r.iter_content(chunk_size=65536):
                                 if chunk:
                                     f.write(chunk)
@@ -476,9 +477,22 @@ class FABDEMAcquirer(BaseAcquisitionHandler):
                         self.logger.info(f"Fetching FABDEM tile: {tile_name}")
                         with requests.get(url, stream=True, timeout=60) as r:
                             if r.status_code == 200:
-                                with open(local_tile, "wb") as f:
-                                    for chunk in r.iter_content(chunk_size=65536): f.write(chunk)
+                                # .part + rename: a truncated tile must not be
+                                # reused as complete on the next run.
+                                part = local_tile.with_name(local_tile.name + ".part")
+                                try:
+                                    with open(part, "wb") as f:
+                                        for chunk in r.iter_content(chunk_size=65536): f.write(chunk)
+                                    part.replace(local_tile)
+                                finally:
+                                    part.unlink(missing_ok=True)
                                 tile_paths.append(local_tile)
+                            elif r.status_code != 404:
+                                # 404 = ocean tile (no data). Anything else would
+                                # silently leave a hole in the mosaic.
+                                r.raise_for_status()
+                                raise RuntimeError(
+                                    f"FABDEM tile {tile_name}: unexpected HTTP {r.status_code}")
                     else:
                         tile_paths.append(local_tile)
 
@@ -926,7 +940,7 @@ class MapzenAcquirer(BaseAcquisitionHandler, RetryMixin, _TileDownloadMixin):
                     if tile_result:
                         # Decompress gzip
                         with gzip.open(gz_path, 'rb') as gz_in:
-                            with open(hgt_path, 'wb') as hgt_out:
+                            with atomic_write(hgt_path) as _part, open(_part, 'wb') as hgt_out:
                                 hgt_out.write(gz_in.read())
                         gz_path.unlink(missing_ok=True)
 

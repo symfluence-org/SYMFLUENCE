@@ -160,8 +160,7 @@ class CHIRPSAcquirer(BaseAcquisitionHandler):
 
         if out_file.exists() and not self._get_config_value(
             lambda: self.config.data.force_download,
-            default=False,
-            dict_key='FORCE_DOWNLOAD'
+            dict_key='FORCE_DOWNLOAD',
         ):
             return out_file
 

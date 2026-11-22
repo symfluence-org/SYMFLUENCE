@@ -231,7 +231,8 @@ class SimulatedAnnealingAlgorithm(OptimizationAlgorithm):
             )
 
             # Check if frozen
-            if temperature < final_temp:
+            # <=: _cool_temperature clamps at final_temp, so `<` never fired
+            if temperature <= final_temp:
                 self.logger.info(f"Temperature reached minimum at iteration {iteration}")
                 break
 

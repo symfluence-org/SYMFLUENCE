@@ -29,7 +29,10 @@ class HYPEConfig(BaseModel):
         default='ttmp,cmlt,cevp,lp,epotdist,rrcs1,rrcs2,rcgrw,rivvel,damp,wcwp,wcfc,wcep,srrcs',
         alias='HYPE_PARAMS_TO_CALIBRATE'
     )
-    spinup_days: int = Field(default=365, alias='HYPE_SPINUP_DAYS')
+    spinup_days: Optional[int] = Field(
+        default=None, alias='HYPE_SPINUP_DAYS', ge=0,
+        description='Spin-up days; None derives them from SPINUP_PERIOD (365 if no period is set)',
+    )
     timeshift: float = Field(
         default=0, alias='HYPE_TIMESHIFT',
         description='Hours added to forcing timestamps before daily aggregation (e.g. UTC to local time)'
@@ -91,7 +94,7 @@ class HYPEConfig(BaseModel):
     )
     # Process options written to info.txt (None = config_manager defaults apply)
     infiltration_model: Optional[int] = Field(
-        default=None, alias='HYPE_INFILTRATION_MODEL',
+        default=3, alias='HYPE_INFILTRATION_MODEL',
         description='HYPE infiltration model option (info.txt modeloption)'
     )
     pet_model: Optional[int] = Field(
@@ -99,15 +102,15 @@ class HYPEConfig(BaseModel):
         description='HYPE potential evapotranspiration model option'
     )
     frozen_soil_model: Optional[int] = Field(
-        default=None, alias='HYPE_FROZEN_SOIL_MODEL',
+        default=2, alias='HYPE_FROZEN_SOIL_MODEL',
         description='HYPE frozen soil model option'
     )
     snow_evaporation: Optional[int] = Field(
-        default=None, alias='HYPE_SNOW_EVAPORATION',
+        default=0, alias='HYPE_SNOW_EVAPORATION',
         description='HYPE snow evaporation option'
     )
     deep_ground: Optional[int] = Field(
-        default=None, alias='HYPE_DEEP_GROUND',
+        default=0, alias='HYPE_DEEP_GROUND',
         description='HYPE deep groundwater option'
     )
     groundwater_export: Optional[bool] = Field(
@@ -117,11 +120,11 @@ class HYPEConfig(BaseModel):
                     'GROUNDWATER_MODEL is MODFLOW'
     )
     surface_runoff: Optional[int] = Field(
-        default=None, alias='HYPE_SURFACE_RUNOFF',
+        default=0, alias='HYPE_SURFACE_RUNOFF',
         description='HYPE surface runoff option'
     )
     soil_init_wet: Optional[bool] = Field(
-        default=None, alias='HYPE_SOIL_INIT_WET',
+        default=False, alias='HYPE_SOIL_INIT_WET',
         description='Initialize soil moisture at field capacity'
     )
     soil_layer_depths: Optional[List[float]] = Field(
@@ -137,6 +140,14 @@ class HYPEConfig(BaseModel):
                               description='Outlet-lake general rating coefficient (gratk) when lakes are set')
     lake_gratp: float = Field(default=1.5, alias='HYPE_LAKE_GRATP', gt=0,
                               description='Outlet-lake general rating exponent (gratp) when lakes are set')
+    water_as_ilake: bool = Field(
+        default=True, alias='HYPE_WATER_AS_ILAKE',
+        description='Model each sub-basin\'s water land cover (HYPE_LAKE_LANDUSE) as an internal lake '
+                    '(HYPE class model 2) instead of a land class')
+    ilake_depth: float = Field(default=5.0, alias='HYPE_ILAKE_DEPTH', gt=0,
+                               description='Internal-lake water depth below the outflow threshold (gldepi, m)')
+    ilake_icatch: float = Field(default=0.0, alias='HYPE_ILAKE_ICATCH', ge=0, le=1,
+                                description='Share of local land runoff routed through the internal lake (gicatch)')
 
 
 # Legacy flat config keys accepted for backward compatibility, mapped to

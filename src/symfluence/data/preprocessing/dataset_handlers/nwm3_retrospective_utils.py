@@ -26,12 +26,12 @@ from typing import Dict, List, Tuple
 import geopandas as gpd
 import numpy as np
 import xarray as xr
-from shapely.geometry import Polygon
 
 from symfluence.core.constants import UnitConversion
 from symfluence.core.registries import R
 
 from ...utils import VariableStandardizer
+from ..resampling.grid_geometry import curvilinear_cell_polygons
 from .base_dataset import BaseDatasetHandler
 
 
@@ -390,22 +390,8 @@ class NWM3RetrospectiveHandler(BaseDatasetHandler):
             )
             min_idx = np.unravel_index(np.argmin(distances), distances.shape)
             i, j = min_idx
-            ny, nx = lat.shape
-
-            lat_corners = [
-                lat[i, j],
-                lat[i, j+1] if j+1 < nx else lat[i, j],
-                lat[i+1, j+1] if i+1 < ny and j+1 < nx else lat[i, j],
-                lat[i+1, j] if i+1 < ny else lat[i, j],
-            ]
-            lon_corners = [
-                lon[i, j],
-                lon[i, j+1] if j+1 < nx else lon[i, j],
-                lon[i+1, j+1] if i+1 < ny and j+1 < nx else lon[i, j],
-                lon[i+1, j] if i+1 < ny else lon[i, j],
-            ]
-
-            geometries.append(Polygon(zip(lon_corners, lat_corners)))
+            # Footprint centred on the selected cell (neighbours give its edges).
+            geometries.append(curvilinear_cell_polygons(lon, lat, rows=(i, i + 1), cols=(j, j + 1), nominal_step=0.01)[0, 0])
             ids.append(0)
             lats.append(float(lat[i, j]))
             lons.append(float(lon[i, j]))
@@ -421,22 +407,10 @@ class NWM3RetrospectiveHandler(BaseDatasetHandler):
             )
 
             cell_count = 0
+            cells = curvilinear_cell_polygons(lon, lat, nominal_step=0.01)
             for i in range(ny):
                 for j in range(nx):
-                    lat_corners = [
-                        lat[i, j],
-                        lat[i, j+1] if j+1 < nx else lat[i, j],
-                        lat[i+1, j+1] if i+1 < ny and j+1 < nx else lat[i, j],
-                        lat[i+1, j] if i+1 < ny else lat[i, j],
-                    ]
-                    lon_corners = [
-                        lon[i, j],
-                        lon[i, j+1] if j+1 < nx else lon[i, j],
-                        lon[i+1, j+1] if i+1 < ny and j+1 < nx else lon[i, j],
-                        lon[i+1, j] if i+1 < ny else lon[i, j],
-                    ]
-
-                    geometries.append(Polygon(zip(lon_corners, lat_corners)))
+                    geometries.append(cells[i, j])
                     ids.append(i * nx + j)
                     lats.append(float(lat[i, j]))
                     lons.append(float(lon[i, j]))
@@ -448,10 +422,12 @@ class NWM3RetrospectiveHandler(BaseDatasetHandler):
                         )
 
         lat_name = self._get_config_value(
-            lambda: self.config.forcing.shape_lat_name, default='lat'
+            lambda: self.config.forcing.shape_lat_name,
+            dict_key='FORCING_SHAPE_LAT_NAME',
         )
         lon_name = self._get_config_value(
-            lambda: self.config.forcing.shape_lon_name, default='lon'
+            lambda: self.config.forcing.shape_lon_name,
+            dict_key='FORCING_SHAPE_LON_NAME',
         )
 
         gdf = gpd.GeoDataFrame(

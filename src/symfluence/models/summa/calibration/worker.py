@@ -63,13 +63,21 @@ class SUMMAWorker(BaseWorker):
         Returns:
             True if routing is needed
         """
-        calibration_var = resolve_config_value(config, lambda: config.optimization.calibration_variable, 'streamflow', 'CALIBRATION_VARIABLE')
+        calibration_var = resolve_config_value(
+            config,
+            lambda: config.optimization.calibration_variable,
+            dict_key='CALIBRATION_VARIABLE',
+        )
 
         if calibration_var != 'streamflow':
             return False
 
         domain_method = resolve_config_value(config, lambda: config.domain.definition_method, 'lumped', 'DOMAIN_DEFINITION_METHOD')
-        routing_delineation = resolve_config_value(config, lambda: config.domain.delineation.routing, 'lumped', 'ROUTING_DELINEATION')
+        routing_delineation = resolve_config_value(
+            config,
+            lambda: config.domain.delineation.routing,
+            dict_key='ROUTING_DELINEATION',
+        )
 
         if domain_method not in ['point', 'lumped']:
             return True
@@ -202,8 +210,12 @@ class SUMMAWorker(BaseWorker):
             # Import existing functions
             from .worker_impl import _run_mizuroute_worker, _run_summa_worker
 
-            summa_install_path = resolve_config_value(config, lambda: config.model.summa.install_path, 'default', 'SUMMA_INSTALL_PATH')
-            summa_exe = resolve_config_value(config, lambda: config.model.summa.exe, "summa_sundials.exe", 'SUMMA_EXE')
+            summa_install_path = resolve_config_value(
+                config,
+                lambda: config.model.summa.install_path,
+                dict_key='SUMMA_INSTALL_PATH',
+            )
+            summa_exe = resolve_config_value(config, lambda: config.model.summa.exe, dict_key='SUMMA_EXE')
             data_dir = resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR')
             summa_exe = resolve_install_dir(summa_install_path, data_dir, 'installs/summa/bin') / summa_exe
 
@@ -228,7 +240,11 @@ class SUMMAWorker(BaseWorker):
             }
 
             # Run SUMMA
-            summa_timeout = int(resolve_config_value(config, lambda: config.model.summa.timeout, 7200, 'SUMMA_TIMEOUT'))
+            summa_timeout = int(resolve_config_value(
+                config,
+                lambda: config.model.summa.timeout,
+                dict_key='SUMMA_TIMEOUT',
+            ))
             success = _run_summa_worker(
                 summa_exe, file_manager, summa_dir, internal_logger, debug_info, settings_dir,
                 timeout=summa_timeout, config=config
@@ -310,8 +326,12 @@ class SUMMAWorker(BaseWorker):
         """
         try:
 
-            summa_install_path = resolve_config_value(config, lambda: config.model.summa.install_path, 'default', 'SUMMA_INSTALL_PATH')
-            summa_exe_name = resolve_config_value(config, lambda: config.model.summa.exe, 'summa_sundials.exe', 'SUMMA_EXE')
+            summa_install_path = resolve_config_value(
+                config,
+                lambda: config.model.summa.install_path,
+                dict_key='SUMMA_INSTALL_PATH',
+            )
+            summa_exe_name = resolve_config_value(config, lambda: config.model.summa.exe, dict_key='SUMMA_EXE')
             data_dir = resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR')
             summa_exe = resolve_install_dir(summa_install_path, data_dir, 'installs/summa/bin') / summa_exe_name
 
@@ -326,7 +346,7 @@ class SUMMAWorker(BaseWorker):
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=resolve_config_value(config, lambda: config.model.summa.timeout, 600, 'SUMMA_TIMEOUT')
+                timeout=resolve_config_value(config, lambda: config.model.summa.timeout, dict_key='SUMMA_TIMEOUT')
             )
 
             return result.returncode == 0
@@ -434,8 +454,17 @@ class SUMMAWorker(BaseWorker):
             obs_dir = resolve_config_value(config, lambda: config.optimization.multi_gauge.obs_dir, None, 'MULTI_GAUGE_OBS_DIR')
             gauge_ids = resolve_config_value(config, lambda: config.optimization.multi_gauge.gauge_ids, None, 'MULTI_GAUGE_IDS')
             exclude_ids = resolve_config_value(config, lambda: config.optimization.multi_gauge.exclude_ids, [], 'MULTI_GAUGE_EXCLUDE_IDS')
-            aggregation = resolve_config_value(config, lambda: config.optimization.multi_gauge.aggregation, 'mean', 'MULTI_GAUGE_AGGREGATION')
-            min_gauges = resolve_config_value(config, lambda: config.optimization.multi_gauge.min_gauges, 5, 'MULTI_GAUGE_MIN_GAUGES')
+            aggregation = resolve_config_value(
+                config,
+                lambda: config.optimization.multi_gauge.aggregation,
+                dict_key='MULTI_GAUGE_AGGREGATION',
+            )
+            min_gauges = resolve_config_value(
+                config,
+                lambda: config.optimization.multi_gauge.min_gauges,
+                default=5,
+                dict_key='MULTI_GAUGE_MIN_GAUGES',
+            )
 
             # Auto-generate gauge mapping if not configured
             if not gauge_mapping_path:
@@ -482,7 +511,11 @@ class SUMMAWorker(BaseWorker):
                 if val is not None:
                     filter_config[key] = float(val)
 
-            min_overlap = int(resolve_config_value(config, lambda: config.optimization.multi_gauge.min_overlap_days, 10, 'MULTI_GAUGE_MIN_OVERLAP_DAYS'))
+            min_overlap = int(resolve_config_value(
+                config,
+                lambda: config.optimization.multi_gauge.min_overlap_days,
+                dict_key='MULTI_GAUGE_MIN_OVERLAP_DAYS',
+            ))
             kge_floor = resolve_config_value(config, lambda: config.optimization.multi_gauge.kge_floor, None, 'MULTI_GAUGE_KGE_FLOOR')
             if kge_floor is not None:
                 kge_floor = float(kge_floor)

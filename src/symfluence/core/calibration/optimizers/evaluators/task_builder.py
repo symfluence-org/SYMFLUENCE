@@ -275,6 +275,12 @@ class TaskBuilder(ConfigMixin):
                     self._cfg('NSGA2_SECONDARY_METRIC',
                         self._cfg('OPTIMIZATION_METRIC2', 'KGE')))
 
+        # Shared forcing-correction prior: the worker subtracts its penalty
+        plan = getattr(self.param_manager, 'forcing_correction', None)
+        if plan is not None and plan.mode == 'calibrated' and plan.prior_weight > 0:
+            from symfluence.core.calibration.forcing_correction import TASK_KEY
+            task_dict[TASK_KEY] = plan.to_dict()
+
         # Add random seed if provided
         if random_seed is not None:
             task_dict['random_seed'] = random_seed

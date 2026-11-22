@@ -106,11 +106,11 @@ class USGSGWConfig(BaseModel):
     download: bool = Field(default=False, alias='DOWNLOAD_USGS_GW')
     station: Optional[str] = Field(default=None, alias='USGS_STATION')
     auto_align: Optional[bool] = Field(
-        default=None, alias='GW_AUTO_ALIGN',
+        default=True, alias='GW_AUTO_ALIGN',
         description='Auto-align simulated and observed groundwater depth datums'
     )
     base_depth: Optional[float] = Field(
-        default=None, alias='GW_BASE_DEPTH',
+        default=50.0, alias='GW_BASE_DEPTH',
         description='Reference depth (m) for groundwater depth conversion'
     )
 
@@ -127,7 +127,7 @@ class SMAPConfig(BaseModel):
     surface_depth_m: float = Field(default=0.05, alias='SMAP_SURFACE_DEPTH_M')
     rootzone_depth_m: float = Field(default=1.0, alias='SMAP_ROOTZONE_DEPTH_M')
     layer: Optional[str] = Field(
-        default=None, alias='SMAP_LAYER',
+        default='surface_sm', alias='SMAP_LAYER',
         description="SMAP soil-moisture layer to evaluate (e.g. 'surface', 'rootzone')"
     )
 
@@ -193,11 +193,11 @@ class CanSWEConfig(BaseModel):
     """CanSWE Canadian snow water equivalent observation settings"""
     model_config = FROZEN_CONFIG
 
-    download: Optional[bool] = Field(default=None, alias='DOWNLOAD_CANSWE')
+    download: Optional[bool] = Field(default=True, alias='DOWNLOAD_CANSWE')
     path: Optional[str] = Field(default=None, alias='CANSWE_PATH')
     version: Optional[str] = Field(default=None, alias='CANSWE_VERSION')
     min_observations: Optional[int] = Field(
-        default=None, alias='CANSWE_MIN_OBSERVATIONS',
+        default=10, alias='CANSWE_MIN_OBSERVATIONS',
         description='Minimum observation count for a CanSWE station to be used'
     )
 
@@ -315,6 +315,38 @@ class ETEvalConfig(BaseModel):
     obs_path: Optional[str] = Field(default=None, alias='ET_OBS_PATH')
 
 
+class MultiVariableEvalConfig(BaseModel):
+    """Model-agnostic multi-variable evaluation (GLACIER_MB, BASIN_SWE/SCA/ET)."""
+    model_config = FROZEN_CONFIG
+
+    adapter_model: Optional[str] = Field(
+        default=None, alias='OUTPUT_ADAPTER_MODEL',
+        description="Model whose output adapter the GLACIER_MB / BASIN_* evaluators use; "
+                    "default: the single HYDROLOGICAL_MODEL")
+    glacier_mb_obs_path: Optional[str] = Field(
+        default=None, alias='GLACIER_MB_OBS_PATH',
+        description="CSV/NetCDF of glacier mass-balance periods (start/end dates, rate, optional "
+                    "uncertainty and area); e.g. Hugonnet et al. (2021) dmdtda/err_dmdtda")
+    glacier_mb_obs_units: Literal['m_we_per_yr', 'mm_we_per_yr'] = Field(
+        default='m_we_per_yr', alias='GLACIER_MB_OBS_UNITS',
+        description="Units of the observed mass-balance rate and its uncertainty")
+    glacier_mb_scale: float = Field(
+        default=1000.0, gt=0, alias='GLACIER_MB_SCALE',
+        description="Error scale (mm w.e./yr) for GMB_SCORE when a period has no uncertainty")
+    glacier_mb_endpoint_tolerance_days: float = Field(
+        default=1.0, ge=0, alias='GLACIER_MB_ENDPOINT_TOLERANCE_DAYS',
+        description="Largest gap (days) between a period boundary and the simulated state used for it")
+    basin_swe_obs_path: Optional[str] = Field(
+        default=None, alias='BASIN_SWE_OBS_PATH',
+        description="Observed basin (or point) SWE series, mm")
+    basin_sca_obs_path: Optional[str] = Field(
+        default=None, alias='BASIN_SCA_OBS_PATH',
+        description="Observed snow-covered fraction series (0-1, or percent)")
+    basin_et_obs_path: Optional[str] = Field(
+        default=None, alias='BASIN_ET_OBS_PATH',
+        description="Observed basin ET series, mm/d")
+
+
 class EvaluationConfig(BaseModel):
     """Evaluation data and analysis configuration"""
     model_config = FROZEN_CONFIG
@@ -323,7 +355,11 @@ class EvaluationConfig(BaseModel):
     analyses: Optional[List[str]] = Field(default=None, alias='ANALYSES')
     sim_reach_id: Optional[int] = Field(default=None, alias='SIM_REACH_ID')
     evaluation_variable: str = Field(default='', alias='EVALUATION_VARIABLE')
+    # Deprecated: use SPINUP_PERIOD. Mapped onto the same spin-up window
+    # (N years from the simulation start) that evaluators exclude from scoring.
     spinup_years: int = Field(default=0, alias='EVALUATION_SPINUP_YEARS')
+    # One-page results/<exp>/summary.png after postprocessing (metrics.json is always written)
+    summary_report: bool = Field(default=True, alias='SUMMARY_REPORT')
 
     # Observation data sources
     streamflow: Optional[StreamflowConfig] = Field(default_factory=StreamflowConfig)
@@ -348,6 +384,7 @@ class EvaluationConfig(BaseModel):
     # Evaluator-specific settings
     tws: Optional[TWSEvalConfig] = Field(default_factory=TWSEvalConfig)
     et: Optional[ETEvalConfig] = Field(default_factory=ETEvalConfig)
+    multivariable: Optional[MultiVariableEvalConfig] = Field(default_factory=MultiVariableEvalConfig)
 
     @field_validator('evaluation_data', 'analyses', mode='before')
     @classmethod

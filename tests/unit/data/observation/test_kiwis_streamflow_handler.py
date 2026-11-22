@@ -85,3 +85,19 @@ def test_update_refetches_only_the_revision_window(tmp_path, monkeypatch):
     assert calls[0][2] == first.index.max() - pd.Timedelta(hours=12)
     n_first = len(first)
     assert len(pd.read_csv(raw)) == n_first          # replaced, not duplicated
+
+
+def test_earlier_experiment_start_fetches_the_missing_head(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(handler_mod.kiwis, 'fetch', _fake_fetch(calls))
+    late = _config(tmp_path, KIWIS_CHANNEL_URL=CHANNEL, KIWIS_TS_ID='TS1')
+    raw = KiWISStreamflowHandler(late, logging.getLogger('kiwis')).acquire()
+    archive_start = pd.read_csv(raw, index_col=0, parse_dates=True).index.min()
+
+    calls.clear()
+    early = dict(late, EXPERIMENT_TIME_START='2025-12-20 00:00')
+    KiWISStreamflowHandler(early, logging.getLogger('kiwis')).acquire()
+
+    assert (calls[0][2], calls[0][3]) == (pd.Timestamp('2025-12-20'), archive_start)
+    stored = pd.read_csv(raw, index_col=0, parse_dates=True)
+    assert stored.index.min() == pd.Timestamp('2025-12-20') and not stored.index.has_duplicates

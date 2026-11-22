@@ -61,7 +61,7 @@ def discretize(discretizer: "DomainDiscretizer") -> Optional[object]:
 
     radiation_class_number = int(discretizer._get_config_value(
         lambda: discretizer.config.domain.radiation_class_number,
-        default=1
+        dict_key='RADIATION_CLASS_NUMBER',
     ))
 
     if not radiation_raster.exists():

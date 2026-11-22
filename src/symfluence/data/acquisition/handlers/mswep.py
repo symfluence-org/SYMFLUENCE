@@ -94,8 +94,7 @@ class MSWEPAcquirer(BaseAcquisitionHandler):
             lambda: None, default='daily', dict_key='MSWEP_RESOLUTION')
         product = self._get_config_value(
             lambda: None, default='Past', dict_key='MSWEP_PRODUCT')
-        force_download = self._get_config_value(
-            lambda: self.config.data.force_download, default=False)
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
 
         file_list = self._generate_file_list(resolution, product)
         self.logger.info(

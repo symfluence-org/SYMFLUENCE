@@ -80,8 +80,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Global sensitivity methods (Sobol and RBD-FAST). Correlation and VISCOUS
-# sensitivity analysis remain available from the default installation.
+# Design-based global sensitivity analysis (Morris and Sobol). Without it the
+# sensitivity step can only write the trajectory-correlation diagnostic.
 #   pip install "symfluence[sensitivity]"
 sensitivity = [
   "SALib>=1.4.0,<2.0.0",

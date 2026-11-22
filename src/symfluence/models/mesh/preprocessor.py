@@ -202,7 +202,10 @@ class MESHPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
     def _get_spatial_mode(self) -> str:
         """Determine MESH spatial mode from configuration."""
-        spatial_mode = self._get_config_value(lambda: self.config.model.mesh.spatial_mode, default='auto')
+        spatial_mode = self._get_config_value(
+            lambda: self.config.model.mesh.spatial_mode,
+            dict_key='MESH_SPATIAL_MODE',
+        )
 
         if spatial_mode != 'auto':
             return spatial_mode
@@ -283,7 +286,7 @@ class MESHPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
     def _prepare_glacier_inputs(self) -> None:
         """Apply the opt-in ice split last, after all ordinary input fixers."""
-        mode = self._get_config_value(lambda: self.config.model.mesh.glacier_mode, default='none')
+        mode = self._get_config_value(lambda: self.config.model.mesh.glacier_mode, dict_key='MESH_GLACIER_MODE')
         if mode == 'none':
             return
         import json
@@ -448,10 +451,9 @@ class MESHPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
                 landcover_path,
                 self._get_config_value(
                     lambda: self.config.model.mesh.landcover_classification,
-                    default='default', dict_key='MESH_LANDCOVER_CLASSIFICATION'),
-                self._get_config_value(
-                    lambda: self.config.domain.land_class_source,
-                    default='modis', dict_key='LAND_CLASS_SOURCE'),
+                    dict_key='MESH_LANDCOVER_CLASSIFICATION',
+                ),
+                self._get_config_value(lambda: self.config.domain.land_class_source, dict_key='LAND_CLASS_SOURCE'),
             )
             self.logger.info(
                 f"MESH land-cover classification: {classification.upper()} "
@@ -684,22 +686,25 @@ class MESHPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         self.logger.info("Applying elevation band GRU discretization")
 
         # Determine lapse rate settings
-        apply_lapse = self._get_config_value(lambda: self.config.forcing.apply_lapse_rate, default=True)
+        apply_lapse = self._get_config_value(
+            lambda: self.config.forcing.apply_lapse_rate,
+            dict_key='APPLY_LAPSE_RATE',
+        )
         if isinstance(apply_lapse, str):
             apply_lapse = apply_lapse.lower() in ('true', '1', 'yes')
-        lapse_rate = float(self._get_config_value(lambda: self.config.forcing.lapse_rate, default=0.0065))
+        lapse_rate = float(self._get_config_value(lambda: self.config.forcing.lapse_rate, dict_key='LAPSE_RATE'))
         # Orographic precipitation gradient (fraction of ref-elevation precip per
         # metre). Default 0.0 = precip replicated unchanged (backwards-compatible).
         # A positive value corrects reanalysis precip under-catch in steep basins.
         precip_lapse_rate = float(self._get_config_value(
             lambda: self.config.forcing.precip_lapse_rate,
-            default=0.0, dict_key='MESH_PRECIP_LAPSE_RATE'
+            dict_key='MESH_PRECIP_LAPSE_RATE',
         ))
         # Uniform gauge-undercatch correction (default 1.0 = unchanged). Orthogonal
         # to the orographic gradient above; corrects net reanalysis precip bias.
         precip_multiplier = float(self._get_config_value(
             lambda: self.config.forcing.precip_multiplier,
-            default=1.0, dict_key='MESH_PRECIP_MULTIPLIER'
+            dict_key='MESH_PRECIP_MULTIPLIER',
         ))
 
         # Find elevation band HRU shapefile

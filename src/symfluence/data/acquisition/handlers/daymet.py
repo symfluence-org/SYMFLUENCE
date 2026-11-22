@@ -93,7 +93,7 @@ class DaymetAcquirer(BaseAcquisitionHandler):
 
         # Get configuration
         variables = self._get_variables()
-        force_download = self._get_config_value(lambda: self.config.data.force_download, default=False)
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
 
         # Check if bbox is in North America
         if self.bbox:

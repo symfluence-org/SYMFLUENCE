@@ -83,10 +83,7 @@ class CLMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
     def _get_install_path(self) -> Path:
         """Resolve CLM install path."""
-        install_path = self._get_config_value(
-            lambda: self.config.model.clm.install_path,
-            default='default', dict_key='CLM_INSTALL_PATH'
-        )
+        install_path = self._get_config_value(lambda: self.config.model.clm.install_path, dict_key='CLM_INSTALL_PATH')
         if install_path == 'default':
             code_dir = self._get_config_value(
                 lambda: self.config.system.code_dir,

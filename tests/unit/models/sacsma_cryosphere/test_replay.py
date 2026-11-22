@@ -205,3 +205,43 @@ def test_v1_identity_cannot_be_replayed_with_v2_engine(tmp_path):
     with pytest.raises(ValueError, match="identity"):
         replay_bundle(path, tmp_path / "out")
     assert not (tmp_path / "out").exists()
+
+
+def _reference_metrics(s, o):
+    """The replay's former inline KGE/NSE, kept to pin numerical equality."""
+    valid = np.isfinite(o)
+    s, o = s[valid], o[valid]
+    r = np.corrcoef(s, o)[0, 1]
+    a, b = s.std() / o.std(), s.mean() / o.mean()
+    return {
+        "KGE": 1 - np.sqrt((r - 1) ** 2 + (a - 1) ** 2 + (b - 1) ** 2),
+        "NSE": 1 - np.sum((s - o) ** 2) / np.sum((o - o.mean()) ** 2),
+        "r": r, "alpha": a, "beta": b,
+    }
+
+
+def test_metrics_use_core_kge_with_identical_values():
+    from symfluence.models.sacsma_cryosphere.replay import _metrics
+
+    rng = np.random.default_rng(0)
+    o = rng.gamma(2.0, 30.0, 400)
+    s = 0.8 * o + rng.normal(0, 10, 400) + 5
+    o[::17] = np.nan  # missing observations are dropped, as before
+
+    actual = _metrics(s, o)
+    expected = _reference_metrics(s, o)
+    assert actual["samples"] == int(np.isfinite(o).sum())
+    for key, value in expected.items():
+        assert actual[key] == pytest.approx(value, rel=1e-12), key
+    assert actual["PBIAS"] == pytest.approx(100 * (expected["beta"] - 1), rel=1e-12)
+
+
+def test_metrics_are_json_safe_for_degenerate_series():
+    from symfluence.models.sacsma_cryosphere.replay import _metrics
+
+    o = np.array([1.0, 2.0, 4.0, 3.0])
+    flat = _metrics(np.full(4, 2.5), o)  # constant simulation: no correlation
+    assert flat["KGE"] is None and flat["r"] is None
+    json.dumps(flat, allow_nan=False)
+    assert _metrics(o, np.full(4, 2.0)) == {"samples": 4, "KGE": None, "NSE": None}
+    assert _metrics(o[:1], o[:1])["KGE"] is None
