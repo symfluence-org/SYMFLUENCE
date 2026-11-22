@@ -207,9 +207,10 @@ failure of a filter that has collapsed.
 The lead-time CSV has one row per lead: CRPS of the forecast, of the open loop
 and MAE of persistence at the same target steps, the two CRPSS, spread-error
 ratio, KGE, and bias/MAE/RMSE/NSE plus MSE skill vs persistence and open loop
-of the ensemble mean. (The ensemble-mean scores follow the signature of the
-``scores`` function proposed for ``symfluence.evaluation.forecast_verification``
-in PR #512, behind a single local function, ``diagnostics.point_scores``.)
+of the ensemble mean. (The ensemble-mean scores come from
+``symfluence.evaluation.forecast_verification.scores``, the same function the
+deterministic forecast verification uses; ``diagnostics.point_scores`` is a
+thin wrapper around it.)
 
 A claim that assimilation improves forecasts needs, at minimum:
 

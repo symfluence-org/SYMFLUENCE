@@ -331,12 +331,18 @@ class TestScores:
         table = dg.lead_time_scores(fc, [3], obs)
         assert list(table['n']) == [1, 0, 0]
 
-    def test_point_scores_matches_pr512_contract(self):
+    def test_point_scores_contract(self):
         o = pd.Series([1.0, 2.0, 3.0, 4.0])
         out = dg.point_scores(o + 1, o, {'persistence': o.shift(1)})
         assert set(out) == {'n', 'bias', 'mae', 'rmse', 'nse', 'skill_vs_persistence'}
         assert out['n'] == 3 and out['bias'] == pytest.approx(1.0)
         assert out['skill_vs_persistence'] == pytest.approx(0.0)
+
+    def test_point_scores_is_forecast_verification_scores(self):
+        from symfluence.evaluation.forecast_verification import scores
+        o = pd.Series([1.0, 2.0, 4.0, 3.0, 5.0])
+        refs = {'persistence': o.shift(1), 'climatology': pd.Series(3.0, index=o.index)}
+        assert dg.point_scores(o * 1.1, o, refs) == scores(o * 1.1, o, refs)
 
     def test_nse_kge_perfect(self):
         x = np.array([1.0, 3.0, 2.0, 5.0])

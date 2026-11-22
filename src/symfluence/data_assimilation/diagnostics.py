@@ -22,6 +22,8 @@ from typing import Any, Dict, Mapping, Optional, Sequence
 import numpy as np
 import pandas as pd
 
+from symfluence.evaluation.forecast_verification import scores as forecast_scores
+
 logger = logging.getLogger(__name__)
 
 
@@ -255,32 +257,11 @@ def point_scores(forecast: pd.Series, observed: pd.Series,
                  references: Optional[Mapping[str, pd.Series]] = None) -> Dict[str, float]:
     """Bias, MAE, RMSE, NSE and MSE skill vs each reference, on pairs where all are present.
 
-    ``skill_vs_<name> = 1 - MSE(forecast) / MSE(reference)``.
-
-    Same signature and keys as ``scores`` in the forecast-verification module
-    proposed in PR #512 (``symfluence.evaluation.forecast_verification``);
-    this local copy is the single swap point once that lands.
+    ``skill_vs_<name> = 1 - MSE(forecast) / MSE(reference)``.  Delegates to
+    :func:`symfluence.evaluation.forecast_verification.scores`, so DA lead-time
+    scores and deterministic forecast verification share one implementation.
     """
-    references = references or {}
-    ok = forecast.notna() & observed.notna()
-    for r in references.values():
-        ok &= r.notna()
-    f, o = forecast[ok].astype(float), observed[ok].astype(float)
-    e = f - o
-    n = int(ok.sum())
-    out: Dict[str, float] = {'n': n}
-    if n == 0:
-        out.update(bias=np.nan, mae=np.nan, rmse=np.nan, nse=np.nan)
-        out.update({f'skill_vs_{k}': np.nan for k in references})
-        return out
-    mse = float((e ** 2).mean())
-    var = float(((o - o.mean()) ** 2).sum())
-    out.update(bias=float(e.mean()), mae=float(e.abs().mean()), rmse=float(np.sqrt(mse)),
-               nse=1 - float((e ** 2).sum()) / var if var > 0 else np.nan)
-    for k, r in references.items():
-        ref_mse = float(((r[ok].astype(float) - o) ** 2).mean())
-        out[f'skill_vs_{k}'] = 1 - mse / ref_mse if ref_mse > 0 else np.nan
-    return out
+    return forecast_scores(forecast, observed, references)
 
 
 def skill_score(score: float, reference: float) -> float:
