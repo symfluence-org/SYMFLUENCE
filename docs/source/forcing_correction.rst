@@ -371,9 +371,24 @@ reference forcing would count the hydrological correction twice. Fit step 1
 against the reference forcing as the model reads it *before* its
 ``FORCING_CORRECTION_*`` values are applied.
 
-The module is a library for now (no workflow step). Config keys, when it is
-wired into the workflow, will use the ``FORCING_SOURCE_CORRECTION_*`` prefix
-(e.g. ``FORCING_SOURCE_CORRECTION_FILE``, ``FORCING_SOURCE_CORRECTION_SOURCE``)
-so they stay apart from the section above. Correcting air temperature or
-relative humidity does not rescale specific humidity; a pipeline that corrects
-either should recompute it.
+Multiplicative factors are guarded against dry months, where the ratio of
+two small means is noise. A pooling group whose source mean is at or below
+``CorrectionSpec.min_source_mean`` stays at 1, and fitted factors are clamped
+to ``factor_bounds`` (default ``(0.25, 4.0)``; ``None`` disables the clamp).
+Every group that was left at 1 or clamped is listed in the correction's
+``meta['limited']``.
+
+Correcting air temperature alone makes the air drier at the same specific
+humidity. Pass ``humidity=HumidityVariables(temperature='airtemp',
+specific_humidity='spechum', pressure='airpres')`` to ``apply`` to recompute
+specific humidity so that relative humidity is unchanged (skipped when
+specific humidity is itself corrected). Without it, specific humidity is left
+as it was.
+
+The module is a library, called by forecast pipelines that build the
+forecast forcing themselves; the standard workflow only ever reads the
+product the model is calibrated on, so it has no step to apply it. Config
+keys, if it is wired in later, will use the ``FORCING_SOURCE_CORRECTION_*``
+prefix (e.g. ``FORCING_SOURCE_CORRECTION_FILE``,
+``FORCING_SOURCE_CORRECTION_SOURCE``) so they stay apart from the section
+above.

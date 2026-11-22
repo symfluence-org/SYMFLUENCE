@@ -91,3 +91,58 @@ def test_split_sample_test_reports_out_of_sample_gain():
 def test_missing_columns():
     with pytest.raises(ValidationError):
         fit_source_correction(_pairs().drop(columns='ref_pptrate'), SPECS, source='s')
+
+
+def _dry_pairs() -> pd.DataFrame:
+    """July is almost dry in the source, so ref/src would be a huge ratio."""
+    t = pd.date_range('2024-01-01', '2024-12-31 21:00', freq='3h')
+    src = np.where(t.month == 7, 1e-9, 1e-4)
+    ref = np.where(t.month == 7, 5e-5, 1.2e-4)
+    return pd.DataFrame({'time': t, 'pptrate': src, 'ref_pptrate': ref})
+
+
+def test_dry_month_below_min_source_mean_stays_neutral():
+    spec = CorrectionSpec('pptrate', 'mult', 'month', clip_min=0.0, min_source_mean=1e-6)
+    corr = fit_source_correction(_dry_pairs(), [spec], source='nwp')
+    assert corr.factors['pptrate']['7'] == 1.0
+    assert corr.factors['pptrate']['1'] == pytest.approx(1.2)
+    assert any('pptrate[7]' in note and 'left at 1' in note for note in corr.meta['limited'])
+
+
+def test_multiplicative_factor_is_clamped_by_default():
+    corr = fit_source_correction(_dry_pairs(), [CorrectionSpec('pptrate', 'mult', 'month')], source='nwp')
+    assert corr.factors['pptrate']['7'] == 4.0
+    assert any('clamped' in note for note in corr.meta['limited'])
+    unbounded = fit_source_correction(_dry_pairs(), [CorrectionSpec('pptrate', 'mult', 'month', factor_bounds=None)],
+                                      source='nwp')
+    assert unbounded.factors['pptrate']['7'] == pytest.approx(5e4)
+
+
+def test_factor_bounds_must_bracket_one():
+    with pytest.raises(ValidationError):
+        CorrectionSpec('pptrate', 'mult', factor_bounds=(1.5, 3.0))
+
+
+def test_temperature_correction_keeps_relative_humidity():
+    from symfluence.data.preprocessing.forcing_source_correction import HumidityVariables
+    from symfluence.data.preprocessing.resampling.elevation_correction import saturation_vapour_pressure
+
+    t = pd.date_range('2024-01-01', periods=24, freq='MS')
+    ds = xr.Dataset({'airtemp': ('time', np.full(24, 275.0)), 'spechum': ('time', np.full(24, 3e-3)),
+                     'airpres': ('time', np.full(24, 9e4))}, coords={'time': t})
+    corr = ForcingSourceCorrection(source='nwp', factors={'airtemp': {m: 2.0 for m in [str(i) for i in range(1, 13)]}},
+                                   kinds={'airtemp': 'add'})
+
+    def rh(d):
+        q, p = d['spechum'].values, d['airpres'].values
+        e = q * p / (0.622 + 0.378 * q)
+        return e / saturation_vapour_pressure(d['airtemp'].values)
+
+    kept = corr.apply(ds, 'nwp', humidity=HumidityVariables())
+    np.testing.assert_allclose(kept['airtemp'], 277.0)
+    np.testing.assert_allclose(rh(kept), rh(ds), rtol=1e-3)
+    assert (kept['spechum'] > ds['spechum']).all()
+    # without the option specific humidity is untouched
+    np.testing.assert_array_equal(corr.apply(ds, 'nwp')['spechum'], ds['spechum'])
+    with pytest.raises(ValidationError):
+        corr.apply(ds.drop_vars('airpres'), 'nwp', humidity=HumidityVariables())
