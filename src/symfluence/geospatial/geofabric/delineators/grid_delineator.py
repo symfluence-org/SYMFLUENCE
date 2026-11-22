@@ -72,10 +72,22 @@ class GridDelineator(BaseGeofabricDelineator):
         super().__init__(config, logger)
 
         # Grid-specific configuration
-        self.grid_cell_size = resolve_config_value(config, lambda: config.domain.grid_cell_size, 1000.0, 'GRID_CELL_SIZE')  # meters
-        self.clip_to_watershed = resolve_config_value(config, lambda: config.domain.clip_grid_to_watershed, True, 'CLIP_GRID_TO_WATERSHED')
-        self.grid_source = resolve_config_value(config, lambda: config.domain.grid_source, 'generate', 'GRID_SOURCE')
-        self.native_grid_dataset = resolve_config_value(config, lambda: config.domain.native_grid_dataset, 'era5', 'NATIVE_GRID_DATASET')
+        self.grid_cell_size = resolve_config_value(
+            config,
+            lambda: config.domain.grid_cell_size,
+            dict_key='GRID_CELL_SIZE',
+        )  # meters
+        self.clip_to_watershed = resolve_config_value(
+            config,
+            lambda: config.domain.clip_grid_to_watershed,
+            dict_key='CLIP_GRID_TO_WATERSHED',
+        )
+        self.grid_source = resolve_config_value(config, lambda: config.domain.grid_source, dict_key='GRID_SOURCE')
+        self.native_grid_dataset = resolve_config_value(
+            config,
+            lambda: config.domain.native_grid_dataset,
+            dict_key='NATIVE_GRID_DATASET',
+        )
 
         # Specific paths for grid delineation
         self.output_dir = self.project_dir / "shapefiles/tempdir"
@@ -165,7 +177,10 @@ class GridDelineator(BaseGeofabricDelineator):
         self.logger.info(f"Saved grid network to: {river_network_path}")
 
         # Cleanup intermediate files if requested
-        if self._get_config_value(lambda: self.config.domain.delineation.cleanup_intermediate_files, default=True, dict_key='CLEANUP_INTERMEDIATE_FILES'):
+        if self._get_config_value(
+            lambda: self.config.domain.delineation.cleanup_intermediate_files,
+            dict_key='CLEANUP_INTERMEDIATE_FILES',
+        ):
             self.cleanup()
 
         return river_network_path, river_basins_path

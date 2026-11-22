@@ -17,17 +17,18 @@ import pytest
 import xarray as xr
 
 from symfluence.core.exceptions import ConfigurationError, EvaluationError
+from symfluence.core.mixins.config import SCHEMA_DEFAULT, fallback_default
 
 pytestmark = [pytest.mark.unit, pytest.mark.quick]
 LOG = logging.getLogger("test")
 
 
-def _cfg_value(accessor=None, default=None, dict_key=None):
+def _cfg_value(accessor=None, default=SCHEMA_DEFAULT, dict_key=None):
     try:
         value = accessor()
     except (AttributeError, KeyError, TypeError):
         value = None
-    return default if value is None else value
+    return fallback_default(default, dict_key) if value is None else value
 
 
 # 1. ParFlow / CLM-ParFlow dump interval -------------------------------------
@@ -211,20 +212,19 @@ def test_crhm_basinflow_shifted_to_interval_start():
     assert q.index[0] == pd.Timestamp("2020-01-01 00:00")
 
 
-# 11. PRMS statvar: element counts and units ---------------------------------
+# 11. PRMS statvar: one column per element entry, and units -------------------
 
-def test_prms_statvar_respects_counts_and_units(tmp_path):
+def test_prms_statvar_respects_elements_and_units(tmp_path):
     from symfluence.models.prms.calibration.worker import PRMSWorker
     from symfluence.models.prms.statvar import CFS_TO_CMS, read_statvar_streamflow
 
     sv = tmp_path / "statvar.dat"
-    sv.write_text("3\nseg_outflow 3\nbasin_actet 1\nbasin_cfs 1\n"
+    sv.write_text("5\nseg_outflow 1\nseg_outflow 2\nseg_outflow 3\nbasin_actet 1\nbasin_cfs 1\n"
                   "1 2000 1 1 0 0 0 1 2 3 0.1 100\n"
                   "2 2000 1 2 0 0 0 1 2 3 0.1 200\n")
     q = read_statvar_streamflow(sv)
     assert q.tolist() == pytest.approx([100 * CFS_TO_CMS, 200 * CFS_TO_CMS])
-    worker = SimpleNamespace(logger=LOG)
-    assert PRMSWorker._extract_streamflow_from_statvar(worker, sv).tolist() == q.tolist()
+    assert PRMSWorker().read_simulated_streamflow(tmp_path, {}).tolist() == q.tolist()
     assert read_statvar_streamflow(sv, preferred=("seg_outflow",), element=2).iloc[0] == \
         pytest.approx(2 * CFS_TO_CMS)
 

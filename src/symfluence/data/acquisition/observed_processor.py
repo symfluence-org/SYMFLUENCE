@@ -333,8 +333,7 @@ class ObservedDataProcessor(ConfigMixin):
                 return
             from symfluence.core.registries import R
             from symfluence.data.observation.registry import ObservationRegistry
-            backend = str(self._get_config_value(
-                lambda: self.config.domain.data_access, default='MAF', dict_key='DATA_ACCESS')).lower()
+            backend = str(self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS')).lower()
             key = self.data_provider.lower()
             # ── ObservationBackend protocol tier (contract 0.2.0) ─────────
             # Backend-first under DATA_ACCESS: community: providers claimed
@@ -881,7 +880,10 @@ class ObservedDataProcessor(ConfigMixin):
                     gdf = gpd.read_file(shapefile_path)
 
                     # Get area column from the shapefile
-                    area_column = self._get_config_value(lambda: self.config.paths.river_basin_area, default='GRU_area', dict_key='RIVER_BASIN_SHP_AREA')
+                    area_column = self._get_config_value(
+                        lambda: self.config.paths.river_basin_area,
+                        dict_key='RIVER_BASIN_SHP_AREA',
+                    )
 
                     # If area column not found, try alternative names
                     if area_column not in gdf.columns:

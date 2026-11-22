@@ -41,6 +41,7 @@ import xarray as xr
 
 from symfluence.core.registries import R
 from symfluence.data.acquisition.earthaccess_base import BaseEarthaccessAcquirer
+from symfluence.data.acquisition.utils import atomic_write
 
 
 @R.acquisition_handlers.add('MOD16')
@@ -79,7 +80,10 @@ class MOD16ETAcquirer(BaseEarthaccessAcquirer):
         output_dir.mkdir(parents=True, exist_ok=True)
         processed_file = output_dir / f"{self.domain_name}_MOD16_ET.nc"
 
-        if processed_file.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False):
+        if processed_file.exists() and not self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             self.logger.info(f"Using existing MOD16 ET file: {processed_file}")
             return processed_file
 
@@ -456,7 +460,10 @@ class MOD16ETAcquirer(BaseEarthaccessAcquirer):
 
         output_file = output_dir / f"{self.domain_name}_{product_name}_raw.nc"
 
-        if output_file.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False):
+        if output_file.exists() and not self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             return output_file
 
         token = self._appeears_login(username, password)
@@ -608,7 +615,7 @@ class MOD16ETAcquirer(BaseEarthaccessAcquirer):
                 )
                 dl_response.raise_for_status()
 
-                with open(out_path, 'wb') as f:
+                with atomic_write(out_path) as _part, open(_part, 'wb') as f:
                     for chunk in dl_response.iter_content(chunk_size=1024*1024):
                         f.write(chunk)
 

@@ -84,10 +84,13 @@ class AsyncDDSAlgorithm(OptimizationAlgorithm):
         default_pool = 1 if sys.platform == "darwin" else min(20, num_processes * 2)
         default_batch = 1 if sys.platform == "darwin" else num_processes
 
-        dds_r = self._get_config_value(lambda: self.config.optimization.dds.r, default=0.2, dict_key='DDS_R')
+        dds_r = self._get_config_value(lambda: self.config.optimization.dds.r, dict_key='DDS_R')
         pool_size = self._get_config_value(lambda: self.config.optimization.dds.async_pool_size, default=default_pool, dict_key='ASYNC_DDS_POOL_SIZE')
         batch_size = self._get_config_value(lambda: self.config.optimization.dds.async_batch_size, default=default_batch, dict_key='ASYNC_DDS_BATCH_SIZE')
-        max_stagnation = self._get_config_value(lambda: self.config.optimization.dds.max_stagnation_batches, default=10, dict_key='MAX_STAGNATION_BATCHES')
+        max_stagnation = self._get_config_value(
+            lambda: self.config.optimization.dds.max_stagnation_batches,
+            dict_key='MAX_STAGNATION_BATCHES',
+        )
 
         # NUMBER_OF_ITERATIONS = total number of batches (consistent with other algorithms)
         target_batches = self.max_iterations

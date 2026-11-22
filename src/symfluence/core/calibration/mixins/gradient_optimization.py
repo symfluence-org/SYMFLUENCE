@@ -43,10 +43,7 @@ class GradientOptimizationMixin(ConfigMixin):
     @property
     def gradient_epsilon(self) -> float:
         """Epsilon for finite difference gradient computation."""
-        return self._get_config_value(
-            lambda: self.config.optimization.gradient_epsilon,
-            default=1e-4
-        )
+        return self._get_config_value(lambda: self.config.optimization.gradient_epsilon, dict_key='GRADIENT_EPSILON')
 
     # =========================================================================
     # Gradient computation

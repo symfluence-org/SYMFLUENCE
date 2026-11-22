@@ -802,12 +802,11 @@ class InMemoryModelWorker(BaseWorker):
             }
 
     def _metrics_calculator(self) -> StreamflowMetrics:
-        """StreamflowMetrics carrying this worker's penalty score (and Box-Cox lambda)."""
-        box_cox_lambda = self._cfg('BOX_COX_LAMBDA')
-        kwargs: Dict[str, Any] = {'penalty_score': self.penalty_score}
-        if box_cox_lambda is not None:
-            kwargs['box_cox_lambda'] = float(box_cox_lambda)
-        return StreamflowMetrics(**kwargs)
+        """StreamflowMetrics carrying this worker's penalty score, Box-Cox lambda
+        and LIKELIHOOD_* error model."""
+        calc = StreamflowMetrics.from_config(self.config or {})
+        calc.penalty_score = self.penalty_score
+        return calc
 
     def _failed_extra_metrics(self, names: List[str]) -> Dict[str, float]:
         """Direction-aware failure value for each requested extra metric."""

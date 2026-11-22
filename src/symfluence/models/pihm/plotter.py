@@ -106,11 +106,15 @@ class PIHMPlotter(BasePlotter):
             default='2000-01-01',
             dict_key='EXPERIMENT_TIME_START',
         ))
-        area_km2 = float(self._get_config_value(
-            lambda: self.config.domain.catchment_area,
-            default=2210.0,
-            dict_key='CATCHMENT_AREA',
-        ))
+        from symfluence.core.metrics.streamflow_metrics import require_catchment_area_km2
+        area_km2 = require_catchment_area_km2(
+            self.config_dict, self.project_dir, self.domain_name,
+            configured_km2=self._get_config_value(
+                lambda: self.config.domain.catchment_area,
+                default=None,
+                dict_key='CATCHMENT_AREA',
+            ),
+        )
         area_m2 = area_km2 * 1e6
 
         extractor = PIHMResultExtractor()

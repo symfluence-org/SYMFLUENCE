@@ -38,7 +38,7 @@ def discretize(discretizer: "DomainDiscretizer") -> Optional[object]:
     default_name = f"{discretizer.domain_name}_riverBasins_{delineation_suffix}.shp"
     delineate_coastal = discretizer._get_config_value(
         lambda: discretizer.config.domain.delineation.delineate_coastal_watersheds,
-        default=False
+        dict_key='DELINEATE_COASTAL_WATERSHEDS',
     )
     if delineate_coastal:
         default_name = f"{discretizer.domain_name}_riverBasins_with_coastal.shp"

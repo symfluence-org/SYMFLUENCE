@@ -71,14 +71,17 @@ class HYPEModelOptimizer(BaseModelOptimizer):
 
     def _get_final_file_manager_path(self) -> Path:
         """Get path to HYPE info file (similar to file manager)."""
-        hype_info = self._get_config_value(lambda: self.config.model.hype.info_file, default='info.txt', dict_key='SETTINGS_HYPE_INFO')
+        hype_info = self._get_config_value(lambda: self.config.model.hype.info_file, dict_key='SETTINGS_HYPE_INFO')
         if hype_info == 'default':
             hype_info = 'info.txt'
         return self.project_dir / 'settings' / 'HYPE' / hype_info
 
     def _setup_parallel_dirs(self) -> None:
         """Setup HYPE-specific parallel directories."""
-        algorithm = self._get_config_value(lambda: self.config.optimization.algorithm, default='optimization', dict_key='ITERATIVE_OPTIMIZATION_ALGORITHM').lower()
+        algorithm = self._get_config_value(
+            lambda: self.config.optimization.algorithm,
+            dict_key='ITERATIVE_OPTIMIZATION_ALGORITHM',
+        ).lower()
         base_dir = self._resolve_sim_base_dir(algorithm)
         self.parallel_dirs = self.setup_parallel_processing(
             base_dir.absolute(),
@@ -96,7 +99,7 @@ class HYPEModelOptimizer(BaseModelOptimizer):
             self.parallel_dirs,
             'HYPE',
             self.experiment_id,
-            self._get_config_value(lambda: self.config.model.hype.info_file, default='info.txt', dict_key='SETTINGS_HYPE_INFO')
+            self._get_config_value(lambda: self.config.model.hype.info_file, dict_key='SETTINGS_HYPE_INFO')
         )
 
         # If routing needed, also copy and configure mizuRoute settings

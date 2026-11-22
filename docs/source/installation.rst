@@ -31,6 +31,18 @@ Quick Install
    GDAL) do not yet ship wheels for Python 3.14+. If you are on 3.14, create a
    3.11 or 3.12 environment instead (``python3.11 -m venv venv``).
 
+   Ubuntu 26.04 ships only Python 3.14 and has no older ``python3.x`` package
+   in apt, so the ``python3.11`` route does not work there. Either use Ubuntu
+   24.04 (on Windows, ``wsl --install -d Ubuntu-24.04``; a plain
+   ``wsl --install`` now gives 26.04), or install an interpreter with
+   `uv <https://docs.astral.sh/uv/>`_ and point the bootstrap at it:
+
+   .. code-block:: bash
+
+      curl -LsSf https://astral.sh/uv/install.sh | sh
+      uv python install 3.12
+      SYMFLUENCE_PYTHON=$(uv python find 3.12) ./scripts/symfluence-bootstrap --install
+
 **Optional extras**
 
 The base install stays lean (~1 GB smaller than with the ML stack). Add

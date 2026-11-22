@@ -284,7 +284,7 @@ class DataManager(BaseManager):
             # Check for USGS Groundwater download and ensure it's in additional_obs
             download_usgs_gw = self._get_config_value(
                 lambda: self.config.evaluation.usgs_gw.download,
-                False
+                dict_key='DOWNLOAD_USGS_GW',
             )
             if isinstance(download_usgs_gw, str):
                 download_usgs_gw = download_usgs_gw.lower() == 'true'
@@ -295,7 +295,7 @@ class DataManager(BaseManager):
             # Check for GRACE TWS and ensure it's in additional_obs
             download_grace = self._get_config_value(
                 lambda: self.config.evaluation.grace.download,
-                False
+                dict_key='DOWNLOAD_GRACE',
             )
             if isinstance(download_grace, str):
                 download_grace = download_grace.lower() == 'true'
@@ -306,7 +306,7 @@ class DataManager(BaseManager):
             # Check for MODIS Snow and ensure it's in additional_obs
             download_modis_snow = self._get_config_value(
                 lambda: self.config.evaluation.modis_snow.download,
-                False
+                dict_key='DOWNLOAD_MODIS_SNOW',
             )
             if download_modis_snow and 'modis_snow' not in [o.lower() for o in additional_obs]:
                 additional_obs.append('modis_snow')
@@ -314,7 +314,7 @@ class DataManager(BaseManager):
             # Check for SNOTEL download and ensure it's in additional_obs
             download_snotel = self._get_config_value(
                 lambda: self.config.evaluation.snotel.download,
-                False
+                dict_key='DOWNLOAD_SNOTEL',
             )
             if isinstance(download_snotel, str):
                 download_snotel = download_snotel.lower() == 'true'
@@ -323,10 +323,7 @@ class DataManager(BaseManager):
                 additional_obs.append('snotel')
 
             # Check for ISMN download and ensure it's in additional_obs
-            download_ismn = self._get_config_value(
-                lambda: self.config.data.download_ismn,
-                False
-            )
+            download_ismn = self._get_config_value(lambda: self.config.data.download_ismn, dict_key='DOWNLOAD_ISMN')
             if isinstance(download_ismn, str):
                 download_ismn = download_ismn.lower() == 'true'
 
@@ -410,25 +407,6 @@ class DataManager(BaseManager):
 
             self.logger.info("Observed data processing completed successfully")
 
-    def _warn_unapplied_lapse_corrections(self) -> None:
-        """Warn when ``lapse`` asks for elevation corrections nothing applies."""
-        lapse = self._get_config_value(lambda: self.config.forcing.lapse, default=None)
-        if lapse is None:
-            return
-        toggles = ('pressure', 'humidity', 'longwave', 'shortwave', 'precipitation', 'wind')
-        if isinstance(lapse, dict):
-            requested = [name for name in toggles if lapse.get(name)]
-        else:
-            requested = [name for name in toggles if getattr(lapse, name, False)]
-        if requested:
-            self.logger.warning(
-                "The 'lapse' configuration requests elevation corrections for "
-                f"{', '.join(requested)}, but model-agnostic elevation correction is not "
-                "implemented: these corrections are NOT applied to the forcing. Only the "
-                "temperature lapse rate (APPLY_LAPSE_RATE / LAPSE_RATE) is applied, by the "
-                "model preprocessors that support it."
-            )
-
     def _run_community_attribute_pipeline(self) -> None:
         """Run community attribute backends + the entry-point plugin seam.
 
@@ -450,8 +428,7 @@ class DataManager(BaseManager):
         plugin loop (tier 2) so it is not extracted twice — the backend is
         canonical. climaclass and any other plugins still run.
         """
-        data_access = str(self._get_config_value(
-            lambda: self.config.domain.data_access, default='MAF', dict_key='DATA_ACCESS')).lower()
+        data_access = str(self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS')).lower()
         if data_access != 'community':
             return
 
@@ -624,8 +601,7 @@ class DataManager(BaseManager):
         """
         if not provider:
             return False
-        data_access = str(self._get_config_value(
-            lambda: self.config.domain.data_access, default='MAF', dict_key='DATA_ACCESS')).lower()
+        data_access = str(self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS')).lower()
         if data_access != 'community':
             return False
         if not R.observation_backends.keys():
@@ -671,7 +647,6 @@ class DataManager(BaseManager):
             # Run extended attribute processing based on profile
             attribute_profile = self._get_config_value(
                 lambda: self.config.domain.attribute_profile,
-                default='core',
                 dict_key='ATTRIBUTE_PROFILE',
             )
             if isinstance(attribute_profile, str) and attribute_profile.lower() != 'core':
@@ -694,13 +669,6 @@ class DataManager(BaseManager):
                 fr.run_resampling()
             except (FileNotFoundError, DataAcquisitionError) as e:
                 self.logger.warning(f"Forcing resampling skipped (no forcing data): {e}")
-
-            # The per-variable elevation corrections of the ``lapse`` config
-            # section (pressure, humidity, longwave, shortwave, precipitation,
-            # wind) were to be applied here by a processor that was never added
-            # to the code base; the hook imported a module that does not exist
-            # and did nothing. Say so instead of silently ignoring the request.
-            self._warn_unapplied_lapse_corrections()
 
             # Visualize preprocessed forcing if available
             if self.reporting_manager:
@@ -747,7 +715,7 @@ class DataManager(BaseManager):
             # Integrate EM-Earth data if supplementation is enabled
             supplement_forcing = self._get_config_value(
                 lambda: self.config.forcing.supplement,
-                False
+                dict_key='SUPPLEMENT_FORCING',
             )
             if supplement_forcing:
                 self.logger.debug("Integrating EM-Earth data")
@@ -880,7 +848,7 @@ class DataManager(BaseManager):
         # Try explicit config value first
         catchment_name = self._get_config_value(
             lambda: self.config.paths.catchment_name,
-            'default'
+            dict_key='CATCHMENT_SHP_NAME',
         )
         if catchment_name != 'default':
             explicit_path = catchment_dir / catchment_name
@@ -951,7 +919,7 @@ class DataManager(BaseManager):
 
         supplement_forcing = self._get_config_value(
             lambda: self.config.forcing.supplement,
-            False
+            dict_key='SUPPLEMENT_FORCING',
         )
         if supplement_forcing:
             status['em_earth_acquired'] = (self.project_forcing_dir / 'raw_data_em_earth').exists()

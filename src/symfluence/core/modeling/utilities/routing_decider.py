@@ -234,7 +234,11 @@ class RoutingDecider:
         # ROUTING_MODEL may be a global template setting, but if the model
         # explicitly declares itself lumped, routing is not meaningful.
         if model_spatial == 'lumped':
-            routing_delineation = resolve_config_value(config, lambda: config.domain.delineation.routing, 'lumped', 'ROUTING_DELINEATION').lower()
+            routing_delineation = resolve_config_value(
+                config,
+                lambda: config.domain.delineation.routing,
+                dict_key='ROUTING_DELINEATION',
+            ).lower()
             if routing_delineation == 'lumped':
                 diagnostics['reason'] = 'model_spatial_mode_lumped'
                 diagnostics['checks']['routing_delineation'] = routing_delineation
@@ -264,7 +268,11 @@ class RoutingDecider:
         # to override the generic DOMAIN_DEFINITION_METHOD.
         spatial_mode = model_spatial or domain_method
 
-        routing_delineation = resolve_config_value(config, lambda: config.domain.delineation.routing, 'lumped', 'ROUTING_DELINEATION').lower()
+        routing_delineation = resolve_config_value(
+            config,
+            lambda: config.domain.delineation.routing,
+            dict_key='ROUTING_DELINEATION',
+        ).lower()
 
         diagnostics['checks']['domain_method'] = domain_method
         diagnostics['checks']['spatial_mode'] = spatial_mode

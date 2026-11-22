@@ -41,6 +41,7 @@ import numpy as np
 import rasterio
 
 from symfluence.core.registries import R
+from symfluence.data.acquisition.utils import atomic_write
 
 from ..base import BaseAcquisitionHandler
 from ..mixins import RetryMixin
@@ -236,7 +237,7 @@ class SoilGridsPropertiesAcquirer(BaseAcquisitionHandler, RetryMixin):
                 snippet = first_chunk[:200].decode("utf-8", errors="ignore")
                 raise ValueError(f"WCS returned unexpected content: {snippet}")
 
-            with open(raw_path, "wb") as f:
+            with atomic_write(raw_path) as _part, open(_part, 'wb') as f:
                 f.write(first_chunk)
                 for chunk in chunks:
                     f.write(chunk)

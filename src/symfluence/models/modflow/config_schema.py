@@ -89,6 +89,7 @@ class MODFLOWConfig(BaseModel):
 
     # Grid discretization (lumped mode)
     grid_type: str = Field(default='dis', alias='MODFLOW_GRID_TYPE')
+    # Lumped mode supports one layer only (rejected otherwise); basin mode is always single-layer.
     nlay: int = Field(default=1, alias='MODFLOW_NLAY', ge=1, le=100)
     nrow: int = Field(default=1, alias='MODFLOW_NROW', ge=1, le=10000)
     ncol: int = Field(default=1, alias='MODFLOW_NCOL', ge=1, le=10000)
@@ -108,7 +109,11 @@ class MODFLOWConfig(BaseModel):
 
     # Drain package
     drain_elevation: Optional[float] = Field(default=None, alias='MODFLOW_DRAIN_ELEVATION')
-    drain_conductance: float = Field(default=50.0, alias='MODFLOW_DRAIN_CONDUCTANCE', gt=0)
+    drain_conductance: Optional[float] = Field(
+        default=None, alias='MODFLOW_DRAIN_CONDUCTANCE', gt=0,
+        description='Lumped drain conductance (m2/d); None scales it with catchment area '
+                    '(~100-day aquifer time constant)',
+    )
 
     # Stress period
     stress_period_length: float = Field(default=1.0, alias='MODFLOW_STRESS_PERIOD_LENGTH', gt=0)

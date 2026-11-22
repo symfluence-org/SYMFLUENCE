@@ -186,7 +186,6 @@ class MODFLOWPlotter(BasePlotter):
 
         sp_length = float(self._get_config_value(
             lambda: self.config.model.modflow.stress_period_length,
-            default=1.0,
             dict_key='MODFLOW_STRESS_PERIOD_LENGTH',
         ))
         start_date = str(self._get_config_value(
@@ -194,29 +193,26 @@ class MODFLOWPlotter(BasePlotter):
             default='2000-01-01',
             dict_key='EXPERIMENT_TIME_START',
         ))
-        area_km2 = float(self._get_config_value(
-            lambda: self.config.domain.catchment_area,
-            default=2210.0,
-            dict_key='CATCHMENT_AREA',
-        ))
+        from symfluence.core.metrics.streamflow_metrics import require_catchment_area_km2
+        area_km2 = require_catchment_area_km2(
+            self.config_dict, self.project_dir, self.domain_name,
+            configured_km2=self._get_config_value(
+                lambda: self.config.domain.catchment_area,
+                default=None,
+                dict_key='CATCHMENT_AREA',
+            ),
+        )
         area_m2 = area_km2 * 1e6
 
-        top = float(self._get_config_value(
-            lambda: self.config.model.modflow.top, default=1500.0,
-            dict_key='MODFLOW_TOP',
-        ))
-        bot = float(self._get_config_value(
-            lambda: self.config.model.modflow.bot, default=1400.0,
-            dict_key='MODFLOW_BOT',
-        ))
-        drain_elev = float(self._get_config_value(
-            lambda: self.config.model.modflow.drain_elevation, default=1450.0,
+        top = float(self._get_config_value(lambda: self.config.model.modflow.top, dict_key='MODFLOW_TOP'))
+        bot = float(self._get_config_value(lambda: self.config.model.modflow.bot, dict_key='MODFLOW_BOT'))
+        # Unset means mid-aquifer, as in the preprocessor's DRN package.
+        drain_elev = self._get_config_value(
+            lambda: self.config.model.modflow.drain_elevation, default=None,
             dict_key='MODFLOW_DRAIN_ELEVATION',
-        ))
-        sy = float(self._get_config_value(
-            lambda: self.config.model.modflow.sy, default=0.15,
-            dict_key='MODFLOW_SY',
-        ))
+        )
+        drain_elev = (top + bot) / 2.0 if drain_elev is None else float(drain_elev)
+        sy = float(self._get_config_value(lambda: self.config.model.modflow.sy, dict_key='MODFLOW_SY'))
         cell_size = float(self._get_config_value(
             lambda: self.config.model.modflow.cell_size, default=1000.0,
             dict_key='MODFLOW_CELL_SIZE',
@@ -235,15 +231,17 @@ class MODFLOWPlotter(BasePlotter):
             modflow_dir, 'drain_discharge',
             stress_period_length=sp_length, start_date=start_date,
         )
-        baseflow_m3s = drain_m3_d / 86400.0
-
         # Extract SUMMA recharge and surface runoff
-        from symfluence.models.modflow.coupling import SUMMAToMODFLOWCoupler
+        from symfluence.models.modflow.coupling import SUMMAToMODFLOWCoupler, periods_to_daily
+
+        # One value per stress period -> every day of its period, to match daily SUMMA output
+        baseflow_m3s = periods_to_daily(drain_m3_d / 86400.0, sp_length)
         coupler = SUMMAToMODFLOWCoupler(self.config_dict, self.logger)
 
         recharge_m_d = coupler.extract_recharge_from_summa(summa_dir)
-        surface_kg_m2_s = coupler.extract_surface_runoff(summa_dir)
-        surface_m3s = surface_kg_m2_s * area_m2 / 1000.0
+        surface_m_s = coupler.extract_surface_runoff(summa_dir)  # m/s
+        surface_m3s = surface_m_s * area_m2
+        surface_m3s.index = pd.DatetimeIndex(surface_m3s.index).normalize()
 
         # Total simulated streamflow
         common_idx = surface_m3s.index.intersection(baseflow_m3s.index)

@@ -166,20 +166,48 @@ class NotebookService(BaseService):
         except (subprocess.SubprocessError, OSError, ValueError) as e:
             self._console.warning(f"Could not ensure ipykernel: {e}")
 
-        # Try to launch Jupyter
-        tool = "jupyterlab" if prefer_lab else "notebook"
-        try:
-            subprocess.run([str(python_exe), "-m", tool, str(nb_path)])
-            return 0
-        except (OSError, subprocess.SubprocessError):
+        # Launch the first front end that is installed in the repo venv.
+        # `python -m <missing module>` exits non-zero without raising, so probe
+        # for the module first instead of trusting subprocess.run to fail.
+        frontends = ["jupyterlab", "notebook"] if prefer_lab else ["notebook", "jupyterlab"]
+        for tool in frontends:
+            if not self._module_available(python_exe, tool):
+                continue
             try:
-                subprocess.run(
-                    [str(python_exe), "-m", "jupyter", "notebook", str(nb_path)]
-                )
-                return 0
+                result = subprocess.run([str(python_exe), "-m", tool, str(nb_path)])
             except (OSError, subprocess.SubprocessError) as e:
-                self._console.error(f"Could not launch Jupyter: {e}")
+                self._console.error(f"Could not launch Jupyter ({tool}): {e}")
                 return 3
+            if result.returncode != 0:
+                self._console.error(f"Jupyter ({tool}) exited with status {result.returncode}")
+                return 3
+            return 0
+
+        self._console.error(
+            f"Neither JupyterLab nor Jupyter Notebook is installed for {python_exe}."
+        )
+        self._console.info(
+            "Install the notebook extra from the repository root, then retry:"
+        )
+        self._console.indent(f'{python_exe} -m pip install -e ".[notebook]"')
+        return 3
+
+    @staticmethod
+    def _module_available(python_exe: Path, module: str) -> bool:
+        """Return True when ``module`` can be imported by ``python_exe``."""
+        try:
+            probe = subprocess.run(
+                [
+                    str(python_exe),
+                    "-c",
+                    f"import importlib.util, sys; sys.exit(importlib.util.find_spec({module!r}) is None)",
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return probe.returncode == 0
 
     def list_examples(self, repo_root: Optional[Path] = None) -> List[Path]:
         """

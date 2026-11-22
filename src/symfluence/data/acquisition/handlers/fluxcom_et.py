@@ -54,6 +54,7 @@ import requests
 import xarray as xr
 
 from symfluence.core.registries import R
+from symfluence.data.acquisition.utils import atomic_write
 
 from ..base import BaseAcquisitionHandler
 
@@ -95,7 +96,10 @@ class FLUXCOMETAcquirer(BaseAcquisitionHandler):
 
         processed_file = et_dir / f"{self.domain_name}_FLUXCOM_ET.nc"
 
-        if processed_file.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False):
+        if processed_file.exists() and not self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             self.logger.info(f"Using existing FLUXCOM file: {processed_file}")
             return processed_file
 
@@ -134,7 +138,10 @@ class FLUXCOMETAcquirer(BaseAcquisitionHandler):
 
         out_file = output_dir / filename
 
-        if out_file.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False):
+        if out_file.exists() and not self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             return out_file
 
         self.logger.info(f"Downloading: {filename}")
@@ -142,7 +149,7 @@ class FLUXCOMETAcquirer(BaseAcquisitionHandler):
             response = requests.get(url, stream=True, timeout=600)
             response.raise_for_status()
 
-            with open(out_file, "wb") as f:
+            with atomic_write(out_file) as _part, open(_part, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=1024*1024):
                     f.write(chunk)
 
@@ -210,7 +217,10 @@ class FLUXCOMETAcquirer(BaseAcquisitionHandler):
                     obj_hash = item.get("hash", "")
                     out_file = output_dir / f"ET_{year}_monthly_halfdeg.nc"
 
-                    if out_file.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False):
+                    if out_file.exists() and not self._get_config_value(
+                        lambda: self.config.data.force_download,
+                        dict_key='FORCE_DOWNLOAD',
+                    ):
                         self.logger.info(f"  {year}: already exists, skipping")
                         downloaded.append(out_file)
                         break

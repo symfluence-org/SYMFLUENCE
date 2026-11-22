@@ -19,6 +19,7 @@ from shapely.geometry import Polygon
 from symfluence.core.registries import R
 
 from ...utils import VariableStandardizer
+from ..resampling.grid_geometry import curvilinear_cell_polygons
 from .base_dataset import BaseDatasetHandler
 
 
@@ -265,15 +266,15 @@ class CERRAHandler(BaseDatasetHandler):
 
             # Get HRU bounding box for spatial filtering
             # Read the HRU shapefile to get its extent
-            # shapefile_path is .../shapefiles/forcing, so parent is .../shapefiles
-            hru_shapefile_dir = shapefile_path.parent / 'catchment'
-            domain_name = self._get_config_value(lambda: self.config.domain.name, default='domain')
-            hru_shapefile = hru_shapefile_dir / f"{domain_name}_HRUs_GRUs.shp"
+            # Resolved from project_dir: shapefile_path may be nested
+            # (shapefiles/forcing/<signature>) and the catchment lives under
+            # shapefiles/catchment/<method>/<experiment_id>/.
+            hru_shapefile = self._find_catchment_shapefile()
 
             self.logger.info(f"Looking for HRU shapefile at: {hru_shapefile}")
 
             bbox_filter = None
-            if hru_shapefile.exists():
+            if hru_shapefile is not None and hru_shapefile.exists():
                 try:
                     import geopandas as gpd
                     hru_gdf = gpd.read_file(hru_shapefile)
@@ -316,7 +317,7 @@ class CERRAHandler(BaseDatasetHandler):
 
                     # If we have the HRU shapefile, use it to ensure full coverage
                     poly_created = False
-                    if hru_shapefile.exists():
+                    if hru_shapefile is not None and hru_shapefile.exists():
                         try:
                             # Re-read or use existing if efficient (safest to re-read to be sure)
                             if 'hru_gdf' not in locals():
@@ -419,26 +420,20 @@ class CERRAHandler(BaseDatasetHandler):
                     # No filter - use all indices
                     indices_list = [(i, j) for i in range(ny) for j in range(nx)]
 
+                # Footprints centred on each cell over the window spanning the selection.
+                if indices_list:
+                    r0 = min(i for i, _ in indices_list)
+                    r1 = max(i for i, _ in indices_list) + 1
+                    c0 = min(j for _, j in indices_list)
+                    c1 = max(j for _, j in indices_list) + 1
+                    cells = curvilinear_cell_polygons(lons, lats, rows=(r0, r1), cols=(c0, c1), nominal_step=0.05)
+
                 for i, j in indices_list:
                     # Get cell center coordinates
                     center_lat = float(lats[i, j])
                     center_lon = float(lons[i, j])
 
-                    # Create cell from corners
-                    lat_corners = [
-                        lats[i, j],
-                        lats[i, j + 1] if j + 1 < nx else lats[i, j],
-                        lats[i + 1, j + 1] if i + 1 < ny and j + 1 < nx else lats[i, j],
-                        lats[i + 1, j] if i + 1 < ny else lats[i, j],
-                    ]
-                    lon_corners = [
-                        lons[i, j],
-                        lons[i, j + 1] if j + 1 < nx else lons[i, j],
-                        lons[i + 1, j + 1] if i + 1 < ny and j + 1 < nx else lons[i, j],
-                        lons[i + 1, j] if i + 1 < ny else lons[i, j],
-                    ]
-
-                    geometries.append(Polygon(zip(lon_corners, lat_corners)))
+                    geometries.append(cells[i - r0, j - c0])
                     ids.append(i * nx + j)
                     center_lats.append(center_lat)
                     center_lons.append(center_lon)
@@ -456,8 +451,8 @@ class CERRAHandler(BaseDatasetHandler):
             gdf = gpd.GeoDataFrame({
                 'geometry': geometries,
                 'ID': ids,
-                self._get_config_value(lambda: self.config.forcing.shape_lat_name, default='lat'): center_lats,
-                self._get_config_value(lambda: self.config.forcing.shape_lon_name, default='lon'): center_lons,
+                self._get_config_value(lambda: self.config.forcing.shape_lat_name, dict_key='FORCING_SHAPE_LAT_NAME'): center_lats,
+                self._get_config_value(lambda: self.config.forcing.shape_lon_name, dict_key='FORCING_SHAPE_LON_NAME'): center_lons,
             }, crs='EPSG:4326')
 
             # Calculate elevation

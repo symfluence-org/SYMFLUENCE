@@ -77,8 +77,7 @@ class PRMSPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # via hru_solsta) so PRMS uses observed radiation where available.
         self.use_obs_solar = bool(self._get_config_value(
             lambda: self.config.model.prms.use_obs_solar,
-            default=False,
-            dict_key='PRMS_USE_OBS_SOLAR'
+            dict_key='PRMS_USE_OBS_SOLAR',
         ))
         if self.use_obs_solar:
             logger.info("PRMS observed solar ON (measured SWRadAtm via hru_solsta)")
@@ -139,10 +138,7 @@ class PRMSPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         """
         logger.info("Generating PRMS data file...")
 
-        data_file_name = self._get_config_value(
-            lambda: self.config.model.prms.data_file,
-            default='data.dat'
-        )
+        data_file_name = self._get_config_value(lambda: self.config.model.prms.data_file, dict_key='PRMS_DATA_FILE')
 
         # Try to load forcing data
         forcing_data = self._load_forcing_data(start_date, end_date)
@@ -514,7 +510,7 @@ class PRMSPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
         param_file_name = self._get_config_value(
             lambda: self.config.model.prms.parameter_file,
-            default='params.dat'
+            dict_key='PRMS_PARAMETER_FILE',
         )
 
         out_path = self.settings_dir / param_file_name
@@ -789,21 +785,15 @@ class PRMSPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
         control_file_name = self._get_config_value(
             lambda: self.config.model.prms.control_file,
-            default='control.dat'
+            dict_key='PRMS_CONTROL_FILE',
         )
         param_file_name = self._get_config_value(
             lambda: self.config.model.prms.parameter_file,
-            default='params.dat'
+            dict_key='PRMS_PARAMETER_FILE',
         )
-        data_file_name = self._get_config_value(
-            lambda: self.config.model.prms.data_file,
-            default='data.dat'
-        )
+        data_file_name = self._get_config_value(lambda: self.config.model.prms.data_file, dict_key='PRMS_DATA_FILE')
 
-        model_mode = self._get_config_value(
-            lambda: self.config.model.prms.model_mode,
-            default='DAILY'
-        )
+        model_mode = self._get_config_value(lambda: self.config.model.prms.model_mode, dict_key='PRMS_MODEL_MODE')
 
         out_path = self.settings_dir / control_file_name
 

@@ -433,8 +433,14 @@ class DaymetHandler(BaseDatasetHandler):
                     lats.append(clat)
                     lons.append(clon)
 
-        lat_col = self._get_config_value(lambda: self.config.forcing.shape_lat_name, default='lat')
-        lon_col = self._get_config_value(lambda: self.config.forcing.shape_lon_name, default='lon')
+        lat_col = self._get_config_value(
+            lambda: self.config.forcing.shape_lat_name,
+            dict_key='FORCING_SHAPE_LAT_NAME',
+        )
+        lon_col = self._get_config_value(
+            lambda: self.config.forcing.shape_lon_name,
+            dict_key='FORCING_SHAPE_LON_NAME',
+        )
 
         gdf = gpd.GeoDataFrame(
             {'geometry': geometries, 'ID': ids, lat_col: lats, lon_col: lons},

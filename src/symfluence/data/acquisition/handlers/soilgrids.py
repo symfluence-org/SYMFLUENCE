@@ -45,6 +45,7 @@ import requests
 from rasterio.windows import from_bounds
 
 from symfluence.core.registries import R
+from symfluence.data.acquisition.utils import atomic_write
 
 from ..base import BaseAcquisitionHandler
 from ..mixins import RetryMixin
@@ -156,10 +157,12 @@ class SoilGridsAcquirer(BaseAcquisitionHandler, RetryMixin):
         self.logger.info("Acquiring soil class data from SoilGrids WCS (fallback)")
 
         layer = self._get_config_value(
-            lambda: self.config.data.geospatial.soilgrids.layer, default="wrb_0-5cm_mode"
+            lambda: self.config.data.geospatial.soilgrids.layer,
+            dict_key='SOILGRIDS_LAYER',
         )
         wcs_map = self._get_config_value(
-            lambda: self.config.data.geospatial.soilgrids.wcs_map, default="/map/wcs/soilgrids.map"
+            lambda: self.config.data.geospatial.soilgrids.wcs_map,
+            dict_key='SOILGRIDS_WCS_MAP',
         )
         coverage = self._get_config_value(
             lambda: self.config.data.geospatial.soilgrids.coverage_id, default=layer
@@ -190,7 +193,7 @@ class SoilGridsAcquirer(BaseAcquisitionHandler, RetryMixin):
             snippet = first_chunk[:200].decode("utf-8", errors="ignore")
             raise ValueError(f"SoilGrids WCS returned unexpected content: {snippet}")
 
-        with open(out_p, "wb") as f:
+        with atomic_write(out_p) as _part, open(_part, 'wb') as f:
             f.write(first_chunk)
             for chunk in chunks:
                 f.write(chunk)
@@ -223,7 +226,8 @@ class SoilGridsAcquirer(BaseAcquisitionHandler, RetryMixin):
             - Subsets extracted raster to domain bounding box via rasterio
         """
         cache_dir_cfg = self._get_config_value(
-            lambda: self.config.data.geospatial.soilgrids.hs_cache_dir, default='default'
+            lambda: self.config.data.geospatial.soilgrids.hs_cache_dir,
+            dict_key='SOILGRIDS_HS_CACHE_DIR',
         )
         if cache_dir_cfg == 'default':
             # Data-dir-level cache: the HydroShare archive is global (~1 GB,
@@ -235,7 +239,7 @@ class SoilGridsAcquirer(BaseAcquisitionHandler, RetryMixin):
 
         resource_id = self._get_config_value(
             lambda: self.config.data.geospatial.soilgrids.hs_resource_id,
-            default="1361509511e44adfba814f6950c6e742"
+            dict_key='SOILGRIDS_HS_RESOURCE_ID',
         )
         hs_url = self._get_config_value(
             lambda: self.config.data.geospatial.soilgrids.hs_api_url,
@@ -245,7 +249,10 @@ class SoilGridsAcquirer(BaseAcquisitionHandler, RetryMixin):
         zip_path = cache_dir / f"soilgrids_{resource_id}.zip"
 
         # Download with retry logic using mixin
-        if not zip_path.exists() or zip_path.stat().st_size == 0 or self._get_config_value(lambda: self.config.data.force_download, default=False):
+        if not zip_path.exists() or zip_path.stat().st_size == 0 or self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             # PID-unique temp: concurrent workflows share this cache dir, so two
             # writers on one .part file would corrupt both downloads. Pass it as
             # part_path so download_file_resumable resumes from it across
@@ -271,7 +278,7 @@ class SoilGridsAcquirer(BaseAcquisitionHandler, RetryMixin):
         if not cached_tif.exists():
             self.logger.info("Extracting soil data from archive...")
             with zipfile.ZipFile(zip_path, "r") as zf:
-                with zf.open(f"{resource_id}/{tif_name}") as src, open(cached_tif, "wb") as dst:
+                with zf.open(f"{resource_id}/{tif_name}") as src, atomic_write(cached_tif) as _part, open(_part, "wb") as dst:
                     dst.write(src.read())
 
         with rasterio.open(cached_tif) as src:

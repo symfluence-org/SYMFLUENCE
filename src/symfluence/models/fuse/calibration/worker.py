@@ -106,6 +106,9 @@ class FUSEWorker(BaseWorker):
         """
         try:
             config = kwargs.get('config', self.config)
+            # Shared FORCING_CORRECTION pseudo-parameters act on a forcing copy
+            from ..forcing_correction import record_trial, split_params
+            params, forcing_corrections = split_params(params)
 
             self.logger.debug(f"APPLY_PARAMS: Applying {len(params)} parameters to {settings_dir}")
             for p, v in list(params.items())[:5]:
@@ -118,10 +121,15 @@ class FUSEWorker(BaseWorker):
                 fuse_settings_dir = settings_dir / 'FUSE'
             else:
                 fuse_settings_dir = settings_dir
+            record_trial(fuse_settings_dir, forcing_corrections)
 
             # Determine regionalization mode
             regionalization_method = config.get('PARAMETER_REGIONALIZATION', 'lumped') if config else 'lumped'
-            if config and resolve_config_value(config, lambda: config.model.fuse.use_transfer_functions, False, 'USE_TRANSFER_FUNCTIONS'):
+            if config and resolve_config_value(
+                config,
+                lambda: config.model.fuse.use_transfer_functions,
+                dict_key='USE_TRANSFER_FUNCTIONS',
+            ):
                 regionalization_method = 'transfer_function'
 
             # Update constraints file (skip in regionalization mode)
@@ -237,6 +245,10 @@ class FUSEWorker(BaseWorker):
                 execution_cwd, fuse_run_id, config, self.logger
             ):
                 return False
+
+            # Shared FORCING_CORRECTION recorded by apply_parameters
+            from ..forcing_correction import apply_trial
+            apply_trial(execution_cwd, fuse_run_id)
 
             # Update file manager
             if not update_fuse_file_manager(
@@ -451,8 +463,17 @@ class FUSEWorker(BaseWorker):
             obs_dir = resolve_config_value(config, lambda: config.optimization.multi_gauge.obs_dir, None, 'MULTI_GAUGE_OBS_DIR')
             gauge_ids = resolve_config_value(config, lambda: config.optimization.multi_gauge.gauge_ids, None, 'MULTI_GAUGE_IDS')
             exclude_ids = resolve_config_value(config, lambda: config.optimization.multi_gauge.exclude_ids, [], 'MULTI_GAUGE_EXCLUDE_IDS')
-            aggregation = resolve_config_value(config, lambda: config.optimization.multi_gauge.aggregation, 'mean', 'MULTI_GAUGE_AGGREGATION')
-            min_gauges = resolve_config_value(config, lambda: config.optimization.multi_gauge.min_gauges, 5, 'MULTI_GAUGE_MIN_GAUGES')
+            aggregation = resolve_config_value(
+                config,
+                lambda: config.optimization.multi_gauge.aggregation,
+                dict_key='MULTI_GAUGE_AGGREGATION',
+            )
+            min_gauges = resolve_config_value(
+                config,
+                lambda: config.optimization.multi_gauge.min_gauges,
+                default=5,
+                dict_key='MULTI_GAUGE_MIN_GAUGES',
+            )
 
             if not gauge_mapping_path:
                 self.logger.error("GAUGE_SEGMENT_MAPPING not configured for multi-gauge calibration")
@@ -507,7 +528,11 @@ class FUSEWorker(BaseWorker):
                 if val is not None:
                     filter_config[key] = float(val)
 
-            min_overlap = int(resolve_config_value(config, lambda: config.optimization.multi_gauge.min_overlap_days, 10, 'MULTI_GAUGE_MIN_OVERLAP_DAYS'))
+            min_overlap = int(resolve_config_value(
+                config,
+                lambda: config.optimization.multi_gauge.min_overlap_days,
+                dict_key='MULTI_GAUGE_MIN_OVERLAP_DAYS',
+            ))
             kge_floor = resolve_config_value(config, lambda: config.optimization.multi_gauge.kge_floor, None, 'MULTI_GAUGE_KGE_FLOOR')
             if kge_floor is not None:
                 kge_floor = float(kge_floor)
@@ -591,7 +616,11 @@ class FUSEWorker(BaseWorker):
             import subprocess
 
             # Get mizuRoute executable
-            mizuroute_install = resolve_config_value(config, lambda: config.model.mizuroute.install_path, 'default', 'MIZUROUTE_INSTALL_PATH')
+            mizuroute_install = resolve_config_value(
+                config,
+                lambda: config.model.mizuroute.install_path,
+                dict_key='MIZUROUTE_INSTALL_PATH',
+            )
             data_dir = resolve_config_value(config, lambda: config.system.data_dir, '.', 'SYMFLUENCE_DATA_DIR')
             mizuroute_exe = resolve_install_dir(
                 mizuroute_install, data_dir, 'installs/mizuRoute/route/bin'
@@ -618,7 +647,11 @@ class FUSEWorker(BaseWorker):
                 text=True,
                 encoding='utf-8',
                 errors='replace',
-                timeout=resolve_config_value(config, lambda: config.model.mizuroute.timeout, 3600, 'MIZUROUTE_TIMEOUT')
+                timeout=resolve_config_value(
+                    config,
+                    lambda: config.model.mizuroute.timeout,
+                    dict_key='MIZUROUTE_TIMEOUT',
+                )
             )
 
             if result.returncode != 0:

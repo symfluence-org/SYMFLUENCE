@@ -575,12 +575,12 @@ class WRFHydroPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         """
         namelist_file = self._get_config_value(
             lambda: self.config.model.wrfhydro.namelist_file,
-            default='namelist.hrldas'
+            dict_key='WRFHYDRO_NAMELIST_FILE',
         )
 
         restart_freq = self._get_config_value(
             lambda: self.config.model.wrfhydro.restart_frequency,
-            default='monthly'
+            dict_key='WRFHYDRO_RESTART_FREQUENCY',
         )
 
         # Map restart frequency to output steps
@@ -659,7 +659,7 @@ class WRFHydroPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         """
         hydro_namelist_file = self._get_config_value(
             lambda: self.config.model.wrfhydro.hydro_namelist,
-            default='hydro.namelist'
+            dict_key='WRFHYDRO_HYDRO_NAMELIST',
         )
 
         content = f"""&HYDRO_nlist

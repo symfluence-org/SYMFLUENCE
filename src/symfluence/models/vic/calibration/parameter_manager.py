@@ -204,7 +204,7 @@ class VICParameterManager(BaseParameterManager):
                 if 'Pfactor' in ds and 'AreaFract' in ds:
                     pfactor_per_km = float(self._get_config_value(
                         lambda: self.config.model.vic.pfactor_per_km,
-                        default=0.0005, dict_key='VIC_PFACTOR_PER_KM',
+                        dict_key='VIC_PFACTOR_PER_KM',
                     ))
                     elevs = ds['elevation'].values
                     areas = ds['AreaFract'].values

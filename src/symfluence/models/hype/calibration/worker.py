@@ -116,7 +116,7 @@ class HYPEWorker(BaseWorker):
         elif hasattr(self.config, 'model_dump'):
             cfg = self.config.model_dump()
 
-        exe_name = resolve_config_value(cfg, lambda: self.config.model.hype.exe, 'hype', 'HYPE_EXE')
+        exe_name = resolve_config_value(cfg, lambda: self.config.model.hype.exe, dict_key='HYPE_EXE')
 
         if Path(exe_name).is_absolute() and Path(exe_name).exists():
             return exe_name
@@ -124,7 +124,11 @@ class HYPEWorker(BaseWorker):
         # Honor the explicitly configured install path (as runner.py does).
         # Without this the worker ignores HYPE_INSTALL_PATH and falls through to
         # the bare exe name -> FileNotFoundError -> 100% calibration crashes.
-        install_path = resolve_config_value(cfg, lambda: self.config.model.hype.install_path, '', 'HYPE_INSTALL_PATH')
+        install_path = resolve_config_value(
+            cfg,
+            lambda: self.config.model.hype.install_path,
+            dict_key='HYPE_INSTALL_PATH',
+        )
         if install_path and install_path != 'default':
             ip = Path(install_path)
             for candidate in (ip / exe_name, ip):
@@ -572,6 +576,8 @@ class HYPEWorker(BaseWorker):
                 nse_val = self.penalty_score
 
             metrics = {'kge': float(kge_val), 'nse': float(nse_val)}
+            # Configured objective beyond KGE/NSE (LOGLIK_BC_AR1, KGE_LOG, ...)
+            metrics.update(self._objective_extras(obs_aligned, sim_aligned, metrics, config))
             if self._resolve_config_value('HYPE_CRYOSPHERE_CONSTRAINTS', config, False):
                 from ..cryosphere import calculate_constraints
                 metrics.update(calculate_constraints(

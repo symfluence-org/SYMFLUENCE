@@ -88,6 +88,7 @@ class BasinParameters:
     manning: float = 3e-6
     glacier_bed_k: Optional[float] = None
     precip_scale: float = 1.0
+    temp_offset: float = 0.0  # K added to the forcing air temperature (shared FORCING_CORRECTION)
     ice_albedo: Optional[Tuple[float, float]] = None
     initial_water_table_depth: float = 3.0
     # optional structure (defaults leave the run unchanged; see the module docstring)
@@ -110,7 +111,7 @@ class BasinParameters:
 
 
 OPTIONAL_DEFAULTS: Dict[str, object] = {'k_tensor': None, 'k_zone_factor': 1.0, 'k_zone_soil': False,
-                                        'lake_manning': None}
+                                        'lake_manning': None, 'temp_offset': 0.0}
 
 
 def parflow_keys(grid: BasinGrid, params: BasinParameters, name: str, hours: int, P: int = 1, Q: int = 1,
@@ -338,6 +339,8 @@ def write_forcing(out: Path, grid: BasinGrid, params: BasinParameters, forcing_f
             v = data[names[var]].transpose('time', ...)
             # scale in the file's precision before widening, as the promoted Tungnaá member was run
             a = (v * params.precip_scale if var == 'APCP' else v).values.astype(float)
+            if var == 'Temp' and params.temp_offset:
+                a = a + float(params.temp_offset)
         elif var == 'VGRD':
             a = np.zeros((n, len(ids)))
         else:

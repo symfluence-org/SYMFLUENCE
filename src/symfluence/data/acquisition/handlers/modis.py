@@ -13,6 +13,7 @@ from pathlib import Path
 import requests
 
 from symfluence.core.registries import R
+from symfluence.data.acquisition.utils import atomic_write
 
 from ..base import BaseAcquisitionHandler
 
@@ -27,7 +28,10 @@ class MODISSnowAcquirer(BaseAcquisitionHandler):
         self.logger.info("Starting MODIS Snow Cover acquisition via THREDDS")
 
         # Configuration
-        product = self._get_config_value(lambda: self.config.evaluation.modis_snow.product, default='MOD10A1.006', dict_key='MODIS_SNOW_PRODUCT')
+        product = self._get_config_value(
+            lambda: self.config.evaluation.modis_snow.product,
+            dict_key='MODIS_SNOW_PRODUCT',
+        )
         thredds_base = self._get_config_value(lambda: None, default="https://ds.nccs.nasa.gov/thredds/ncss/grid", dict_key='MODIS_THREDDS_BASE')
 
         # BBox
@@ -41,7 +45,10 @@ class MODISSnowAcquirer(BaseAcquisitionHandler):
         output_dir.mkdir(parents=True, exist_ok=True)
         out_nc = output_dir / f"{self.domain_name}_{product}_raw.nc"
 
-        if out_nc.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False, dict_key='FORCE_DOWNLOAD'):
+        if out_nc.exists() and not self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             return out_nc
 
         # Construct NCSS query
@@ -76,7 +83,7 @@ class MODISSnowAcquirer(BaseAcquisitionHandler):
                 self.logger.error(f"THREDDS returned an error page instead of data: {snippet}")
                 raise ValueError("THREDDS NCSS request failed: received HTML/XML instead of NetCDF")
 
-            with open(out_nc, "wb") as f:
+            with atomic_write(out_nc) as _part, open(_part, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=1024*1024):
                     f.write(chunk)
 

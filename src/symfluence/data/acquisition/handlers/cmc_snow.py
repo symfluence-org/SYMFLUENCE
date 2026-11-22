@@ -38,6 +38,7 @@ from typing import Dict, Optional
 import requests
 
 from symfluence.core.registries import R
+from symfluence.data.acquisition.utils import atomic_write
 
 from ..base import BaseAcquisitionHandler
 
@@ -80,7 +81,7 @@ class CMCSnowAcquirer(BaseAcquisitionHandler):
         self.logger.info("Starting CMC Snow Depth acquisition")
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        force_download = self._get_config_value(lambda: self.config.data.force_download, default=False)
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
         _snow_density = float(self._get_config_value(lambda: None, default=DEFAULT_SNOW_DENSITY, dict_key='CMC_SNOW_DENSITY'))
 
         # Get Earthdata credentials
@@ -156,7 +157,7 @@ class CMCSnowAcquirer(BaseAcquisitionHandler):
                         resp.raise_for_status()
 
                     total_size = 0
-                    with open(fp, 'wb') as f:
+                    with atomic_write(fp) as _part, open(_part, 'wb') as f:
                         for chunk in resp.iter_content(chunk_size=8192):
                             if chunk:
                                 f.write(chunk)

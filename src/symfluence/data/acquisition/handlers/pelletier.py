@@ -37,6 +37,7 @@ import rasterio
 from rasterio.windows import from_bounds
 
 from symfluence.core.registries import R
+from symfluence.data.acquisition.utils import atomic_write
 
 from ..base import BaseAcquisitionHandler
 from ..mixins import RetryMixin
@@ -168,7 +169,7 @@ class PelletierAcquirer(BaseAcquisitionHandler, RetryMixin):
         """Download a file using the authenticated session with redirect handling."""
         with session.get(url, stream=True, timeout=600, allow_redirects=True) as r:
             r.raise_for_status()
-            with open(dst, 'wb') as f:
+            with atomic_write(dst) as _part, open(_part, 'wb') as f:
                 for chunk in r.iter_content(chunk_size=65536):
                     if chunk:
                         f.write(chunk)

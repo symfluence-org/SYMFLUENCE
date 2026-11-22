@@ -40,6 +40,7 @@ import xarray as xr
 
 from symfluence.core.registries import R
 from symfluence.data.acquisition.earthaccess_base import BaseEarthaccessAcquirer
+from symfluence.data.acquisition.utils import atomic_write
 
 
 @R.acquisition_handlers.add('MODIS_LAI')
@@ -84,7 +85,10 @@ class MODISLAIAcquirer(BaseEarthaccessAcquirer):
         output_dir.mkdir(parents=True, exist_ok=True)
         processed_file = output_dir / f"{self.domain_name}_MODIS_LAI.nc"
 
-        if processed_file.exists() and not self._get_config_value(lambda: self.config.data.force_download, default=False):
+        if processed_file.exists() and not self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ):
             self.logger.info(f"Using existing MODIS LAI file: {processed_file}")
             return processed_file
 
@@ -536,7 +540,7 @@ class MODISLAIAcquirer(BaseEarthaccessAcquirer):
                 )
                 response.raise_for_status()
 
-                with open(output_path, 'wb') as f:
+                with atomic_write(output_path) as _part, open(_part, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192):
                         f.write(chunk)
 

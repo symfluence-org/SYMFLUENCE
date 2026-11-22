@@ -12,7 +12,9 @@ definition through model calibration and analysis.
 Example:
     >>> from symfluence import SYMFLUENCE
     >>> s = SYMFLUENCE("config.yaml")
-    >>> s.run_workflow()
+    >>> result = s.run_workflow()      # or s.run()
+    >>> result.status                  # 'completed' | 'partial' | 'failed'
+    >>> result.outputs["metrics_json"]  # results/<experiment_id>/metrics.json
 """
 from __future__ import annotations
 
@@ -31,10 +33,17 @@ from symfluence.core.config.models import SymfluenceConfig
 from symfluence.core.exceptions import SYMFLUENCEError
 from symfluence.core.mixins.project import resolve_data_subdir
 from symfluence.core.path_resolver import find_basin_shapefile, find_river_basins_shapefile
-from symfluence.core.provenance import capture_provenance, record_input
+from symfluence.core.provenance import (
+    capture_provenance,
+    record_input,
+    record_input_tree,
+    set_active_provenance,
+    write_resolved_config,
+)
 from symfluence.core.provenance import finalize as finalize_provenance
 from symfluence.project.logging_manager import LoggingManager
 from symfluence.project.manager_factory import LazyManagerDict
+from symfluence.project.run_result import RunResult, StepResult
 
 # Import core components
 from symfluence.project.workflow_orchestrator import WorkflowOrchestrator
@@ -265,9 +274,13 @@ class SYMFLUENCE:
                 domain_name=getattr(self.typed_config.domain, 'name', 'unknown') or 'unknown',
                 config_path=str(self.config_path) if self.config_path else None,
             )
+            # Components inside steps (the calibration optimizer) append the
+            # seed and evaluation budget they actually used to this record.
+            set_active_provenance(self.provenance)
         else:
             self.logger.info("Provenance capture disabled via configuration")
             self.provenance = None
+            set_active_provenance(None)
 
         # Initialize managers (lazy loaded)
         self.managers = LazyManagerDict(self.typed_config, self.logger, self.visualize, self.diagnostic)
@@ -296,10 +309,30 @@ class SYMFLUENCE:
         except FileNotFoundError:
             raise FileNotFoundError(f"Configuration file not found: {self.config_path}") from None
 
-    def run_workflow(self, force_run: Optional[bool] = None) -> None:
-        """Execute the complete SYMFLUENCE workflow (CLI wrapper)."""
+    def run_workflow(
+        self,
+        force_run: Optional[bool] = None,
+        *,
+        continue_on_error: Optional[bool] = None,
+    ) -> RunResult:
+        """Execute the complete SYMFLUENCE workflow.
+
+        Args:
+            force_run: Re-run every step even when its outputs exist. None
+                (default) uses the config's ``FORCE_RUN_ALL_STEPS``.
+            continue_on_error: Keep going after a failing step instead of
+                stopping. None (default) uses the config: ``STOP_ON_ERROR``,
+                or a ``continue_on_error`` entry in ``config_overrides``.
+
+        Returns:
+            RunResult: per-step status/duration/error, output paths and the
+            run's metrics (``results/<experiment_id>/metrics.json``). A failed
+            step that stops the run raises instead (as before).
+        """
         start = datetime.now()
         errors: List[Any] = []
+        status = "failed"
+        manifest: Optional[Path] = None
 
         try:
             self.logger.info("Starting complete SYMFLUENCE workflow execution")
@@ -309,7 +342,11 @@ class SYMFLUENCE:
                 force_run = getattr(self.typed_config.system, "force_run_all_steps", False)
 
             # Run the workflow
-            self.workflow_orchestrator.run_workflow(force_run=bool(force_run))
+            run_kwargs: Dict[str, Any] = {'force_run': bool(force_run)}
+            resolved_continue = self._resolve_continue_on_error(continue_on_error)
+            if resolved_continue is not None:
+                run_kwargs['stop_on_error'] = not resolved_continue
+            self.workflow_orchestrator.run_workflow(**run_kwargs)
 
             # Outcome of *this* run (STOP_ON_ERROR=False lets a run finish
             # with failed steps; those must not be reported as success).
@@ -365,13 +402,115 @@ class SYMFLUENCE:
             self._record_input_provenance()
             finalize_provenance(self.provenance, status,
                                 errors=[e.get("error", str(e)) for e in errors] if errors else None)
-            if self.provenance is not None:
-                manifest = self.provenance.write(self.logging_manager.log_dir)
-                self.logger.info(f"Run manifest written to: {manifest}")
+            manifest = self._write_run_manifest()
+            self._link_metrics_to_manifest(start, manifest)
 
+        return self._build_run_result(status, start, manifest)
+
+    def run(
+        self,
+        force_run: Optional[bool] = None,
+        *,
+        continue_on_error: Optional[bool] = None,
+    ) -> RunResult:
+        """Alias for :meth:`run_workflow`."""
+        return self.run_workflow(force_run, continue_on_error=continue_on_error)
+
+    # ------------------------------------------------------------------
+    # Run result helpers
+    # ------------------------------------------------------------------
+
+    def _resolve_continue_on_error(self, explicit: Optional[bool]) -> Optional[bool]:
+        """Explicit argument, else a ``continue_on_error`` config override, else None."""
+        if explicit is not None:
+            return bool(explicit)
+        if "continue_on_error" in self.config_overrides:
+            return bool(self.config_overrides["continue_on_error"])
+        return None
+
+    def _project_dir(self) -> Path:
+        return Path(self.typed_config.system.data_dir) / f"domain_{self.typed_config.domain.name}"
+
+    def _metrics_path(self) -> Path:
+        from symfluence.core.metrics.run_metrics import METRICS_FILENAME, run_results_dir
+        return run_results_dir(self._project_dir(), self.typed_config.domain.experiment_id) / METRICS_FILENAME
+
+    def _link_metrics_to_manifest(self, start: datetime, manifest: Optional[Path]) -> None:
+        """Point a metrics.json written during this run at the run manifest."""
+        from symfluence.core.metrics.run_metrics import load_metrics, write_metrics
+
+        path = self._metrics_path()
+        try:
+            if not isinstance(manifest, (str, Path)) or not path.exists() or path.stat().st_mtime < start.timestamp():
+                return
+            doc = load_metrics(path)
+            if doc is None:
+                return
+            prov = doc.setdefault('provenance', {})
+            prov['run_manifest'] = str(manifest)
+            prov['run_id'] = getattr(self.provenance, 'run_id', None)
+            write_metrics(doc, path.parent)
+        except (OSError, ValueError, TypeError) as e:
+            self.logger.debug(f"Could not link metrics.json to the run manifest: {e}")
+
+    def _build_run_result(self, status: str, start: datetime,
+                          manifest: Optional[Path]) -> RunResult:
+        """Assemble the RunResult for the call that started at ``start``."""
+        from symfluence.core.metrics.run_metrics import (
+            METRICS_CSV_FILENAME,
+            SUMMARY_FIGURE_FILENAME,
+            load_metrics,
+        )
+
+        steps = [StepResult.from_record(r)
+                 for r in getattr(self.workflow_orchestrator, 'last_step_results', [])]
+        experiment_id = str(self.typed_config.domain.experiment_id)
+        project_dir = self._project_dir()
+        metrics_path = self._metrics_path()
+        candidates = {
+            'results_csv': project_dir / 'results' / f"{experiment_id}_results.csv",
+            'metrics_json': metrics_path,
+            'metrics_csv': metrics_path.parent / METRICS_CSV_FILENAME,
+            'summary_figure': metrics_path.parent / SUMMARY_FIGURE_FILENAME,
+        }
+        if isinstance(manifest, (str, Path)):
+            candidates['run_manifest'] = Path(manifest)
+        log_dir = getattr(self.logging_manager, 'log_dir', None)
+        if isinstance(log_dir, (str, Path)):
+            candidates['log_dir'] = Path(log_dir)
+        outputs = {k: v for k, v in candidates.items() if v.exists()}
+        return RunResult(
+            status=status,
+            steps=steps,
+            duration_s=round((datetime.now() - start).total_seconds(), 3),
+            domain_name=str(self.typed_config.domain.name),
+            experiment_id=experiment_id,
+            project_dir=project_dir,
+            outputs=outputs,
+            metrics=load_metrics(metrics_path) if metrics_path.exists() else None,
+        )
+
+    def _write_run_manifest(self) -> Optional[Path]:
+        """Write ``resolved_config.yaml`` and ``run_manifest.json`` into the log dir.
+
+        The resolved config (validated, defaults filled) sits next to the
+        manifest, which records its SHA-256: two runs used the same
+        configuration iff the hashes match.
+        """
+        if self.provenance is None:
+            return None
+        log_dir = self.logging_manager.log_dir
+        try:
+            path, sha = write_resolved_config(self.typed_config, log_dir, prov=self.provenance)
+            self.logger.info(f"Resolved config written to {path} (sha256 {sha[:12]})")
+        except (OSError, TypeError, ValueError) as e:
+            self.logger.warning(f"Could not write resolved config: {e}")
+        manifest = self.provenance.write(log_dir)
+        self.logger.info(f"Run manifest written to: {manifest}")
+        return manifest
 
     def _record_input_provenance(self) -> None:
-        """Hash the source DEM into the run manifest.
+        """Hash the source DEM, forcing and observations into the run manifest.
 
         The DEM is the input that decides delineation geometry, so a change in
         it shifts discretization counts in ways that otherwise look identical
@@ -388,8 +527,25 @@ class SYMFLUENCE:
                 break
         except (AttributeError, OSError, TypeError):
             pass
+        # Forcing and observations: by default a listing fingerprint (names,
+        # sizes, mtimes); PROVENANCE_INPUT_HASH: content hashes every byte.
+        try:
+            mode = getattr(self.typed_config.system, 'provenance_input_hash', 'listing') or 'listing'
+            project_dir = Path(self.typed_config.paths.root_path) / f"domain_{self.typed_config.domain.name}"
+            forcing_dir = resolve_data_subdir(project_dir, 'forcing') / 'basin_averaged_data'
+            record_input_tree(self.provenance, "forcing", forcing_dir, mode=mode,
+                              patterns=("*.nc", "*.csv"))
+            obs_dir = resolve_data_subdir(project_dir, 'observations')
+            record_input_tree(self.provenance, "observations", obs_dir, mode=mode,
+                              patterns=("*_processed.csv", "*.nc"))
+        except (AttributeError, OSError, TypeError, ValueError) as e:
+            self.logger.debug(f"Input fingerprinting skipped: {e}")
 
-    def run_individual_steps(self, step_names: List[str]) -> None:
+    def run_individual_steps(
+        self,
+        step_names: List[str],
+        continue_on_error: Optional[bool] = None,
+    ) -> RunResult:
         """
         Execute specific workflow steps by name.
 
@@ -399,15 +555,24 @@ class SYMFLUENCE:
 
         Args:
             step_names: List of step names to execute (e.g., ['setup_project', 'calibrate_model'])
+            continue_on_error: Run the remaining steps after one fails. None
+                (default) reads a ``continue_on_error`` entry in
+                ``config_overrides`` (False when absent).
+
+        Returns:
+            RunResult: per-step status/duration/error, output paths and the
+            metrics of ``results/<experiment_id>/metrics.json``.
         """
         start = datetime.now()
         errors: List[Any] = []
+        manifest: Optional[Path] = None
+        status = "failed"
 
         try:
-            continue_on_error = self.config_overrides.get("continue_on_error", False)
+            resolved_continue = bool(self._resolve_continue_on_error(continue_on_error))
 
             # Execute individual steps via orchestrator
-            self.workflow_orchestrator.run_individual_steps(step_names, continue_on_error)
+            self.workflow_orchestrator.run_individual_steps(step_names, resolved_continue)
 
         finally:
             end = datetime.now()
@@ -437,9 +602,10 @@ class SYMFLUENCE:
             self._record_input_provenance()
             finalize_provenance(self.provenance, status,
                                 errors=[e.get("error", str(e)) for e in errors] if errors else None)
-            if self.provenance is not None:
-                manifest = self.provenance.write(self.logging_manager.log_dir)
-                self.logger.info(f"Run manifest written to: {manifest}")
+            manifest = self._write_run_manifest()
+            self._link_metrics_to_manifest(start, manifest)
+
+        return self._build_run_result(status, start, manifest)
 
     def get_failed_steps(self) -> List[str]:
         """CLI names of the steps that failed in the most recent workflow/steps run."""

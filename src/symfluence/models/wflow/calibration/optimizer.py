@@ -31,7 +31,7 @@ class WflowModelOptimizer(BaseModelOptimizer):
     def _get_final_file_manager_path(self) -> Path:
         config_file = self._get_config_value(
             lambda: self.config.model.wflow.config_file,
-            default='wflow_sbm.toml', dict_key='WFLOW_CONFIG_FILE'
+            dict_key='WFLOW_CONFIG_FILE',
         )
         return self.wflow_setup_dir / config_file
 

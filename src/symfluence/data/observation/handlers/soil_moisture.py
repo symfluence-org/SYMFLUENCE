@@ -44,13 +44,9 @@ class SMAPHandler(BaseObservationHandler):
 
     def acquire(self) -> Path:
         """Locate SMAP data."""
-        data_access = self._get_config_value(
-            lambda: self.config.domain.data_access, default='local'
-        ).lower()
+        data_access = self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS').lower()
 
-        smap_path = self._get_config_value(
-            lambda: self.config.evaluation.smap.path, default='default'
-        )
+        smap_path = self._get_config_value(lambda: self.config.evaluation.smap.path, dict_key='SMAP_PATH')
         if isinstance(smap_path, str) and smap_path.lower() == 'default':
             smap_dir = self.project_observations_dir / "soil_moisture" / "smap"
         else:
@@ -59,11 +55,10 @@ class SMAPHandler(BaseObservationHandler):
         if not smap_dir.exists():
             smap_dir.mkdir(parents=True, exist_ok=True)
 
-        force_download = self._get_config_value(
-            lambda: self.config.data.force_download, default=False
-        )
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
         use_opendap = self._get_config_value(
-            lambda: self.config.evaluation.smap.use_opendap, default=False
+            lambda: self.config.evaluation.smap.use_opendap,
+            dict_key='SMAP_USE_OPENDAP',
         )
 
         if list(smap_dir.glob("*.nc")) and not force_download:
@@ -168,22 +163,16 @@ class ISMNHandler(BaseObservationHandler):
 
     def acquire(self) -> Path:
         """Locate or download ISMN data."""
-        data_access = self._get_config_value(
-            lambda: self.config.domain.data_access, default='local'
-        ).lower()
+        data_access = self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS').lower()
 
-        ismn_path = self._get_config_value(
-            lambda: self.config.evaluation.ismn.path, default='default'
-        )
+        ismn_path = self._get_config_value(lambda: self.config.evaluation.ismn.path, dict_key='ISMN_PATH')
         if isinstance(ismn_path, str) and ismn_path.lower() == 'default':
             ismn_dir = self.project_observations_dir / "soil_moisture" / "ismn"
         else:
             ismn_dir = Path(ismn_path)
         ismn_dir.mkdir(parents=True, exist_ok=True)
 
-        force_download = self._get_config_value(
-            lambda: self.config.data.force_download, default=False
-        )
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
         if list(ismn_dir.glob("*.csv")) and not force_download:
             return ismn_dir
 
@@ -263,7 +252,8 @@ class ISMNHandler(BaseObservationHandler):
             combined = combined.loc[(combined.index >= self.start_date) & (combined.index <= self.end_date)]
 
         aggregation = self._get_config_value(
-            lambda: self.config.evaluation.ismn.temporal_aggregation, default='daily_mean'
+            lambda: self.config.evaluation.ismn.temporal_aggregation,
+            dict_key='ISMN_TEMPORAL_AGGREGATION',
         )
         if aggregation == 'daily_mean':
             combined = combined.resample('D').mean().dropna()
@@ -331,7 +321,8 @@ class ISMNHandler(BaseObservationHandler):
 
     def _get_target_depth(self) -> float:
         target_depth = self._get_config_value(
-            lambda: self.config.evaluation.ismn.target_depth_m, default=0.05
+            lambda: self.config.evaluation.ismn.target_depth_m,
+            dict_key='ISMN_TARGET_DEPTH_M',
         )
         try:
             return float(target_depth)
@@ -358,12 +349,8 @@ class ESACCISMHandler(BaseObservationHandler):
             esa_dir = self.project_observations_dir / "soil_moisture" / "esa_cci"
         esa_dir.mkdir(parents=True, exist_ok=True)
 
-        data_access = self._get_config_value(
-            lambda: self.config.domain.data_access, default='local'
-        ).lower()
-        force_download = self._get_config_value(
-            lambda: self.config.data.force_download, default=False
-        )
+        data_access = self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS').lower()
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
 
         if list(esa_dir.glob("*.nc")) and not force_download:
             return esa_dir
@@ -473,12 +460,8 @@ class SMOSSMHandler(BaseObservationHandler):
             smos_dir = self.project_observations_dir / "soil_moisture" / "smos"
         smos_dir.mkdir(parents=True, exist_ok=True)
 
-        data_access = self._get_config_value(
-            lambda: self.config.domain.data_access, default='local'
-        ).lower()
-        force_download = self._get_config_value(
-            lambda: self.config.data.force_download, default=False
-        )
+        data_access = self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS').lower()
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
 
         if list(smos_dir.glob("*.nc")) and not force_download:
             return smos_dir
@@ -618,12 +601,8 @@ class ASCATSMHandler(BaseObservationHandler):
             ascat_dir = self.project_observations_dir / "soil_moisture" / "ascat"
         ascat_dir.mkdir(parents=True, exist_ok=True)
 
-        data_access = self._get_config_value(
-            lambda: self.config.domain.data_access, default='local'
-        ).lower()
-        force_download = self._get_config_value(
-            lambda: self.config.data.force_download, default=False
-        )
+        data_access = self._get_config_value(lambda: self.config.domain.data_access, dict_key='DATA_ACCESS').lower()
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
 
         if list(ascat_dir.glob("*.nc")) and not force_download:
             return ascat_dir

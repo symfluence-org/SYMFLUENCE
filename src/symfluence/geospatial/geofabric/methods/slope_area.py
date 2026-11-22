@@ -53,12 +53,24 @@ class SlopeAreaMethod(ConfigMixin):
             pour_point_path: Path to the pour point shapefile
             mpi_prefix: MPI command prefix
         """
-        max_distance = self._get_config_value(lambda: self.config.domain.delineation.move_outlets_max_distance, default=200, dict_key='MOVE_OUTLETS_MAX_DISTANCE')
+        max_distance = self._get_config_value(
+            lambda: self.config.domain.delineation.move_outlets_max_distance,
+            dict_key='MOVE_OUTLETS_MAX_DISTANCE',
+        )
 
         # Get slope-area parameters from config
-        slope_area_threshold = self._get_config_value(lambda: self.config.domain.delineation.slope_area_threshold, default=100.0, dict_key='SLOPE_AREA_THRESHOLD')
-        slope_exponent = self._get_config_value(lambda: self.config.domain.delineation.slope_area_exponent, default=2.0, dict_key='SLOPE_AREA_EXPONENT')
-        area_exponent = self._get_config_value(lambda: self.config.domain.delineation.area_exponent, default=1.0, dict_key='AREA_EXPONENT')
+        slope_area_threshold = self._get_config_value(
+            lambda: self.config.domain.delineation.slope_area_threshold,
+            dict_key='SLOPE_AREA_THRESHOLD',
+        )
+        slope_exponent = self._get_config_value(
+            lambda: self.config.domain.delineation.slope_area_exponent,
+            dict_key='SLOPE_AREA_EXPONENT',
+        )
+        area_exponent = self._get_config_value(
+            lambda: self.config.domain.delineation.area_exponent,
+            dict_key='AREA_EXPONENT',
+        )
 
         steps = [
             # D-infinity flow direction and slope

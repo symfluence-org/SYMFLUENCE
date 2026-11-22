@@ -52,7 +52,6 @@ class CalibrationOrchestrator(ConfigMixin):
         """Find calibrated SUMMA daily output from the final evaluation run."""
         algorithm = str(self._get_config_value(
             lambda: self.config.optimization.algorithm,
-            default='optimization',
             dict_key='ITERATIVE_OPTIMIZATION_ALGORITHM',
         )).lower()
         final_eval_file = (

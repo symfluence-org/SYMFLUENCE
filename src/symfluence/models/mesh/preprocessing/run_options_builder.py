@@ -142,7 +142,7 @@ class RunOptionsConfigBuilder(ConfigMixin):
 
             enable_frozen = self._get_config_value(
                 lambda: self.config.model.mesh.enable_frozen_soil,
-                default=False, dict_key="MESH_ENABLE_FROZEN_SOIL"
+                dict_key='MESH_ENABLE_FROZEN_SOIL',
             )
             frozen_flag = "1" if enable_frozen else "0"
             if enable_frozen:
@@ -156,7 +156,7 @@ class RunOptionsConfigBuilder(ConfigMixin):
                 (r'PBSMFLAG\s+\w+', 'PBSMFLAG              off'),
                 (r'FROZENSOILINFILFLAG\s+\d+', f'FROZENSOILINFILFLAG   {frozen_flag}'),
                 (r'RUNMODE\s+\w+', f'RUNMODE               {runmode}'),
-                (r'METRICSSPINUP\s+\d+', f'METRICSSPINUP         {int(self._get_config_value(lambda: self.config.model.mesh.spinup_days, default=730, dict_key="MESH_SPINUP_DAYS"))}'),
+                (r'METRICSSPINUP\s+\d+', f'METRICSSPINUP         {int(self._get_config_value(lambda: self.config.model.mesh.spinup_days, dict_key="MESH_SPINUP_DAYS"))}'),
                 (r'DIAGNOSEMODE\s+\w+', 'DIAGNOSEMODE          off'),
                 (r'SHDFILEFLAG\s+\w+', 'SHDFILEFLAG           nc_subbasin pad_outlets'),
                 (r'BASINFORCINGFLAG\s+\w+', 'BASINFORCINGFLAG      nc_subbasin'),
@@ -310,7 +310,8 @@ class RunOptionsConfigBuilder(ConfigMixin):
             # stop timestamp, so include the complete final forcing interval.
             dt = int(self._get_config_value(
                 lambda: self.config.forcing.time_step_size,
-                default=3600, dict_key='FORCING_TIME_STEP_SIZE'))
+                dict_key='FORCING_TIME_STEP_SIZE',
+            ))
             stop = pd.Timestamp(end_time) + pd.Timedelta(seconds=dt)
             new_lines[start_idx] = f"{start_time.year:04d} {start_time.dayofyear:03d} {start_time.hour:3d} {start_time.minute:3d}"
             new_lines[end_idx] = f"{stop.year:04d} {stop.dayofyear:03d} {stop.hour:3d} {stop.minute:3d}"

@@ -30,6 +30,9 @@ from symfluence.models.hype.geodata_manager import (
     load_elevation_band_table,
 )
 
+# Spin-up used when neither HYPE_SPINUP_DAYS nor SPINUP_PERIOD is configured.
+DEFAULT_HYPE_SPINUP_DAYS = 365
+
 
 @R.preprocessors.add('HYPE')
 class HYPEPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
@@ -165,7 +168,11 @@ class HYPEPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             0.05
         )
 
-        # If spinup_days not provided, calculate from SPINUP_PERIOD
+        # An explicit HYPE_SPINUP_DAYS wins; otherwise derive it from
+        # SPINUP_PERIOD, falling back to one year when no period is set.
+        if not self._hype_spinup_days_explicit():
+            self.spinup_days = None
+
         if self.spinup_days is None:
             spinup_period = self._get_config_value(
                 lambda: self.config.domain.spinup_period,
@@ -173,14 +180,13 @@ class HYPEPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
             )
             if spinup_period:
                 try:
-                    start_date, end_date = parse_period(spinup_period, strict=True)
-                    self.spinup_days = (end_date - start_date).days
+                    self.spinup_days = self._spinup_days_from_period(spinup_period)
                     self.logger.debug(f"Calculated HYPE spinup days from SPINUP_PERIOD: {self.spinup_days}")
                 except Exception as e:  # noqa: BLE001 — model execution resilience
                     self.logger.warning(f"Could not calculate HYPE spinup from {spinup_period}: {e}", exc_info=True)
                     self.spinup_days = 0
             else:
-                self.spinup_days = 0
+                self.spinup_days = DEFAULT_HYPE_SPINUP_DAYS
 
         self.spinup_days = int(self.spinup_days)
 
@@ -300,8 +306,7 @@ class HYPEPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         if band_shp is not None:
             band_table = load_elevation_band_table(band_shp)
             if band_table:
-                lapse = self._get_config_value(
-                    lambda: self.config.forcing.lapse_rate, default=0.0065)
+                lapse = self._get_config_value(lambda: self.config.forcing.lapse_rate, dict_key='LAPSE_RATE')
                 self.forcing_processor.set_elevation_bands(
                     band_table, lapse_rate=lapse)
                 self.logger.info(
@@ -326,7 +331,10 @@ class HYPEPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         Uses the template method pattern from BaseModelPreProcessor.
         """
         self.logger.info("Starting HYPE preprocessing")
-        if self._get_config_value(lambda: self.config.model.hype.cryosphere_constraints, default=False, dict_key='HYPE_CRYOSPHERE_CONSTRAINTS'):
+        if self._get_config_value(
+            lambda: self.config.model.hype.cryosphere_constraints,
+            dict_key='HYPE_CRYOSPHERE_CONSTRAINTS',
+        ):
             from .cryosphere import ensure_observations
             station = self._get_config_value(lambda: self.config.evaluation.lamah_ice.domain_id, dict_key='LAMAH_ICE_DOMAIN_ID') or self._get_config_value(lambda: self.config.data.streamflow_station_id, dict_key='STREAMFLOW_STATION_ID')
             if station is None:
@@ -471,6 +479,31 @@ class HYPEPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # not from filedir.txt. Create symlinks in settings/HYPE/ pointing to
         # forcing files in data/forcing/HYPE_input/ so HYPE can find them.
         self._link_forcing_to_settings()
+
+    def _hype_spinup_days_explicit(self) -> bool:
+        """True when HYPE_SPINUP_DAYS was set by the user to a value (not left unset/null)."""
+        try:
+            hype_cfg = self.config.model.hype if self.config.model else None
+        except AttributeError:
+            hype_cfg = None
+        # Without a typed HYPE section the spinup_days lookup already yields None.
+        return (
+            hype_cfg is not None
+            and 'spinup_days' in getattr(hype_cfg, 'model_fields_set', set())
+            and getattr(hype_cfg, 'spinup_days', None) is not None
+        )
+
+    @staticmethod
+    def _spinup_days_from_period(spinup_period) -> int:
+        """Number of spin-up days in an inclusive ``'start, end'`` SPINUP_PERIOD.
+
+        Both ends of the period are spin-up days (the evaluation period starts
+        the day after ``end``), so a period of ``2000-01-01, 2000-12-31`` is
+        366 days and HYPE's ``cdate = bdate + spinup_days`` lands on
+        2001-01-01. A plain ``(end - start).days`` drops the last spin-up day.
+        """
+        start_date, end_date = parse_period(spinup_period, strict=True)
+        return (end_date.normalize() - start_date.normalize()).days + 1
 
     def _find_elevation_band_shapefile(self) -> Path | None:
         """Locate the elevation-banded HRU shapefile when banding is requested.
