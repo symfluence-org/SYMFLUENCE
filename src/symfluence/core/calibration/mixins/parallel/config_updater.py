@@ -145,7 +145,10 @@ class ConfigurationUpdater(ConfigMixin):
     def _adjust_end_time_for_forcing(self, cal_end: str) -> str:
         """Adjust end time to align with forcing timestep."""
         try:
-            forcing_timestep = self._get_config_value(lambda: self.config.forcing.time_step_size, default=3600, dict_key='FORCING_TIME_STEP_SIZE')
+            forcing_timestep = self._get_config_value(
+                lambda: self.config.forcing.time_step_size,
+                dict_key='FORCING_TIME_STEP_SIZE',
+            )
             if forcing_timestep >= 3600:  # Hourly or coarser
                 end_dt = datetime.strptime(cal_end, '%Y-%m-%d')
                 cal_end = adjust_end_time_for_forcing(
@@ -286,7 +289,10 @@ class ConfigurationUpdater(ConfigMixin):
 
         # SETTINGS_MIZU_ROUTING_DT decides, unless the model's output cadence
         # is fixed by construction (FUSE/HYPE write daily regardless).
-        dt_qsim = self._get_config_value(lambda: self.config.model.mizuroute.routing_dt, default='3600', dict_key='SETTINGS_MIZU_ROUTING_DT')
+        dt_qsim = self._get_config_value(
+            lambda: self.config.model.mizuroute.routing_dt,
+            dict_key='SETTINGS_MIZU_ROUTING_DT',
+        )
         if dt_qsim in ('default', None, ''):
             dt_qsim = '3600'
         if spec.dt_qsim is not None:

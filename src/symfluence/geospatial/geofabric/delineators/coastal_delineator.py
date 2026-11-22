@@ -234,7 +234,10 @@ class CoastalWatershedDelineator(BaseGeofabricDelineator):
             self.logger.info(f"Combined river basins saved to: {combined_basins_path}")
 
             # Cleanup if requested
-            if self._get_config_value(lambda: self.config.domain.delineation.cleanup_intermediate_files, default=True, dict_key='CLEANUP_INTERMEDIATE_FILES'):
+            if self._get_config_value(
+                lambda: self.config.domain.delineation.cleanup_intermediate_files,
+                dict_key='CLEANUP_INTERMEDIATE_FILES',
+            ):
                 shutil.rmtree(coastal_interim_dir, ignore_errors=True)
                 self.logger.info(f"Cleaned up coastal interim files: {coastal_interim_dir}")
 

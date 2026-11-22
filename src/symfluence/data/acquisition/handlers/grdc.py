@@ -73,7 +73,7 @@ class GRDCAcquirer(BaseAcquisitionHandler):
 
         # Get resolution
         resolution = self._get_config_value(lambda: None, default='daily', dict_key='GRDC_RESOLUTION')
-        force_download = self._get_config_value(lambda: self.config.data.force_download, default=False)
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
 
         downloaded_files = []
 

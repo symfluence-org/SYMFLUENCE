@@ -62,16 +62,10 @@ class ParFlowRunner(BaseModelRunner):
         )
 
     def _get_timeout(self) -> int:
-        return self._get_config_value(
-            lambda: self.config.model.parflow.timeout,
-            default=3600,
-        )
+        return self._get_config_value(lambda: self.config.model.parflow.timeout, dict_key='PARFLOW_TIMEOUT')
 
     def _get_num_procs(self) -> int:
-        return self._get_config_value(
-            lambda: self.config.model.parflow.num_procs,
-            default=1,
-        )
+        return self._get_config_value(lambda: self.config.model.parflow.num_procs, dict_key='PARFLOW_NUM_PROCS')
 
     def _get_parflow_dir(self) -> Optional[str]:
         """Get PARFLOW_DIR for environment variable."""

@@ -51,6 +51,7 @@ import requests
 from rasterio.windows import Window, from_bounds
 
 from symfluence.core.registries import R
+from symfluence.data.acquisition.utils import atomic_write
 
 from ..base import BaseAcquisitionHandler
 from ..utils import create_robust_session, download_file_resumable
@@ -175,7 +176,7 @@ class MODISLandcoverAcquirer(BaseAcquisitionHandler):
             Path to the land cover GeoTIFF.
         """
         lc_dir = self._attribute_dir("landclass")
-        land_name = self._get_config_value(lambda: self.config.domain.land_class_name, default="default")
+        land_name = self._get_config_value(lambda: self.config.domain.land_class_name, dict_key='LAND_CLASS_NAME')
         if land_name == "default":
             land_name = f"domain_{self.domain_name}_land_classes.tif"
         out_path = lc_dir / land_name
@@ -226,11 +227,11 @@ class MODISLandcoverAcquirer(BaseAcquisitionHandler):
 
         base_url = self._get_config_value(
             lambda: self.config.data.geospatial.modis_landcover.base_url,
-            default="https://zenodo.org/records/8367523/files"
+            dict_key='MODIS_LANDCOVER_BASE_URL',
         )
         cache_dir_cfg = self._get_config_value(
             lambda: self.config.data.geospatial.modis_landcover.cache_dir,
-            default='default'
+            dict_key='MODIS_LANDCOVER_CACHE_DIR',
         )
         if cache_dir_cfg == 'default':
             # Data-dir-level cache: the ~130 MB/year Zenodo tiles are global,
@@ -358,7 +359,7 @@ class USGSLandcoverAcquirer(BaseAcquisitionHandler):
             Path to the clipped land cover GeoTIFF.
         """
         lc_dir = self._attribute_dir("landclass")
-        land_name = self._get_config_value(lambda: self.config.domain.land_class_name, default="default")
+        land_name = self._get_config_value(lambda: self.config.domain.land_class_name, dict_key='LAND_CLASS_NAME')
         if land_name == "default":
             land_name = f"domain_{self.domain_name}_land_classes.tif"
         out_path = lc_dir / land_name
@@ -374,7 +375,7 @@ class USGSLandcoverAcquirer(BaseAcquisitionHandler):
         # Use 2019 data by default
         coverage_id = self._get_config_value(
             lambda: self.config.data.geospatial.nlcd.coverage_id,
-            default="NLCD_2019_Land_Cover_L48"
+            dict_key='NLCD_COVERAGE_ID',
         )
 
         # WCS 2.0.1 Params
@@ -403,7 +404,7 @@ class USGSLandcoverAcquirer(BaseAcquisitionHandler):
                 snippet = next(resp.iter_content(2048)).decode("utf-8", errors="ignore")
                 raise ValueError(f"NLCD WCS returned XML error: {snippet}")
 
-            with open(out_path, "wb") as f:
+            with atomic_write(out_path) as _part, open(_part, 'wb') as f:
                 for chunk in resp.iter_content(chunk_size=65536):
                     f.write(chunk)
 

@@ -110,8 +110,13 @@ class NEXGDDPCHandler(BaseAcquisitionHandler):
                                     f"NEX-GDDP-CMIP6: no file found for {var} "
                                     f"{model_name}/{scenario_name}/{member} {year} "
                                     f"(tried suffixes {', '.join(repr(s) for s in self.FILENAME_SUFFIXES)})")
-                        if attempted_chunks > 0 and var_files_found == 0:
-                            missing_variables.append(f"{model_name}/{scenario_name}/{member}/{var}")
+                        if attempted_chunks > 0 and var_files_found < attempted_chunks:
+                            # A missing year leaves a gap in the forcing just as a
+                            # missing variable does, so it fails the same way.
+                            missing_variables.append(
+                                f"{model_name}/{scenario_name}/{member}/{var}"
+                                + ("" if var_files_found == 0
+                                   else f" ({attempted_chunks - var_files_found} of {attempted_chunks} years)"))
                     if all_nc_files_for_ens:
                         ds_ens = xr.open_mfdataset(all_nc_files_for_ens, engine="netcdf4", combine="by_coords", parallel=False, data_vars='minimal', coords='minimal', compat='override').chunk({"time": -1})
                         ds_ens = ds_ens.expand_dims(ensemble=[len(ensemble_datasets)]).assign_coords(model=("ensemble", [model_name]), scenario=("ensemble", [scenario_name]), member=("ensemble", [member]))
@@ -228,9 +233,16 @@ class NEXGDDPCHandler(BaseAcquisitionHandler):
             try:
                 resp = requests.get(f"{ncss_base}/{dataset_path}", params=params, stream=True, timeout=600)
                 if resp.status_code == 200:
-                    with open(out_nc, "wb") as f:
-                        for chunk in resp.iter_content(chunk_size=1024 * 1024):
-                            f.write(chunk)
+                    # Write to .part and rename only when complete; a truncated
+                    # file at out_nc would be reused as cached on the next run.
+                    part = out_nc.with_name(out_nc.name + ".part")
+                    try:
+                        with open(part, "wb") as f:
+                            for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                                f.write(chunk)
+                        part.replace(out_nc)
+                    finally:
+                        part.unlink(missing_ok=True)
                     return out_nc
                 self.logger.debug(
                     f"NCSS request failed with status {resp.status_code} for {fname}: {resp.text[:500]}")

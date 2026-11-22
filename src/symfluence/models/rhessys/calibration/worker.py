@@ -448,8 +448,12 @@ class RHESSysWorker(BaseWorker):
 
     def _get_rhessys_executable(self, config: Dict[str, Any], data_dir: Path) -> Path:
         """Get RHESSys executable path."""
-        install_path = resolve_config_value(config, lambda: config.model.rhessys.install_path, 'default', 'RHESSYS_INSTALL_PATH')
-        exe_name = resolve_config_value(config, lambda: config.model.rhessys.exe, 'rhessys', 'RHESSYS_EXE')
+        install_path = resolve_config_value(
+            config,
+            lambda: config.model.rhessys.install_path,
+            dict_key='RHESSYS_INSTALL_PATH',
+        )
+        exe_name = resolve_config_value(config, lambda: config.model.rhessys.exe, dict_key='RHESSYS_EXE')
         # A directory install_path gets exe_name appended; otherwise it is the full path
         exe = resolve_install_executable(install_path, data_dir, 'installs/rhessys/bin', exe_name)
         # Windows builds produce <name>.exe even when the config declares a bare
@@ -598,13 +602,21 @@ class RHESSysWorker(BaseWorker):
         cmd.extend(['-longwaveevap'])
 
         # Fire spread if WMFire is enabled
-        wmfire_enabled = resolve_config_value(config, lambda: config.model.rhessys.use_wmfire, False, 'RHESSYS_USE_WMFIRE')
+        wmfire_enabled = resolve_config_value(
+            config,
+            lambda: config.model.rhessys.use_wmfire,
+            dict_key='RHESSYS_USE_WMFIRE',
+        )
         if wmfire_enabled:
             fire_dir = rhessys_input_dir / "fire"
             patch_grid = fire_dir / "patch_grid.txt"
             dem_grid = fire_dir / "dem_grid.txt"
             if patch_grid.exists() and dem_grid.exists():
-                resolution = resolve_config_value(config, lambda: config.model.rhessys.wmfire.grid_resolution, 30, 'WMFIRE_GRID_RESOLUTION')
+                resolution = resolve_config_value(
+                    config,
+                    lambda: config.model.rhessys.wmfire.grid_resolution,
+                    dict_key='WMFIRE_GRID_RESOLUTION',
+                )
                 cmd.extend(["-firespread", str(resolution), str(patch_grid), str(dem_grid)])
                 self.logger.debug(f"WMFire fire spread enabled: {resolution}m resolution")
             else:
@@ -619,7 +631,7 @@ class RHESSysWorker(BaseWorker):
 
         # Subgrid variability for lumped mode (-stdev enables variance-based return flow)
         # This uses normal distribution around mean sat_deficit to generate partial saturation
-        std_scale = resolve_config_value(config, lambda: config.model.rhessys.std_scale, 1.0, 'RHESSYS_STD_SCALE')
+        std_scale = resolve_config_value(config, lambda: config.model.rhessys.std_scale, dict_key='RHESSYS_STD_SCALE')
         if std_scale > 0:
             cmd.extend(["-stdev", str(std_scale)])
             self.logger.debug(f"Subgrid variability enabled with std_scale={std_scale}")
@@ -629,7 +641,10 @@ class RHESSysWorker(BaseWorker):
         # Same switch as the runner (RHESSYS_USE_SUBSURFACE_GW); previously the
         # worker always added the flag when the binary supported it.
         use_subsurface_gw = resolve_config_value(
-            config, lambda: config.model.rhessys.use_subsurface_gw, True, 'RHESSYS_USE_SUBSURFACE_GW')
+            config,
+            lambda: config.model.rhessys.use_subsurface_gw,
+            dict_key='RHESSYS_USE_SUBSURFACE_GW',
+        )
         if use_subsurface_gw and self._binary_supports_subsurfacegw(exe):
             cmd.extend(["-subsurfacegw"])
 

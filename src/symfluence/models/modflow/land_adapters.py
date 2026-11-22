@@ -299,7 +299,8 @@ class SUMMARechargeAdapter(LandRechargeAdapter):
 
     Recharge is ``scalarSoilDrainage`` (m/s) per HRU; fast flow is
     ``scalarSurfaceRunoff`` (m/s) area-weighted over HRUs. Without a zone
-    shapefile the basin is one zone (``zone_id`` 1).
+    shapefile the basin is one zone (``zone_id`` 1) and every HRU is
+    area-weighted (``HRUarea`` from the SUMMA attributes file) into it.
     """
     name = 'SUMMA'
 
@@ -344,13 +345,57 @@ class SUMMARechargeAdapter(LandRechargeAdapter):
         df.index = pd.to_datetime(df.index).normalize()
         return df.groupby(level=0).mean()
 
+    def _basin_wide(self) -> bool:
+        """True when the basin is the single recharge zone 1 (no zone shapefile)."""
+        return not self.options.get('zone_shapefile')
+
+    @staticmethod
+    def _hru_areas(settings_dir: Path) -> pd.Series:
+        """SUMMA ``HRUarea`` (m2) indexed by ``hruId``, from the fileManager's attribute file."""
+        import xarray as xr
+        d = Path(settings_dir)
+        name, base = 'attributes.nc', d
+        fm = d / 'fileManager.txt'
+        if fm.exists():
+            entries = {}
+            for line in fm.read_text().splitlines():
+                parts = line.split(None, 1)
+                if len(parts) == 2:
+                    entries[parts[0]] = parts[1].split('!')[0].strip().strip("'\"")
+            name = entries.get('attributeFile') or name
+            if entries.get('settingsPath') and Path(entries['settingsPath']).is_dir():
+                base = Path(entries['settingsPath'])
+        path = next((p for p in (base / name, d / name) if p.exists()), None)
+        if path is None:
+            raise ConfigurationError(
+                f'SUMMA attributes file {name} not found in {base}; HRU areas are needed to '
+                'aggregate HRUs into the basin recharge zone (or set MODFLOW_LAND_ZONE_SHAPEFILE)')
+        with xr.open_dataset(path) as ds:
+            if 'HRUarea' not in ds or 'hruId' not in ds:
+                raise ConfigurationError(f'{path} lacks hruId/HRUarea')
+            return pd.Series(ds['HRUarea'].values.astype(float), index=ds['hruId'].values.astype(int))
+
+    def _to_basin_zone(self, df: pd.DataFrame, settings_dir: Path) -> pd.DataFrame:
+        """Area-weighted mean of all HRU columns as the single basin zone 1."""
+        if len(df.columns) == 1:
+            return df.set_axis([1], axis=1)
+        areas = self._hru_areas(settings_dir)
+        missing = sorted(set(df.columns) - set(areas.index))
+        if missing:
+            raise ValidationError(f'SUMMA attributes have no HRUarea for hruId {missing}')
+        w = areas.loc[list(df.columns)]
+        return (df.mul(w, axis=1).sum(axis=1) / float(w.sum())).to_frame(1)
+
     def read_recharge(self, output_dir: Path, settings_dir: Path) -> pd.DataFrame:
         var = self.options.get('recharge_variable') or 'scalarSoilDrainage'
-        return self._daily(output_dir, var).clip(lower=0.0) * 86400.0
+        rec = self._daily(output_dir, var).clip(lower=0.0) * 86400.0
+        return self._to_basin_zone(rec, settings_dir) if self._basin_wide() else rec
 
     def read_fast_flow(self, output_dir: Path, settings_dir: Path) -> pd.Series:
         q = self._daily(output_dir, 'scalarSurfaceRunoff')
         zones = self.recharge_zones(settings_dir).set_index('zone_id').area_m2
+        if self._basin_wide():
+            q = self._to_basin_zone(q, settings_dir)
         if len(q.columns) == 1 and len(zones) == 1:
             return (q.iloc[:, 0] * float(zones.iloc[0])).rename('fast_flow_m3s')
         return (q[zones.index] * zones).sum(axis=1).rename('fast_flow_m3s')

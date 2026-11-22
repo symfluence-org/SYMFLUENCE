@@ -1578,8 +1578,14 @@ main() {
     # Find Python interpreter
     local python_cmd
     if ! python_cmd=$(find_python); then
-        print_error "Python ${MIN_PYTHON_VERSION}+ not found"
-        print_info  "Please install or load Python ${MIN_PYTHON_VERSION} or later"
+        print_error "No Python 3.11–3.13 interpreter found (3.14+ is not supported yet)"
+        print_info  "Geospatial dependencies (GDAL, rasterio, Fiona) lack 3.14 wheels."
+        print_info  "Ubuntu 26.04 ships only Python 3.14 and has no older python3.x in apt."
+        print_info  "Either use Ubuntu 24.04 (on Windows: wsl --install -d Ubuntu-24.04), or"
+        print_info  "install a supported interpreter with uv and point bootstrap at it:"
+        print_info  "  curl -LsSf https://astral.sh/uv/install.sh | sh"
+        print_info  "  uv python install 3.12"
+        print_info  "  SYMFLUENCE_PYTHON=\$(uv python find 3.12) ./scripts/symfluence-bootstrap --install"
         exit 1
     fi
 
@@ -1846,6 +1852,25 @@ else:
         # Ensure rich is installed (needed for CLI console output)
         python -m pip install "rich>=13.0.0" --quiet || true
         print_success "SYMFLUENCE package installed"
+
+        # JupyterLab + ipykernel (the [notebook] extra) so that
+        # `symfluence example launch` works straight after bootstrap, as
+        # examples/README.md promises. Install only the extra's own packages:
+        # `pip install -e ".[notebook]"` would re-resolve the core deps that
+        # requirements.txt has already pinned.
+        print_info "Installing JupyterLab for the example notebooks..."
+        local -a notebook_reqs=()
+        local req
+        while IFS= read -r req; do
+            req=${req%$'\r'}
+            [[ -n "$req" ]] && notebook_reqs+=("$req")
+        done < <(python -c "import tomllib; print('\n'.join(tomllib.load(open('pyproject.toml', 'rb'))['project']['optional-dependencies']['notebook']))" 2>/dev/null || true)
+        if (( ${#notebook_reqs[@]} )) && python -m pip install "${notebook_reqs[@]}" --quiet; then
+            print_success "JupyterLab installed"
+        else
+            print_warning "JupyterLab install failed; 'symfluence example launch' needs it."
+            print_info  "  Retry with: python -m pip install -e \".[notebook]\""
+        fi
 
         # The paper ensemble needs the optional model stacks: the JAX
         # re-implementations (HBV*, SACSMA*, XAJ*, HECHMS*, TOPMODEL*) and the

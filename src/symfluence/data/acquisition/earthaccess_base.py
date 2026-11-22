@@ -25,6 +25,8 @@ from typing import Dict, List, Optional, Tuple
 
 import requests
 
+from symfluence.data.acquisition.utils import atomic_write
+
 from .base import BaseAcquisitionHandler
 
 
@@ -197,7 +199,7 @@ class BaseEarthaccessAcquirer(BaseAcquisitionHandler):
             try:
                 response = session.get(url, timeout=120)
                 response.raise_for_status()
-                with open(output_path, 'wb') as f:
+                with atomic_write(output_path) as _part, open(_part, 'wb') as f:
                     f.write(response.content)
                 downloaded.append(output_path)
             except (

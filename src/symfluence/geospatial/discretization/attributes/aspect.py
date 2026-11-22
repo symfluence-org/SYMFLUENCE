@@ -29,7 +29,7 @@ def discretize(discretizer: "DomainDiscretizer") -> Optional[object]:
     default_name = f"{discretizer.domain_name}_riverBasins_{discretizer.delineation_suffix}.shp"
     delineate_coastal = discretizer._get_config_value(
         lambda: discretizer.config.domain.delineation.delineate_coastal_watersheds,
-        default=False
+        dict_key='DELINEATE_COASTAL_WATERSHEDS',
     )
     if delineate_coastal:
         default_name = f"{discretizer.domain_name}_riverBasins_with_coastal.shp"
@@ -66,7 +66,7 @@ def discretize(discretizer: "DomainDiscretizer") -> Optional[object]:
 
     aspect_class_number = int(discretizer._get_config_value(
         lambda: discretizer.config.domain.aspect_class_number,
-        default=8
+        dict_key='ASPECT_CLASS_NUMBER',
     ))
 
     if not aspect_raster.exists():

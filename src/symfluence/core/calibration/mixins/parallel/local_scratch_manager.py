@@ -115,7 +115,10 @@ class LocalScratchManager(ConfigMixin):
             True if scratch should be used, False otherwise
         """
         # Check config flag
-        use_scratch_config = self._get_config_value(lambda: self.config.system.use_local_scratch, default=False, dict_key='USE_LOCAL_SCRATCH')
+        use_scratch_config = self._get_config_value(
+            lambda: self.config.system.use_local_scratch,
+            dict_key='USE_LOCAL_SCRATCH',
+        )
 
         if not use_scratch_config:
             return False
@@ -184,7 +187,10 @@ class LocalScratchManager(ConfigMixin):
             True if routing is needed, False otherwise
         """
         # Check routing delineation setting
-        routing_delineation = self._get_config_value(lambda: self.config.domain.delineation.routing, default='lumped', dict_key='ROUTING_DELINEATION').lower()
+        routing_delineation = self._get_config_value(
+            lambda: self.config.domain.delineation.routing,
+            dict_key='ROUTING_DELINEATION',
+        ).lower()
 
         # Skip routing for lumped or none
         if routing_delineation in ['lumped', 'none', 'off', 'false']:

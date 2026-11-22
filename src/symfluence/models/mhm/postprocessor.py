@@ -90,33 +90,9 @@ class MHMPostProcessor(StandardModelPostProcessor):
             return None
 
         try:
-            import xarray as xr
+            from .extractor import read_mhm_discharge
 
-            ds = xr.open_dataset(output_file)
-
-            # Find discharge variable
-            discharge = None
-            for var in ['Qsim', 'Q', 'discharge', 'Qrouted']:
-                if var in ds.data_vars:
-                    discharge = ds[var]
-                    break
-
-            if discharge is None:
-                self.logger.error("No discharge variable found in mHM output")
-                ds.close()
-                return None
-
-            # Aggregate spatially if needed (usually single gauge)
-            spatial_dims = [d for d in discharge.dims if d not in ['time']]
-            if spatial_dims:
-                # Take first gauge if multiple
-                if len(spatial_dims) == 1 and discharge.shape[discharge.dims.index(spatial_dims[0])] > 1:
-                    discharge = discharge.isel({spatial_dims[0]: 0})
-                else:
-                    discharge = discharge.squeeze(dim=spatial_dims, drop=True)
-
-            streamflow = discharge.to_series()
-            ds.close()
+            streamflow = read_mhm_discharge(output_file)
 
             # mHM discharge is already in m3/s, no conversion needed
 

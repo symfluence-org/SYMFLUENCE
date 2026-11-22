@@ -14,6 +14,7 @@ from .binary_commands import BinaryCommands
 from .config_commands import ConfigCommands
 from .data_commands import DataCommands
 from .doctor_commands import DoctorCommands
+from .ensemble_commands import EnsembleCommands
 from .example_commands import ExampleCommands
 from .fews_commands import FEWSCommands
 from .gui_commands import GUICommands
@@ -35,6 +36,7 @@ __all__ = [
     'TUICommands',
     'DataCommands',
     'DoctorCommands',
+    'EnsembleCommands',
     'FEWSCommands',
     'ListCommands',
 ]

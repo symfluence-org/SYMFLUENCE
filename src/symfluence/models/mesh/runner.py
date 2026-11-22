@@ -174,18 +174,17 @@ class MESHRunner(BaseModelRunner):  # type: ignore[misc]
             prepare_spatial_baseflow(self.forcing_mesh_path)
             if self._get_config_value(
                 lambda: self.config.model.mesh.spatial_diagnostics,
-                default=False, dict_key='MESH_SPATIAL_DIAGNOSTICS',
+                dict_key='MESH_SPATIAL_DIAGNOSTICS',
             ):
                 from symfluence.models.mesh.preprocessing.spatial_units import prepare_spatial_diagnostics
                 prepare_spatial_diagnostics(self.forcing_mesh_path, cryosphere_endpoints=self._get_config_value(
                     lambda: self.config.model.mesh.cryosphere_constraints,
-                    default=False, dict_key='MESH_CRYOSPHERE_CONSTRAINTS'))
+                    dict_key='MESH_CRYOSPHERE_CONSTRAINTS',
+                ))
             # Create run command
             finite_ice = check_finite_runtime(
                 Path(self.mesh_exe), self.forcing_mesh_path,
-                self._get_config_value(
-                    lambda: self.config.model.mesh.glacier_mode,
-                    default='none', dict_key='MESH_GLACIER_MODE'),
+                self._get_config_value(lambda: self.config.model.mesh.glacier_mode, dict_key='MESH_GLACIER_MODE'),
             )
             cmd = self._create_run_command()
 

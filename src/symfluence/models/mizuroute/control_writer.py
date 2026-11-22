@@ -141,7 +141,10 @@ class ControlFileWriter(ConfigurableMixin):
             model_output = Path(model_output)
 
         # Get mizuRoute output directory
-        mizu_output = self._get_config_value(lambda: self.config.model.mizuroute.experiment_output, default='default')
+        mizu_output = self._get_config_value(
+            lambda: self.config.model.mizuroute.experiment_output,
+            dict_key='EXPERIMENT_OUTPUT_MIZUROUTE',
+        )
         if mizu_output == 'default' or not mizu_output:
             mizu_output = self.project_dir / f"simulations/{self.experiment_id}" / 'mizuRoute'
         else:
@@ -157,7 +160,10 @@ class ControlFileWriter(ConfigurableMixin):
 
     def _write_parameters(self, cf: TextIO, mizu_config: Dict[str, Any]) -> None:
         """Write namelist parameters section."""
-        param_file = mizu_config.get('parameters_file', self._get_config_value(lambda: self.config.model.mizuroute.parameter_file, default='mizuRoute_params.nml'))
+        param_file = mizu_config.get('parameters_file', self._get_config_value(
+            lambda: self.config.model.mizuroute.parameter_file,
+            dict_key='SETTINGS_MIZU_PARAMETER_FILE',
+        ))
         cf.write("!\n! --- NAMELIST FILENAME \n")
         cf.write(f"<param_nml>             {param_file}    ! Spatially constant parameter namelist (should be stored in the ancil_dir) \n")
 
@@ -189,15 +195,13 @@ class ControlFileWriter(ConfigurableMixin):
         # Get routing scheme from config (default to IRF for proper river routing)
         route_opt = self._get_config_value(
             lambda: self.config.model.mizuroute.output_vars,
-            default='1',
-            dict_key='SETTINGS_MIZU_OUTPUT_VARS'
+            dict_key='SETTINGS_MIZU_OUTPUT_VARS',
         )
 
         # Get output file frequency from config
         output_freq = self._get_config_value(
             lambda: self.config.model.mizuroute.output_freq,
-            default='yearly',
-            dict_key='SETTINGS_MIZU_OUTPUT_FREQ'
+            dict_key='SETTINGS_MIZU_OUTPUT_FREQ',
         )
 
         cf.write("!\n! --- DEFINE SIMULATION CONTROLS \n")
@@ -209,7 +213,10 @@ class ControlFileWriter(ConfigurableMixin):
 
     def _write_topology(self, cf: TextIO, mizu_config: Dict[str, Any]) -> None:
         """Write topology file section."""
-        topology_file = mizu_config.get('topology_file', self._get_config_value(lambda: self.config.model.mizuroute.topology_file, default='network_topology.nc'))
+        topology_file = mizu_config.get('topology_file', self._get_config_value(
+            lambda: self.config.model.mizuroute.topology_file,
+            dict_key='SETTINGS_MIZU_TOPOLOGY_FILE',
+        ))
 
         cf.write("!\n! --- DEFINE TOPOLOGY FILE \n")
         cf.write(f"<fname_ntopOld>         {topology_file}    ! Name of input netCDF for River Network \n")
@@ -352,9 +359,15 @@ class ControlFileWriter(ConfigurableMixin):
 
     def _write_remapping(self, cf: TextIO, mizu_config: Dict[str, Any]) -> None:
         """Write runoff remapping section."""
-        remap_file = mizu_config.get('remap_file', self._get_config_value(lambda: self.config.model.mizuroute.remap_file, default='runoff_remap.nc'))
+        remap_file = mizu_config.get('remap_file', self._get_config_value(
+            lambda: self.config.model.mizuroute.remap_file,
+            dict_key='SETTINGS_MIZU_REMAP_FILE',
+        ))
         remap_flag = (
-            self._get_config_value(lambda: self.config.model.mizuroute.needs_remap, default=False) or
+            self._get_config_value(
+                lambda: self.config.model.mizuroute.needs_remap,
+                dict_key='SETTINGS_MIZU_NEEDS_REMAP',
+            ) or
             self.needs_remap_lumped_distributed
         )
 
@@ -372,6 +385,9 @@ class ControlFileWriter(ConfigurableMixin):
 
     def _write_miscellaneous(self, cf: TextIO, mizu_config: Dict[str, Any]) -> None:
         """Write miscellaneous settings section."""
-        within_basin = mizu_config.get('within_basin', self._get_config_value(lambda: self.config.model.mizuroute.within_basin, default=0))
+        within_basin = mizu_config.get('within_basin', self._get_config_value(
+            lambda: self.config.model.mizuroute.within_basin,
+            dict_key='SETTINGS_MIZU_WITHIN_BASIN',
+        ))
         cf.write("!\n! --- MISCELLANEOUS \n")
         cf.write(f"<doesBasinRoute>        {within_basin}    ! Hillslope routing options. 0 -> no (already routed by SUMMA), 1 -> use IRF \n")

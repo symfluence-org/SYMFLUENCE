@@ -61,17 +61,26 @@ class MODFLOWResultExtractor(ModelResultExtractor):
         Args:
             output_file: Path to output file or directory
             variable_type: Type ('head', 'drain_discharge', 'budget')
-            **kwargs: Additional args (stress_period_length for time index)
+            **kwargs: Additional args (start_date for the time index; records
+                are dated from the file's own period start times, one value
+                per stress period). ``daily=True`` spreads drain discharge
+                rates over the days each stress period covers
+                (``stress_period_length`` sizes the last period).
 
         Returns:
             Time series of extracted variable
         """
         output_path = Path(output_file)
+        daily = bool(kwargs.pop('daily', False))
 
         if variable_type == 'head':
             return self._extract_heads(output_path, **kwargs)
         elif variable_type in ('drain_discharge', 'baseflow'):
-            return self._extract_drain_discharge(output_path, **kwargs)
+            series = self._extract_drain_discharge(output_path, **kwargs)
+            if daily:
+                from .coupling import periods_to_daily
+                series = periods_to_daily(series, kwargs.get('stress_period_length'))
+            return series
         else:
             raise ValueError(f"Unknown variable type: {variable_type}")
 
@@ -99,8 +108,8 @@ class MODFLOWResultExtractor(ModelResultExtractor):
         else:
             hds_file = output_path
 
-        times = []
-        heads = []
+        # kper -> (period start time, head at the last time step of the period)
+        per_head: Dict[int, tuple] = {}
 
         with open(hds_file, 'rb') as f:
             while True:
@@ -111,21 +120,26 @@ class MODFLOWResultExtractor(ModelResultExtractor):
                     kstp, kper, pertim, totim, text, ncol, nrow, nlay = header
                     n_values = ncol * nrow * nlay
                     data = struct.unpack(f'{n_values}d', f.read(n_values * 8))
-                    times.append(totim)
-                    # For lumped model (1×1×1), head is a single value
-                    heads.append(data[0])
+                    # For lumped model (1×1×1), head is a single value; records
+                    # come in time order, so the last one of a period wins.
+                    per_head[kper] = (totim - pertim, data[0])
                 except (struct.error, ValueError):
                     break
 
-        sp_length = kwargs.get('stress_period_length', 1.0)
-        start_date = kwargs.get('start_date', '2000-01-01')
-        date_index = pd.date_range(
-            start=start_date,
-            periods=len(heads),
-            freq=f'{int(sp_length)}D',
-        )
+        kpers = sorted(per_head)
+        date_index = self._period_dates(kwargs.get('start_date', '2000-01-01'),
+                                        [per_head[k][0] for k in kpers])
+        return pd.Series([per_head[k][1] for k in kpers], index=date_index, name='head_m')
 
-        return pd.Series(heads, index=date_index, name='head_m')
+    @staticmethod
+    def _period_dates(start_date, period_starts) -> pd.DatetimeIndex:
+        """Dates of stress periods from their start times (days since ``start_date``).
+
+        Each period is labelled by the day it starts, matching the daily
+        land-model series that ``combine_flows`` aligns it with.
+        """
+        offsets = pd.to_timedelta(list(period_starts), unit='D').round('s')
+        return pd.DatetimeIndex(pd.Timestamp(str(start_date)) + offsets)
 
     def _extract_drain_discharge(
         self,
@@ -145,8 +159,8 @@ class MODFLOWResultExtractor(ModelResultExtractor):
         else:
             bud_file = output_path
 
-        times = []
-        drain_flows = []
+        # (kper, kstp) -> [period start time, delt, summed DRN flow]
+        steps: Dict[tuple, list] = {}
 
         with open(bud_file, 'rb') as f:
             while True:
@@ -172,25 +186,34 @@ class MODFLOWResultExtractor(ModelResultExtractor):
                         continue
 
                     if 'DRN' in text_clean:
-                        times.append(totim)
-                        total_drain = sum(data) if isinstance(data, list) else sum(data)
-                        # Drain flows are negative (outflow), take absolute value
-                        drain_flows.append(abs(total_drain))
+                        step = steps.setdefault((kper, kstp), [totim - pertim, delt, 0.0])
+                        step[2] += sum(data)
 
                 except (struct.error, ValueError, EOFError):
                     break
 
-        if not drain_flows:
+        if not steps:
             self.logger.warning("No drain discharge records found in budget file")
             return pd.Series(dtype=float, name='drain_m3d')
 
-        sp_length = kwargs.get('stress_period_length', 1.0)
-        start_date = kwargs.get('start_date', '2000-01-01')
-        date_index = pd.date_range(
-            start=start_date,
-            periods=len(drain_flows),
-            freq=f'{int(sp_length)}D',
-        )
+        # One value per stress period: the time-step-length weighted mean of
+        # the drain rate (OC saves every time step when NSTP > 1).
+        # Drain flows are negative (outflow), take absolute value.
+        by_period: Dict[int, list] = {}
+        for (kper, _kstp), (t0, delt, flow) in sorted(steps.items()):
+            by_period.setdefault(kper, []).append((t0, delt, abs(flow)))
+        kpers = sorted(by_period)
+        drain_flows = []
+        for k in kpers:
+            recs = by_period[k]
+            if len(recs) == 1:
+                drain_flows.append(recs[0][2])
+            else:
+                wsum = sum(r[1] for r in recs)
+                drain_flows.append(sum(r[1] * r[2] for r in recs) / wsum if wsum > 0
+                                   else sum(r[2] for r in recs) / len(recs))
+        date_index = self._period_dates(kwargs.get('start_date', '2000-01-01'),
+                                        [by_period[k][0][0] for k in kpers])
 
         return pd.Series(drain_flows, index=date_index, name='drain_m3d')
 

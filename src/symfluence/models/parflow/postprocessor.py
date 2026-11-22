@@ -72,7 +72,6 @@ class ParFlowPostProcessor(StandardModelPostProcessor):
 
             timestep_hours = self._get_config_value(
                 lambda: self.config.model.parflow.timestep_hours,
-                default=1.0,
                 dict_key='PARFLOW_TIMESTEP_HOURS',
             )
 
@@ -82,26 +81,10 @@ class ParFlowPostProcessor(StandardModelPostProcessor):
                 dict_key='EXPERIMENT_TIME_START',
             )
 
-            k_sat = self._get_config_value(
-                lambda: self.config.model.parflow.k_sat,
-                default=5.0,
-                dict_key='PARFLOW_K_SAT',
-            )
-            dx = self._get_config_value(
-                lambda: self.config.model.parflow.dx,
-                default=1000.0,
-                dict_key='PARFLOW_DX',
-            )
-            dy = self._get_config_value(
-                lambda: self.config.model.parflow.dy,
-                default=1000.0,
-                dict_key='PARFLOW_DY',
-            )
-            dz = self._get_config_value(
-                lambda: self.config.model.parflow.dz,
-                default=100.0,
-                dict_key='PARFLOW_DZ',
-            )
+            k_sat = self._get_config_value(lambda: self.config.model.parflow.k_sat, dict_key='PARFLOW_K_SAT')
+            dx = self._get_config_value(lambda: self.config.model.parflow.dx, dict_key='PARFLOW_DX')
+            dy = self._get_config_value(lambda: self.config.model.parflow.dy, dict_key='PARFLOW_DY')
+            dz = self._get_config_value(lambda: self.config.model.parflow.dz, dict_key='PARFLOW_DZ')
 
             from symfluence.models.parflow.extractor import resolve_dump_interval_hours
             common_kwargs = dict(

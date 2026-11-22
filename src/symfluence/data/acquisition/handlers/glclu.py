@@ -39,6 +39,7 @@ from rasterio.merge import merge as rio_merge
 from rasterio.windows import from_bounds
 
 from symfluence.core.registries import R
+from symfluence.data.acquisition.utils import atomic_write
 
 from ..base import BaseAcquisitionHandler
 from ..mixins import RetryMixin
@@ -193,7 +194,7 @@ class GLCLUAcquirer(BaseAcquisitionHandler, RetryMixin):
                 url, stream=True, timeout=600, allow_redirects=True
             ) as r:
                 if r.status_code == 200:
-                    with open(local_tile, 'wb') as f:
+                    with atomic_write(local_tile) as _part, open(_part, 'wb') as f:
                         for chunk in r.iter_content(chunk_size=65536):
                             if chunk:
                                 f.write(chunk)

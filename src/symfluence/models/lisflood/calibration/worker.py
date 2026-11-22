@@ -8,23 +8,19 @@ import shutil
 import subprocess
 from pathlib import Path
 
-import pandas as pd
 import xarray as xr
 
-from symfluence.core.calibration.workers.base_worker import BaseWorker
+from symfluence.core.calibration.workers.streamflow_worker import StreamflowWorker
 from symfluence.core.exceptions import ConfigurationError
-from symfluence.core.metrics import StreamflowMetrics
 from symfluence.core.mixins.config import resolve_config_value
-from symfluence.core.modeling.utilities.periods import split_period
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
 
 @R.workers.add("LISFLOOD")
-class LisfloodWorker(BaseWorker):
+class LisfloodWorker(StreamflowWorker):
     """Worker for LISFLOOD model calibration."""
 
-    _streamflow_metrics = StreamflowMetrics()
 
     def apply_parameters(self, params, settings_dir, **kwargs):
         try:
@@ -43,7 +39,11 @@ class LisfloodWorker(BaseWorker):
                 shutil.copytree(original_maps, target_maps)
 
             # Copy and patch settings XML
-            settings_file = resolve_config_value(config, lambda: config.model.lisflood.settings_file, "settings.xml", 'LISFLOOD_SETTINGS_FILE')
+            settings_file = resolve_config_value(
+                config,
+                lambda: config.model.lisflood.settings_file,
+                dict_key='LISFLOOD_SETTINGS_FILE',
+            )
             original_xml = original_settings / settings_file
             target_xml = settings_dir / settings_file
             if original_xml.exists() and original_xml != target_xml:
@@ -83,9 +83,17 @@ class LisfloodWorker(BaseWorker):
             if override:
                 settings_path = Path(override)
             else:
-                settings_file = resolve_config_value(config, lambda: config.model.lisflood.settings_file, "settings.xml", 'LISFLOOD_SETTINGS_FILE')
+                settings_file = resolve_config_value(
+                    config,
+                    lambda: config.model.lisflood.settings_file,
+                    dict_key='LISFLOOD_SETTINGS_FILE',
+                )
                 settings_path = Path(settings_dir) / settings_file
-            timeout = int(resolve_config_value(config, lambda: config.model.lisflood.timeout, 7200, 'LISFLOOD_TIMEOUT'))
+            timeout = int(resolve_config_value(
+                config,
+                lambda: config.model.lisflood.timeout,
+                dict_key='LISFLOOD_TIMEOUT',
+            ))
 
             env = dict(os.environ)
             from symfluence.models.lisflood.runner import _find_pcraster_site_packages
@@ -115,43 +123,10 @@ class LisfloodWorker(BaseWorker):
             self.logger.error(f"LISFLOOD execution failed: {e}")
             return False
 
-    def calculate_metrics(self, output_dir, config, **kwargs):
-        try:
-            sim = self._load_simulated_streamflow(Path(output_dir), config)
-            if sim is None:
-                self.logger.warning(f"No sim data found in {output_dir}")
-                return {"KGE": -999.0, "NSE": -999.0}
-            obs = self._load_observations(config)
-            if obs is None:
-                self.logger.warning("No observation data found")
-                return {"KGE": -999.0, "NSE": -999.0}
-            if not isinstance(sim.index, pd.DatetimeIndex):
-                sim.index = pd.to_datetime(sim.index)
-            if not isinstance(obs.index, pd.DatetimeIndex):
-                obs.index = pd.to_datetime(obs.index)
-            if len(sim) > 1:
-                median_dt = pd.Series(sim.index).diff().median()
-                if median_dt < pd.Timedelta(days=1):
-                    sim = sim.resample("D").mean()
-            # Explicit dict guard kept: a typed config scores the whole record.
-            cal_period = (resolve_config_value(config, lambda: config.domain.calibration_period, "", 'CALIBRATION_PERIOD')
-                          if isinstance(config, dict) else "")
-            parts = split_period(cal_period)
-            if parts:
-                sim = sim.loc[parts[0]:parts[1]]  # type: ignore[misc]
-                obs = obs.loc[parts[0]:parts[1]]  # type: ignore[misc]
-            sim, obs = sim.align(obs, join="inner")
-            common_idx = sim.dropna().index.intersection(obs.dropna().index)
-            sim, obs = sim.loc[common_idx], obs.loc[common_idx]
-            if len(sim) < 30:
-                self.logger.warning(f"Insufficient data: n={len(sim)} < 30")
-                return {"KGE": -999.0, "NSE": -999.0}
-            metrics = self._streamflow_metrics.calculate_metrics(obs.values, sim.values)
-            self.logger.info(f"Computed metrics: {metrics}")
-            return metrics
-        except Exception as e:  # noqa: BLE001
-            self.logger.error(f"Metric calculation failed: {e}")
-            return {"KGE": -999.0, "NSE": -999.0}
+    def read_simulated_streamflow(self, output_dir, config, **kwargs):
+        """This trial's outlet discharge (m3/s), daily means when LISFLOOD ran sub-daily."""
+        sim = self._load_simulated_streamflow(Path(output_dir), config)
+        return None if sim is None else self.daily_mean_if_subdaily(sim)
 
     def _load_simulated_streamflow(self, output_dir: Path, config=None):
         # Try NetCDF discharge output
@@ -186,17 +161,3 @@ class LisfloodWorker(BaseWorker):
             raise ConfigurationError("EXPERIMENT_TIME_START is required to date LISFLOOD .tss output")
         return read_tss_series(tss_path, start, resolve_lisflood_timestep_seconds(config))
 
-    def _load_observations(self, config):
-        try:
-            domain_name = resolve_config_value(config, lambda: config.domain.name, "", 'DOMAIN_NAME')
-            data_dir = Path(resolve_config_value(config, lambda: config.system.data_dir, ".", 'SYMFLUENCE_DATA_DIR'))
-            obs_dir = data_dir / f"domain_{domain_name}" / "observations" / "streamflow" / "preprocessed"
-            if not obs_dir.exists():
-                return None
-            obs_files = list(obs_dir.glob("*.csv"))
-            if not obs_files:
-                return None
-            df = pd.read_csv(obs_files[0], parse_dates=True, index_col=0)
-            return df["discharge_cms"] if "discharge_cms" in df.columns else df.iloc[:, 0]
-        except Exception:  # noqa: BLE001
-            return None

@@ -26,6 +26,27 @@ import numpy as np
 from symfluence.core.calibration.parameters.base_parameter_manager import BaseParameterManager
 from symfluence.core.registries import R
 
+
+def read_drn_conductance(drn_path: Path) -> Optional[float]:
+    """Conductance of the first cell in a lumped gwf.drn PERIOD block, or None."""
+    try:
+        in_period = False
+        for line in drn_path.read_text().splitlines():
+            tokens = line.split()
+            if not tokens:
+                continue
+            head = tokens[0].upper()
+            if head == 'BEGIN' and len(tokens) > 1 and tokens[1].upper() == 'PERIOD':
+                in_period = True
+            elif head == 'END':
+                in_period = False
+            elif in_period and len(tokens) >= 5:
+                return float(tokens[4])
+    except (OSError, ValueError):
+        return None
+    return None
+
+
 # MODFLOW groundwater parameter bounds
 MODFLOW_DEFAULT_BOUNDS = {
     'K': {
@@ -312,6 +333,24 @@ class CoupledGWParameterManager(BaseParameterManager):
             "END PERIOD 1\n"
         )
 
+    def _initial_drain_conductance(self) -> float:
+        """Starting DRAIN_CONDUCTANCE: configured value, else the preprocessed gwf.drn's.
+
+        When MODFLOW_DRAIN_CONDUCTANCE is unset the preprocessor writes an
+        area-scaled value into gwf.drn; start calibration from that, falling
+        back to the lower calibration bound if the file can't be read.
+        """
+        configured = self._get_config_value(
+            lambda: self.config.model.modflow.drain_conductance if self.config.model and self.config.model.modflow else None,
+            default=None
+        )
+        if configured is not None:
+            return float(configured)
+        written = read_drn_conductance(self.modflow_settings_dir / "gwf.drn")
+        if written is not None:
+            return written
+        return float(MODFLOW_DEFAULT_BOUNDS['DRAIN_CONDUCTANCE']['min'])
+
     def get_initial_parameters(self) -> Optional[Dict[str, Any]]:
         """Get initial parameter values from land surface files and MODFLOW defaults."""
         params = self._land_pm.get_initial_parameters() or {}
@@ -325,10 +364,7 @@ class CoupledGWParameterManager(BaseParameterManager):
                 lambda: self.config.model.modflow.sy if self.config.model and self.config.model.modflow else None,
                 default=0.05
             )),
-            'DRAIN_CONDUCTANCE': float(self._get_config_value(
-                lambda: self.config.model.modflow.drain_conductance if self.config.model and self.config.model.modflow else None,
-                default=1e4
-            )),
+            'DRAIN_CONDUCTANCE': self._initial_drain_conductance(),
         }
         mf = self.config.model.modflow if getattr(self.config, 'model', None) else None
         if mf is not None:

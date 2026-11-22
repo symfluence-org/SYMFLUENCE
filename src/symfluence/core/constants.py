@@ -624,6 +624,9 @@ class ConfigKeys:
     EVALUATION_PERIOD = 'EVALUATION_PERIOD'
     """Evaluation period string."""
 
+    TEST_PERIOD = 'TEST_PERIOD'
+    """Optional independent test period string (scored, never optimised on)."""
+
     # Spatial configuration
     SIM_REACH_ID = 'SIM_REACH_ID'
     """Simulated reach ID for routing comparison."""

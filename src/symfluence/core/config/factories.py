@@ -127,6 +127,16 @@ def _normalize_nested_config(nested_config: Dict[str, Any]) -> Dict[str, Any]:
             # Keep other keys as-is
             normalized[key] = value
 
+    # A top-level ``lapse`` section is shorthand for ``forcing.lapse`` (the
+    # elevation corrections of remapped forcing). Explicit ``forcing.lapse``
+    # entries win over the shorthand.
+    lapse = normalized.get('lapse')
+    if isinstance(lapse, dict):
+        del normalized['lapse']
+        forcing = dict(normalized.get('forcing') or {})
+        forcing['lapse'] = {**lapse, **(forcing.get('lapse') or {})}
+        normalized['forcing'] = forcing
+
     return normalized
 
 
@@ -287,6 +297,11 @@ def from_file_factory(
             normalized_overrides = {_normalize_key(k): v for k, v in overrides.items()}
             config_dict.update(normalized_overrides)
 
+        # The ``lapse`` section (elevation corrections of remapped forcing)
+        # is a mapping with no flat spelling; carry it past the flat-key
+        # machinery into ``forcing.lapse``.
+        lapse_section = config_dict.pop('LAPSE', None)
+
         # Tiered validation of unrecognized keys (RTI review item 21):
         # warn by default, raise under STRICT_CONFIG / SYMFLUENCE_STRICT_CONFIG.
         # Runs on the fully-resolved flat user config before transformation, so
@@ -303,6 +318,10 @@ def from_file_factory(
 
         # Transform flat dict to nested structure
         nested_config = transform_flat_to_nested(config_dict)
+        if isinstance(lapse_section, dict):
+            nested_config.setdefault('forcing', {})['lapse'] = lapse_section
+        elif lapse_section is not None:
+            raise ConfigurationError("'lapse' must be a mapping of elevation-correction settings")
 
     # Filter out None values so Pydantic can use field defaults
     nested_config = _filter_none_values(nested_config)

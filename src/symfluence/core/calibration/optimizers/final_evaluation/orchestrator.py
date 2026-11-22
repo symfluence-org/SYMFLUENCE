@@ -13,7 +13,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from symfluence.core.mixins.config import resolve_config_value
+from symfluence.core.mixins.config import SCHEMA_DEFAULT, resolve_config_value
 
 from .file_manager_updater import FileManagerUpdater
 from .model_decisions_updater import ModelDecisionsUpdater
@@ -50,7 +50,7 @@ class FinalEvaluationOrchestrator:
         self._results_saver = results_saver
 
     # Helper to access config values via ConfigMixin-style
-    def _get_config_value(self, accessor, default=None, dict_key=None):
+    def _get_config_value(self, accessor, default=SCHEMA_DEFAULT, dict_key=None):
         """Access config value using accessor lambda or dict key."""
         return resolve_config_value(self._config, accessor, default, dict_key)
 
@@ -102,10 +102,12 @@ class FinalEvaluationOrchestrator:
     def log_results(
         self,
         calib_metrics: Dict[str, Any],
-        eval_metrics: Dict[str, Any]
+        eval_metrics: Dict[str, Any],
+        test_metrics: Optional[Dict[str, Any]] = None,
+        period_warning: Optional[str] = None,
     ) -> None:
         """Log detailed final evaluation results."""
-        self._results_saver.log_results(calib_metrics, eval_metrics)
+        self._results_saver.log_results(calib_metrics, eval_metrics, test_metrics, period_warning)
 
     def save_results(
         self,

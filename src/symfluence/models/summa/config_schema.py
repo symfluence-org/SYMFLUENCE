@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, PositiveInt
+from pydantic import BaseModel, Field, PositiveInt, field_validator
 
 from symfluence.core.config.models.base import FROZEN_CONFIG
 
@@ -92,11 +92,20 @@ class SUMMAConfig(BaseModel):
     transfer_function_attributes_path: Optional[str] = Field(default=None, alias='TRANSFER_FUNCTION_ATTRIBUTES')
     transfer_function_param_config: Optional[Dict[str, Any]] = Field(default=None, alias='TRANSFER_FUNCTION_PARAM_CONFIG')
 
+    @field_validator('backup_settings', mode='before')
+    @classmethod
+    def _backup_settings_yes_no(cls, value: Any) -> Any:
+        # Unquoted YAML `yes`/`no` arrives as a bool and failed str validation.
+        if isinstance(value, bool):
+            return 'yes' if value else 'no'
+        return str(value).strip().lower() if isinstance(value, str) else value
+
 
 # Legacy flat config keys accepted for backward compatibility, mapped to
 # this schema's field names. Core's flat->nested transform collects these
 # from every schema registered in R.config_schemas (see
 # core.config.legacy_aliases.iter_legacy_flat_to_nested_aliases).
+
 SUMMAConfig.LEGACY_FLAT_ALIASES = {
     'SETTINGS_SUMMA_PATH': 'settings_path',
     'SETTINGS_SUMMA_FILEMANAGER': 'filemanager',

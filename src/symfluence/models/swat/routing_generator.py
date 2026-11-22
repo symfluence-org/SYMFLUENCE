@@ -40,7 +40,7 @@ class SWATRoutingGenerator:
         """
         warmup_years = self.pp._get_config_value(
             lambda: self.pp.config.model.swat.warmup_years,
-            default=2
+            dict_key='SWAT_WARMUP_YEARS',
         )
 
         nbyr = end_date.year - start_date.year + 1

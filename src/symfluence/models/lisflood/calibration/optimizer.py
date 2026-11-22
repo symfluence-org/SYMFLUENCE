@@ -34,7 +34,8 @@ class LisfloodModelOptimizer(BaseModelOptimizer):
 
     def _get_final_file_manager_path(self) -> Path:
         settings_file = self._get_config_value(
-            lambda: self.config.model.lisflood.settings_file, default="settings.xml", dict_key="LISFLOOD_SETTINGS_FILE"
+            lambda: self.config.model.lisflood.settings_file,
+            dict_key='LISFLOOD_SETTINGS_FILE',
         )
         return self.lisflood_setup_dir / settings_file
 
@@ -49,7 +50,8 @@ class LisfloodModelOptimizer(BaseModelOptimizer):
     def _run_model_for_final_evaluation(self, output_dir: Path) -> bool:
         """Run LISFLOOD with best params, directing output to output_dir."""
         settings_file = self._get_config_value(
-            lambda: self.config.model.lisflood.settings_file, default="settings.xml", dict_key="LISFLOOD_SETTINGS_FILE"
+            lambda: self.config.model.lisflood.settings_file,
+            dict_key='LISFLOOD_SETTINGS_FILE',
         )
         src_xml = self.lisflood_setup_dir / settings_file
 

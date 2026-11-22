@@ -1,4 +1,6 @@
 """Check the workshop's real data, daily weather and native training split."""
+from __future__ import annotations
+
 import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
@@ -27,9 +29,6 @@ def test_bundled_observed_flow_and_boundary():
 def make_hourly(project):
     folder = project / 'data' / 'forcing' / 'SUMMA_input'
     folder.mkdir(parents=True)
-    settings = project / 'settings' / 'SUMMA'
-    settings.mkdir(parents=True)
-    (settings / 'forcingFileList.txt').write_text('"weather.nc" ! workshop input\n')
     times = pd.date_range('2000-01-01', periods=48, freq='h')
     hourly = pd.DataFrame({name: np.ones(48) for name in workshop.FORCING_UNITS}, index=times)
     hourly.airtemp = 273.15 + np.arange(48)
@@ -43,10 +42,9 @@ def test_daily_precipitation_conserves_water_and_keeps_seven_inputs(tmp_path):
     make_hourly(tmp_path)
     config = SimpleNamespace(domain=SimpleNamespace(time_start='2000-01-01 00:00', time_end='2000-01-02 23:00'),
                              forcing=SimpleNamespace(time_step_size=3600))
-    daily, hashes = workshop.daily_summa_forcing(tmp_path, config)
+    daily = workshop.daily_summa_forcing(tmp_path, config)
     np.testing.assert_allclose(daily.pptrate * 86400, [1, 1])
     np.testing.assert_allclose(daily.airtemp, [284.65, 308.65])
-    assert len(hashes) == 1
     output = tmp_path / 'daily.nc'
     workshop.write_daily_forcing(daily, output)
     with xr.open_dataset(output) as ds:
@@ -78,14 +76,16 @@ def test_comparison_uses_identical_dates_for_all_predictors():
 
 def test_native_lstm_smoke_and_scalers_exclude_validation_and_holdout(tmp_path, monkeypatch):
     pytest.importorskip('torch')
+    import logging
+
     from symfluence.core.config.models import SymfluenceConfig
     from symfluence.models.lstm.runner import LSTMRunner
-    import logging
 
     monkeypatch.setenv('SYMFLUENCE_LSTM_DEVICE', 'cpu')
     cfg = SymfluenceConfig.from_file(WORKSHOP / 'config_ayilam_streamflow.yaml', use_env=False, overrides={
         'SYMFLUENCE_DATA_DIR': str(tmp_path), 'HYDROLOGICAL_MODEL': 'LSTM',
-        'EXPERIMENT_ID': 'workshop_test', 'EXPERIMENT_TIME_END': '2000-12-31 23:00',
+        'EXPERIMENT_ID': 'workshop_test', 'EXPERIMENT_TIME_START': '2000-01-01 00:00',
+        'EXPERIMENT_TIME_END': '2000-12-31 23:00',
         'SPINUP_PERIOD': '2000-01-01,2000-01-31',
         'CALIBRATION_PERIOD': '2000-02-01,2000-06-30',
         'EVALUATION_PERIOD': '2000-07-01,2000-12-31',

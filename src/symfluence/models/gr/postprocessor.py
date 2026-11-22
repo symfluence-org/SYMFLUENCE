@@ -322,10 +322,12 @@ class GRPostProcessor(BaseModelPostProcessor):
 
             gdf = gpd.read_file(basin_path)
             id_col = self._get_config_value(
-                lambda: self.config.paths.river_basin_rm_gruid, default='GRU_ID'
+                lambda: self.config.paths.river_basin_rm_gruid,
+                dict_key='RIVER_BASIN_SHP_RM_GRUID',
             )
             area_col = self._get_config_value(
-                lambda: self.config.paths.river_basin_area, default='GRU_area'
+                lambda: self.config.paths.river_basin_area,
+                dict_key='RIVER_BASIN_SHP_AREA',
             )
             if id_col not in gdf.columns or area_col not in gdf.columns:
                 return None

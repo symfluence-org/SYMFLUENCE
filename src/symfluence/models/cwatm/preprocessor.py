@@ -51,7 +51,7 @@ class CWatMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
         self.resolution = self._get_config_value(
             lambda: self.config.model.cwatm.resolution,
-            default='30min', dict_key='CWATM_RESOLUTION',
+            dict_key='CWATM_RESOLUTION',
         )
 
     def run_preprocessing(self) -> bool:
@@ -194,10 +194,7 @@ class CWatMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         """Estimate PET in m/day (Hamon by default, or Oudin)."""
         from symfluence.core.modeling.mixins.pet_calculator import PETCalculatorMixin
 
-        pet_method = self._get_config_value(
-            lambda: self.config.model.cwatm.pet_method,
-            default='hamon', dict_key='CWATM_PET_METHOD',
-        )
+        pet_method = self._get_config_value(lambda: self.config.model.cwatm.pet_method, dict_key='CWATM_PET_METHOD')
         doy = np.array([t.timetuple().tm_yday for t in times])
 
         if pet_method == 'oudin':
@@ -233,7 +230,7 @@ class CWatMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
 
         config_file = self._get_config_value(
             lambda: self.config.model.cwatm.config_file,
-            default='settings.ini',
+            dict_key='CWATM_CONFIG_FILE',
         )
         domain_name = self._get_config_value(
             lambda: self.config.domain.name,
@@ -257,14 +254,14 @@ class CWatMPreProcessor(BaseModelPreProcessor):  # type: ignore[misc]
         # CWatM install dir (contains cwatm_input/ with global parameter data)
         install_path = self._get_config_value(
             lambda: self.config.model.cwatm.install_path,
-            default='default',
+            dict_key='CWATM_INSTALL_PATH',
         )
         cwatm_dir = resolve_install_dir(install_path, data_dir, 'installs/cwatm')
 
         # Spinup
         spinup_years = self._get_config_value(
             lambda: self.config.model.cwatm.spinup_years,
-            default=0, dict_key='CWATM_SPINUP_YEARS',
+            dict_key='CWATM_SPINUP_YEARS',
         )
 
         # Determine paths for CWatM's global parameter dataset

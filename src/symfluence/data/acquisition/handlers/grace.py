@@ -70,7 +70,10 @@ class GRACEAcquirer(BaseAcquisitionHandler):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         subset_enabled = self._parse_bool(self._get_config_value(lambda: None, default=False, dict_key='GRACE_SUBSET'))
-        force_download = self._parse_bool(self._get_config_value(lambda: self.config.data.force_download, default=False, dict_key='FORCE_DOWNLOAD'))
+        force_download = self._parse_bool(self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ))
 
         datasets = {
             'jpl': {

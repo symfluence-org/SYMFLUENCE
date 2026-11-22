@@ -51,6 +51,13 @@ class TestErrorLoggerInitialization:
         assert logger.mode == 'failures'
         assert not logger.stop_on_failure
 
+    def test_params_keep_trials_with_a_validated_config(self, tmp_path):
+        """A validated config carries the schema's ERROR_LOGGING_MODE='none'."""
+        config = {'PARAMS_KEEP_TRIALS': True, 'ERROR_LOGGING_MODE': 'none'}
+        assert ErrorLogger(config, tmp_path).mode == 'failures'
+        config = {'PARAMS_KEEP_TRIALS': True, 'ERROR_LOGGING_MODE': 'all'}
+        assert ErrorLogger(config, tmp_path).mode == 'all'
+
     def test_explicit_error_logging_mode(self, tmp_path):
         """Explicit ERROR_LOGGING_MODE should override default."""
         config = {'ERROR_LOGGING_MODE': 'all'}

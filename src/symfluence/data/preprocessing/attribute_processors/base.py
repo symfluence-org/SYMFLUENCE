@@ -190,8 +190,7 @@ class BaseAttributeProcessor(ConfigMixin):
         catchment = gpd.read_file(self.catchment_path)
         hru_id_field = self._get_config_value(
             lambda: self.config.paths.catchment_hruid,
-            default='HRU_ID',
-            dict_key='CATCHMENT_SHP_HRUID'
+            dict_key='CATCHMENT_SHP_HRUID',
         )
 
         return catchment[hru_id_field].tolist()

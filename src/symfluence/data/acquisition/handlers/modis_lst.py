@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from symfluence.core.registries import R
+from symfluence.data.acquisition.utils import atomic_write
 
 from ..base import BaseAcquisitionHandler
 from ..earthdata_auth import missing_credentials_message
@@ -76,7 +77,7 @@ class MODISLSTAcquirer(BaseAcquisitionHandler):
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Check for existing data
-        force_download = self._get_config_value(lambda: self.config.data.force_download, default=False)
+        force_download = self._get_config_value(lambda: self.config.data.force_download, dict_key='FORCE_DOWNLOAD')
         existing_files = list(output_dir.glob("*LST*.nc")) + list(output_dir.glob("*LST*.tif"))
         if existing_files and not force_download:
             self.logger.info(f"MODIS LST data already exists: {len(existing_files)} files")
@@ -293,7 +294,7 @@ class MODISLSTAcquirer(BaseAcquisitionHandler):
                 )
                 response.raise_for_status()
 
-                with open(output_path, 'wb') as f:
+                with atomic_write(output_path) as _part, open(_part, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192):
                         f.write(chunk)
 

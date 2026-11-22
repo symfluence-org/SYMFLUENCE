@@ -36,6 +36,13 @@ class SystemConfig(BaseModel):
     random_seed: Optional[int] = Field(default=None, alias='RANDOM_SEED')
     stop_on_error: bool = Field(default=True, alias='STOP_ON_ERROR')
     record_provenance: bool = Field(default=True, alias='RECORD_PROVENANCE')
+    # How forcing and observation inputs are fingerprinted in the run manifest:
+    # 'listing' hashes file names + sizes + mtimes (cheap), 'content' hashes
+    # every byte (SHA-256; slow for large forcing), 'none' skips them.
+    provenance_input_hash: Literal['listing', 'content', 'none'] = Field(
+        default='listing', alias='PROVENANCE_INPUT_HASH',
+        description="Fingerprint forcing/observation inputs by file listing (names, sizes, "
+                    "mtimes), by full content SHA-256, or not at all")
     # Scope `workflow run` to this subset of steps (canonical names or aliases).
     # Steps always execute in pipeline order regardless of list order; None runs all.
     workflow_steps: Optional[List[str]] = Field(default=None, alias='WORKFLOW_STEPS')

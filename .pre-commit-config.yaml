@@ -52,6 +52,9 @@ repos:
     hooks:
       - id: nbstripout
         files: ^examples/
+        # The Intelligent Rivers workshop notebooks are taught as walkthroughs
+        # and ship with their executed outputs on purpose.
+        exclude: ^examples/04_workshop_notebooks/04[de]_intelligent_rivers_
 
   # Mypy type checking — rev and pandas-stubs pin must match the CI mypy
   # step in .github/workflows/ci.yml (same toolchain in both gates, or casts

@@ -351,6 +351,38 @@ class BaseDatasetHandler(ABC, ConfigMixin):
             ``True`` if :meth:`merge_forcings` must be called.
         """
 
+    def _find_catchment_shapefile(self) -> Optional[Path]:
+        """Locate the domain's existing catchment (HRU) shapefile, or None.
+
+        Used to subset a forcing grid to the catchment extent. The forcing
+        ``shapefile_path`` passed to :meth:`create_shapefile` may be nested
+        (``shapefiles/forcing/<signature>``), so the catchment is resolved from
+        ``project_dir`` with the shared finder: CATCHMENT_PATH/CATCHMENT_SHP_NAME
+        when set, then ``shapefiles/catchment/<method>/<experiment_id>/`` and the
+        legacy flat ``shapefiles/catchment/`` directory.
+        """
+        from symfluence.core.path_resolver import find_basin_shapefile
+
+        catchment_path = self._get_config_value(
+            lambda: self.config.paths.catchment_path, default='default',
+            dict_key='CATCHMENT_PATH')
+        catchment_name = self._get_config_value(
+            lambda: self.config.paths.catchment_name, default='default',
+            dict_key='CATCHMENT_SHP_NAME')
+        return find_basin_shapefile(
+            Path(self.project_dir) / 'shapefiles',
+            str(self.domain_name),
+            self._get_config_value(
+                lambda: self.config.domain.definition_method, default='lumped',
+                dict_key='DOMAIN_DEFINITION_METHOD'),
+            self._get_config_value(
+                lambda: self.config.domain.experiment_id, default='run_1',
+                dict_key='EXPERIMENT_ID'),
+            explicit_path=str(catchment_path) if catchment_path else None,
+            explicit_name=str(catchment_name) if catchment_name else None,
+            logger=self.logger,
+        )
+
     @staticmethod
     def _file_overlaps_period(filepath: Path, start_year: int, end_year: int) -> bool:
         """Check if a forcing file's time range overlaps the configured period.

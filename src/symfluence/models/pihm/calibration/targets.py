@@ -94,7 +94,8 @@ class PIHMStreamflowTarget(StreamflowEvaluator):
                 output_dir, 'river_flux', start_date=start_date,
                 outlet_segment=int(self._get_config_value(
                     lambda: self.config.model.pihm.outlet_segment,
-                    default=1, dict_key='PIHM_OUTLET_SEGMENT')),
+                    dict_key='PIHM_OUTLET_SEGMENT',
+                )),
             )
 
             if streamflow.empty:

@@ -51,7 +51,10 @@ class GLEAMETHandler(BaseObservationHandler):
 
         archive_name = Path(download_url).name
         target_path = et_dir / archive_name
-        force_download = bool(self._get_config_value(lambda: self.config.data.force_download, default=False, dict_key='FORCE_DOWNLOAD'))
+        force_download = bool(self._get_config_value(
+            lambda: self.config.data.force_download,
+            dict_key='FORCE_DOWNLOAD',
+        ))
 
         if target_path.exists() and not force_download:
             return et_dir
