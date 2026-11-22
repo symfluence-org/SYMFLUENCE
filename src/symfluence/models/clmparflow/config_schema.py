@@ -101,6 +101,8 @@ class CLMParFlowConfig(BaseModel):
 
     # Execution
     timeout: int = Field(default=7200, alias='CLMPARFLOW_TIMEOUT', ge=60, le=86400)
+    # CLM segfaults at random on some runs that succeed bit-identically when rerun (segfault_retry.py)
+    segv_retries: int = Field(default=2, alias='CLMPARFLOW_SEGV_RETRIES', ge=0, le=10)
 
     # Basin mode (opt-in): regular grid over the real basin, water-year segments with spin-up (basin/ package).
     # Glacier water and the ice albedo need the patched build: symfluence binary install clmparflow --patched.

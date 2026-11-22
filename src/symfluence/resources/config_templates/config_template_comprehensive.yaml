@@ -4544,6 +4544,55 @@ DOWNLOAD_HUBEAU_DATA: true
 #   Usage:      1
 HUBEAU_USE_DAILY: true
 
+# KIWIS_CHANNEL_URL
+#   Type:        str
+#   Default:     None
+#   Source:      KiWISConfig (evaluation.py)
+#   Description: KiWebPortal share-channel URL (grants access: prefer the KIWIS_CHANNEL_URL environment variable)
+KIWIS_CHANNEL_URL: null
+
+# KIWIS_TS_ID
+#   Type:        str
+#   Default:     None
+#   Source:      KiWISConfig (evaluation.py)
+#   Description: KiWIS time series id of the discharge series (or environment variable KIWIS_TS_ID)
+KIWIS_TS_ID: null
+
+# KIWIS_INTERVAL_LABEL
+#   Type:        str
+#   Default:     start
+#   Source:      KiWISConfig (evaluation.py)
+#   Description: Stamp interval means at the interval 'start' or 'end'
+KIWIS_INTERVAL_LABEL: start
+
+# KIWIS_MIN_COVERAGE
+#   Type:        float
+#   Default:     0.8
+#   Source:      KiWISConfig (evaluation.py)
+#   Description: Share of sub-interval values needed for an interval mean
+KIWIS_MIN_COVERAGE: 0.8
+
+# KIWIS_REVISE_DAYS
+#   Type:        float
+#   Default:     3.0
+#   Source:      KiWISConfig (evaluation.py)
+#   Description: On update, refetch this many days before the newest stored value
+KIWIS_REVISE_DAYS: 3.0
+
+# KIWIS_TIMEOUT
+#   Type:        float
+#   Default:     180.0
+#   Source:      KiWISConfig (evaluation.py)
+#   Description: Request timeout in seconds
+KIWIS_TIMEOUT: 180.0
+
+# KIWIS_RETRIES
+#   Type:        int
+#   Default:     2
+#   Source:      KiWISConfig (evaluation.py)
+#   Description: Retries of a failed request
+KIWIS_RETRIES: 2
+
 # DOWNLOAD_USGS_GW
 #   Type:        bool
 #   Default:     False
@@ -5269,6 +5318,13 @@ SETTINGS_SUMMA_SOILPROFILE: "FA"
 #   Source:      SUMMAConfig (model_configs.py)
 #   Description: Initial matric head for SUMMA cold state initialization
 SUMMA_INIT_MATRIC_HEAD: -1.0
+
+# SUMMA_REPAIR_INITIAL_STATE
+#   Type:        bool
+#   Default:     False
+#   Source:      SUMMAConfig (model_configs.py)
+#   Description: Before each run, thicken initial-state snow layers above SUMMA's 0.80 water fraction limit (mass kept)
+SUMMA_REPAIR_INITIAL_STATE: false
 
 
 # 8. FUSE Model Configuration
@@ -6509,6 +6565,12 @@ CLMPARFLOW_PARAMS_TO_CALIBRATE: "K_SAT,POROSITY,VG_ALPHA,VG_N,S_RES,MANNINGS_N,S
 #   Default:     7200
 #   Source:      CLMParFlowConfig (model_configs.py)
 CLMPARFLOW_TIMEOUT: 7200
+
+# CLMPARFLOW_SEGV_RETRIES — Reruns of a ParFlow-CLM run that ended in a segmentation fault (0 = no retry)
+#   Type:        int
+#   Default:     2
+#   Source:      CLMParFlowConfig (model_configs.py)
+CLMPARFLOW_SEGV_RETRIES: 2
 
 
 # 9.8. PIHM Model Configuration
