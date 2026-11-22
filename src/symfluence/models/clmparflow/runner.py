@@ -24,6 +24,8 @@ from symfluence.core.mpi_utils import find_mpirun
 from symfluence.core.process_exec import run as run_subprocess
 from symfluence.core.registries import R
 
+from .segfault_retry import run_with_segfault_retry
+
 logger = logging.getLogger(__name__)
 
 
@@ -170,15 +172,22 @@ class CLMParFlowRunner(BaseModelRunner):
                 env['PARFLOW_DIR'] = pf_dir
 
             timeout = self._get_timeout()
+            retries = self._get_config_value(
+                lambda: self.config.model.clmparflow.segv_retries, dict_key='CLMPARFLOW_SEGV_RETRIES',
+            )
 
-            result = run_subprocess(
-                cmd,
-                cwd=str(self.output_dir),
-                env=env,
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
+            # stdin=DEVNULL: mpirun otherwise reads the parent's stdin
+            result = run_with_segfault_retry(
+                lambda: run_subprocess(
+                    cmd,
+                    cwd=str(self.output_dir),
+                    env=env,
+                    stdin=subprocess.DEVNULL,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                ),
+                self.output_dir, runname, retries=retries, log=logger.warning,
             )
 
             stdout_log = self.write_stdout_sidecar(
